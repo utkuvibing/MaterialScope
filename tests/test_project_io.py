@@ -9,6 +9,8 @@ import pytest
 from core.data_io import ThermalDataset
 from core.dsc_processor import GlassTransition
 from core.peak_analysis import ThermalPeak
+from core.processing_schema import ensure_processing_payload, update_method_context, update_processing_step
+from core.provenance import build_calibration_reference_context
 from core.project_io import load_project_archive, save_project_archive
 from core.result_serialization import serialize_dsc_result, serialize_tga_result
 from core.tga_processor import MassLossStep, TGAResult
@@ -80,6 +82,36 @@ def test_project_archive_round_trip_restores_stable_state(thermal_dataset, tempe
     peak = _make_peak()
     tg = _make_tg()
     tga_result = _make_tga_result(tga_dataset, tga_signal)
+    dsc_processing = ensure_processing_payload(
+        analysis_type="DSC",
+        workflow_template="dsc.polymer_tg",
+        workflow_template_label="Polymer Tg",
+    )
+    dsc_processing = update_processing_step(dsc_processing, "baseline", {"method": "asls"})
+    dsc_processing = update_method_context(
+        dsc_processing,
+        build_calibration_reference_context(
+            dataset=thermal_dataset,
+            analysis_type="DSC",
+            reference_temperature_c=peak.peak_temperature,
+        ),
+        analysis_type="DSC",
+    )
+    tga_processing = ensure_processing_payload(
+        analysis_type="TGA",
+        workflow_template="tga.general",
+        workflow_template_label="General TGA",
+    )
+    tga_processing = update_processing_step(tga_processing, "step_detection", {"method": "savgol"})
+    tga_processing = update_method_context(
+        tga_processing,
+        build_calibration_reference_context(
+            dataset=tga_dataset,
+            analysis_type="TGA",
+            reference_temperature_c=tga_result.steps[0].midpoint_temperature,
+        ),
+        analysis_type="TGA",
+    )
 
     dsc_record = serialize_dsc_result(
         "synthetic_dsc",
@@ -87,12 +119,20 @@ def test_project_archive_round_trip_restores_stable_state(thermal_dataset, tempe
         [peak],
         glass_transitions=[tg],
         artifacts={"figure_keys": ["DSC Analysis - synthetic_dsc"]},
+        processing=dsc_processing,
+        provenance={"saved_at_utc": "2026-03-07T10:02:00+00:00", "app_version": "2.0"},
+        validation={"status": "warn", "issues": [], "warnings": ["Calibration identifier is not recorded for this DSC dataset."]},
+        review={"commercial_scope": "stable_dsc"},
     )
     tga_record = serialize_tga_result(
         "synthetic_tga",
         tga_dataset,
         tga_result,
         artifacts={"figure_keys": ["TGA Analysis - synthetic_tga"]},
+        processing=tga_processing,
+        provenance={"saved_at_utc": "2026-03-07T10:03:00+00:00", "app_version": "2.0"},
+        validation={"status": "warn", "issues": [], "warnings": ["Atmosphere is not recorded for this TGA dataset."]},
+        review={"commercial_scope": "stable_tga"},
     )
 
     session_state = {
@@ -128,6 +168,23 @@ def test_project_archive_round_trip_restores_stable_state(thermal_dataset, tempe
             "notes": "Synthetic comparison notes",
             "figure_key": "Comparison Workspace - DSC",
             "saved_at": "2026-03-07T10:05:00",
+            "batch_run_id": "batch_dsc_20260307_demo",
+            "batch_template_id": "dsc.polymer_tg",
+            "batch_template_label": "Polymer Tg",
+            "batch_completed_at": "2026-03-07T10:06:00",
+            "batch_summary": [
+                {
+                    "dataset_key": "synthetic_dsc",
+                    "sample_name": "SyntheticDSC",
+                    "workflow_template": "Polymer Tg",
+                    "execution_status": "saved",
+                    "validation_status": "warn",
+                    "calibration_state": "missing_calibration",
+                    "reference_state": "reference_out_of_window",
+                    "result_id": "dsc_synthetic_dsc",
+                    "error_id": "",
+                }
+            ],
         },
         "dsc_state_synthetic_dsc": {
             "smoothed": thermal_dataset.data["signal"].values,
@@ -136,11 +193,13 @@ def test_project_archive_round_trip_restores_stable_state(thermal_dataset, tempe
             "peaks": [peak],
             "glass_transitions": [tg],
             "processor": None,
+            "processing": dsc_processing,
         },
         "tga_state_synthetic_tga": {
             "smoothed": tga_signal,
             "dtg": np.zeros_like(tga_signal),
             "tga_result": tga_result,
+            "processing": tga_processing,
         },
     }
 
@@ -156,7 +215,19 @@ def test_project_archive_round_trip_restores_stable_state(thermal_dataset, tempe
     assert restored["branding"]["company_name"] == "Acme Lab"
     assert restored["branding"]["logo_bytes"] == b"fake-logo"
     assert restored["comparison_workspace"]["notes"] == "Synthetic comparison notes"
+    assert restored["comparison_workspace"]["batch_run_id"] == "batch_dsc_20260307_demo"
+    assert restored["comparison_workspace"]["batch_summary"][0]["result_id"] == "dsc_synthetic_dsc"
+    assert restored["results"]["dsc_synthetic_dsc"]["processing"]["workflow_template"] == "Polymer Tg"
+    assert restored["results"]["dsc_synthetic_dsc"]["processing"]["workflow_template_id"] == "dsc.polymer_tg"
+    assert restored["results"]["dsc_synthetic_dsc"]["processing"]["method_context"]["reference_state"] == "reference_out_of_window"
+    assert restored["results"]["dsc_synthetic_dsc"]["provenance"]["app_version"] == "2.0"
+    assert restored["results"]["tga_synthetic_tga"]["review"]["commercial_scope"] == "stable_tga"
     assert restored["dsc_state_synthetic_dsc"]["peaks"][0].peak_temperature == pytest.approx(250.0)
+    assert restored["dsc_state_synthetic_dsc"]["processing"]["workflow_template"] == "Polymer Tg"
+    assert restored["dsc_state_synthetic_dsc"]["processing"]["workflow_template_id"] == "dsc.polymer_tg"
+    assert restored["tga_state_synthetic_tga"]["processing"]["workflow_template"] == "General TGA"
+    assert restored["tga_state_synthetic_tga"]["processing"]["workflow_template_id"] == "tga.general"
+    assert restored["tga_state_synthetic_tga"]["processing"]["method_context"]["reference_state"] == "reference_out_of_window"
     assert restored["dsc_state_synthetic_dsc"]["glass_transitions"][0].tg_midpoint == pytest.approx(120.0)
     assert restored["tga_state_synthetic_tga"]["tga_result"] is not None
     assert restored["tga_state_synthetic_tga"]["tga_result"].steps[0].mass_loss_percent == pytest.approx(12.0)

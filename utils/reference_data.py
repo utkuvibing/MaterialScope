@@ -6,7 +6,7 @@ known values and return colour-coded deviation information.
 """
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, List, Optional
 
 
 @dataclass
@@ -58,17 +58,17 @@ def find_nearest_reference(
     threshold_c : float
         Maximum acceptable distance (°C) to consider a match.
     analysis_type : str
-        ``"DSC"`` / ``"DTA"`` searches melting standards first;
-        ``"TGA"`` searches decomposition standards first.
+        ``"DSC"`` / ``"DTA"`` searches melting / transition standards;
+        ``"TGA"`` searches decomposition standards only.
 
     Returns
     -------
     ReferencePoint or None
     """
     if analysis_type in ("DSC", "DTA"):
-        pool = DSC_MELTING_STANDARDS + TGA_DECOMPOSITION_STANDARDS
+        pool = DSC_MELTING_STANDARDS
     else:
-        pool = TGA_DECOMPOSITION_STANDARDS + DSC_MELTING_STANDARDS
+        pool = TGA_DECOMPOSITION_STANDARDS
 
     best: Optional[ReferencePoint] = None
     best_dist = float("inf")
@@ -119,3 +119,52 @@ def render_reference_comparison(
     if ref.standard:
         line += f" | {ref.standard}"
     return line
+
+
+def evaluate_reference_check(
+    temperature_c: float | None,
+    analysis_type: str = "DSC",
+    threshold_c: float = 15.0,
+) -> dict[str, Any]:
+    """Return a structured reference-check payload for saved results and reports."""
+    if temperature_c in (None, ""):
+        return {
+            "reference_state": "reference_candidate_missing",
+            "reference_checked": False,
+            "reference_threshold_c": threshold_c,
+        }
+
+    try:
+        measured_temperature_c = float(temperature_c)
+    except (TypeError, ValueError):
+        return {
+            "reference_state": "reference_candidate_invalid",
+            "reference_checked": False,
+            "reference_threshold_c": threshold_c,
+        }
+
+    reference = find_nearest_reference(
+        measured_temperature_c,
+        threshold_c=threshold_c,
+        analysis_type=analysis_type,
+    )
+    if reference is None:
+        return {
+            "reference_state": "reference_out_of_window",
+            "reference_checked": False,
+            "reference_threshold_c": threshold_c,
+            "reference_temperature_c": measured_temperature_c,
+        }
+
+    delta_c = measured_temperature_c - reference.temperature_c
+    return {
+        "reference_state": "reference_checked",
+        "reference_checked": True,
+        "reference_threshold_c": threshold_c,
+        "reference_name": reference.name,
+        "reference_event_type": reference.event_type,
+        "reference_standard": reference.standard,
+        "reference_temperature_c": reference.temperature_c,
+        "measured_reference_temperature_c": measured_temperature_c,
+        "reference_delta_c": delta_c,
+    }

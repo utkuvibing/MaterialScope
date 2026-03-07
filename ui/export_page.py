@@ -7,6 +7,7 @@ import io
 import pandas as pd
 import streamlit as st
 
+from core.batch_runner import filter_batch_summary_rows, normalize_batch_summary_rows, summarize_batch_outcomes
 from core.data_io import export_data_xlsx
 from core.report_generator import (
     generate_csv_summary,
@@ -16,8 +17,9 @@ from core.report_generator import (
 )
 from core.result_serialization import collect_figure_keys, split_valid_results
 from ui.components.chrome import render_page_header
+from utils.diagnostics import record_exception, serialize_support_snapshot
 from utils.i18n import t
-from utils.license_manager import license_allows_write
+from utils.license_manager import APP_VERSION, license_allows_write
 
 
 def render():
@@ -119,6 +121,7 @@ def _render_preview(datasets, valid_results, issues, branding, comparison_worksp
         if comparison_workspace.get("notes"):
             st.write(f"**{'Karşılaştırma Notları' if lang == 'tr' else 'Comparison Notes'}**")
             st.write(comparison_workspace["notes"])
+        _render_batch_preview(comparison_workspace, lang)
 
     if branding.get("report_notes"):
         st.subheader("Analist Notları" if lang == "tr" else "Analyst Notes")
@@ -128,6 +131,42 @@ def _render_preview(datasets, valid_results, issues, branding, comparison_worksp
         st.warning("Bazı kayıtlar eksik ve atlanacak." if lang == "tr" else "Some saved records are incomplete and will be skipped.")
         for issue in issues:
             st.caption(f"- {issue}")
+
+    with st.expander("Destek Tanı Paketi" if lang == "tr" else "Support Diagnostics", expanded=False):
+        st.caption(
+            "Bu JSON snapshot hata bildirimi ve destek talepleri için son olayları, log yolunu ve çalışma alanı özetini içerir."
+            if lang == "tr"
+            else "This JSON snapshot includes recent events, the diagnostics log path, and a workspace summary for bug reports and support requests."
+        )
+        if st.button("Destek Snapshot Hazırla" if lang == "tr" else "Prepare Support Snapshot", key="prepare_support_snapshot"):
+            try:
+                st.session_state["prepared_support_snapshot"] = serialize_support_snapshot(
+                    st.session_state,
+                    app_version=APP_VERSION,
+                    log_file=st.session_state.get("diagnostics_log_path"),
+                )
+            except Exception as exc:
+                error_id = record_exception(
+                    st.session_state,
+                    area="export",
+                    action="support_snapshot",
+                    message="Support snapshot generation failed.",
+                    exception=exc,
+                )
+                st.error(
+                    "Destek snapshot oluşturulamadı: {error}".format(error=f"{exc} (Error ID: {error_id})")
+                    if lang == "tr"
+                    else f"Support snapshot generation failed: {exc} (Error ID: {error_id})"
+                )
+        if st.session_state.get("prepared_support_snapshot"):
+            st.download_button(
+                label="Destek Snapshot İndir" if lang == "tr" else "Download Support Snapshot",
+                data=st.session_state["prepared_support_snapshot"],
+                file_name="thermoanalyzer_support_snapshot.json",
+                mime="application/json",
+                key="dl_support_snapshot",
+                on_click="ignore",
+            )
 
 
 def _render_data_export(datasets, write_enabled, lang):
@@ -177,18 +216,33 @@ def _render_data_export(datasets, write_enabled, lang):
             key="prepare_data_xlsx",
             disabled=not write_enabled,
         ):
-            buffer = io.BytesIO()
-            export_data_xlsx([datasets[k] for k in selected_datasets], buffer)
-            buffer.seek(0)
-            st.session_state["prepared_data_exports"] = [
-                {
-                    "label": "Veri çalışma kitabını indir" if lang == "tr" else "Download Data Workbook",
-                    "data": buffer.getvalue(),
-                    "file_name": "thermoanalyzer_data.xlsx",
-                    "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    "key": "dl_data_xlsx",
-                }
-            ]
+            try:
+                buffer = io.BytesIO()
+                export_data_xlsx([datasets[k] for k in selected_datasets], buffer)
+                buffer.seek(0)
+                st.session_state["prepared_data_exports"] = [
+                    {
+                        "label": "Veri çalışma kitabını indir" if lang == "tr" else "Download Data Workbook",
+                        "data": buffer.getvalue(),
+                        "file_name": "thermoanalyzer_data.xlsx",
+                        "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        "key": "dl_data_xlsx",
+                    }
+                ]
+            except Exception as exc:
+                error_id = record_exception(
+                    st.session_state,
+                    area="export",
+                    action="data_workbook",
+                    message="Preparing data workbook failed.",
+                    context={"dataset_count": len(selected_datasets)},
+                    exception=exc,
+                )
+                st.error(
+                    "Excel çalışma kitabı hazırlanamadı: {error}".format(error=f"{exc} (Error ID: {error_id})")
+                    if lang == "tr"
+                    else f"Preparing the data workbook failed: {exc} (Error ID: {error_id})"
+                )
 
     for item in st.session_state.get("prepared_data_exports", []):
         st.download_button(
@@ -230,12 +284,27 @@ def _render_result_export(valid_results, issues, write_enabled, lang):
         key="prepare_result_exports",
         disabled=not write_enabled,
     ):
-        csv_text = generate_csv_summary(valid_results)
-        xlsx_buffer = io.BytesIO()
-        _results_to_xlsx(valid_results, issues, xlsx_buffer)
-        xlsx_buffer.seek(0)
-        st.session_state["prepared_results_csv"] = csv_text.encode("utf-8")
-        st.session_state["prepared_results_xlsx"] = xlsx_buffer.getvalue()
+        try:
+            csv_text = generate_csv_summary(valid_results)
+            xlsx_buffer = io.BytesIO()
+            _results_to_xlsx(valid_results, issues, xlsx_buffer)
+            xlsx_buffer.seek(0)
+            st.session_state["prepared_results_csv"] = csv_text.encode("utf-8")
+            st.session_state["prepared_results_xlsx"] = xlsx_buffer.getvalue()
+        except Exception as exc:
+            error_id = record_exception(
+                st.session_state,
+                area="export",
+                action="result_exports",
+                message="Preparing normalized result exports failed.",
+                context={"result_count": len(valid_results)},
+                exception=exc,
+            )
+            st.error(
+                "Sonuç export paketi hazırlanamadı: {error}".format(error=f"{exc} (Error ID: {error_id})")
+                if lang == "tr"
+                else f"Preparing result exports failed: {exc} (Error ID: {error_id})"
+            )
 
     c1, c2 = st.columns(2)
     if st.session_state.get("prepared_results_csv"):
@@ -290,16 +359,8 @@ def _render_report_export(
         key="prepare_report_files",
         disabled=not write_enabled,
     ):
-        st.session_state["prepared_report_docx"] = generate_docx_report(
-            results=valid_results,
-            datasets=datasets,
-            figures=figures if include_figures else None,
-            branding=branding,
-            comparison_workspace=comparison_workspace,
-            license_state=license_state,
-        )
-        if pdf_export_available():
-            st.session_state["prepared_report_pdf"] = generate_pdf_report(
+        try:
+            st.session_state["prepared_report_docx"] = generate_docx_report(
                 results=valid_results,
                 datasets=datasets,
                 figures=figures if include_figures else None,
@@ -307,8 +368,31 @@ def _render_report_export(
                 comparison_workspace=comparison_workspace,
                 license_state=license_state,
             )
-        else:
-            st.session_state["prepared_report_pdf"] = None
+            if pdf_export_available():
+                st.session_state["prepared_report_pdf"] = generate_pdf_report(
+                    results=valid_results,
+                    datasets=datasets,
+                    figures=figures if include_figures else None,
+                    branding=branding,
+                    comparison_workspace=comparison_workspace,
+                    license_state=license_state,
+                )
+            else:
+                st.session_state["prepared_report_pdf"] = None
+        except Exception as exc:
+            error_id = record_exception(
+                st.session_state,
+                area="report",
+                action="report_generation",
+                message="Preparing branded report files failed.",
+                context={"result_count": len(valid_results), "figure_count": len(figures or {})},
+                exception=exc,
+            )
+            st.error(
+                "Rapor dosyaları hazırlanamadı: {error}".format(error=f"{exc} (Error ID: {error_id})")
+                if lang == "tr"
+                else f"Preparing report files failed: {exc} (Error ID: {error_id})"
+            )
 
     if st.session_state.get("prepared_report_docx"):
         st.download_button(
@@ -344,6 +428,9 @@ def _results_to_xlsx(results, issues, buf):
                 "status": record["status"],
                 "analysis_type": record["analysis_type"],
                 "dataset_key": record.get("dataset_key"),
+                "workflow_template": (record.get("processing") or {}).get("workflow_template"),
+                "validation_status": (record.get("validation") or {}).get("status"),
+                "saved_at_utc": (record.get("provenance") or {}).get("saved_at_utc"),
             }
             row.update(record.get("summary", {}))
             summary_rows.append(row)
@@ -373,3 +460,61 @@ def _collect_figures(results, comparison_workspace):
     stored_figures = st.session_state.get("figures", {}) or {}
     figures = {key: stored_figures[key] for key in figure_keys if key in stored_figures}
     return figures or None
+
+
+def _render_batch_preview(comparison_workspace, lang):
+    batch_summary = normalize_batch_summary_rows(comparison_workspace.get("batch_summary") or [])
+    if not batch_summary:
+        return
+
+    st.subheader("Batch Özeti" if lang == "tr" else "Batch Summary")
+    totals = summarize_batch_outcomes(batch_summary)
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Toplam" if lang == "tr" else "Total", str(totals["total"]))
+    col2.metric("Kaydedilen" if lang == "tr" else "Saved", str(totals["saved"]))
+    col3.metric("Bloklanan" if lang == "tr" else "Blocked", str(totals["blocked"]))
+    col4.metric("Başarısız" if lang == "tr" else "Failed", str(totals["failed"]))
+
+    outcome_filter = st.selectbox(
+        "Batch filtresi" if lang == "tr" else "Batch filter",
+        ["all", "saved", "blocked", "failed"],
+        format_func=lambda value: {
+            "all": "Tümü" if lang == "tr" else "All",
+            "saved": "Kaydedilen" if lang == "tr" else "Saved",
+            "blocked": "Bloklanan" if lang == "tr" else "Blocked",
+            "failed": "Başarısız" if lang == "tr" else "Failed",
+        }[value],
+        index=0,
+        key="export_batch_filter",
+    )
+    filtered_rows = filter_batch_summary_rows(batch_summary, execution_status=outcome_filter)
+    if filtered_rows:
+        st.dataframe(_batch_summary_preview_frame(filtered_rows, lang), use_container_width=True, hide_index=True)
+
+
+def _batch_summary_preview_frame(summary_rows, lang):
+    df = pd.DataFrame(summary_rows)
+    preferred = [
+        "dataset_key",
+        "sample_name",
+        "workflow_template",
+        "execution_status",
+        "validation_status",
+        "result_id",
+        "error_id",
+        "failure_reason",
+    ]
+    available = [column for column in preferred if column in df.columns]
+    df = df[available]
+    return df.rename(
+        columns={
+            "dataset_key": "Koşu" if lang == "tr" else "Run",
+            "sample_name": "Numune" if lang == "tr" else "Sample",
+            "workflow_template": "Şablon" if lang == "tr" else "Template",
+            "execution_status": "Çalıştırma" if lang == "tr" else "Execution",
+            "validation_status": "Doğrulama" if lang == "tr" else "Validation",
+            "result_id": "Sonuç ID" if lang == "tr" else "Result ID",
+            "error_id": "Hata ID" if lang == "tr" else "Error ID",
+            "failure_reason": "Neden" if lang == "tr" else "Reason",
+        }
+    )

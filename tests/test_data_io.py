@@ -50,6 +50,7 @@ class TestThermalDatasetCreation:
         assert "signal" in ds.data.columns
         assert ds.data_type == "DSC"
         assert ds.metadata["sample_name"] == "SyntheticDSC"
+        assert ds.metadata["source_data_hash"]
         assert ds.units["temperature"] == "degC"
         assert ds.units["signal"] == "mW/mg"
         assert len(ds.data) == 500

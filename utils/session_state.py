@@ -14,6 +14,8 @@ SESSION_DEFAULTS = {
     "results": {},
     "figures": {},
     "analysis_history": [],
+    "support_events": [],
+    "diagnostics_log_path": "",
     "branding": {
         "report_title": "ThermoAnalyzer Professional Report",
         "company_name": "",
@@ -35,6 +37,7 @@ SESSION_DEFAULTS = {
 EPHEMERAL_KEYS = {
     "kissinger_result",
     "ofw_results",
+    "friedman_results",
     "deconv_result",
     "project_archive_bytes",
     "project_archive_ready",
@@ -43,6 +46,7 @@ EPHEMERAL_KEYS = {
     "prepared_results_xlsx",
     "prepared_report_docx",
     "prepared_report_pdf",
+    "prepared_support_snapshot",
 }
 
 ANALYSIS_PREFIXES = ("dsc_state_", "tga_state_", "dta_state_")

@@ -10,9 +10,18 @@ Tabs:
 import pandas as pd
 import streamlit as st
 
+from core.processing_schema import (
+    ensure_processing_payload,
+    get_workflow_templates,
+    set_workflow_template,
+    update_method_context,
+    update_processing_step,
+)
 from core.preprocessing import compute_derivative, smooth_signal
+from core.provenance import build_calibration_reference_context, build_result_provenance
 from core.result_serialization import serialize_tga_result
 from core.tga_processor import TGAProcessor, TGAResult
+from core.validation import validate_thermal_dataset
 from ui.components.chrome import render_page_header
 from ui.components.history_tracker import _log_event
 from ui.components.plot_builder import (
@@ -24,7 +33,9 @@ from ui.components.plot_builder import (
 )
 from ui.components.quality_dashboard import render_quality_dashboard
 from ui.components.workflow_guide import render_tga_workflow_guide
+from utils.diagnostics import record_exception
 from utils.i18n import t, tx
+from utils.license_manager import APP_VERSION
 from utils.reference_data import render_reference_comparison
 
 
@@ -69,6 +80,14 @@ def _create_localized_tga_plot(temperature, mass_signal, dataset, title, dtg=Non
     )
 
 
+def _select_tga_reference_temperature(result):
+    """Return the best available TGA step temperature for reference checking."""
+    steps = getattr(result, "steps", []) or []
+    if steps:
+        return getattr(steps[0], "midpoint_temperature", None) or getattr(steps[0], "onset_temperature", None)
+    return None
+
+
 def _store_tga_result(selected_key, dataset, temperature, mass_signal, result):
     """Persist the normalized TGA result record and linked figure."""
     figures = st.session_state.setdefault("figures", {})
@@ -87,12 +106,39 @@ def _store_tga_result(selected_key, dataset, temperature, mass_signal, result):
         figure_keys.append(figure_key)
     except Exception:
         pass
+    calibration_context = build_calibration_reference_context(
+        dataset=dataset,
+        analysis_type="TGA",
+        reference_temperature_c=_select_tga_reference_temperature(result),
+    )
+    processing_payload = update_method_context(
+        (st.session_state.get(f"tga_state_{selected_key}", {}) or {}).get("processing"),
+        calibration_context,
+        analysis_type="TGA",
+    )
+    st.session_state.setdefault(f"tga_state_{selected_key}", {})["processing"] = processing_payload
 
     record = serialize_tga_result(
         selected_key,
         dataset,
         result,
         artifacts={"figure_keys": figure_keys},
+        processing=processing_payload,
+        provenance=build_result_provenance(
+            dataset=dataset,
+            dataset_key=selected_key,
+            analysis_history=st.session_state.get("analysis_history", []),
+            app_version=APP_VERSION,
+            analyst_name=(st.session_state.get("branding", {}) or {}).get("analyst_name"),
+            extra={
+                "calibration_state": calibration_context.get("calibration_state"),
+                "reference_state": calibration_context.get("reference_state"),
+                "reference_name": calibration_context.get("reference_name"),
+                "reference_delta_c": calibration_context.get("reference_delta_c"),
+            },
+        ),
+        validation=validate_thermal_dataset(dataset, analysis_type="TGA", processing=processing_payload),
+        review={"commercial_scope": "stable_tga"},
     )
     st.session_state.setdefault("results", {})[record["id"]] = record
 
@@ -117,20 +163,54 @@ def render():
         key="tga_dataset_select",
     )
     dataset = tga_datasets[selected_key]
-
-    temperature = dataset.data["temperature"].values
-    mass_signal = dataset.data["signal"].values
-    temp_unit = dataset.units.get("temperature", "°C")
-    mass_unit = dataset.units.get("signal", "%")
-
     state_key = f"tga_state_{selected_key}"
     if state_key not in st.session_state:
         st.session_state[state_key] = {
             "smoothed": None,
             "dtg": None,
             "tga_result": None,
+            "processing": ensure_processing_payload(analysis_type="TGA", workflow_template="General TGA"),
         }
     state = st.session_state[state_key]
+    state["processing"] = ensure_processing_payload(state.get("processing"), analysis_type="TGA")
+    workflow_catalog = get_workflow_templates("TGA")
+    workflow_labels = {
+        "tga.general": tx("Genel TGA", "General TGA"),
+        "tga.single_step_decomposition": tx("Tek Adımlı Ayrışma", "Single-Step Decomposition"),
+        "tga.multi_step_decomposition": tx("Çok Adımlı Ayrışma", "Multi-Step Decomposition"),
+    }
+    for entry in workflow_catalog:
+        workflow_labels.setdefault(entry["id"], entry["label"])
+    workflow_options = list(workflow_labels.keys())
+    current_template = state["processing"].get("workflow_template_id")
+    template_index = workflow_options.index(current_template) if current_template in workflow_options else 0
+    workflow_template_id = st.selectbox(
+        tx("İş Akışı Şablonu", "Workflow Template"),
+        workflow_options,
+        format_func=lambda template_id: workflow_labels.get(template_id, template_id),
+        index=template_index,
+        key=f"tga_template_{selected_key}",
+    )
+    state["processing"] = set_workflow_template(
+        state.get("processing"),
+        workflow_template_id,
+        analysis_type="TGA",
+        workflow_template_label=workflow_labels.get(workflow_template_id),
+    )
+
+    dataset_validation = validate_thermal_dataset(dataset, analysis_type="TGA", processing=state.get("processing"))
+    if dataset_validation["status"] == "fail":
+        st.error(tx("Veri seti kararlı TGA iş akışına alınmadı: ", "Dataset is blocked from the stable TGA workflow: ") + "; ".join(dataset_validation["issues"]))
+        return
+    if dataset_validation["warnings"]:
+        with st.expander(tx("Veri Doğrulama", "Dataset Validation"), expanded=False):
+            for warning in dataset_validation["warnings"]:
+                st.warning(warning)
+
+    temperature = dataset.data["temperature"].values
+    mass_signal = dataset.data["signal"].values
+    temp_unit = dataset.units.get("temperature", "°C")
+    mass_unit = dataset.units.get("signal", "%")
 
     tab_raw, tab_smooth, tab_steps, tab_results = st.tabs(
         [
@@ -294,15 +374,36 @@ def render():
                         tx("Yumuşatma Uygulandı", "Smoothing Applied"),
                         f"{tx('Yöntem', 'Method')}: {smooth_method}",
                         t("tga.title"),
+                        dataset_key=selected_key,
+                        parameters={"method": smooth_method, **smooth_kwargs},
                     )
 
                     dtg = compute_derivative(temperature, smoothed, order=1, smooth_first=False)
                     if smooth_dtg_extra:
                         dtg = smooth_signal(dtg, method="savgol", window_length=11, polyorder=3)
                     state["dtg"] = dtg
+                    state["processing"] = update_processing_step(
+                        state.get("processing"),
+                        "smoothing",
+                        {
+                            "method": smooth_method,
+                            "show_dtg": show_dtg,
+                            "smooth_dtg": smooth_dtg_extra,
+                            **smooth_kwargs,
+                        },
+                        analysis_type="TGA",
+                    )
                     st.success(tx("Yumuşatma uygulandı. DTG hesaplandı.", "Smoothing applied. DTG computed."))
                 except Exception as exc:
-                    st.error(tx("Yumuşatma başarısız oldu: {error}", "Smoothing failed: {error}", error=exc))
+                    error_id = record_exception(
+                        st.session_state,
+                        area="tga_analysis",
+                        action="smoothing",
+                        message="TGA smoothing failed.",
+                        context={"dataset_key": selected_key, "method": smooth_method},
+                        exception=exc,
+                    )
+                    st.error(tx("Yumuşatma başarısız oldu: {error}", "Smoothing failed: {error}", error=f"{exc} (Error ID: {error_id})"))
 
         with col_plot:
             smoothed_for_plot = state.get("smoothed")
@@ -433,6 +534,17 @@ def render():
                     state["tga_result"] = result
                     state["smoothed"] = result.smoothed_signal
                     state["dtg"] = result.dtg_signal
+                    state["processing"] = update_processing_step(
+                        state.get("processing"),
+                        "step_detection",
+                        {
+                            "method": step_smooth_method,
+                            "prominence": prom_kwarg,
+                            "min_mass_loss": min_mass_loss,
+                            **step_smooth_kwargs,
+                        },
+                        analysis_type="TGA",
+                    )
 
                     n_steps = len(result.steps)
                     _log_event(
@@ -444,6 +556,8 @@ def render():
                             loss=result.total_mass_loss_percent,
                         ),
                         t("tga.title"),
+                        dataset_key=selected_key,
+                        parameters={"step_count": n_steps, "prominence": prom_kwarg, "min_mass_loss": min_mass_loss},
                     )
                     st.success(
                         tx(
@@ -455,11 +569,19 @@ def render():
                         )
                     )
                 except Exception as exc:
+                    error_id = record_exception(
+                        st.session_state,
+                        area="tga_analysis",
+                        action="step_detection",
+                        message="TGA step detection failed.",
+                        context={"dataset_key": selected_key, "method": step_smooth_method},
+                        exception=exc,
+                    )
                     st.error(
                         tx(
                             "Adım tespiti başarısız oldu: {error}",
                             "Step detection failed: {error}",
-                            error=exc,
+                            error=f"{exc} (Error ID: {error_id})",
                         )
                     )
 
@@ -569,10 +691,28 @@ def render():
         st.divider()
 
         if st.button(tx("Sonuçları Oturuma Kaydet", "Save Results to Session"), key="tga_save_results"):
-            _store_tga_result(selected_key, dataset, temperature, mass_signal, result)
-            st.success(
-                tx(
-                    "Kararlı TGA sonuçları kaydedildi. İndirmek için Rapor Merkezi'ne geçin.",
-                    "Stable TGA results saved. Go to Report Center to download.",
+            try:
+                _store_tga_result(selected_key, dataset, temperature, mass_signal, result)
+                _log_event(tx("Sonuçlar Kaydedildi", "Results Saved"), tx("Kararlı TGA sonucu kaydedildi", "Stable TGA result saved"), t("tga.title"), dataset_key=selected_key, result_id=f"tga_{selected_key}")
+                st.success(
+                    tx(
+                        "Kararlı TGA sonuçları kaydedildi. İndirmek için Rapor Merkezi'ne geçin.",
+                        "Stable TGA results saved. Go to Report Center to download.",
+                    )
                 )
-            )
+            except Exception as exc:
+                error_id = record_exception(
+                    st.session_state,
+                    area="tga_analysis",
+                    action="save_results",
+                    message="Saving TGA results failed.",
+                    context={"dataset_key": selected_key},
+                    exception=exc,
+                )
+                st.error(
+                    tx(
+                        "Sonuç kaydı başarısız oldu: {error}",
+                        "Saving results failed: {error}",
+                        error=f"{exc} (Error ID: {error_id})",
+                    )
+                )

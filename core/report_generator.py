@@ -7,7 +7,10 @@ import io
 import datetime
 from typing import Optional, Union
 
+from core.batch_runner import normalize_batch_summary_rows, summarize_batch_outcomes
+from core.processing_schema import ensure_processing_payload
 from core.result_serialization import flatten_result_records, partition_results_by_status, split_valid_results
+from utils.reference_data import find_nearest_reference
 
 try:
     from docx import Document
@@ -81,6 +84,10 @@ def _add_results_table(doc: Document, headers: list[str], rows: list[list]) -> N
 def _format_value(value):
     if value is None:
         return "N/A"
+    if isinstance(value, list):
+        return "; ".join(str(item) for item in value) if value else "N/A"
+    if isinstance(value, dict):
+        return ", ".join(f"{key}={_format_value(item)}" for key, item in value.items()) if value else "N/A"
     try:
         return f"{float(value):.4f}"
     except (TypeError, ValueError):
@@ -100,6 +107,277 @@ def _record_headers(record: dict) -> list[str]:
         return []
     first_row = rows[0]
     return list(first_row.keys())
+
+
+def _humanize_key(key: str) -> str:
+    replacements = {"id": "ID", "utc": "UTC", "dsc": "DSC", "tga": "TGA", "dtg": "DTG"}
+    words = str(key).replace("_", " ").split()
+    return " ".join(replacements.get(word.lower(), word.capitalize()) for word in words)
+
+
+def _table_payload(payload: dict | None) -> dict[str, str]:
+    table_rows: dict[str, str] = {}
+    for key, value in (payload or {}).items():
+        if value in (None, "", [], {}):
+            continue
+        table_rows[_humanize_key(key)] = _format_value(value)
+    return table_rows
+
+
+def _processing_step(processing: dict | None, key: str) -> dict:
+    processing = processing or {}
+    nested = processing.get("signal_pipeline") or {}
+    if key in nested and isinstance(nested[key], dict):
+        return nested[key]
+
+    nested = processing.get("analysis_steps") or {}
+    if key in nested and isinstance(nested[key], dict):
+        return nested[key]
+
+    value = processing.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def _format_processing_step(payload: dict | None) -> str:
+    payload = payload or {}
+    if not payload:
+        return "Not recorded"
+
+    method = payload.get("method")
+    details = []
+    for key, value in payload.items():
+        if key == "method" or value in (None, "", [], {}):
+            continue
+        details.append(f"{_humanize_key(key)}={_format_value(value)}")
+
+    if method and details:
+        return f"{method} ({'; '.join(details)})"
+    if method:
+        return str(method)
+    if details:
+        return "; ".join(details)
+    return "Recorded"
+
+
+def _reference_visibility(record: dict) -> str:
+    analysis_type = record.get("analysis_type")
+    if analysis_type not in {"DSC", "TGA"}:
+        return "Not applicable"
+
+    candidate_temperature = None
+    rows = record.get("rows") or []
+    summary = record.get("summary") or {}
+    if analysis_type == "DSC":
+        if rows:
+            candidate_temperature = rows[0].get("peak_temperature")
+        if candidate_temperature in (None, ""):
+            candidate_temperature = summary.get("tg_midpoint")
+    elif analysis_type == "TGA":
+        if rows:
+            candidate_temperature = rows[0].get("midpoint_temperature") or rows[0].get("onset_temperature")
+
+    if candidate_temperature in (None, ""):
+        return "No reference candidate recorded"
+
+    try:
+        candidate_temperature = float(candidate_temperature)
+    except (TypeError, ValueError):
+        return "Reference candidate could not be parsed"
+
+    reference = find_nearest_reference(candidate_temperature, analysis_type=analysis_type)
+    if reference is None:
+        return f"No close reference match within 15.0 °C (candidate {candidate_temperature:.1f} °C)"
+
+    delta = candidate_temperature - reference.temperature_c
+    standard = f"; {reference.standard}" if reference.standard else ""
+    return f"{reference.name} ({reference.temperature_c:.1f} °C, ΔT {delta:+.1f} °C{standard})"
+
+
+def _domain_method_summary(record: dict) -> dict[str, str] | None:
+    analysis_type = record.get("analysis_type")
+    if analysis_type not in {"DSC", "TGA"}:
+        return None
+
+    processing = ensure_processing_payload(record.get("processing"), analysis_type=analysis_type) if record.get("processing") else {}
+    metadata = record.get("metadata") or {}
+    validation_checks = (record.get("validation") or {}).get("checks") or {}
+    method_context = processing.get("method_context") or {}
+    provenance = record.get("provenance") or {}
+
+    if analysis_type == "DSC":
+        summary = {
+            "Template": processing.get("workflow_template_label") or processing.get("workflow_template") or "Not recorded",
+            "Template ID": processing.get("workflow_template_id") or "Not recorded",
+            "Sign Convention": method_context.get("sign_convention_label") or processing.get("sign_convention") or "Not recorded",
+            "Smoothing": _format_processing_step(_processing_step(processing, "smoothing")),
+            "Baseline": _format_processing_step(_processing_step(processing, "baseline")),
+            "Peak Analysis Context": _format_processing_step(_processing_step(processing, "peak_detection")),
+            "Glass Transition Context": _format_processing_step(_processing_step(processing, "glass_transition")),
+            "Calibration State": method_context.get("calibration_state") or provenance.get("calibration_state") or validation_checks.get("calibration_state") or "Not recorded",
+            "Calibration ID": metadata.get("calibration_id") or validation_checks.get("calibration_id") or "Not recorded",
+            "Calibration Status": metadata.get("calibration_status") or validation_checks.get("calibration_status") or "Not recorded",
+            "Reference State": method_context.get("reference_state") or provenance.get("reference_state") or validation_checks.get("reference_state") or "Not recorded",
+            "Reference Material": method_context.get("reference_name") or provenance.get("reference_name") or validation_checks.get("reference_name") or "Not recorded",
+            "Reference Check": _reference_visibility(record),
+        }
+        return _table_payload(summary)
+
+    summary = {
+        "Template": processing.get("workflow_template_label") or processing.get("workflow_template") or "Not recorded",
+        "Template ID": processing.get("workflow_template_id") or "Not recorded",
+        "Mass Unit": validation_checks.get("signal_unit") or (record.get("metadata") or {}).get("signal_unit") or "Not recorded",
+        "Unit Plausibility": validation_checks.get("unit_plausibility") or "Not recorded",
+        "Calibration State": method_context.get("calibration_state") or provenance.get("calibration_state") or validation_checks.get("calibration_state") or "Not recorded",
+        "Calibration ID": metadata.get("calibration_id") or validation_checks.get("calibration_id") or "Not recorded",
+        "Calibration Status": metadata.get("calibration_status") or validation_checks.get("calibration_status") or "Not recorded",
+        "Atmosphere": metadata.get("atmosphere") or validation_checks.get("atmosphere") or "Not recorded",
+        "Atmosphere Status": metadata.get("atmosphere_status") or validation_checks.get("atmosphere_status") or "Not recorded",
+        "Smoothing": _format_processing_step(_processing_step(processing, "smoothing")),
+        "Step Analysis Context": _format_processing_step(_processing_step(processing, "step_detection")),
+        "Reference State": method_context.get("reference_state") or provenance.get("reference_state") or validation_checks.get("reference_state") or "Not recorded",
+        "Reference Material": method_context.get("reference_name") or provenance.get("reference_name") or validation_checks.get("reference_name") or "Not recorded",
+        "Reference Check": _reference_visibility(record),
+    }
+    return _table_payload(summary)
+
+
+def _generic_method_summary(processing: dict | None) -> dict[str, str]:
+    processing = processing or {}
+    return _table_payload(
+        {
+            "analysis_type": processing.get("analysis_type"),
+            "workflow_template": processing.get("workflow_template"),
+            "workflow_template_id": processing.get("workflow_template_id"),
+            "schema_version": processing.get("schema_version"),
+            "method": processing.get("method"),
+        }
+    )
+
+
+def _processing_sections(processing: dict | None) -> list[tuple[str, dict[str, str]]]:
+    processing = processing or {}
+    if not processing:
+        return []
+
+    sections: list[tuple[str, dict[str, str]]] = []
+    method_context = _table_payload(processing.get("method_context"))
+    if method_context:
+        sections.append(("Method Context", method_context))
+
+    signal_pipeline = processing.get("signal_pipeline")
+    if not isinstance(signal_pipeline, dict) or not signal_pipeline:
+        signal_pipeline = {
+            key: processing.get(key)
+            for key in ("smoothing", "baseline")
+            if isinstance(processing.get(key), dict)
+        }
+    signal_payload = _table_payload(signal_pipeline)
+    if signal_payload:
+        sections.append(("Signal Pipeline", signal_payload))
+
+    analysis_steps = processing.get("analysis_steps")
+    if not isinstance(analysis_steps, dict) or not analysis_steps:
+        analysis_steps = {
+            key: processing.get(key)
+            for key in ("glass_transition", "peak_detection", "step_detection")
+            if isinstance(processing.get(key), dict)
+        }
+    step_payload = _table_payload(analysis_steps)
+    if step_payload:
+        sections.append(("Analysis Steps", step_payload))
+
+    return sections
+
+
+def _validation_sections(validation: dict | None) -> list[tuple[str, dict[str, str]]]:
+    validation = validation or {}
+    if not validation:
+        return []
+
+    sections: list[tuple[str, dict[str, str]]] = []
+    summary = _table_payload(
+        {
+            "status": validation.get("status"),
+            "issue_count": len(validation.get("issues") or []),
+            "warning_count": len(validation.get("warnings") or []),
+        }
+    )
+    if summary:
+        sections.append(("Data Validation", summary))
+
+    issue_payload = _table_payload({"issues": validation.get("issues")})
+    if issue_payload:
+        sections.append(("Validation Issues", issue_payload))
+
+    warning_payload = _table_payload({"warnings": validation.get("warnings")})
+    if warning_payload:
+        sections.append(("Validation Warnings", warning_payload))
+
+    checks_payload = _table_payload(validation.get("checks"))
+    if checks_payload:
+        sections.append(("Validation Checks", checks_payload))
+
+    return sections
+
+
+def _provenance_sections(provenance: dict | None) -> list[tuple[str, dict[str, str]]]:
+    provenance = provenance or {}
+    if not provenance:
+        return []
+
+    primary_keys = (
+        "saved_at_utc",
+        "dataset_key",
+        "source_data_hash",
+        "vendor",
+        "instrument",
+        "analyst_name",
+        "app_version",
+        "analysis_event_count",
+    )
+    sections: list[tuple[str, dict[str, str]]] = []
+
+    summary = _table_payload({key: provenance.get(key) for key in primary_keys})
+    if summary:
+        sections.append(("Provenance", summary))
+
+    remaining = {
+        key: value
+        for key, value in provenance.items()
+        if key not in primary_keys and value not in (None, "", [], {})
+    }
+    context_payload = _table_payload(remaining)
+    if context_payload:
+        sections.append(("Provenance Context", context_payload))
+
+    return sections
+
+
+def _record_sections(record: dict) -> list[tuple[str, dict[str, str]]]:
+    sections = []
+    method_summary = _domain_method_summary(record)
+    if method_summary:
+        sections.append(("Method Summary", method_summary))
+    else:
+        generic_summary = _generic_method_summary(record.get("processing"))
+        if generic_summary:
+            sections.append(("Method Summary", generic_summary))
+    sections.extend(_processing_sections(record.get("processing")))
+    sections.extend(_validation_sections(record.get("validation")))
+    sections.extend(_provenance_sections(record.get("provenance")))
+    review_payload = _table_payload(record.get("review"))
+    if review_payload:
+        sections.append(("Review", review_payload))
+    return sections
+
+
+def _render_record_mapping(doc: Document, title: str, payload: dict | None) -> None:
+    payload = payload or {}
+    if not payload:
+        return
+    doc.add_paragraph(title, style="Heading 3")
+    _add_key_value_table(doc, {key: _format_value(value) for key, value in payload.items()})
+    doc.add_paragraph()
 
 
 def _add_cover_page(doc: Document, branding: dict | None, license_state: dict | None) -> None:
@@ -184,6 +462,43 @@ def _render_comparison_workspace(
         doc.add_paragraph("Comparison Notes", style="Heading 2")
         doc.add_paragraph(str(comparison_workspace["notes"]))
 
+    batch_rows = _comparison_batch_rows(comparison_workspace)
+    if batch_rows:
+        batch_totals = summarize_batch_outcomes(batch_rows)
+        doc.add_paragraph("Batch Template Runner", style="Heading 2")
+        batch_overview = {
+            "Batch Run ID": comparison_workspace.get("batch_run_id") or "Not recorded",
+            "Batch Template": comparison_workspace.get("batch_template_label") or comparison_workspace.get("batch_template_id") or "Not recorded",
+            "Template ID": comparison_workspace.get("batch_template_id") or "Not recorded",
+            "Completed At": comparison_workspace.get("batch_completed_at") or "Not recorded",
+            "Batch Total": batch_totals["total"],
+            "Saved": batch_totals["saved"],
+            "Blocked": batch_totals["blocked"],
+            "Failed": batch_totals["failed"],
+        }
+        _add_key_value_table(doc, batch_overview)
+        doc.add_paragraph()
+        _add_results_table(
+            doc,
+            ["Run", "Sample", "Template", "Execution", "Validation", "Calibration", "Reference", "Result ID", "Error ID", "Reason"],
+            [
+                [
+                    _format_value(row.get("dataset_key")),
+                    _format_value(row.get("sample_name")),
+                    _format_value(row.get("workflow_template")),
+                    _format_value(row.get("execution_status")),
+                    _format_value(row.get("validation_status")),
+                    _format_value(row.get("calibration_state")),
+                    _format_value(row.get("reference_state")),
+                    _format_value(row.get("result_id")),
+                    _format_value(row.get("error_id")),
+                    _format_value(row.get("failure_reason")),
+                ]
+                for row in batch_rows
+            ],
+        )
+        doc.add_paragraph()
+
 
 def generate_docx_report(
     results: dict,
@@ -228,6 +543,8 @@ def generate_docx_report(
                     {key: _format_value(value) for key, value in record["summary"].items()},
                 )
                 doc.add_paragraph()
+            for title, payload in _record_sections(record):
+                _render_record_mapping(doc, title, payload)
             headers = _record_headers(record)
             if headers:
                 rows = [
@@ -252,6 +569,8 @@ def generate_docx_report(
                     {key: _format_value(value) for key, value in record["summary"].items()},
                 )
                 doc.add_paragraph()
+            for title, payload in _record_sections(record):
+                _render_record_mapping(doc, title, payload)
             headers = _record_headers(record)
             if headers:
                 rows = [
@@ -295,6 +614,11 @@ def generate_docx_report(
         file_path_or_buffer.seek(0)
 
     return docx_bytes
+
+
+def _comparison_batch_rows(comparison_workspace: dict | None) -> list[dict]:
+    comparison_workspace = comparison_workspace or {}
+    return normalize_batch_summary_rows(comparison_workspace.get("batch_summary") or [])
 
 
 def generate_csv_summary(
@@ -410,6 +734,59 @@ def generate_pdf_report(
         story.append(Paragraph(", ".join(comparison_workspace["selected_datasets"]), styles["Normal"]))
         if comparison_workspace.get("notes"):
             story.append(Paragraph(str(comparison_workspace["notes"]), styles["Normal"]))
+        batch_rows = _comparison_batch_rows(comparison_workspace)
+        if batch_rows:
+            batch_totals = summarize_batch_outcomes(batch_rows)
+            story.append(Paragraph("Batch Template Runner", styles["Heading2"]))
+            batch_overview = [["Parameter", "Value"]]
+            batch_overview.append(["Batch Run ID", _format_value(comparison_workspace.get("batch_run_id"))])
+            batch_overview.append(["Batch Template", _format_value(comparison_workspace.get("batch_template_label") or comparison_workspace.get("batch_template_id"))])
+            batch_overview.append(["Template ID", _format_value(comparison_workspace.get("batch_template_id"))])
+            batch_overview.append(["Completed At", _format_value(comparison_workspace.get("batch_completed_at"))])
+            batch_overview.append(["Batch Total", _format_value(batch_totals["total"])])
+            batch_overview.append(["Saved", _format_value(batch_totals["saved"])])
+            batch_overview.append(["Blocked", _format_value(batch_totals["blocked"])])
+            batch_overview.append(["Failed", _format_value(batch_totals["failed"])])
+            batch_table = Table(batch_overview, hAlign="LEFT")
+            batch_table.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
+                    ]
+                )
+            )
+            story.append(batch_table)
+            batch_detail = [["Run", "Sample", "Template", "Execution", "Validation", "Calibration", "Reference", "Result ID", "Error ID", "Reason"]]
+            batch_detail.extend(
+                [
+                    [
+                        _format_value(row.get("dataset_key")),
+                        _format_value(row.get("sample_name")),
+                        _format_value(row.get("workflow_template")),
+                        _format_value(row.get("execution_status")),
+                        _format_value(row.get("validation_status")),
+                        _format_value(row.get("calibration_state")),
+                        _format_value(row.get("reference_state")),
+                        _format_value(row.get("result_id")),
+                        _format_value(row.get("error_id")),
+                        _format_value(row.get("failure_reason")),
+                    ]
+                    for row in batch_rows
+                ]
+            )
+            batch_detail_table = Table(batch_detail, hAlign="LEFT")
+            batch_detail_table.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
+                    ]
+                )
+            )
+            story.append(batch_detail_table)
         story.append(Spacer(1, 0.15 * inch))
 
     def _append_record_block(heading, record_list):
@@ -434,6 +811,22 @@ def generate_pdf_report(
                     )
                 )
                 story.append(summary_table)
+            for title, payload in _record_sections(record):
+                story.append(Paragraph(title, styles["Heading3"]))
+                section_rows = [["Parameter", "Value"]]
+                for key, value in payload.items():
+                    section_rows.append([str(key), value])
+                section_table = Table(section_rows, hAlign="LEFT")
+                section_table.setStyle(
+                    TableStyle(
+                        [
+                            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
+                            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
+                        ]
+                    )
+                )
+                story.append(section_table)
             story.append(Spacer(1, 0.1 * inch))
 
     _append_record_block("Stable Analyses", stable_results)

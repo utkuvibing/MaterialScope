@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import copy
 import csv
+import hashlib
 import io
 import logging
 import os
@@ -554,6 +555,12 @@ def _extract_unit(col_name: str, role: str) -> str:
     return unit_str
 
 
+def _hash_dataframe(df: pd.DataFrame) -> str:
+    """Return a stable content hash for a standardized dataset DataFrame."""
+    csv_bytes = df.to_csv(index=False).encode("utf-8")
+    return hashlib.sha256(csv_bytes).hexdigest()
+
+
 # ---------------------------------------------------------------------------
 # 4. read_thermal_data
 # ---------------------------------------------------------------------------
@@ -708,7 +715,11 @@ def read_thermal_data(
         "instrument": metadata.get("instrument", ""),
         "vendor": metadata.get("vendor", vendor),
         "display_name": display_name,
+        "source_data_hash": _hash_dataframe(out_df),
     }
+    for optional_key in ("atmosphere", "operator", "calibration_id", "method_template_id"):
+        if metadata.get(optional_key) not in (None, ""):
+            base_meta[optional_key] = metadata[optional_key]
     base_meta.update(metadata)  # let caller override defaults
 
     return ThermalDataset(

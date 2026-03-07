@@ -4,10 +4,24 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 
-from core.kinetics import kissinger_analysis, ozawa_flynn_wall_analysis, compute_conversion
-from core.result_serialization import serialize_kissinger_result, serialize_ofw_results
+from core.kinetics import compute_conversion, friedman_analysis, kissinger_analysis, ozawa_flynn_wall_analysis
+from core.provenance import build_result_provenance
+from core.result_serialization import serialize_friedman_results, serialize_kissinger_result, serialize_ofw_results
+from core.validation import validate_thermal_dataset
 from ui.components.plot_builder import create_kissinger_plot, create_thermal_plot, fig_to_bytes, THERMAL_COLORS, PLOTLY_CONFIG
 from ui.components.history_tracker import _log_event
+from utils.license_manager import APP_VERSION
+
+
+def _kinetics_provenance():
+    return build_result_provenance(
+        dataset=type("KineticDataset", (), {"metadata": {}})(),
+        dataset_key=None,
+        analysis_history=st.session_state.get("analysis_history", []),
+        app_version=APP_VERSION,
+        analyst_name=(st.session_state.get("branding", {}) or {}).get("analyst_name"),
+        extra={"analysis_scope": "preview_kinetics"},
+    )
 
 
 def _store_kissinger_result(result):
@@ -29,13 +43,37 @@ def _store_kissinger_result(result):
         except Exception:
             pass
 
-    record = serialize_kissinger_result(result, artifacts={"figure_keys": figure_keys})
+    record = serialize_kissinger_result(
+        result,
+        artifacts={"figure_keys": figure_keys},
+        processing={"method": "Kissinger"},
+        provenance=_kinetics_provenance(),
+        review={"commercial_scope": "preview_kinetics"},
+    )
     st.session_state.setdefault("results", {})[record["id"]] = record
 
 
 def _store_ofw_results(results):
     """Persist normalized experimental OFW results."""
-    record = serialize_ofw_results(results, artifacts={})
+    record = serialize_ofw_results(
+        results,
+        artifacts={},
+        processing={"method": "Ozawa-Flynn-Wall"},
+        provenance=_kinetics_provenance(),
+        review={"commercial_scope": "preview_kinetics"},
+    )
+    st.session_state.setdefault("results", {})[record["id"]] = record
+
+
+def _store_friedman_results(results):
+    """Persist normalized experimental Friedman results."""
+    record = serialize_friedman_results(
+        results,
+        artifacts={},
+        processing={"method": "Friedman"},
+        provenance=_kinetics_provenance(),
+        review={"commercial_scope": "preview_kinetics"},
+    )
     st.session_state.setdefault("results", {})[record["id"]] = record
 
 
@@ -82,16 +120,18 @@ def render():
 
     method = st.selectbox(
         "Kinetic Method",
-        ["Kissinger", "Ozawa-Flynn-Wall"],
+        ["Kissinger", "Ozawa-Flynn-Wall", "Friedman"],
         key="kinetics_method",
-        help="Kissinger: single Ea from peak temperature shift. OFW: isoconversional Ea at each conversion level.",
+        help="Kissinger: single Ea from peak temperature shift. OFW/Friedman: isoconversional Ea at each conversion level.",
     )
 
     st.divider()
     if method == "Kissinger":
         _render_kissinger(datasets)
-    else:
+    elif method == "Ozawa-Flynn-Wall":
         _render_ofw(datasets)
+    else:
+        _render_friedman(datasets)
 
 
 def _render_kissinger(datasets):
@@ -360,3 +400,141 @@ def _render_ofw(datasets):
             st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
         _store_ofw_results(ofw_results)
+
+
+def _render_friedman(datasets):
+    st.subheader("Friedman Analysis")
+    st.markdown(
+        "Differential isoconversional method: determine Ea at different conversion levels "
+        "using ln(dα/dt) vs 1/T across multiple heating rates."
+    )
+
+    dataset_keys = list(datasets.keys())
+    if len(dataset_keys) < 2:
+        st.warning("At least 2 datasets at different heating rates are needed.")
+        return
+
+    selected_keys = st.multiselect(
+        "Select datasets (different heating rates)",
+        dataset_keys,
+        default=dataset_keys[: min(4, len(dataset_keys))],
+        key="friedman_datasets",
+    )
+
+    if len(selected_keys) < 2:
+        st.warning("Select at least 2 datasets.")
+        return
+
+    rates = []
+    validation_warnings = []
+    for key in selected_keys:
+        ds = datasets[key]
+        validation = validate_thermal_dataset(ds, analysis_type=ds.data_type, require_heating_rate=True)
+        validation_warnings.extend(validation["warnings"])
+        hr = ds.metadata.get("heating_rate", 10.0) or 0.0
+        rate = st.number_input(
+            f"Heating rate for {key} (°C/min)",
+            value=float(hr),
+            min_value=0.0,
+            key=f"friedman_rate_{key}",
+        )
+        rates.append(rate)
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        alpha_min = st.number_input("α min", value=0.1, min_value=0.01, max_value=0.9, key="friedman_amin")
+    with col2:
+        alpha_max = st.number_input("α max", value=0.9, min_value=0.1, max_value=0.99, key="friedman_amax")
+    with col3:
+        alpha_step = st.number_input("α step", value=0.05, min_value=0.01, max_value=0.2, key="friedman_astep")
+
+    dataset_type, issues = _collect_dataset_checks(selected_keys, datasets, rates)
+    if alpha_min >= alpha_max:
+        issues.append("α min must be smaller than α max.")
+
+    if dataset_type == "DSC":
+        for key in selected_keys:
+            dsc_state = st.session_state.get(f"dsc_state_{key}", {})
+            if dsc_state.get("corrected") is None:
+                issues.append(f"Run baseline correction for DSC dataset '{key}' before Friedman analysis.")
+
+    for issue in issues:
+        st.warning(issue)
+    for warning in validation_warnings:
+        st.info(warning)
+
+    alpha_values = np.arange(alpha_min, alpha_max + alpha_step / 2, alpha_step)
+
+    if st.button("Run Friedman Analysis", key="friedman_run", disabled=bool(issues)):
+        try:
+            temp_data = []
+            conv_data = []
+            dalpha_dt_data = []
+            for key, rate in zip(selected_keys, rates):
+                ds = datasets[key]
+                temp = ds.data["temperature"].values
+                if dataset_type == "TGA":
+                    sig = ds.data["signal"].values
+                    alpha = compute_conversion(temp, sig, mode="tga")
+                else:
+                    corrected = st.session_state[f"dsc_state_{key}"]["corrected"]
+                    alpha = compute_conversion(
+                        temp,
+                        corrected,
+                        baseline=np.zeros_like(corrected),
+                        mode="dsc",
+                    )
+                dalpha_dt = np.gradient(alpha, temp) * float(rate)
+                temp_data.append(temp)
+                conv_data.append(alpha)
+                dalpha_dt_data.append(dalpha_dt)
+
+            results = friedman_analysis(
+                rates,
+                temp_data,
+                conv_data,
+                dalpha_dt_data,
+                alpha_values=alpha_values,
+            )
+            st.session_state["friedman_results"] = results
+            _log_event("Friedman Analysis", f"{len(results)} conversion points", "Kinetic Analysis", parameters={"method": "Friedman"})
+            st.success(f"Analysis complete. {len(results)} conversion points analyzed.")
+        except Exception as exc:
+            st.error(f"Analysis failed: {exc}")
+
+    friedman_results = st.session_state.get("friedman_results")
+    if friedman_results:
+        st.subheader("Results: Ea vs Conversion")
+
+        rows = []
+        alphas_plot = []
+        eas_plot = []
+        for result in friedman_results:
+            alpha_val = result.plot_data.get("alpha") if result.plot_data else None
+            rows.append(
+                {
+                    "α": f"{alpha_val:.2f}" if alpha_val is not None else "N/A",
+                    "Ea (kJ/mol)": f"{result.activation_energy:.1f}",
+                    "ln[A·f(α)]": f"{result.pre_exponential:.2f}" if result.pre_exponential is not None else "N/A",
+                    "R²": f"{result.r_squared:.4f}" if result.r_squared is not None else "N/A",
+                }
+            )
+            if alpha_val is not None:
+                alphas_plot.append(alpha_val)
+                eas_plot.append(result.activation_energy)
+
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+        if alphas_plot:
+            fig = create_thermal_plot(
+                np.array(alphas_plot),
+                np.array(eas_plot),
+                title="Activation Energy vs Conversion (Friedman)",
+                x_label="Conversion (α)",
+                y_label="Ea (kJ/mol)",
+                name="Ea",
+                color=THERMAL_COLORS[1],
+            )
+            st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+
+        _store_friedman_results(friedman_results)

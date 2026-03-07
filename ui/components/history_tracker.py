@@ -5,11 +5,21 @@ into ``st.session_state.analysis_history`` and renders a timeline in the sidebar
 or within a page expander.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
+import uuid
 import streamlit as st
 
 
-def _log_event(action: str, details: str = "", page: str = ""):
+def _log_event(
+    action: str,
+    details: str = "",
+    page: str = "",
+    *,
+    dataset_key: str | None = None,
+    result_id: str | None = None,
+    parameters: dict | None = None,
+    status: str = "info",
+):
     """Append an analysis event to the session-state history list.
 
     Parameters
@@ -26,9 +36,15 @@ def _log_event(action: str, details: str = "", page: str = ""):
     history.append({
         "step_number": step_number,
         "timestamp": datetime.now().strftime("%H:%M:%S"),
+        "timestamp_utc": datetime.now(UTC).isoformat(),
+        "event_id": uuid.uuid4().hex[:12],
         "action": action,
         "details": details,
         "page": page,
+        "dataset_key": dataset_key,
+        "result_id": result_id,
+        "parameters": parameters or {},
+        "status": status,
     })
 
 
@@ -59,5 +75,25 @@ def render_history_expander():
     with st.expander(f"Analysis History ({len(history)} steps)", expanded=False):
         import pandas as pd
         df = pd.DataFrame(history)
-        df.columns = ["#", "Time", "Action", "Details", "Page"]
+        preferred = [
+            "step_number",
+            "timestamp",
+            "action",
+            "details",
+            "page",
+            "dataset_key",
+            "result_id",
+            "status",
+        ]
+        available = [column for column in preferred if column in df.columns]
+        df = df[available].rename(columns={
+            "step_number": "#",
+            "timestamp": "Time",
+            "action": "Action",
+            "details": "Details",
+            "page": "Page",
+            "dataset_key": "Dataset",
+            "result_id": "Result ID",
+            "status": "Status",
+        })
         st.dataframe(df, use_container_width=True, hide_index=True)

@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 from datetime import datetime
+import uuid
 
 import pandas as pd
 import streamlit as st
 
+from core.batch_runner import execute_batch_template, filter_batch_summary_rows, normalize_batch_summary_rows, summarize_batch_outcomes
+from core.processing_schema import get_workflow_templates
 from core.result_serialization import split_valid_results
 from ui.components.chrome import render_page_header
 from ui.components.history_tracker import _log_event
 from ui.components.plot_builder import PLOTLY_CONFIG, create_overlay_plot, fig_to_bytes
+from utils.diagnostics import make_error_id, record_diagnostic_event, record_exception
 from utils.i18n import t
+from utils.license_manager import APP_VERSION
 
 
 ANALYSIS_LABELS = {
@@ -160,7 +165,9 @@ def render():
                 )
             )
 
-    _render_saved_result_preview(valid_results, analysis_type, selected, lang)
+    _render_batch_runner(workspace, eligible, selected, analysis_type, lang)
+    refreshed_results, _ = split_valid_results(st.session_state.get("results", {}))
+    _render_saved_result_preview(refreshed_results, analysis_type, selected, lang)
 
 
 def _resolve_signal(dataset_key, dataset, analysis_type, signal_mode):
@@ -216,3 +223,260 @@ def _render_saved_result_preview(results, analysis_type, selected, lang):
     if preview_rows:
         st.subheader("Kayıtlı Analiz Özetleri" if lang == "tr" else "Saved Analysis Summaries")
         st.dataframe(pd.DataFrame(preview_rows), use_container_width=True, hide_index=True)
+
+
+def _render_batch_runner(workspace, eligible, selected, analysis_type, lang):
+    st.subheader("Toplu Şablon Uygulama" if lang == "tr" else "Batch Template Runner")
+    workflow_catalog = get_workflow_templates(analysis_type)
+    workflow_labels = {entry["id"]: entry["label"] for entry in workflow_catalog}
+    workflow_options = list(workflow_labels)
+    if not workflow_options:
+        st.info("Bu analiz tipi için kayıtlı şablon bulunamadı." if lang == "tr" else "No workflow templates are available for this analysis type.")
+        return
+
+    current_template = workspace.get("batch_template_id")
+    template_index = workflow_options.index(current_template) if current_template in workflow_options else 0
+    workflow_template_id = st.selectbox(
+        "Batch şablonu" if lang == "tr" else "Batch template",
+        workflow_options,
+        index=template_index,
+        format_func=lambda template_id: workflow_labels.get(template_id, template_id),
+        key=f"compare_batch_template_{analysis_type}",
+        help=(
+            "Seçili tüm koşulara aynı kararlı DSC/TGA şablonunu uygular ve sonuçları mevcut export/report akışına yazar."
+            if lang == "tr"
+            else "Applies the same stable DSC/TGA template to every selected run and saves the outputs into the existing export/report flow."
+        ),
+    )
+
+    run_col, hint_col = st.columns([1, 2])
+    with run_col:
+        if st.button("Toplu Şablonu Çalıştır" if lang == "tr" else "Run Batch Template", key=f"compare_batch_run_{analysis_type}"):
+            _apply_batch_template(workspace, eligible, selected, analysis_type, workflow_template_id, workflow_labels.get(workflow_template_id), lang)
+            st.rerun()
+    with hint_col:
+        st.caption(
+            (
+                "Başarılı koşular kararlı sonuç olarak kaydedilir; hata alan koşular özet tabloda Error ID ile kalır."
+                if lang == "tr"
+                else "Successful runs are saved as stable results; failed runs stay in the batch summary with an Error ID."
+            )
+        )
+
+    feedback = workspace.get("batch_last_feedback") or {}
+    if feedback:
+        message = (
+            f"Son batch: {feedback.get('saved', 0)} kaydedildi, {feedback.get('blocked', 0)} bloklandı, {feedback.get('failed', 0)} başarısız oldu."
+            if lang == "tr"
+            else f"Last batch: {feedback.get('saved', 0)} saved, {feedback.get('blocked', 0)} blocked, {feedback.get('failed', 0)} failed."
+        )
+        if feedback.get("failed") or feedback.get("blocked"):
+            st.warning(message)
+        else:
+            st.success(message)
+
+    batch_summary = normalize_batch_summary_rows(workspace.get("batch_summary") or [])
+    if batch_summary:
+        metrics = summarize_batch_outcomes(batch_summary)
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Batch Koşu" if lang == "tr" else "Batch Runs", str(metrics["total"]))
+        col2.metric("Kaydedilen" if lang == "tr" else "Saved", str(metrics["saved"]))
+        col3.metric("Bloklanan" if lang == "tr" else "Blocked", str(metrics["blocked"]))
+        col4.metric("Başarısız" if lang == "tr" else "Failed", str(metrics["failed"]))
+
+        if workspace.get("batch_completed_at"):
+            st.caption(
+                (
+                    f"Son batch: `{workspace.get('batch_template_label', workspace.get('batch_template_id', ''))}` / {workspace['batch_completed_at']}"
+                    if lang == "tr"
+                    else f"Last batch: `{workspace.get('batch_template_label', workspace.get('batch_template_id', ''))}` / {workspace['batch_completed_at']}"
+                )
+            )
+
+        filter_options = ["all", "saved", "blocked", "failed"]
+        filter_value = st.segmented_control(
+            "Sonuç filtresi" if lang == "tr" else "Outcome filter",
+            filter_options,
+            default=workspace.get("batch_filter") if workspace.get("batch_filter") in filter_options else "all",
+            format_func=lambda value: {
+                "all": "Tümü" if lang == "tr" else "All",
+                "saved": "Kaydedilen" if lang == "tr" else "Saved",
+                "blocked": "Bloklanan" if lang == "tr" else "Blocked",
+                "failed": "Başarısız" if lang == "tr" else "Failed",
+            }[value],
+            selection_mode="single",
+            key=f"compare_batch_filter_{analysis_type}",
+        )
+        workspace["batch_filter"] = filter_value
+        filtered_rows = filter_batch_summary_rows(batch_summary, execution_status=filter_value)
+
+        st.dataframe(
+            _batch_summary_dataframe(filtered_rows, lang),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
+def _apply_batch_template(workspace, eligible, selected, analysis_type, workflow_template_id, workflow_template_label, lang):
+    batch_run_id = f"batch_{analysis_type.lower()}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:6]}"
+    analysis_history = st.session_state.get("analysis_history", [])
+    analyst_name = (st.session_state.get("branding", {}) or {}).get("analyst_name")
+    area = "dsc_analysis" if analysis_type == "DSC" else "tga_analysis"
+    page_label = "Compare Workspace"
+
+    _log_event(
+        "Batch Template Started",
+        f"{analysis_type} template {workflow_template_id} on {len(selected)} run(s)",
+        page_label,
+        parameters={"workflow_template_id": workflow_template_id, "batch_run_id": batch_run_id},
+        status="info",
+    )
+
+    summary_rows = []
+    saved_result_ids = []
+    for dataset_key in selected:
+        dataset = eligible[dataset_key]
+        existing_state = st.session_state.get(_state_key(analysis_type, dataset_key), {}) or {}
+        try:
+            outcome = execute_batch_template(
+                dataset_key=dataset_key,
+                dataset=dataset,
+                analysis_type=analysis_type,
+                workflow_template_id=workflow_template_id,
+                existing_processing=existing_state.get("processing"),
+                analysis_history=analysis_history,
+                analyst_name=analyst_name,
+                app_version=APP_VERSION,
+                batch_run_id=batch_run_id,
+            )
+            row = dict(outcome["summary_row"])
+
+            if outcome["status"] == "saved":
+                st.session_state.setdefault("results", {})[outcome["record"]["id"]] = outcome["record"]
+                st.session_state[_state_key(analysis_type, dataset_key)] = outcome["state"]
+                saved_result_ids.append(outcome["record"]["id"])
+                _log_event(
+                    "Batch Template Applied",
+                    f"{analysis_type} batch saved with {workflow_template_id}",
+                    page_label,
+                    dataset_key=dataset_key,
+                    result_id=outcome["record"]["id"],
+                    parameters={"workflow_template_id": workflow_template_id, "batch_run_id": batch_run_id},
+                    status="info",
+                )
+            else:
+                error_id = make_error_id(area)
+                record_diagnostic_event(
+                    st.session_state,
+                    area=area,
+                    action="batch_validation",
+                    status="error",
+                    message="Batch template blocked by dataset validation.",
+                    context={
+                        "dataset_key": dataset_key,
+                        "analysis_type": analysis_type,
+                        "workflow_template_id": workflow_template_id,
+                        "batch_run_id": batch_run_id,
+                        "issues": outcome["validation"].get("issues", []),
+                    },
+                    error_id=error_id,
+                )
+                row["error_id"] = error_id
+                row["failure_reason"] = row.get("failure_reason") or ("Validation blocked this dataset." if lang != "tr" else "Veri seti doğrulama nedeniyle bloklandı.")
+                row["message"] = row["failure_reason"]
+                _log_event(
+                    "Batch Template Blocked",
+                    row["failure_reason"],
+                    page_label,
+                    dataset_key=dataset_key,
+                    parameters={"workflow_template_id": workflow_template_id, "batch_run_id": batch_run_id, "error_id": error_id},
+                    status="error",
+                )
+            summary_rows.append(row)
+        except Exception as exc:
+            error_id = record_exception(
+                st.session_state,
+                area=area,
+                action="batch_run",
+                message="Batch template execution failed.",
+                context={
+                    "dataset_key": dataset_key,
+                    "analysis_type": analysis_type,
+                    "workflow_template_id": workflow_template_id,
+                    "batch_run_id": batch_run_id,
+                },
+                exception=exc,
+            )
+            summary_rows.append(
+                {
+                    "dataset_key": dataset_key,
+                    "analysis_type": analysis_type,
+                    "sample_name": dataset.metadata.get("sample_name") or dataset_key,
+                    "workflow_template_id": workflow_template_id,
+                    "workflow_template": workflow_template_label,
+                    "execution_status": "failed",
+                    "validation_status": "not_run",
+                    "warning_count": 0,
+                    "issue_count": 1,
+                    "calibration_state": dataset.metadata.get("calibration_status") or "unknown",
+                    "reference_state": "not_run",
+                    "result_id": None,
+                    "failure_reason": str(exc),
+                    "message": str(exc),
+                    "error_id": error_id,
+                }
+            )
+            _log_event(
+                "Batch Template Failed",
+                str(exc),
+                page_label,
+                dataset_key=dataset_key,
+                parameters={"workflow_template_id": workflow_template_id, "batch_run_id": batch_run_id, "error_id": error_id},
+                status="error",
+            )
+
+    workspace["batch_run_id"] = batch_run_id
+    workspace["batch_template_id"] = workflow_template_id
+    workspace["batch_template_label"] = workflow_template_label
+    workspace["batch_completed_at"] = datetime.now().isoformat(timespec="seconds")
+    workspace["batch_summary"] = normalize_batch_summary_rows(summary_rows)
+    workspace["batch_result_ids"] = saved_result_ids
+    workspace["batch_last_feedback"] = summarize_batch_outcomes(summary_rows)
+
+
+def _state_key(analysis_type, dataset_key):
+    prefix = "dsc_state" if analysis_type == "DSC" else "tga_state"
+    return f"{prefix}_{dataset_key}"
+
+
+def _batch_summary_dataframe(summary_rows, lang):
+    df = pd.DataFrame(summary_rows)
+    if df.empty:
+        return df
+    preferred = [
+        "dataset_key",
+        "sample_name",
+        "workflow_template",
+        "execution_status",
+        "validation_status",
+        "calibration_state",
+        "reference_state",
+        "result_id",
+        "error_id",
+        "failure_reason",
+    ]
+    available = [column for column in preferred if column in df.columns]
+    df = df[available]
+    rename_map = {
+        "dataset_key": "Koşu" if lang == "tr" else "Run",
+        "sample_name": "Numune" if lang == "tr" else "Sample",
+        "workflow_template": "Şablon" if lang == "tr" else "Template",
+        "execution_status": "Çalıştırma" if lang == "tr" else "Execution",
+        "validation_status": "Doğrulama" if lang == "tr" else "Validation",
+        "calibration_state": "Kalibrasyon" if lang == "tr" else "Calibration",
+        "reference_state": "Referans" if lang == "tr" else "Reference",
+        "result_id": "Sonuç ID" if lang == "tr" else "Result ID",
+        "error_id": "Hata ID" if lang == "tr" else "Error ID",
+        "failure_reason": "Neden" if lang == "tr" else "Reason",
+    }
+    return df.rename(columns=rename_map)

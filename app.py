@@ -9,6 +9,7 @@ Run with: streamlit run app.py
 import streamlit as st
 
 from core.project_io import PROJECT_EXTENSION, save_project_archive, load_project_archive
+from utils.diagnostics import configure_diagnostics_logger, record_exception
 from utils.i18n import SUPPORTED_LANGUAGES, t
 from utils.license_manager import APP_VERSION, commercial_mode_enabled, license_allows_write, load_license_state
 from utils.session_state import clear_project_state, ensure_session_state, replace_project_state
@@ -21,6 +22,7 @@ st.set_page_config(
 )
 
 ensure_session_state()
+st.session_state["diagnostics_log_path"] = configure_diagnostics_logger()
 try:
     st.session_state["license_state"] = load_license_state(app_version=APP_VERSION)
 except Exception as exc:
@@ -316,8 +318,19 @@ def _render_project_sidebar():
             disabled=not can_write,
             help="Build the archive first, then download it explicitly.",
         ):
-            st.session_state["project_archive_bytes"] = save_project_archive(st.session_state)
-            st.session_state["project_archive_ready"] = True
+            try:
+                st.session_state["project_archive_bytes"] = save_project_archive(st.session_state)
+                st.session_state["project_archive_ready"] = True
+            except Exception as exc:
+                error_id = record_exception(
+                    st.session_state,
+                    area="project_load",
+                    action="project_prepare",
+                    message="Preparing project archive failed.",
+                    context={"dataset_count": len(st.session_state.get("datasets", {}))},
+                    exception=exc,
+                )
+                st.error(f"Project archive preparation failed: {exc} (Error ID: {error_id})")
 
         if st.session_state.get("project_archive_ready") and st.session_state.get("project_archive_bytes"):
             st.download_button(
@@ -345,7 +358,15 @@ def _render_project_sidebar():
             st.success("Project loaded.")
             st.rerun()
         except Exception as exc:
-            st.error(f"Project load failed: {exc}")
+            error_id = record_exception(
+                st.session_state,
+                area="project_load",
+                action="project_load",
+                message="Loading project archive failed.",
+                context={"file_name": getattr(uploaded_project, "name", "")},
+                exception=exc,
+            )
+            st.error(f"Project load failed: {exc} (Error ID: {error_id})")
 
 # --- Page imports ---
 from ui.components.history_tracker import render_history_sidebar

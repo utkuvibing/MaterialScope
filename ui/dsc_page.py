@@ -5,9 +5,18 @@ import streamlit as st
 
 from core.preprocessing import smooth_signal, compute_derivative, normalize_by_mass
 from core.baseline import correct_baseline, AVAILABLE_METHODS
+from core.processing_schema import (
+    ensure_processing_payload,
+    get_workflow_templates,
+    set_workflow_template,
+    update_method_context,
+    update_processing_step,
+)
+from core.provenance import build_calibration_reference_context, build_result_provenance
 from core.peak_analysis import find_thermal_peaks, characterize_peaks
 from core.dsc_processor import DSCProcessor
 from core.result_serialization import serialize_dsc_result
+from core.validation import validate_thermal_dataset
 from ui.components.chrome import render_page_header
 from ui.components.plot_builder import (
     create_dsc_plot,
@@ -17,7 +26,9 @@ from ui.components.plot_builder import (
 )
 from ui.components.history_tracker import _log_event
 from ui.components.quality_dashboard import render_quality_dashboard
+from utils.diagnostics import record_exception
 from utils.i18n import t
+from utils.license_manager import APP_VERSION
 from utils.reference_data import render_reference_comparison
 
 
@@ -61,6 +72,17 @@ def _build_dsc_figure(selected_key, temperature, signal, state):
     return fig
 
 
+def _select_dsc_reference_temperature(state):
+    """Return the best available DSC event temperature for reference checking."""
+    peaks = state.get("peaks") or []
+    if peaks:
+        return getattr(peaks[0], "peak_temperature", None)
+    glass_transitions = state.get("glass_transitions") or []
+    if glass_transitions:
+        return getattr(glass_transitions[0], "tg_midpoint", None)
+    return None
+
+
 def _store_dsc_result(selected_key, dataset, temperature, signal, state):
     """Persist the normalized DSC result record and linked figure."""
     figures = st.session_state.setdefault("figures", {})
@@ -72,6 +94,17 @@ def _store_dsc_result(selected_key, dataset, temperature, signal, state):
         figure_keys.append(figure_key)
     except Exception:
         pass
+    calibration_context = build_calibration_reference_context(
+        dataset=dataset,
+        analysis_type="DSC",
+        reference_temperature_c=_select_dsc_reference_temperature(state),
+    )
+    processing_payload = update_method_context(
+        state.get("processing"),
+        calibration_context,
+        analysis_type="DSC",
+    )
+    state["processing"] = processing_payload
 
     record = serialize_dsc_result(
         selected_key,
@@ -79,6 +112,22 @@ def _store_dsc_result(selected_key, dataset, temperature, signal, state):
         state.get("peaks") or [],
         glass_transitions=state.get("glass_transitions") or [],
         artifacts={"figure_keys": figure_keys},
+        processing=processing_payload,
+        provenance=build_result_provenance(
+            dataset=dataset,
+            dataset_key=selected_key,
+            analysis_history=st.session_state.get("analysis_history", []),
+            app_version=APP_VERSION,
+            analyst_name=(st.session_state.get("branding", {}) or {}).get("analyst_name"),
+            extra={
+                "calibration_state": calibration_context.get("calibration_state"),
+                "reference_state": calibration_context.get("reference_state"),
+                "reference_name": calibration_context.get("reference_name"),
+                "reference_delta_c": calibration_context.get("reference_delta_c"),
+            },
+        ),
+        validation=validate_thermal_dataset(dataset, analysis_type="DSC", processing=processing_payload),
+        review={"commercial_scope": "stable_dsc"},
     )
     st.session_state.setdefault("results", {})[record["id"]] = record
 
@@ -93,11 +142,6 @@ def render():
 
     selected_key = st.selectbox("Select Dataset", list(dsc_datasets.keys()), key="dsc_dataset_select")
     dataset = dsc_datasets[selected_key]
-
-    temperature = dataset.data["temperature"].values
-    signal = dataset.data["signal"].values
-    y_label = f"Heat Flow ({dataset.units.get('signal', 'mW')})"
-
     state_key = f"dsc_state_{selected_key}"
     if state_key not in st.session_state:
         st.session_state[state_key] = {
@@ -107,8 +151,42 @@ def render():
             "peaks": None,
             "glass_transitions": [],
             "processor": None,
+            "processing": ensure_processing_payload(analysis_type="DSC", workflow_template="General DSC"),
         }
     state = st.session_state[state_key]
+    state["processing"] = ensure_processing_payload(state.get("processing"), analysis_type="DSC")
+
+    workflow_catalog = get_workflow_templates("DSC")
+    workflow_labels = {entry["id"]: entry["label"] for entry in workflow_catalog}
+    workflow_options = list(workflow_labels.keys())
+    current_template = state["processing"].get("workflow_template_id")
+    template_index = workflow_options.index(current_template) if current_template in workflow_options else 0
+    workflow_template_id = st.selectbox(
+        "Workflow Template",
+        workflow_options,
+        format_func=lambda template_id: workflow_labels.get(template_id, template_id),
+        index=template_index,
+        key=f"dsc_template_{selected_key}",
+    )
+    state["processing"] = set_workflow_template(
+        state.get("processing"),
+        workflow_template_id,
+        analysis_type="DSC",
+        workflow_template_label=workflow_labels.get(workflow_template_id),
+    )
+
+    dataset_validation = validate_thermal_dataset(dataset, analysis_type="DSC", processing=state.get("processing"))
+    if dataset_validation["status"] == "fail":
+        st.error("Dataset is blocked from the stable DSC workflow: " + "; ".join(dataset_validation["issues"]))
+        return
+    if dataset_validation["warnings"]:
+        with st.expander("Dataset Validation", expanded=False):
+            for warning in dataset_validation["warnings"]:
+                st.warning(warning)
+
+    temperature = dataset.data["temperature"].values
+    signal = dataset.data["signal"].values
+    y_label = f"Heat Flow ({dataset.units.get('signal', 'mW')})"
 
     tab_raw, tab_smooth, tab_baseline, tab_tg, tab_peaks, tab_results = st.tabs(
         ["Raw Data", "Smoothing", "Baseline Correction", "Glass Transition (Tg)", "Peak Analysis", "Results Summary"]
@@ -206,7 +284,19 @@ def render():
                 state["corrected"] = None
                 state["peaks"] = None
                 state["glass_transitions"] = []
-                _log_event("Smoothing Applied", f"Method: {smooth_method}", "DSC Analysis")
+                state["processing"] = update_processing_step(
+                    state.get("processing"),
+                    "smoothing",
+                    {"method": smooth_method, **smooth_kwargs},
+                    analysis_type="DSC",
+                )
+                _log_event(
+                    "Smoothing Applied",
+                    f"Method: {smooth_method}",
+                    "DSC Analysis",
+                    dataset_key=selected_key,
+                    parameters={"method": smooth_method, **smooth_kwargs},
+                )
                 st.success("Smoothing applied.")
 
         with col2:
@@ -280,10 +370,34 @@ def render():
                     state["corrected"] = corrected
                     state["peaks"] = None
                     state["glass_transitions"] = []
-                    _log_event("Baseline Corrected", f"Method: {baseline_method}", "DSC Analysis")
+                    state["processing"] = update_processing_step(
+                        state.get("processing"),
+                        "baseline",
+                        {
+                            "method": baseline_method,
+                            "region": region,
+                            **bl_kwargs,
+                        },
+                        analysis_type="DSC",
+                    )
+                    _log_event(
+                        "Baseline Corrected",
+                        f"Method: {baseline_method}",
+                        "DSC Analysis",
+                        dataset_key=selected_key,
+                        parameters={"method": baseline_method, "region": region, **bl_kwargs},
+                    )
                     st.success(f"Baseline correction applied ({baseline_method})")
                 except Exception as exc:
-                    st.error(f"Baseline correction failed: {exc}")
+                    error_id = record_exception(
+                        st.session_state,
+                        area="dsc_analysis",
+                        action="baseline_correction",
+                        message="DSC baseline correction failed.",
+                        context={"dataset_key": selected_key, "method": baseline_method},
+                        exception=exc,
+                    )
+                    st.error(f"Baseline correction failed: {exc} (Error ID: {error_id})")
 
         with col2:
             working_signal = state.get("smoothed") if state.get("smoothed") is not None else signal
@@ -333,13 +447,33 @@ def render():
                     processor.detect_glass_transition(region=tg_region)
                     glass_transitions = processor.get_result().glass_transitions
                     state["glass_transitions"] = glass_transitions
-                    _log_event("Glass Transition Detected", f"{len(glass_transitions)} Tg event(s)", "DSC Analysis")
+                    state["processing"] = update_processing_step(
+                        state.get("processing"),
+                        "glass_transition",
+                        {"region": tg_region, "event_count": len(glass_transitions)},
+                        analysis_type="DSC",
+                    )
+                    _log_event(
+                        "Glass Transition Detected",
+                        f"{len(glass_transitions)} Tg event(s)",
+                        "DSC Analysis",
+                        dataset_key=selected_key,
+                        parameters={"region": tg_region, "event_count": len(glass_transitions)},
+                    )
                     if glass_transitions:
                         st.success(f"Detected {len(glass_transitions)} Tg event(s).")
                     else:
                         st.info("No Tg event was detected for the current signal/region.")
                 except Exception as exc:
-                    st.error(f"Tg detection failed: {exc}")
+                    error_id = record_exception(
+                        st.session_state,
+                        area="dsc_analysis",
+                        action="glass_transition_detection",
+                        message="DSC Tg detection failed.",
+                        context={"dataset_key": selected_key, "region": tg_region},
+                        exception=exc,
+                    )
+                    st.error(f"Tg detection failed: {exc} (Error ID: {error_id})")
 
         with col2:
             fig_tg = create_thermal_plot(
@@ -409,10 +543,30 @@ def render():
                     baseline_for_peaks = np.zeros_like(working) if state.get("corrected") is not None else state.get("baseline")
                     peaks = characterize_peaks(temperature, working, peaks, baseline=baseline_for_peaks)
                     state["peaks"] = peaks
-                    _log_event("Peaks Detected", f"{len(peaks)} peak(s) found", "DSC Analysis")
+                    state["processing"] = update_processing_step(
+                        state.get("processing"),
+                        "peak_detection",
+                        {"peak_count": len(peaks), **kwargs},
+                        analysis_type="DSC",
+                    )
+                    _log_event(
+                        "Peaks Detected",
+                        f"{len(peaks)} peak(s) found",
+                        "DSC Analysis",
+                        dataset_key=selected_key,
+                        parameters={"peak_count": len(peaks), **kwargs},
+                    )
                     st.success(f"Found {len(peaks)} peak(s)")
                 except Exception as exc:
-                    st.error(f"Peak detection failed: {exc}")
+                    error_id = record_exception(
+                        st.session_state,
+                        area="dsc_analysis",
+                        action="peak_detection",
+                        message="DSC peak detection failed.",
+                        context={"dataset_key": selected_key, "direction": dir_map[direction]},
+                        exception=exc,
+                    )
+                    st.error(f"Peak detection failed: {exc} (Error ID: {error_id})")
 
         with col2:
             fig = create_dsc_plot(
@@ -489,5 +643,17 @@ def render():
             st.divider()
 
         if st.button("Save Results to Session", key="dsc_save_results"):
-            _store_dsc_result(selected_key, dataset, temperature, signal, state)
-            st.success("Stable DSC results saved. Go to Export & Report to download.")
+            try:
+                _store_dsc_result(selected_key, dataset, temperature, signal, state)
+                _log_event("Results Saved", "Stable DSC result saved", "DSC Analysis", dataset_key=selected_key, result_id=f"dsc_{selected_key}")
+                st.success("Stable DSC results saved. Go to Export & Report to download.")
+            except Exception as exc:
+                error_id = record_exception(
+                    st.session_state,
+                    area="dsc_analysis",
+                    action="save_results",
+                    message="Saving DSC results failed.",
+                    context={"dataset_key": selected_key},
+                    exception=exc,
+                )
+                st.error(f"Saving DSC results failed: {exc} (Error ID: {error_id})")

@@ -236,6 +236,7 @@ def _serialize_dsc_state(state: Mapping[str, Any]) -> dict[str, Any]:
         "glass_transitions": [
             glass_transition_to_dict(tg) for tg in state.get("glass_transitions") or []
         ],
+        "processing": copy.deepcopy(state.get("processing", {})),
     }
 
 
@@ -250,6 +251,7 @@ def _deserialize_dsc_state(payload: Mapping[str, Any]) -> dict[str, Any]:
             for item in payload.get("glass_transitions", [])
         ],
         "processor": None,
+        "processing": copy.deepcopy(payload.get("processing", {})),
     }
 
 
@@ -268,6 +270,7 @@ def _serialize_tga_state(state: Mapping[str, Any]) -> dict[str, Any]:
         "dtg": _array_to_list(state.get("dtg")),
         "steps": steps,
         "summary": summary,
+        "processing": copy.deepcopy(state.get("processing", {})),
     }
 
 
@@ -291,6 +294,7 @@ def _deserialize_tga_state(payload: Mapping[str, Any]) -> dict[str, Any]:
         "smoothed": smoothed,
         "dtg": dtg,
         "tga_result": tga_result,
+        "processing": copy.deepcopy(payload.get("processing", {})),
     }
 
 

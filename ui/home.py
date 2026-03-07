@@ -6,12 +6,14 @@ import pandas as pd
 import streamlit as st
 
 from core.data_io import detect_file_format, read_thermal_data
+from core.validation import validate_thermal_dataset
 from ui.components.chrome import render_page_header
 from ui.components.column_mapper import render_column_mapper
 from ui.components.data_preview import render_data_preview
 from ui.components.history_tracker import _log_event
 from ui.components.plot_builder import PLOTLY_CONFIG, create_thermal_plot
 from ui.components.workflow_guide import render_home_workflow_guide
+from utils.diagnostics import record_exception
 from utils.i18n import t, tx
 from utils.session_state import ensure_session_state
 
@@ -21,6 +23,12 @@ def render():
 
     render_page_header(t("home.title"), t("home.caption"), badge=t("home.hero_badge"))
     render_home_workflow_guide()
+    st.info(
+        tx(
+            "Kararlı ticari akış bu build'de Veri Alma -> Karşılaştırma Alanı -> DSC/TGA Analizi -> Rapor/Proje Kaydı zinciridir. DTA, kinetik ve dekonvolüsyon preview kapsamındadır.",
+            "The stable commercial workflow in this build is Import -> Compare Workspace -> DSC/TGA Analysis -> Report/Project Save. DTA, kinetics, and deconvolution remain preview modules.",
+        )
+    )
 
     datasets = st.session_state.get("datasets", {})
     if datasets:
@@ -59,6 +67,17 @@ def render():
 
                 try:
                     dataset = read_thermal_data(uploaded_file)
+                    validation = validate_thermal_dataset(dataset, analysis_type=dataset.data_type)
+                    if validation["status"] == "fail":
+                        st.error(
+                            tx(
+                                "{file_name} kararlı iş akışına alınmadı: {issues}",
+                                "{file_name} was blocked from the stable workflow: {issues}",
+                                file_name=uploaded_file.name,
+                                issues="; ".join(validation["issues"]),
+                            )
+                        )
+                        continue
                     guessed = {
                         "temperature": dataset.original_columns.get("temperature"),
                         "signal": dataset.original_columns.get("signal"),
@@ -112,6 +131,8 @@ def render():
                         tx("Veri Yüklendi", "Data Loaded"),
                         f"{uploaded_file.name} ({dataset.data_type}, {dataset.metadata.get('vendor', 'Generic')}, {len(dataset.data)} pts)",
                         t("home.title"),
+                        dataset_key=file_key,
+                        parameters={"validation_status": validation["status"]},
                     )
                     st.success(
                         tx(
@@ -123,14 +144,24 @@ def render():
                             points=len(dataset.data),
                         )
                     )
+                    for warning in validation["warnings"]:
+                        st.warning(warning)
 
                 except Exception as error:
+                    error_id = record_exception(
+                        st.session_state,
+                        area="import",
+                        action="initial_import",
+                        message="Import pipeline failed while reading uploaded data.",
+                        context={"file_name": uploaded_file.name},
+                        exception=error,
+                    )
                     st.error(
                         tx(
                             "{file_name} yüklenirken hata oluştu: {error}",
                             "Error loading {file_name}: {error}",
                             file_name=uploaded_file.name,
-                            error=error,
+                            error=f"{error} (Error ID: {error_id})",
                         )
                     )
 
@@ -161,17 +192,47 @@ def render():
                                 data_type=mapping["data_type"],
                                 metadata=mapping["metadata"],
                             )
+                            validation = validate_thermal_dataset(dataset, analysis_type=dataset.data_type)
+                            if validation["status"] == "fail":
+                                st.error(
+                                    tx(
+                                        "Yeniden eşlenen veri kararlı iş akışına alınmadı: {issues}",
+                                        "Re-mapped dataset was blocked from the stable workflow: {issues}",
+                                        issues="; ".join(validation["issues"]),
+                                    )
+                                )
+                                continue
+                            validation = validate_thermal_dataset(dataset, analysis_type=dataset.data_type)
+                            if validation["status"] == "fail":
+                                st.error(
+                                    tx(
+                                        "Eşleme sonrası veri kararlı iş akışına alınmadı: {issues}",
+                                        "Mapped dataset was blocked from the stable workflow: {issues}",
+                                        issues="; ".join(validation["issues"]),
+                                    )
+                                )
+                                continue
                             dataset.metadata["file_name"] = uploaded_file.name
                             dataset.metadata.setdefault("display_name", uploaded_file.name)
                             st.session_state.datasets[file_key] = dataset
                             st.session_state.active_dataset = file_key
+                            for warning in validation["warnings"]:
+                                st.warning(warning)
                             st.rerun()
                     except Exception as fallback_error:
+                        error_id = record_exception(
+                            st.session_state,
+                            area="import",
+                            action="fallback_import",
+                            message="Fallback import with manual column mapping failed.",
+                            context={"file_name": uploaded_file.name},
+                            exception=fallback_error,
+                        )
                         st.error(
                             tx(
                                 "Dosya ayrıştırılamadı: {error}",
                                 "Could not parse file: {error}",
-                                error=fallback_error,
+                                error=f"{fallback_error} (Error ID: {error_id})",
                             )
                         )
 
@@ -192,6 +253,16 @@ def render():
                 if st.button(f"{tx('Yükle', 'Load')}: {label}", key=f"sample_{filename}"):
                     try:
                         dataset = read_thermal_data(filepath)
+                        validation = validate_thermal_dataset(dataset, analysis_type=dataset.data_type)
+                        if validation["status"] == "fail":
+                            st.error(
+                                tx(
+                                    "Örnek veri kararlı iş akışına alınmadı: {issues}",
+                                    "Sample dataset was blocked from the stable workflow: {issues}",
+                                    issues="; ".join(validation["issues"]),
+                                )
+                            )
+                            continue
                         dataset.metadata["file_name"] = filename
                         dataset.metadata.setdefault("display_name", filename)
                         st.session_state.datasets[filename] = dataset
@@ -200,15 +271,27 @@ def render():
                             tx("Veri Yüklendi", "Data Loaded"),
                             f"{label} ({dataset.data_type}, {dataset.metadata.get('vendor', 'Generic')}, {len(dataset.data)} pts)",
                             t("home.title"),
+                            dataset_key=filename,
+                            parameters={"validation_status": validation["status"]},
                         )
                         st.success(tx("**{label}** yüklendi.", "Loaded **{label}**.", label=label))
+                        for warning in validation["warnings"]:
+                            st.warning(warning)
                         st.rerun()
                     except Exception as error:
+                        error_id = record_exception(
+                            st.session_state,
+                            area="import",
+                            action="sample_import",
+                            message="Built-in sample import failed.",
+                            context={"file_name": filename},
+                            exception=error,
+                        )
                         st.error(
                             tx(
                                 "Örnek veri yüklenemedi: {error}",
                                 "Error loading sample: {error}",
-                                error=error,
+                                error=f"{error} (Error ID: {error_id})",
                             )
                         )
 

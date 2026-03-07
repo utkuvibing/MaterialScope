@@ -144,6 +144,7 @@ def thermal_dataset(temperature_range, dsc_signal):
             "sample_mass": 5.0,
             "heating_rate": 10.0,
             "instrument": "TestInstrument",
+            "source_data_hash": "synthetic-dsc-hash",
         },
         data_type="DSC",
         units={"temperature": "degC", "signal": "mW/mg"},

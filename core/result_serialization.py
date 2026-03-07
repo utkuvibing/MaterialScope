@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import math
 from typing import Any, Iterable
 
@@ -20,6 +21,12 @@ REQUIRED_RESULT_KEYS = {
     "summary",
     "rows",
     "artifacts",
+}
+OPTIONAL_RESULT_KEYS = {
+    "processing",
+    "provenance",
+    "validation",
+    "review",
 }
 
 VALID_STATUSES = {"stable", "experimental"}
@@ -47,6 +54,10 @@ def make_result_record(
     summary: dict[str, Any] | None = None,
     rows: list[dict[str, Any]] | None = None,
     artifacts: dict[str, Any] | None = None,
+    processing: dict[str, Any] | None = None,
+    provenance: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
+    review: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a normalized result record."""
     if status not in VALID_STATUSES:
@@ -61,6 +72,10 @@ def make_result_record(
         "summary": copy.deepcopy(summary or {}),
         "rows": copy.deepcopy(rows or []),
         "artifacts": copy.deepcopy(artifacts or {}),
+        "processing": copy.deepcopy(processing or {}),
+        "provenance": copy.deepcopy(provenance or {}),
+        "validation": copy.deepcopy(validation or {}),
+        "review": copy.deepcopy(review or {}),
     }
 
 
@@ -157,6 +172,10 @@ def serialize_dsc_result(
     peaks: Iterable[ThermalPeak],
     glass_transitions: Iterable[GlassTransition] | None = None,
     artifacts: dict[str, Any] | None = None,
+    processing: dict[str, Any] | None = None,
+    provenance: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
+    review: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Serialize a stable DSC analysis record."""
     peaks = list(peaks)
@@ -199,6 +218,10 @@ def serialize_dsc_result(
         summary=summary,
         rows=rows,
         artifacts=artifacts,
+        processing=processing,
+        provenance=provenance,
+        validation=validation,
+        review=review,
     )
 
 
@@ -207,6 +230,10 @@ def serialize_tga_result(
     dataset,
     result: TGAResult,
     artifacts: dict[str, Any] | None = None,
+    processing: dict[str, Any] | None = None,
+    provenance: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
+    review: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Serialize a stable TGA analysis record."""
     rows = [
@@ -237,6 +264,10 @@ def serialize_tga_result(
         summary=summary,
         rows=rows,
         artifacts=artifacts,
+        processing=processing,
+        provenance=provenance,
+        validation=validation,
+        review=review,
     )
 
 
@@ -245,6 +276,10 @@ def serialize_dta_result(
     dataset,
     peaks: Iterable[ThermalPeak],
     artifacts: dict[str, Any] | None = None,
+    processing: dict[str, Any] | None = None,
+    provenance: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
+    review: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Serialize an experimental DTA analysis record."""
     peaks = list(peaks)
@@ -270,12 +305,20 @@ def serialize_dta_result(
         summary=summary,
         rows=rows,
         artifacts=artifacts,
+        processing=processing,
+        provenance=provenance,
+        validation=validation,
+        review=review,
     )
 
 
 def serialize_kissinger_result(
     result,
     artifacts: dict[str, Any] | None = None,
+    processing: dict[str, Any] | None = None,
+    provenance: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
+    review: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Serialize an experimental Kissinger result."""
     summary = {
@@ -292,12 +335,20 @@ def serialize_kissinger_result(
         summary=summary,
         rows=[],
         artifacts=artifacts,
+        processing=processing,
+        provenance=provenance,
+        validation=validation,
+        review=review,
     )
 
 
 def serialize_ofw_results(
     results: Iterable[Any],
     artifacts: dict[str, Any] | None = None,
+    processing: dict[str, Any] | None = None,
+    provenance: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
+    review: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Serialize experimental Ozawa-Flynn-Wall results."""
     rows = []
@@ -321,6 +372,48 @@ def serialize_ofw_results(
         summary=summary,
         rows=rows,
         artifacts=artifacts,
+        processing=processing,
+        provenance=provenance,
+        validation=validation,
+        review=review,
+    )
+
+
+def serialize_friedman_results(
+    results: Iterable[Any],
+    artifacts: dict[str, Any] | None = None,
+    processing: dict[str, Any] | None = None,
+    provenance: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
+    review: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Serialize experimental Friedman results."""
+    rows = []
+    results = list(results)
+    for item in results:
+        plot_data = item.plot_data or {}
+        rows.append(
+            {
+                "alpha": _clean_scalar(plot_data.get("alpha")),
+                "activation_energy_kj_mol": _clean_scalar(item.activation_energy),
+                "pre_exponential": _clean_scalar(item.pre_exponential),
+                "r_squared": _clean_scalar(item.r_squared),
+            }
+        )
+    summary = {"conversion_point_count": len(rows)}
+    return make_result_record(
+        result_id="friedman",
+        analysis_type="Friedman",
+        status="experimental",
+        dataset_key=None,
+        metadata={},
+        summary=summary,
+        rows=rows,
+        artifacts=artifacts,
+        processing=processing,
+        provenance=provenance,
+        validation=validation,
+        review=review,
     )
 
 
@@ -330,6 +423,10 @@ def serialize_deconvolution_result(
     result: dict[str, Any],
     peak_shape: str,
     artifacts: dict[str, Any] | None = None,
+    processing: dict[str, Any] | None = None,
+    provenance: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
+    review: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Serialize an experimental peak deconvolution result."""
     params = result.get("params", {})
@@ -362,6 +459,10 @@ def serialize_deconvolution_result(
         summary=summary,
         rows=rows,
         artifacts=artifacts,
+        processing=processing,
+        provenance=provenance,
+        validation=validation,
+        review=review,
     )
 
 
@@ -387,6 +488,9 @@ def validate_result_record(result_id: str, record: Any) -> list[str]:
         issues.append(f"{result_id}: metadata must be a dict")
     if "artifacts" in record and not isinstance(record.get("artifacts"), dict):
         issues.append(f"{result_id}: artifacts must be a dict")
+    for optional_key in OPTIONAL_RESULT_KEYS:
+        if optional_key in record and not isinstance(record.get(optional_key), dict):
+            issues.append(f"{result_id}: {optional_key} must be a dict")
 
     return issues
 
@@ -402,8 +506,19 @@ def split_valid_results(results: dict[str, Any]) -> tuple[dict[str, dict[str, An
             continue
         normalized = copy.deepcopy(record)
         normalized.setdefault("id", result_id)
+        normalized.setdefault("processing", {})
+        normalized.setdefault("provenance", {})
+        normalized.setdefault("validation", {})
+        normalized.setdefault("review", {})
         valid[result_id] = normalized
     return valid, issues
+
+
+def _flat_value(value: Any) -> Any:
+    value = _clean_scalar(value)
+    if isinstance(value, (list, dict)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+    return value
 
 
 def partition_results_by_status(results: dict[str, dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -428,11 +543,16 @@ def flatten_result_records(results: dict[str, dict[str, Any]]) -> list[dict[str,
             "analysis_type": record["analysis_type"],
             "dataset_key": record["dataset_key"],
         }
+        for key, value in record.get("metadata", {}).items():
+            rows.append({**base, "section": "metadata", "row_index": "", "field": key, "value": _flat_value(value)})
         for key, value in record.get("summary", {}).items():
-            rows.append({**base, "section": "summary", "row_index": "", "field": key, "value": _clean_scalar(value)})
+            rows.append({**base, "section": "summary", "row_index": "", "field": key, "value": _flat_value(value)})
+        for section_name in ("processing", "provenance", "validation", "review"):
+            for key, value in record.get(section_name, {}).items():
+                rows.append({**base, "section": section_name, "row_index": "", "field": key, "value": _flat_value(value)})
         for index, row in enumerate(record.get("rows", []), start=1):
             for key, value in row.items():
-                rows.append({**base, "section": "row", "row_index": index, "field": key, "value": _clean_scalar(value)})
+                rows.append({**base, "section": "row", "row_index": index, "field": key, "value": _flat_value(value)})
     return rows
 
 
