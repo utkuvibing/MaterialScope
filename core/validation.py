@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 
 from core.processing_schema import ensure_processing_payload
+from core.provenance import classify_calibration_state, classify_reference_acceptance
+from core.tga_processor import resolve_tga_unit_interpretation
 
 
 SUPPORTED_ANALYSIS_TYPES = {"DSC", "TGA", "DTA", "UNKNOWN", "unknown"}
@@ -36,12 +38,12 @@ OPTIONAL_METADATA_FIELDS = (
     "method_template_id",
     "source_data_hash",
 )
-ACCEPTED_CALIBRATION_STATUSES = {"verified", "current", "pass", "ok"}
-BLOCKING_CALIBRATION_STATUSES = {"failed", "expired", "invalid", "out_of_date"}
 ACCEPTED_ATMOSPHERE_STATUSES = {"verified", "recorded", "controlled", "current", "ok"}
 BLOCKING_ATMOSPHERE_STATUSES = {"failed", "unstable", "unknown", "unverified", "invalid"}
 TGA_PERCENT_MIN = -5.0
 TGA_PERCENT_MAX = 120.0
+_TGA_PERCENT_SIGNAL_UNITS = {"%"}
+_TGA_ABSOLUTE_SIGNAL_UNITS = {"mg", "g"}
 
 
 def _coerce_float(value: Any) -> float | None:
@@ -93,18 +95,14 @@ def _check_dsc_workflow(
     issues: list[str],
     warnings: list[str],
 ) -> None:
-    calibration_id = metadata.get("calibration_id")
-    calibration_status = metadata.get("calibration_status")
-    calibration_state = "unknown_calibration_state"
-    if calibration_id and _normalize_status_token(calibration_status) in ACCEPTED_CALIBRATION_STATUSES:
-        calibration_state = "calibrated"
-    elif calibration_id in (None, "") and calibration_status in (None, ""):
-        calibration_state = "missing_calibration"
-    elif _normalize_status_token(calibration_status) in BLOCKING_CALIBRATION_STATUSES:
-        calibration_state = "calibration_not_current"
+    calibration_context = classify_calibration_state(metadata=metadata)
+    calibration_id = calibration_context["calibration_id"]
+    calibration_status = calibration_context["calibration_status"]
+    calibration_state = calibration_context["calibration_state"]
     checks["calibration_id"] = calibration_id or "not recorded"
     checks["calibration_status"] = calibration_status or "not recorded"
     checks["calibration_state"] = calibration_state
+    checks["calibration_acceptance"] = calibration_context["calibration_acceptance"]
 
     if not calibration_id:
         warnings.append("Calibration identifier is not recorded for this DSC dataset.")
@@ -112,9 +110,9 @@ def _check_dsc_workflow(
     calibration_token = _normalize_status_token(calibration_status)
     if calibration_token is None:
         warnings.append("Calibration status is not recorded for this DSC dataset.")
-    elif calibration_token in BLOCKING_CALIBRATION_STATUSES:
+    elif calibration_state == "calibration_not_current":
         issues.append("Calibration status indicates the DSC workflow is not currently verified.")
-    elif calibration_token not in ACCEPTED_CALIBRATION_STATUSES:
+    elif calibration_state == "unknown_calibration_state":
         warnings.append(f"Calibration status '{calibration_status}' should be reviewed before stable reporting.")
 
     if not processing:
@@ -127,7 +125,9 @@ def _check_dsc_workflow(
     sign_convention = method_context.get("sign_convention_label") or processing.get("sign_convention")
     checks["sign_convention"] = sign_convention or "not recorded"
     checks["reference_state"] = method_context.get("reference_state") or "not recorded"
+    checks["reference_acceptance"] = classify_reference_acceptance(checks["reference_state"])
     checks["reference_name"] = method_context.get("reference_name") or "not recorded"
+    checks["workflow_template_version"] = processing.get("workflow_template_version") or "not recorded"
     if not sign_convention:
         warnings.append("DSC sign convention is not recorded in the saved method context.")
 
@@ -160,43 +160,71 @@ def _check_tga_workflow(
     signal_max = float(signal.max())
     checks["signal_min"] = signal_min
     checks["signal_max"] = signal_max
+    method_context = (processing or {}).get("method_context") or {}
+    declared_unit_mode = method_context.get("tga_unit_mode_declared") or "auto"
+    unit_context = resolve_tga_unit_interpretation(
+        signal.to_numpy(dtype=float),
+        unit_mode=declared_unit_mode,
+        signal_unit=signal_unit,
+        initial_mass_mg=sample_mass,
+    )
+    resolved_unit_mode = str(unit_context["resolved_unit_mode"])
+    checks["tga_unit_mode"] = resolved_unit_mode
+    checks["tga_unit_mode_declared"] = unit_context["declared_unit_mode"]
+    checks["tga_unit_mode_resolved"] = resolved_unit_mode
+    checks["tga_unit_auto_inference_used"] = bool(unit_context["auto_inference_used"])
+    checks["tga_unit_inference_basis"] = unit_context["unit_inference_basis"]
+    checks["tga_unit_interpretation_status"] = unit_context["unit_interpretation_status"]
+    checks["tga_unit_reference_source"] = unit_context["unit_reference_source"]
+    checks["tga_unit_reference_value"] = unit_context["unit_reference_value"]
 
-    if signal_unit == "%":
-        if signal_min < TGA_PERCENT_MIN or signal_max > TGA_PERCENT_MAX:
+    if signal_unit in _TGA_PERCENT_SIGNAL_UNITS:
+        if resolved_unit_mode != "percent":
+            warnings.append("TGA signal unit is recorded as % but the workflow resolved the unit mode as absolute mass.")
+            checks["unit_plausibility"] = "review"
+        elif signal_min < TGA_PERCENT_MIN or signal_max > TGA_PERCENT_MAX:
             warnings.append("TGA signal is labeled as % but falls outside a plausible mass-percent range.")
             checks["unit_plausibility"] = "review"
         else:
             checks["unit_plausibility"] = "pass"
-        checks["tga_unit_mode"] = "mass_percent"
-    elif signal_unit == "mg":
-        checks["unit_plausibility"] = "pass"
-        checks["tga_unit_mode"] = "absolute_mass"
+    elif signal_unit in _TGA_ABSOLUTE_SIGNAL_UNITS:
+        if resolved_unit_mode != "absolute_mass":
+            warnings.append("TGA signal unit is recorded as absolute mass but the workflow resolved the unit mode as percent.")
+            checks["unit_plausibility"] = "review"
+        else:
+            checks["unit_plausibility"] = "pass"
         if sample_mass is None:
-            warnings.append("Absolute-mass TGA data is recorded in mg but sample mass is not recorded.")
+            warnings.append("Absolute-mass TGA data is recorded but sample mass is not recorded.")
     elif signal_unit:
         checks["unit_plausibility"] = "review"
-        checks["tga_unit_mode"] = "unusual"
+        warnings.append(f"Signal unit '{signal_unit}' should be reviewed before stable TGA reporting.")
     else:
-        checks["unit_plausibility"] = "not_recorded"
-        checks["tga_unit_mode"] = "not_recorded"
+        if declared_unit_mode != "auto":
+            if resolved_unit_mode == "percent" and (signal_min < TGA_PERCENT_MIN or signal_max > TGA_PERCENT_MAX):
+                checks["unit_plausibility"] = "review"
+                warnings.append("Explicit percent-mode TGA signal falls outside a plausible mass-percent range.")
+            else:
+                checks["unit_plausibility"] = "pass"
+        else:
+            checks["unit_plausibility"] = "review" if unit_context["unit_interpretation_status"] == "review" else "not_recorded"
         warnings.append("Signal unit is not recorded for this TGA dataset.")
+
+    if unit_context["unit_interpretation_status"] == "review" and unit_context["unit_review_reason"]:
+        warnings.append(str(unit_context["unit_review_reason"]))
+    if resolved_unit_mode == "absolute_mass" and unit_context["unit_reference_source"] == "first_signal_value":
+        warnings.append("Absolute-mass TGA was converted to percent using the first signal value as the 100% reference.")
 
     atmosphere = metadata.get("atmosphere")
     atmosphere_status = metadata.get("atmosphere_status")
-    calibration_id = metadata.get("calibration_id")
-    calibration_status = metadata.get("calibration_status")
+    calibration_context = classify_calibration_state(metadata=metadata)
+    calibration_id = calibration_context["calibration_id"]
+    calibration_status = calibration_context["calibration_status"]
     checks["atmosphere"] = atmosphere or "not recorded"
     checks["atmosphere_status"] = atmosphere_status or "not recorded"
     checks["calibration_id"] = calibration_id or "not recorded"
     checks["calibration_status"] = calibration_status or "not recorded"
-    if calibration_id and _normalize_status_token(calibration_status) in ACCEPTED_CALIBRATION_STATUSES:
-        checks["calibration_state"] = "calibrated"
-    elif calibration_id in (None, "") and calibration_status in (None, ""):
-        checks["calibration_state"] = "missing_calibration"
-    elif _normalize_status_token(calibration_status) in BLOCKING_CALIBRATION_STATUSES:
-        checks["calibration_state"] = "calibration_not_current"
-    else:
-        checks["calibration_state"] = "unknown_calibration_state"
+    checks["calibration_state"] = calibration_context["calibration_state"]
+    checks["calibration_acceptance"] = calibration_context["calibration_acceptance"]
 
     if not atmosphere:
         warnings.append("Atmosphere is not recorded for this TGA dataset.")
@@ -214,12 +242,14 @@ def _check_tga_workflow(
 
     checks["workflow_template_id"] = processing.get("workflow_template_id") or "not recorded"
     checks["workflow_template_label"] = processing.get("workflow_template_label") or processing.get("workflow_template") or "not recorded"
+    checks["workflow_template_version"] = processing.get("workflow_template_version") or "not recorded"
 
     step_detection = _processing_section(processing, "step_detection")
     method_context = processing.get("method_context") or {}
     checks["step_analysis_context"] = "recorded" if step_detection else "not recorded"
     checks["step_detection_method"] = step_detection.get("method") or "not recorded"
     checks["reference_state"] = method_context.get("reference_state") or "not recorded"
+    checks["reference_acceptance"] = classify_reference_acceptance(checks["reference_state"])
     checks["reference_name"] = method_context.get("reference_name") or "not recorded"
     if not step_detection:
         warnings.append("TGA method context does not record step-analysis settings.")

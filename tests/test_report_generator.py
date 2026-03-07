@@ -6,11 +6,18 @@ import os
 import zipfile
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 
+from core.data_io import ThermalDataset
 from core.dsc_processor import GlassTransition
 from core.peak_analysis import ThermalPeak
-from core.processing_schema import ensure_processing_payload, update_method_context, update_processing_step
+from core.processing_schema import (
+    ensure_processing_payload,
+    update_method_context,
+    update_processing_step,
+    update_tga_unit_context,
+)
 from core.provenance import build_calibration_reference_context
 from core.report_generator import generate_csv_summary, generate_docx_report
 from core.result_serialization import (
@@ -18,7 +25,9 @@ from core.result_serialization import (
     serialize_friedman_results,
     serialize_kissinger_result,
     serialize_ofw_results,
+    serialize_tga_result,
 )
+from core.tga_processor import TGAProcessor, resolve_tga_unit_interpretation
 from core.validation import validate_thermal_dataset
 
 
@@ -141,22 +150,99 @@ def _make_dsc_record(thermal_dataset):
     )
 
 
+def _make_tga_record(temperature_range, tga_percent_signal):
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": temperature_range, "signal": tga_percent_signal}),
+        metadata={
+            "sample_name": "SyntheticTGA",
+            "sample_mass": 10.0,
+            "heating_rate": 20.0,
+            "instrument": "TestInstrument",
+            "vendor": "TestVendor",
+            "display_name": "Synthetic TGA Run",
+            "atmosphere": "Nitrogen",
+            "atmosphere_status": "verified",
+            "source_data_hash": "synthetic-tga-hash",
+        },
+        data_type="TGA",
+        units={"temperature": "degC", "signal": ""},
+        original_columns={"temperature": "temperature", "signal": "signal"},
+        file_path="",
+    )
+    processing = ensure_processing_payload(
+        analysis_type="TGA",
+        workflow_template="tga.single_step_decomposition",
+        workflow_template_label="Single-Step Decomposition",
+    )
+    processing = update_processing_step(
+        processing,
+        "smoothing",
+        {"method": "savgol", "window_length": 11, "polyorder": 3},
+    )
+    processing = update_processing_step(
+        processing,
+        "step_detection",
+        {"method": "dtg_peaks", "prominence": 0.1, "min_mass_loss": 0.5},
+    )
+    unit_context = resolve_tga_unit_interpretation(
+        tga_percent_signal,
+        unit_mode="auto",
+        signal_unit="",
+        initial_mass_mg=dataset.metadata["sample_mass"],
+    )
+    processing = update_tga_unit_context(processing, unit_context)
+    result = TGAProcessor(
+        temperature_range,
+        tga_percent_signal,
+        initial_mass_mg=dataset.metadata["sample_mass"],
+        unit_mode=str(unit_context["resolved_unit_mode"]),
+    ).process()
+    calibration_context = build_calibration_reference_context(
+        dataset=dataset,
+        analysis_type="TGA",
+        reference_temperature_c=result.steps[0].midpoint_temperature if result.steps else None,
+    )
+    processing = update_method_context(processing, calibration_context, analysis_type="TGA")
+    validation = validate_thermal_dataset(dataset, analysis_type="TGA", processing=processing)
+
+    record = serialize_tga_result(
+        "synthetic_tga",
+        dataset,
+        result,
+        artifacts={},
+        processing=processing,
+        provenance={
+            "saved_at_utc": "2026-03-07T12:00:00+00:00",
+            "source_data_hash": dataset.metadata["source_data_hash"],
+            "app_version": "2.0",
+            "tga_unit_mode_declared": unit_context["declared_unit_mode"],
+            "tga_unit_mode_resolved": unit_context["resolved_unit_mode"],
+            "tga_unit_auto_inference_used": unit_context["auto_inference_used"],
+        },
+        validation=validation,
+        review={"commercial_scope": "stable_tga"},
+    )
+    return record, dataset
+
+
 def test_generate_docx_report_returns_docx_bytes(thermal_dataset):
     docx_bytes = generate_docx_report(results={}, datasets={"synthetic_dsc": thermal_dataset})
     assert isinstance(docx_bytes, bytes)
     assert docx_bytes[:4] == b"PK\x03\x04"
 
 
-def test_generate_docx_report_renders_method_validation_and_provenance_sections(thermal_dataset):
+def test_generate_docx_report_renders_method_validation_and_provenance_sections(thermal_dataset, temperature_range, tga_percent_signal):
     dsc_record = _make_dsc_record(thermal_dataset)
+    tga_record, tga_dataset = _make_tga_record(temperature_range, tga_percent_signal)
     kissinger_record = _make_kissinger()
 
     docx_bytes = generate_docx_report(
         results={
             dsc_record["id"]: dsc_record,
+            tga_record["id"]: tga_record,
             kissinger_record["id"]: kissinger_record,
         },
-        datasets={"synthetic_dsc": thermal_dataset},
+        datasets={"synthetic_dsc": thermal_dataset, "synthetic_tga": tga_dataset},
         branding={"report_notes": "Batch remains within envelope."},
         comparison_workspace={
             "analysis_type": "DSC",
@@ -228,6 +314,14 @@ def test_generate_docx_report_renders_method_validation_and_provenance_sections(
     assert "Reference Material" in xml
     assert "Reference Check" in xml
     assert "Tin (Sn)" in xml
+    assert "Declared Unit Mode" in xml
+    assert "Resolved Unit Mode" in xml
+    assert "Auto Inference Used" in xml
+    assert "Unit Interpretation" in xml
+    assert "Unit Inference Basis" in xml
+    assert "Unit Review Note" in xml
+    assert "signal max le 105 default percent" not in xml.lower()
+    assert "defaulted to percent" in xml
     assert "Data Validation" in xml
     assert "Validation Checks" in xml
     assert "Provenance" in xml

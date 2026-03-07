@@ -77,6 +77,11 @@ def _sigmoid_step(x, center, width, initial, loss):
     return initial - loss / (1.0 + np.exp(-(x - center) / width))
 
 
+def _tanh_step(x, center, width, amplitude):
+    """Return a Tg-like DSC baseline step centered at *center*."""
+    return amplitude * np.tanh((x - center) / width)
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -122,6 +127,61 @@ def tga_signal(temperature_range):
         TGA_MASS_LOSS,
     )
     return mass + noise
+
+
+@pytest.fixture(scope="session")
+def dsc_tg_signal(temperature_range):
+    """Deterministic polymer-like DSC signal dominated by a Tg step near 120 C."""
+    rng = np.random.default_rng(101)
+    baseline = 0.0004 * (temperature_range - T_START)
+    tg_step = _tanh_step(temperature_range, center=120.0, width=4.0, amplitude=0.08)
+    noise = rng.normal(0.0, 0.0015, size=N_POINTS)
+    return baseline + tg_step + noise
+
+
+@pytest.fixture(scope="session")
+def dsc_melting_crystallization_signal(temperature_range):
+    """Deterministic DSC signal with one exotherm and one endotherm."""
+    rng = np.random.default_rng(202)
+    baseline = 0.0002 * (temperature_range - T_START)
+    crystallization = _gaussian(temperature_range, center=125.0, sigma=7.0, amplitude=1.2)
+    melting = -_gaussian(temperature_range, center=215.0, sigma=9.0, amplitude=1.6)
+    noise = rng.normal(0.0, 0.002, size=N_POINTS)
+    return baseline + crystallization + melting + noise
+
+
+@pytest.fixture(scope="session")
+def tga_percent_signal(temperature_range):
+    """Deterministic single-step TGA signal in mass-percent units."""
+    rng = np.random.default_rng(303)
+    mass = _sigmoid_step(temperature_range, center=150.0, width=9.0, initial=100.0, loss=12.0)
+    return mass + rng.normal(0.0, 0.008, size=N_POINTS)
+
+
+@pytest.fixture(scope="session")
+def tga_noisy_signal(temperature_range):
+    """Deterministic noisy single-step TGA signal for step-detection regression."""
+    rng = np.random.default_rng(404)
+    mass = _sigmoid_step(temperature_range, center=150.0, width=10.0, initial=100.0, loss=12.0)
+    return mass + rng.normal(0.0, 0.06, size=N_POINTS)
+
+
+@pytest.fixture(scope="session")
+def tga_multi_step_signal(temperature_range):
+    """Deterministic multi-step TGA signal with two separated decomposition steps."""
+    rng = np.random.default_rng(505)
+    first = _sigmoid_step(temperature_range, center=125.0, width=7.0, initial=100.0, loss=7.0)
+    second = _sigmoid_step(temperature_range, center=225.0, width=9.0, initial=0.0, loss=10.0)
+    mass = first + second
+    return mass + rng.normal(0.0, 0.01, size=N_POINTS)
+
+
+@pytest.fixture(scope="session")
+def tga_mg_signal(temperature_range):
+    """Deterministic single-step TGA signal in absolute-mass units (>105 mg path)."""
+    initial_mass_mg = 250.0
+    percent = _sigmoid_step(temperature_range, center=150.0, width=9.0, initial=100.0, loss=12.0)
+    return initial_mass_mg * percent / 100.0
 
 
 @pytest.fixture(scope="session")

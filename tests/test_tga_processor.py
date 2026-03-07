@@ -377,3 +377,130 @@ class TestTGAFullPipeline:
         assert len(result.steps) >= 1, (
             "Expected at least one step from the conftest TGA fixture"
         )
+
+
+class TestTGADeterministicRegressions:
+
+    def test_percent_input_path_is_deterministic(self, temperature_range, tga_percent_signal):
+        """Lock in deterministic single-step behavior for percent-input TGA data."""
+        result = TGAProcessor(temperature_range, tga_percent_signal).process()
+
+        assert result.total_mass_loss_percent == pytest.approx(12.0, abs=2.0)
+        assert len(result.steps) >= 1
+        assert result.steps[0].midpoint_temperature == pytest.approx(150.0, abs=20.0)
+
+    def test_multi_step_signal_detects_multiple_steps(self, temperature_range, tga_multi_step_signal):
+        """Lock in two-step detection for a deterministic multi-step TGA signal."""
+        result = (
+            TGAProcessor(temperature_range, tga_multi_step_signal)
+            .smooth(method="savgol", window_length=15, polyorder=3)
+            .compute_dtg(smooth_dtg=True, window_length=11, polyorder=3)
+            .detect_steps(min_mass_loss=2.0)
+            .get_result()
+        )
+
+        assert len(result.steps) >= 2
+        midpoints = [step.midpoint_temperature for step in result.steps]
+        assert any(abs(midpoint - 125.0) < 20.0 for midpoint in midpoints)
+        assert any(abs(midpoint - 225.0) < 20.0 for midpoint in midpoints)
+        assert result.steps == sorted(result.steps, key=lambda step: step.onset_temperature)
+
+    def test_noisy_input_still_returns_finite_step_analysis(self, temperature_range, tga_noisy_signal):
+        """Noisy TGA input should still yield finite arrays and at least one valid step."""
+        result = (
+            TGAProcessor(temperature_range, tga_noisy_signal)
+            .smooth(method="savgol", window_length=17, polyorder=3)
+            .compute_dtg(smooth_dtg=True, window_length=11, polyorder=3)
+            .detect_steps(min_mass_loss=1.0)
+            .get_result()
+        )
+
+        assert np.all(np.isfinite(result.smoothed_signal))
+        assert np.all(np.isfinite(result.dtg_signal))
+        assert len(result.steps) >= 1
+
+    def test_absolute_mass_input_above_threshold_converts_to_percent(self, temperature_range, tga_mg_signal):
+        """Lock in the unambiguous >105 mg absolute-mass conversion path."""
+        result = TGAProcessor(temperature_range, tga_mg_signal, initial_mass_mg=250.0).process()
+
+        assert result.total_mass_loss_percent == pytest.approx(12.0, abs=2.0)
+        assert all(step.mass_loss_mg is not None for step in result.steps)
+
+
+class TestTGAUnitModes:
+
+    def test_explicit_percent_mode_uses_percent_path(self, temperature_range, tga_percent_signal):
+        processor = TGAProcessor(
+            temperature_range,
+            tga_percent_signal,
+            unit_mode="percent",
+        )
+        result = processor.process()
+        unit_context = processor.get_unit_context()
+
+        assert unit_context["declared_unit_mode"] == "percent"
+        assert unit_context["resolved_unit_mode"] == "percent"
+        assert unit_context["auto_inference_used"] is False
+        assert unit_context["unit_interpretation_status"] == "accepted"
+        assert result.total_mass_loss_percent == pytest.approx(12.0, abs=2.0)
+
+    def test_explicit_absolute_mass_mode_uses_absolute_mass_path(self, temperature_range, tga_percent_signal):
+        processor = TGAProcessor(
+            temperature_range,
+            tga_percent_signal,
+            initial_mass_mg=100.0,
+            unit_mode="absolute_mass",
+        )
+        result = processor.process()
+        unit_context = processor.get_unit_context()
+
+        assert unit_context["declared_unit_mode"] == "absolute_mass"
+        assert unit_context["resolved_unit_mode"] == "absolute_mass"
+        assert unit_context["unit_reference_source"] == "initial_mass_mg"
+        assert unit_context["auto_inference_used"] is False
+        assert result.total_mass_loss_percent == pytest.approx(12.0, abs=2.0)
+        assert all(step.mass_loss_mg is not None for step in result.steps)
+
+    def test_auto_mode_with_percent_unit_is_unambiguous(self, temperature_range, tga_percent_signal):
+        processor = TGAProcessor(
+            temperature_range,
+            tga_percent_signal,
+            unit_mode="auto",
+            signal_unit="%",
+        )
+        processor.process()
+        unit_context = processor.get_unit_context()
+
+        assert unit_context["resolved_unit_mode"] == "percent"
+        assert unit_context["auto_inference_used"] is True
+        assert unit_context["unit_interpretation_status"] == "accepted"
+        assert unit_context["unit_inference_basis"] == "signal_unit_percent"
+
+    def test_auto_mode_with_unambiguous_absolute_mass_input_uses_threshold_path(self, temperature_range, tga_mg_signal):
+        processor = TGAProcessor(
+            temperature_range,
+            tga_mg_signal,
+            initial_mass_mg=250.0,
+            unit_mode="auto",
+        )
+        processor.process()
+        unit_context = processor.get_unit_context()
+
+        assert unit_context["resolved_unit_mode"] == "absolute_mass"
+        assert unit_context["auto_inference_used"] is True
+        assert unit_context["unit_interpretation_status"] == "accepted"
+        assert unit_context["unit_inference_basis"] == "signal_max_gt_105"
+
+    def test_auto_mode_with_ambiguous_low_range_input_marks_review(self, temperature_range, tga_percent_signal):
+        processor = TGAProcessor(
+            temperature_range,
+            tga_percent_signal,
+            unit_mode="auto",
+        )
+        processor.process()
+        unit_context = processor.get_unit_context()
+
+        assert unit_context["resolved_unit_mode"] == "percent"
+        assert unit_context["auto_inference_used"] is True
+        assert unit_context["unit_interpretation_status"] == "review"
+        assert "explicit unit mode is recommended" in unit_context["unit_review_reason"]

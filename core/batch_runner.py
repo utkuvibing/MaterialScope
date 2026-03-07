@@ -6,10 +6,16 @@ import copy
 from typing import Any, Mapping
 
 from core.dsc_processor import DSCProcessor
-from core.processing_schema import ensure_processing_payload, get_workflow_templates, update_method_context, update_processing_step
+from core.processing_schema import (
+    ensure_processing_payload,
+    get_workflow_templates,
+    update_method_context,
+    update_processing_step,
+    update_tga_unit_context,
+)
 from core.provenance import build_calibration_reference_context, build_result_provenance
 from core.result_serialization import serialize_dsc_result, serialize_tga_result
-from core.tga_processor import TGAProcessor
+from core.tga_processor import TGAProcessor, resolve_tga_unit_interpretation
 from core.validation import validate_thermal_dataset
 
 
@@ -49,6 +55,17 @@ _TGA_TEMPLATE_DEFAULTS = {
     },
 }
 _VALID_EXECUTION_STATUSES = {"saved", "blocked", "failed"}
+
+
+def _resolve_batch_tga_processing(processing: dict[str, Any], dataset) -> tuple[dict[str, Any], dict[str, Any]]:
+    method_context = processing.get("method_context") or {}
+    unit_context = resolve_tga_unit_interpretation(
+        dataset.data["signal"].values,
+        unit_mode=method_context.get("tga_unit_mode_declared") or "auto",
+        signal_unit=(dataset.units or {}).get("signal"),
+        initial_mass_mg=dataset.metadata.get("sample_mass"),
+    )
+    return update_tga_unit_context(processing, unit_context), unit_context
 
 
 def execute_batch_template(
@@ -174,11 +191,11 @@ def _execute_dsc_batch(
     smooth_method = smoothing.pop("method", "savgol")
     processor.smooth(method=smooth_method, **smoothing)
     processor.normalize()
-    smoothed_signal = processor._signal.copy()
+    smoothed_signal = processor.get_result().smoothed_signal.copy()
 
     baseline_method = baseline.pop("method", "asls")
     processor.correct_baseline(method=baseline_method, **baseline)
-    corrected_signal = processor._signal.copy()
+    corrected_signal = processor.get_result().smoothed_signal.copy()
 
     processor.find_peaks(**peak_detection)
     tg_region = glass_transition.get("region")
@@ -261,6 +278,7 @@ def _execute_tga_batch(
     temperature = dataset.data["temperature"].values
     signal = dataset.data["signal"].values
     initial_mass_mg = dataset.metadata.get("sample_mass")
+    processing, unit_context = _resolve_batch_tga_processing(processing, dataset)
 
     smoothing = copy.deepcopy((processing.get("signal_pipeline") or {}).get("smoothing") or {})
     step_detection = copy.deepcopy((processing.get("analysis_steps") or {}).get("step_detection") or {})
@@ -270,6 +288,8 @@ def _execute_tga_batch(
         signal,
         initial_mass_mg=initial_mass_mg,
         metadata=dataset.metadata,
+        unit_mode=str(unit_context["resolved_unit_mode"]),
+        signal_unit=(dataset.units or {}).get("signal"),
     )
 
     smooth_method = smoothing.pop("method", "savgol")

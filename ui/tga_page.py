@@ -12,15 +12,18 @@ import streamlit as st
 
 from core.processing_schema import (
     ensure_processing_payload,
+    get_tga_unit_modes,
     get_workflow_templates,
+    set_tga_unit_mode,
     set_workflow_template,
+    update_tga_unit_context,
     update_method_context,
     update_processing_step,
 )
 from core.preprocessing import compute_derivative, smooth_signal
 from core.provenance import build_calibration_reference_context, build_result_provenance
 from core.result_serialization import serialize_tga_result
-from core.tga_processor import TGAProcessor, TGAResult
+from core.tga_processor import TGAProcessor, TGAResult, resolve_tga_unit_interpretation
 from core.validation import validate_thermal_dataset
 from ui.components.chrome import render_page_header
 from ui.components.history_tracker import _log_event
@@ -88,6 +91,18 @@ def _select_tga_reference_temperature(result):
     return None
 
 
+def _resolve_tga_processing_with_unit_context(processing, dataset):
+    """Attach resolved TGA unit-mode context to the standardized processing payload."""
+    method_context = (processing or {}).get("method_context") or {}
+    unit_context = resolve_tga_unit_interpretation(
+        dataset.data["signal"].values,
+        unit_mode=method_context.get("tga_unit_mode_declared") or "auto",
+        signal_unit=(dataset.units or {}).get("signal"),
+        initial_mass_mg=dataset.metadata.get("sample_mass"),
+    )
+    return update_tga_unit_context(processing, unit_context), unit_context
+
+
 def _store_tga_result(selected_key, dataset, temperature, mass_signal, result):
     """Persist the normalized TGA result record and linked figure."""
     figures = st.session_state.setdefault("figures", {})
@@ -111,8 +126,12 @@ def _store_tga_result(selected_key, dataset, temperature, mass_signal, result):
         analysis_type="TGA",
         reference_temperature_c=_select_tga_reference_temperature(result),
     )
-    processing_payload = update_method_context(
+    processing_payload, unit_context = _resolve_tga_processing_with_unit_context(
         (st.session_state.get(f"tga_state_{selected_key}", {}) or {}).get("processing"),
+        dataset,
+    )
+    processing_payload = update_method_context(
+        processing_payload,
         calibration_context,
         analysis_type="TGA",
     )
@@ -135,6 +154,9 @@ def _store_tga_result(selected_key, dataset, temperature, mass_signal, result):
                 "reference_state": calibration_context.get("reference_state"),
                 "reference_name": calibration_context.get("reference_name"),
                 "reference_delta_c": calibration_context.get("reference_delta_c"),
+                "tga_unit_mode_declared": unit_context.get("declared_unit_mode"),
+                "tga_unit_mode_resolved": unit_context.get("resolved_unit_mode"),
+                "tga_unit_auto_inference_used": unit_context.get("auto_inference_used"),
             },
         ),
         validation=validate_thermal_dataset(dataset, analysis_type="TGA", processing=processing_payload),
@@ -197,6 +219,32 @@ def render():
         analysis_type="TGA",
         workflow_template_label=workflow_labels.get(workflow_template_id),
     )
+    unit_mode_catalog = get_tga_unit_modes()
+    unit_mode_labels = {
+        "auto": tx("Otomatik", "Auto"),
+        "percent": tx("Yüzde", "Percent"),
+        "absolute_mass": tx("Mutlak Kütle", "Absolute Mass"),
+    }
+    current_unit_mode = (state["processing"].get("method_context") or {}).get("tga_unit_mode_declared", "auto")
+    unit_mode_options = [entry["id"] for entry in unit_mode_catalog]
+    unit_mode_index = unit_mode_options.index(current_unit_mode) if current_unit_mode in unit_mode_options else 0
+    selected_unit_mode = st.selectbox(
+        tx("Birim Modu", "Unit Mode"),
+        unit_mode_options,
+        format_func=lambda mode: unit_mode_labels.get(mode, mode),
+        index=unit_mode_index,
+        key=f"tga_unit_mode_{selected_key}",
+        help=tx(
+            "Otomatik mod mevcut unit bilgisini ve sinyal aralığını kullanır. Belirsiz düşük aralıklı TGA verilerinde açık seçim önerilir.",
+            "Auto mode uses any recorded unit plus the signal range. Choose an explicit mode for low-range or ambiguous TGA signals.",
+        ),
+    )
+    state["processing"] = set_tga_unit_mode(
+        state.get("processing"),
+        selected_unit_mode,
+        unit_mode_label=unit_mode_labels.get(selected_unit_mode),
+    )
+    state["processing"], unit_context = _resolve_tga_processing_with_unit_context(state.get("processing"), dataset)
 
     dataset_validation = validate_thermal_dataset(dataset, analysis_type="TGA", processing=state.get("processing"))
     if dataset_validation["status"] == "fail":
@@ -523,6 +571,8 @@ def render():
                         mass_signal,
                         initial_mass_mg=initial_mass,
                         metadata=dataset.metadata,
+                        unit_mode=str(unit_context["resolved_unit_mode"]),
+                        signal_unit=dataset.units.get("signal"),
                     )
                     result: TGAResult = processor.process(
                         smooth_method=step_smooth_method,

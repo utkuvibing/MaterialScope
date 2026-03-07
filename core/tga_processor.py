@@ -45,6 +45,94 @@ from core.baseline import correct_baseline
 from core.peak_analysis import find_thermal_peaks, ThermalPeak
 
 
+TGA_UNIT_AUTO_THRESHOLD = 105.0
+TGA_UNIT_MODES = {"auto", "percent", "absolute_mass"}
+_PERCENT_SIGNAL_UNITS = {"%", "percent", "mass_percent", "mass %", "wt%", "wt %"}
+_ABSOLUTE_SIGNAL_UNITS = {"mg", "milligram", "milligrams", "g", "gram", "grams"}
+
+
+def normalize_tga_unit_mode(unit_mode: str | None) -> str:
+    """Return a stable TGA unit-mode identifier."""
+    token = str(unit_mode or "auto").strip().lower()
+    if token in {"mass_percent", "percent"}:
+        return "percent"
+    if token in {"absolute_mass", "mass", "mg", "g"}:
+        return "absolute_mass"
+    return "auto"
+
+
+def resolve_tga_unit_interpretation(
+    mass_signal,
+    *,
+    unit_mode: str | None = "auto",
+    signal_unit: str | None = None,
+    initial_mass_mg: float | None = None,
+) -> dict[str, object]:
+    """
+    Resolve how a TGA mass signal should be interpreted and converted to percent.
+
+    The returned context is additive workflow metadata. It makes any auto-mode
+    inference explicit without changing the normalized result contract.
+    """
+    raw_mass = np.asarray(mass_signal, dtype=float)
+    declared_mode = normalize_tga_unit_mode(unit_mode)
+    signal_unit_token = str(signal_unit or "").strip().lower()
+    signal_max = float(np.nanmax(raw_mass)) if raw_mass.size else float("nan")
+
+    resolved_mode = declared_mode
+    auto_inference_used = declared_mode == "auto"
+    interpretation_status = "accepted"
+    inference_basis = f"declared_{declared_mode}"
+    review_reason = ""
+
+    if declared_mode == "auto":
+        if signal_unit_token in _PERCENT_SIGNAL_UNITS:
+            resolved_mode = "percent"
+            inference_basis = "signal_unit_percent"
+        elif signal_unit_token in _ABSOLUTE_SIGNAL_UNITS:
+            resolved_mode = "absolute_mass"
+            inference_basis = "signal_unit_absolute_mass"
+        elif raw_mass.size and signal_max > TGA_UNIT_AUTO_THRESHOLD:
+            resolved_mode = "absolute_mass"
+            inference_basis = "signal_max_gt_105"
+        else:
+            resolved_mode = "percent"
+            inference_basis = "signal_max_le_105_default_percent"
+            interpretation_status = "review"
+            review_reason = (
+                "Auto mode defaulted to percent because the signal range stayed at or below 105; "
+                "explicit unit mode is recommended for low-range TGA inputs."
+            )
+
+    reference_source = "not_required"
+    reference_value = None
+    if resolved_mode == "absolute_mass":
+        reference_value = initial_mass_mg if initial_mass_mg is not None else (float(raw_mass[0]) if raw_mass.size else None)
+        reference_source = "initial_mass_mg" if initial_mass_mg is not None else "first_signal_value"
+        if reference_value is None or reference_value <= 0:
+            raise ValueError(
+                "Cannot convert mass signal to percent: reference mass is zero or negative. "
+                "Supply a positive initial_mass_mg."
+            )
+        mass_percent = raw_mass / float(reference_value) * 100.0
+    else:
+        mass_percent = raw_mass
+
+    return {
+        "mass_percent": mass_percent,
+        "declared_unit_mode": declared_mode,
+        "resolved_unit_mode": resolved_mode,
+        "auto_inference_used": auto_inference_used,
+        "unit_interpretation_status": interpretation_status,
+        "unit_inference_basis": inference_basis,
+        "unit_review_reason": review_reason,
+        "unit_reference_source": reference_source,
+        "unit_reference_value": reference_value,
+        "signal_unit": signal_unit or "",
+        "signal_max": signal_max,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
@@ -279,26 +367,21 @@ class TGAProcessor:
         mass_signal,
         initial_mass_mg: Optional[float] = None,
         metadata: Optional[dict] = None,
+        unit_mode: str = "auto",
+        signal_unit: str | None = None,
     ):
         self._temperature = np.asarray(temperature, dtype=float)
         raw_mass = np.asarray(mass_signal, dtype=float)
 
         self._initial_mass_mg = initial_mass_mg
         self._metadata = metadata or {}
-
-        # Auto-detect unit: if the maximum value is much greater than 100 the
-        # signal is almost certainly in absolute mass (mg or g).
-        if raw_mass.max() > 105.0:
-            # Treat as absolute mass; convert to % using the initial value
-            ref = initial_mass_mg if initial_mass_mg is not None else raw_mass[0]
-            if ref <= 0:
-                raise ValueError(
-                    "Cannot convert mass signal to percent: reference mass is zero "
-                    "or negative.  Supply a positive initial_mass_mg."
-                )
-            self._mass_percent = raw_mass / ref * 100.0
-        else:
-            self._mass_percent = raw_mass
+        self._unit_context = resolve_tga_unit_interpretation(
+            raw_mass,
+            unit_mode=unit_mode,
+            signal_unit=signal_unit,
+            initial_mass_mg=initial_mass_mg,
+        )
+        self._mass_percent = np.asarray(self._unit_context["mass_percent"], dtype=float)
 
         # Internal state populated by each pipeline stage
         self._smoothed: Optional[np.ndarray] = None
@@ -310,6 +393,10 @@ class TGAProcessor:
     # ------------------------------------------------------------------
     # Pipeline stages
     # ------------------------------------------------------------------
+
+    def get_unit_context(self) -> dict[str, object]:
+        """Return the resolved unit-interpretation context for this run."""
+        return dict(self._unit_context)
 
     def smooth(self, method: str = "savgol", **kwargs) -> "TGAProcessor":
         """

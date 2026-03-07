@@ -348,3 +348,103 @@ Harden the compare-workspace batch runner UX by standardizing per-dataset outcom
 ### Notes
 - Legacy `execution_status="error"` rows will be displayed as `failed` without mutating archive structure.
 - `pytest --collect-only -q` increased from 168 to 170 after adding batch outcome normalization and export-preview coverage.
+
+---
+
+## Title
+DSC/TGA Reproducibility and Calibration Acceptance Hardening
+
+### Objective
+Improve DSC/TGA scientific reliability inside the current brownfield repo by reducing fragile private-state reliance, enriching saved processing context with stable template/version information, centralizing calibration acceptance logic, and adding deterministic regression coverage for common DSC/TGA cases.
+
+### Definition Of Done
+- Batch runner no longer depends on private processor state where a public snapshot is sufficient.
+- Saved DSC/TGA processing carries stable template/version context additively.
+- Calibration acceptance logic is centralized, explicit, and regression-tested for all four supported states.
+- Deterministic regression fixtures cover Tg-like DSC, melting/crystallization DSC, single-step TGA, multi-step TGA, noisy TGA, percent input, and mg input without changing archive or export contracts.
+
+### Constraints
+- No processor rewrite, no architecture migration, no normalized export contract change, no archive compatibility break.
+- Keep batch/provenance/validation/report flows intact.
+- Avoid touching unrelated modules.
+
+### Impact Analysis
+- Runtime files: `core/batch_runner.py`, `core/processing_schema.py`, `core/provenance.py`, `core/validation.py`.
+- Regression files: `tests/conftest.py`, `tests/test_dsc_processor.py`, `tests/test_tga_processor.py`, `tests/test_batch_runner.py`, `tests/test_validation.py`.
+- Process record: `bugs.md` for any concrete hardening bug fixed during the tranche.
+
+### Risks
+- Adding template-version context will expand `processing` payload contents, so tests must assert additive compatibility rather than exact old payload equality.
+- TGA absolute-mass ambiguity near 100 units cannot be solved safely without an explicit unit input, so tests should lock only the unambiguous current paths.
+- Deterministic fixtures must remain simple enough that numerical drift signals a real regression rather than fixture instability.
+
+### Migration / Rollout Strategy
+- Replace private-state reads with public processor snapshots first.
+- Add template-version and calibration acceptance context through existing payload helpers.
+- Expand deterministic fixtures and regression tests around current behavior.
+- Verify the full suite before touching any recent batch/report flows.
+
+### Test Strategy
+- Run `pytest tests/test_dsc_processor.py tests/test_tga_processor.py tests/test_batch_runner.py tests/test_validation.py -q`.
+- Run `pytest -q`.
+- Run `pytest --collect-only -q`.
+
+### Progress Log
+- [x] Document and remove current private-state reliance in batch runner
+- [x] Add additive template/version and calibration acceptance context
+- [x] Add deterministic DSC/TGA regression fixtures and tests
+- [x] Verify full suite and collect-count delta
+
+### Notes
+- The current risky private-state dependency is the direct use of `DSCProcessor._signal` in `core/batch_runner.py`; the goal is to remove that dependency without changing DSC numerics.
+- Verification complete: focused regression run passed, `pytest -q` passed with `180 passed, 5 warnings`, and `pytest --collect-only -q` reported `180` collected tests (`+10` versus the previous `170` baseline).
+
+---
+
+## Title
+TGA Unit-Mode Hardening for Ambiguous Inputs
+
+### Objective
+Make TGA unit interpretation explicit, reviewable, and reproducible inside the current brownfield flow by introducing an additive declared/resolved unit-mode context, preserving current auto defaults, and surfacing ambiguous low-range auto cases without changing normalized export or archive contracts.
+
+### Definition Of Done
+- TGA processing payloads carry declared and resolved unit mode plus auto-inference context.
+- Validation distinguishes clear vs ambiguous auto-mode cases and warns on ambiguous low-range inputs.
+- TGA processor accepts explicit `unit_mode` while preserving current default auto behavior.
+- Saved TGA records and reports expose the richer unit interpretation context without changing the flat export schema.
+
+### Constraints
+- No TGAProcessor rewrite, no batch/provenance/report redesign, no archive format change, no flat CSV/XLSX contract change.
+- Preserve current behavior for unambiguous inputs.
+- Keep all changes additive and backward-compatible.
+
+### Impact Analysis
+- Runtime files: `core/tga_processor.py`, `core/processing_schema.py`, `core/validation.py`, `core/batch_runner.py`, `ui/tga_page.py`, `core/report_generator.py`.
+- Regression files: `tests/test_tga_processor.py`, `tests/test_validation.py`, `tests/test_batch_runner.py`, `tests/test_report_generator.py`.
+- Process record: `bugs.md` for the ambiguous low-range auto-mode hardening note.
+
+### Risks
+- Auto mode now prefers recorded signal units when they are available, which can change low-range mg-labeled runs from the old hidden percent path to the explicit absolute-mass path.
+- Ambiguous low-range auto inputs intentionally keep the old percent numerics for compatibility, so scientific ambiguity is reduced through review signaling rather than a forced numeric change.
+- Compare-workspace batch runs still need an existing TGA state if the user wants to override auto mode before running a batch template.
+
+### Migration / Rollout Strategy
+- Add a shared TGA unit-interpretation helper first.
+- Persist declared/resolved unit mode through the existing processing payload.
+- Reuse the same helper in validation, UI save flow, batch execution, and report rendering.
+- Add deterministic regression coverage before verifying the full suite.
+
+### Test Strategy
+- Run `pytest tests/test_tga_processor.py tests/test_validation.py tests/test_batch_runner.py tests/test_report_generator.py -q`.
+- Run `pytest -q`.
+- Run `pytest --collect-only -q`.
+
+### Progress Log
+- [x] Add explicit TGA unit-mode context while preserving default auto behavior
+- [x] Surface ambiguous low-range auto-mode review warnings without changing flat export or archive contracts
+- [x] Persist declared/resolved unit mode through TGA UI and batch flows
+- [x] Add deterministic processor/validation/batch/report regressions and verify full-suite delta
+
+### Notes
+- Ambiguous `auto` cases now keep the existing percent-processing path but are marked for review through validation/report context.
+- Verification complete: focused regression run passed, `pytest -q` passed with `188 passed, 5 warnings`, and `pytest --collect-only -q` reported `188` collected tests (`+8` versus the previous `180` baseline).

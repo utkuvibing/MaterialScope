@@ -250,6 +250,52 @@ class TestDSCProcessorFullPipeline:
         assert "correct_baseline" in step_names
         assert "find_peaks" in step_names
 
+    def test_process_without_sample_mass_warns_and_skips_normalization(self, temperature_range):
+        """The missing-sample-mass path should warn deterministically and skip normalize()."""
+        raw = _make_clean_dsc(temperature_range)
+        proc = DSCProcessor(temperature_range, raw, heating_rate=10.0)
+
+        with pytest.warns(RuntimeWarning, match="sample_mass was not provided"):
+            result = proc.process(smooth_method="savgol", baseline_method="linear")
+
+        step_names = [step.get("step") for step in result.metadata.get("steps", [])]
+        assert "normalize" not in step_names
+        assert isinstance(result, DSCResult)
+
+
+class TestDSCDeterministicRegressions:
+
+    def test_detects_tg_on_polymer_like_signal(self, temperature_range, dsc_tg_signal):
+        """Lock in Tg detection for a deterministic polymer-like DSC step near 120 C."""
+        result = (
+            DSCProcessor(temperature_range, dsc_tg_signal)
+            .smooth(method="savgol", window_length=15, polyorder=3)
+            .detect_glass_transition(region=(95.0, 145.0))
+            .get_result()
+        )
+
+        assert len(result.glass_transitions) == 1
+        tg = result.glass_transitions[0]
+        assert tg.tg_onset < tg.tg_midpoint < tg.tg_endset
+        assert tg.tg_midpoint == pytest.approx(120.0, abs=8.0)
+        assert tg.delta_cp > 0.0
+
+    def test_detects_crystallization_and_melting_like_peaks(self, temperature_range, dsc_melting_crystallization_signal):
+        """Lock in dual-peak DSC behavior for one exotherm and one endotherm."""
+        result = (
+            DSCProcessor(temperature_range, dsc_melting_crystallization_signal)
+            .smooth(method="savgol", window_length=11, polyorder=3)
+            .correct_baseline(method="linear")
+            .find_peaks(direction="both", prominence=0.08)
+            .get_result()
+        )
+
+        peak_temperatures = [peak.peak_temperature for peak in result.peaks]
+        peak_types = {peak.peak_type for peak in result.peaks}
+        assert any(abs(temp - 125.0) < 10.0 for temp in peak_temperatures)
+        assert any(abs(temp - 215.0) < 10.0 for temp in peak_temperatures)
+        assert {"exotherm", "endotherm"} <= peak_types
+
 
 # ---------------------------------------------------------------------------
 # DSCResult structure validation

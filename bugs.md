@@ -133,3 +133,53 @@ Limit `find_nearest_reference()` to DSC/DTA melting standards for DSC/DTA analys
 - Run `pytest tests/test_validation.py tests/test_project_io.py -q`
 - Run `pytest -q`
 - Confirm TGA project round-trip keeps `reference_out_of_window` for the 155 °C synthetic step while 200 °C still matches `CaC₂O₄·H₂O  Step 1`
+
+### Title
+Batch runner relied on private DSC processor state for saved signal snapshots
+
+### Date
+2026-03-07
+
+### Repro
+1. Read `core/batch_runner.py`.
+2. Observe that the DSC batch path captures `smoothed` and `corrected` arrays via `DSCProcessor._signal`.
+3. Note that this creates an external dependency on a private implementation detail rather than the processor's public snapshot API.
+
+### Suspected Cause
+The first batch MVP optimized for minimal code reuse and reached into the processor internals to capture intermediate arrays, even though `get_result()` already exposes the current signal snapshot.
+
+### Attempted Fix
+Avoid changing `DSCProcessor` itself; replace the private-state reads with public `get_result()` snapshots after `normalize()` and after `correct_baseline()`.
+
+### Actual Fix
+Update `core.batch_runner` to capture DSC `smoothed` / `corrected` arrays through `processor.get_result().smoothed_signal` instead of `processor._signal`, and add deterministic batch regression tests so the saved summaries/rows remain stable for the same input and template.
+
+### Verification
+- Run `pytest tests/test_batch_runner.py tests/test_dsc_processor.py -q`
+- Run `pytest -q`
+- Confirm the batch runner no longer reads `DSCProcessor._signal` directly while DSC batch results remain numerically stable
+
+### Title
+Ambiguous low-range TGA auto mode silently defaulted to percent
+
+### Date
+2026-03-07
+
+### Repro
+1. Load a TGA dataset with low-range mass values near `100 -> 90` and no trustworthy signal-unit label.
+2. Run the stable TGA workflow or a TGA batch template with the default auto settings.
+3. Observe that the processor uses the percent path because `max(signal) <= 105`, but the saved workflow context does not clearly record that the result depended on an ambiguous auto inference.
+
+### Suspected Cause
+`core.tga_processor.TGAProcessor` only used the hidden `raw_mass.max() > 105` heuristic, and the brownfield save/validation flows did not persist or report whether the run was declared as auto, explicitly percent, or explicitly absolute mass.
+
+### Attempted Fix
+Keep the default auto behavior for backward compatibility, but introduce an additive unit-mode context that records declared mode, resolved mode, inference basis, and review status. Reuse that context in validation, TGA page state, batch execution, and report rendering instead of redesigning the export or archive contracts.
+
+### Actual Fix
+Add `unit_mode` support and a shared `resolve_tga_unit_interpretation()` helper in `core.tga_processor`, persist declared/resolved mode through `core.processing_schema`, surface ambiguous low-range auto cases as review warnings in `core.validation`, and thread the same context through `ui.tga_page`, `core.batch_runner`, and `core.report_generator`.
+
+### Verification
+- Run `pytest tests/test_tga_processor.py tests/test_validation.py tests/test_batch_runner.py tests/test_report_generator.py -q`
+- Run `pytest -q`
+- Confirm explicit `percent` / `absolute_mass` modes stay deterministic, unambiguous auto cases resolve cleanly, and ambiguous low-range auto inputs are still processed compatibly but flagged for review

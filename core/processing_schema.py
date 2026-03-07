@@ -23,16 +23,34 @@ _DEFAULT_WORKFLOW_TEMPLATE = {
 }
 _WORKFLOW_TEMPLATES = {
     "DSC": (
-        {"id": "dsc.general", "label": "General DSC"},
-        {"id": "dsc.polymer_tg", "label": "Polymer Tg"},
-        {"id": "dsc.polymer_melting_crystallization", "label": "Polymer Melting/Crystallization"},
+        {"id": "dsc.general", "label": "General DSC", "version": 1},
+        {"id": "dsc.polymer_tg", "label": "Polymer Tg", "version": 1},
+        {"id": "dsc.polymer_melting_crystallization", "label": "Polymer Melting/Crystallization", "version": 1},
     ),
     "TGA": (
-        {"id": "tga.general", "label": "General TGA"},
-        {"id": "tga.single_step_decomposition", "label": "Single-Step Decomposition"},
-        {"id": "tga.multi_step_decomposition", "label": "Multi-Step Decomposition"},
+        {"id": "tga.general", "label": "General TGA", "version": 1},
+        {"id": "tga.single_step_decomposition", "label": "Single-Step Decomposition", "version": 1},
+        {"id": "tga.multi_step_decomposition", "label": "Multi-Step Decomposition", "version": 1},
     ),
 }
+_TGA_UNIT_MODES = (
+    {"id": "auto", "label": "Auto"},
+    {"id": "percent", "label": "Percent"},
+    {"id": "absolute_mass", "label": "Absolute Mass"},
+)
+_TGA_METHOD_CONTEXT_ALIASES = (
+    "tga_unit_mode_declared",
+    "tga_unit_mode_label",
+    "tga_unit_mode_resolved",
+    "tga_unit_mode_resolved_label",
+    "tga_unit_auto_inference_used",
+    "tga_unit_inference_basis",
+    "tga_unit_interpretation_status",
+    "tga_unit_review_reason",
+    "tga_unit_reference_source",
+    "tga_unit_reference_value",
+    "tga_signal_unit_recorded",
+)
 _METHOD_CONTEXT_DEFAULTS = {
     "DSC": {
         "sign_convention_id": "dsc.endotherm_up",
@@ -40,6 +58,8 @@ _METHOD_CONTEXT_DEFAULTS = {
     },
     "TGA": {
         "step_analysis_basis": "DTG-derived onset, midpoint, and endset estimation",
+        "tga_unit_mode_declared": "auto",
+        "tga_unit_mode_label": "Auto",
     },
 }
 
@@ -57,18 +77,24 @@ def _slugify(value: Any) -> str:
     return text.strip("_") or "template"
 
 
-def get_workflow_templates(analysis_type: str | None) -> list[dict[str, str]]:
+def get_workflow_templates(analysis_type: str | None) -> list[dict[str, Any]]:
     """Return a copy of the stable workflow template catalog for an analysis type."""
     normalized_type = _normalize_analysis_type(analysis_type)
     return [copy.deepcopy(entry) for entry in _WORKFLOW_TEMPLATES.get(normalized_type, ())]
 
 
-def _fallback_template_entry(analysis_type: str, raw_value: Any) -> dict[str, str]:
+def get_tga_unit_modes() -> list[dict[str, str]]:
+    """Return the stable TGA unit-mode catalog."""
+    return [copy.deepcopy(entry) for entry in _TGA_UNIT_MODES]
+
+
+def _fallback_template_entry(analysis_type: str, raw_value: Any, version: int | None = None) -> dict[str, Any]:
     normalized_type = _normalize_analysis_type(analysis_type)
     label = str(raw_value or _DEFAULT_WORKFLOW_TEMPLATE.get(normalized_type, f"General {normalized_type}"))
     return {
         "id": f"{normalized_type.lower()}.custom.{_slugify(label)}",
         "label": label,
+        "version": int(version or 1),
     }
 
 
@@ -78,7 +104,7 @@ def _resolve_workflow_template(
     workflow_template: Any = None,
     workflow_template_label: str | None = None,
     payload: dict[str, Any] | None = None,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     payload = payload or {}
     catalog = get_workflow_templates(analysis_type)
     template_inputs = [
@@ -101,7 +127,11 @@ def _resolve_workflow_template(
             return resolved
 
     raw_value = workflow_template or payload.get("workflow_template_label") or payload.get("workflow_template")
-    resolved = _fallback_template_entry(analysis_type, raw_value)
+    resolved = _fallback_template_entry(
+        analysis_type,
+        raw_value,
+        version=payload.get("workflow_template_version"),
+    )
     if workflow_template_label:
         resolved["label"] = workflow_template_label
     return resolved
@@ -153,6 +183,10 @@ def ensure_processing_payload(
     )
     method_context = copy.deepcopy(_METHOD_CONTEXT_DEFAULTS.get(normalized_type, {}))
     method_context.update(_copy_mapping(payload.get("method_context")))
+    if normalized_type == "TGA":
+        for key in _TGA_METHOD_CONTEXT_ALIASES:
+            if payload.get(key) not in (None, "") and key not in method_context:
+                method_context[key] = copy.deepcopy(payload[key])
 
     normalized = {
         "schema_version": PROCESSING_SCHEMA_VERSION,
@@ -160,6 +194,7 @@ def ensure_processing_payload(
         "workflow_template_id": template_entry["id"],
         "workflow_template_label": template_entry["label"],
         "workflow_template": template_entry["label"],
+        "workflow_template_version": int(template_entry.get("version", payload.get("workflow_template_version") or 1)),
         "signal_pipeline": signal_sections,
         "analysis_steps": analysis_sections,
         "method_context": method_context,
@@ -174,6 +209,10 @@ def ensure_processing_payload(
             normalized["sign_convention"] = method_context["sign_convention_label"]
         if method_context.get("step_analysis_basis"):
             normalized["step_analysis_basis"] = method_context["step_analysis_basis"]
+        if normalized_type == "TGA":
+            for key in _TGA_METHOD_CONTEXT_ALIASES:
+                if key in method_context:
+                    normalized[key] = copy.deepcopy(method_context[key])
 
     return normalized
 
@@ -211,6 +250,12 @@ def update_method_context(
         normalized["sign_convention"] = method_context["sign_convention_label"]
     if method_context.get("step_analysis_basis"):
         normalized["step_analysis_basis"] = method_context["step_analysis_basis"]
+    if normalized["analysis_type"] == "TGA":
+        for key in _TGA_METHOD_CONTEXT_ALIASES:
+            if key in method_context:
+                normalized[key] = copy.deepcopy(method_context[key])
+            else:
+                normalized.pop(key, None)
     return normalized
 
 
@@ -236,3 +281,54 @@ def update_processing_step(
 
     normalized[section_name] = copy.deepcopy(values)
     return normalized
+
+
+def set_tga_unit_mode(
+    payload: dict[str, Any] | None,
+    unit_mode: str,
+    *,
+    unit_mode_label: str | None = None,
+) -> dict[str, Any]:
+    """Persist the declared TGA unit mode in the method-context block."""
+    normalized_mode = str(unit_mode or "auto").strip().lower()
+    for entry in _TGA_UNIT_MODES:
+        if entry["id"] == normalized_mode:
+            label = unit_mode_label or entry["label"]
+            break
+    else:
+        normalized_mode = "auto"
+        label = unit_mode_label or "Auto"
+
+    return update_method_context(
+        payload,
+        {
+            "tga_unit_mode_declared": normalized_mode,
+            "tga_unit_mode_label": label,
+        },
+        analysis_type="TGA",
+    )
+
+
+def update_tga_unit_context(payload: dict[str, Any] | None, unit_context: dict[str, Any] | None) -> dict[str, Any]:
+    """Persist resolved TGA unit interpretation context additively."""
+    unit_context = _copy_mapping(unit_context)
+    declared = str(unit_context.get("declared_unit_mode") or "auto")
+    resolved = str(unit_context.get("resolved_unit_mode") or "not_recorded")
+    labels = {entry["id"]: entry["label"] for entry in _TGA_UNIT_MODES}
+    return update_method_context(
+        payload,
+        {
+            "tga_unit_mode_declared": declared,
+            "tga_unit_mode_label": labels.get(declared, declared.replace("_", " ").title()),
+            "tga_unit_mode_resolved": resolved,
+            "tga_unit_mode_resolved_label": labels.get(resolved, resolved.replace("_", " ").title()),
+            "tga_unit_auto_inference_used": bool(unit_context.get("auto_inference_used")),
+            "tga_unit_inference_basis": unit_context.get("unit_inference_basis") or "not_recorded",
+            "tga_unit_interpretation_status": unit_context.get("unit_interpretation_status") or "not_recorded",
+            "tga_unit_review_reason": unit_context.get("unit_review_reason") or "",
+            "tga_unit_reference_source": unit_context.get("unit_reference_source") or "not_recorded",
+            "tga_unit_reference_value": unit_context.get("unit_reference_value"),
+            "tga_signal_unit_recorded": unit_context.get("signal_unit") or "",
+        },
+        analysis_type="TGA",
+    )

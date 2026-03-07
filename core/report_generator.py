@@ -84,6 +84,8 @@ def _add_results_table(doc: Document, headers: list[str], rows: list[list]) -> N
 def _format_value(value):
     if value is None:
         return "N/A"
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
     if isinstance(value, list):
         return "; ".join(str(item) for item in value) if value else "N/A"
     if isinstance(value, dict):
@@ -225,6 +227,15 @@ def _domain_method_summary(record: dict) -> dict[str, str] | None:
     summary = {
         "Template": processing.get("workflow_template_label") or processing.get("workflow_template") or "Not recorded",
         "Template ID": processing.get("workflow_template_id") or "Not recorded",
+        "Declared Unit Mode": method_context.get("tga_unit_mode_label") or validation_checks.get("tga_unit_mode_declared") or "Not recorded",
+        "Resolved Unit Mode": method_context.get("tga_unit_mode_resolved_label") or validation_checks.get("tga_unit_mode_resolved") or "Not recorded",
+        "Auto Inference Used": method_context.get("tga_unit_auto_inference_used")
+        if "tga_unit_auto_inference_used" in method_context
+        else validation_checks.get("tga_unit_auto_inference_used"),
+        "Unit Interpretation": method_context.get("tga_unit_interpretation_status") or validation_checks.get("tga_unit_interpretation_status") or "Not recorded",
+        "Unit Inference Basis": method_context.get("tga_unit_inference_basis") or validation_checks.get("tga_unit_inference_basis") or "Not recorded",
+        "Unit Review Note": method_context.get("tga_unit_review_reason") or "Not recorded",
+        "Unit Reference Source": method_context.get("tga_unit_reference_source") or validation_checks.get("tga_unit_reference_source") or "Not recorded",
         "Mass Unit": validation_checks.get("signal_unit") or (record.get("metadata") or {}).get("signal_unit") or "Not recorded",
         "Unit Plausibility": validation_checks.get("unit_plausibility") or "Not recorded",
         "Calibration State": method_context.get("calibration_state") or provenance.get("calibration_state") or validation_checks.get("calibration_state") or "Not recorded",
