@@ -448,3 +448,56 @@ Make TGA unit interpretation explicit, reviewable, and reproducible inside the c
 ### Notes
 - Ambiguous `auto` cases now keep the existing percent-processing path but are marked for review through validation/report context.
 - Verification complete: focused regression run passed, `pytest -q` passed with `188 passed, 5 warnings`, and `pytest --collect-only -q` reported `188` collected tests (`+8` versus the previous `180` baseline).
+
+---
+
+## Title
+Import Hardening and Professor Beta Pack
+
+### Objective
+Improve real-world DSC/TGA import reliability for professor beta testing by making import heuristics safer, review-aware, and better documented without changing the normalized result contract or project archive format.
+
+### Definition Of Done
+- `core.data_io` produces additive import-confidence and import-warning metadata for ambiguous imports.
+- Clearly unambiguous TA/NETZSCH/generic delimited exports still import successfully.
+- Validation surfaces import uncertainty so existing report/provenance flows can reflect it.
+- Stable vs preview scope is tightened in the app messaging and repo docs.
+- A concise professor beta guide exists inside the repo.
+
+### Constraints
+- No import architecture rewrite, no result/export schema change, no archive format change, no batch redesign.
+- Only minimal UI touches around the existing import/preview flow.
+- Focus on shipping confidence rather than adding new features.
+
+### Impact Analysis
+- Runtime files: `core/data_io.py`, `core/validation.py`, `ui/home.py`, `ui/components/data_preview.py`, `ui/components/workflow_guide.py`, `app.py`, `README.md`.
+- Regression files: `tests/test_data_io.py`, `tests/test_validation.py`.
+- Beta pack file: `PROFESSOR_BETA_GUIDE.md`.
+- Process record: `bugs.md` for the import ambiguity hardening note.
+
+### Risks
+- More ambiguous files will now import with explicit review warnings instead of silent confidence.
+- Vendor detection remains heuristic for text exports and still falls back to `Generic` when evidence is weak.
+- README and UI messaging become narrower by design to avoid overclaiming during the beta.
+
+### Migration / Rollout Strategy
+- Add additive import metadata in `core.data_io` first.
+- Reuse the metadata in validation and the existing home/data-preview surfaces.
+- Tighten stable/preview wording and add the professor beta guide.
+- Verify targeted import tests, then the full suite and collect-count delta.
+
+### Test Strategy
+- Run `pytest tests/test_data_io.py tests/test_validation.py -q`.
+- Run `pytest -q`.
+- Run `pytest --collect-only -q`.
+
+### Progress Log
+- [x] Add additive import-confidence and import-warning metadata
+- [x] Harden column/type/unit/vendor inference for common text exports
+- [x] Surface import review context in validation and the current import UI
+- [x] Add professor beta guide and tighten stable vs preview messaging
+- [x] Verify targeted import tests plus full-suite collect-count delta
+
+### Notes
+- Ambiguous imports now prefer explicit review metadata over hidden certainty; they are not silently promoted to the stable workflow as fully trusted.
+- Verification complete: focused import/validation regression run passed, `pytest -q` passed with `197 passed, 5 warnings`, and `pytest --collect-only -q` reported `197` collected tests (`+9` versus the previous `188` baseline).

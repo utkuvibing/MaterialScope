@@ -183,3 +183,29 @@ Add `unit_mode` support and a shared `resolve_tga_unit_interpretation()` helper 
 - Run `pytest tests/test_tga_processor.py tests/test_validation.py tests/test_batch_runner.py tests/test_report_generator.py -q`
 - Run `pytest -q`
 - Confirm explicit `percent` / `absolute_mass` modes stay deterministic, unambiguous auto cases resolve cleanly, and ambiguous low-range auto inputs are still processed compatibly but flagged for review
+
+### Title
+Import heuristics silently overclaimed confidence for ambiguous lab exports
+
+### Date
+2026-03-07
+
+### Repro
+1. Load a generic DSC/TGA text export where the headers are weak, overlapping, or partially edited, for example a semicolon-delimited sheet with columns like `Weight (mW)` or a generic `Signal` column.
+2. Let `core.data_io.read_thermal_data()` infer the mapping automatically.
+3. Observe that the import previously selected a signal column, analysis type, vendor, and signal unit without preserving enough uncertainty context for the user to review the guess.
+
+### Suspected Cause
+`core.data_io.guess_columns()` relied on first-match and numeric-fallback heuristics that favored choosing *some* plausible column over recording ambiguity. Vendor and unit inference were similarly shallow, and the resulting uncertainty was not surfaced through metadata or validation.
+
+### Attempted Fix
+Keep the brownfield import architecture and existing `ThermalDataset` shape, but make the inference pipeline additive and review-aware: score likely columns more carefully, detect conflicting cues, classify confidence, and persist structured import warnings/metadata that the existing validation and UI layers can surface.
+
+### Actual Fix
+Harden `core.data_io` so import now records additive `import_confidence`, `import_warnings`, `import_review_required`, `inferred_analysis_type`, `inferred_signal_unit`, `inferred_vendor`, and vendor-confidence metadata. Preserve current behavior for clear TA/NETZSCH/generic exports, but downgrade ambiguous signal/unit/vendor cases to explicit review warnings instead of hidden certainty. Reuse the same context in `core.validation`, `ui.home`, and `ui.components.data_preview`, and add regression coverage for generic, delimited, vendor-like, ambiguous, and misleading-header cases.
+
+### Verification
+- Run `pytest tests/test_data_io.py tests/test_validation.py -q`
+- Run `pytest -q`
+- Run `pytest --collect-only -q`
+- Confirm clear TA/NETZSCH/generic imports still resolve cleanly, while ambiguous header/unit cases now carry explicit review metadata and warnings

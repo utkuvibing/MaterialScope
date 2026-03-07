@@ -10,13 +10,14 @@ def render_data_preview(dataset, key_prefix="preview"):
     """Render a data preview section for a ThermalDataset."""
     st.subheader(tx("Veri Önizleme", "Data Preview"))
 
-    # Compact 4-column metrics
-    c1, c2, c3, c4 = st.columns(4)
+    # Compact 5-column metrics
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric(tx("Veri Tipi", "Data Type"), dataset.data_type)
     c2.metric(tx("Nokta", "Points"), f"{len(dataset.data):,}")
     c3.metric(tx("Kolon", "Columns"), len(dataset.data.columns))
     mass = dataset.metadata.get("sample_mass")
     c4.metric(tx("Numune Kütlesi", "Sample Mass"), f"{mass} mg" if mass else tx("Yok", "N/A"))
+    c5.metric(tx("İçe Aktarım Güveni", "Import Confidence"), str(dataset.metadata.get("import_confidence", "N/A")).upper())
 
     # Temperature range as status bar
     if "temperature" in dataset.data.columns:
@@ -43,6 +44,28 @@ def render_data_preview(dataset, key_prefix="preview"):
             with mc2:
                 for k, v in meta_items[mid:]:
                     st.write(f"**{k}:** {v}")
+
+    import_warnings = [str(item) for item in (dataset.metadata.get("import_warnings") or []) if item]
+    if import_warnings or dataset.metadata.get("import_review_required"):
+        with st.expander(tx("İçe Aktarım İncelemesi", "Import Review"), expanded=False):
+            st.write(
+                f"**{tx('Algılanan analiz tipi', 'Inferred analysis type')}:** "
+                f"{dataset.metadata.get('inferred_analysis_type', 'N/A')}"
+            )
+            st.write(
+                f"**{tx('Algılanan sinyal birimi', 'Inferred signal unit')}:** "
+                f"{dataset.metadata.get('inferred_signal_unit', 'N/A')}"
+            )
+            st.write(
+                f"**{tx('Algılanan vendor', 'Inferred vendor')}:** "
+                f"{dataset.metadata.get('inferred_vendor', dataset.metadata.get('vendor', 'N/A'))}"
+            )
+            st.write(
+                f"**{tx('Vendor güveni', 'Vendor confidence')}:** "
+                f"{dataset.metadata.get('vendor_detection_confidence', 'N/A')}"
+            )
+            for warning in import_warnings:
+                st.warning(warning)
 
     with st.expander(tx("Kolon Eşleme", "Column Mapping"), expanded=False):
         for std_name, orig_name in dataset.original_columns.items():

@@ -73,7 +73,6 @@ _PATTERNS: Dict[str, List[str]] = {
         r"[Mm][Ww]",
         r"[Ee]ndo",
         r"[Ee]xo",
-        r"\u00b5[Vv]",      # µV
         r"[Hh]eat\s*[Cc]ap",
         r"Cp\b",
     ],
@@ -92,6 +91,41 @@ _PATTERNS: Dict[str, List[str]] = {
         r"\u00b5[Vv]",      # µV
         r"\u0394T",         # ΔT
     ],
+}
+
+_IMPORT_CONFIDENCE_ORDER = {"high": 3, "medium": 2, "review": 1}
+_ANALYSIS_TYPE_KEYS = ("DSC", "TGA", "DTA")
+_TYPE_PATTERN_KEYS = {"DSC": "signal_dsc", "TGA": "signal_tga", "DTA": "signal_dta"}
+_VENDOR_TOKEN_SETS = {
+    "NETZSCH": (
+        "netzsch",
+        "proteus",
+        "sta 449",
+        "sta449",
+        "sta 2500",
+        "temp./°c",
+        "dsc/(mw",
+        "tg/%",
+        "dtg/(%/",
+    ),
+    "TA": (
+        "ta instruments",
+        "trios",
+        "q20",
+        "q200",
+        "q50",
+        "q500",
+        "temperature (°c)",
+        "heat flow (",
+        "weight (%)",
+        "derivative weight",
+    ),
+    "METTLER": (
+        "mettler",
+        "star e",
+        "stare",
+        "toledo",
+    ),
 }
 
 # ---------------------------------------------------------------------------
@@ -251,6 +285,35 @@ def _detect_decimal_sep(sample: str) -> str:
     comma_decimal = len(re.findall(r"\d,\d", sample))
     dot_decimal = len(re.findall(r"\d\.\d", sample))
     return "," if comma_decimal > dot_decimal else "."
+
+
+def _count_pattern_hits(text: str, patterns: List[str]) -> int:
+    return sum(1 for pat in patterns if re.search(pat, text))
+
+
+def _is_mostly_monotonic_increasing(series: pd.Series, threshold: float = 0.9) -> bool:
+    """Return True when numeric values are predominantly monotonic increasing."""
+    coerced = pd.to_numeric(series, errors="coerce").dropna()
+    if len(coerced) < 3:
+        return False
+    diffs = np.diff(coerced.to_numpy(dtype=float))
+    positive = float(np.mean(diffs > 0))
+    return positive >= threshold
+
+
+def _raw_unit_token(col_name: str) -> str:
+    match = _UNIT_RE.search(str(col_name))
+    return match.group(1).strip() if match else ""
+
+
+def _classify_import_confidence(*levels: str) -> str:
+    if not levels:
+        return "review"
+    if any(level == "review" for level in levels):
+        return "review"
+    if any(level == "medium" for level in levels):
+        return "medium"
+    return "high"
 
 
 # ---------------------------------------------------------------------------
@@ -447,53 +510,180 @@ def guess_columns(df: pd.DataFrame) -> dict:
         'data_type'    str          - 'DSC', 'TGA', 'DTA', or 'unknown'
     """
     cols = list(df.columns)
-    result: Dict[str, Optional[str]] = {
+    numeric_cols = {col for col in cols if _is_mostly_numeric(df[col])}
+    result: Dict[str, Optional[str] | dict | list] = {
         "temperature": None,
         "time": None,
         "signal": None,
         "data_type": "unknown",
+        "warnings": [],
+        "confidence": {},
+        "candidates": {},
+        "inferred_signal_unit": "unknown",
+        "inferred_analysis_type": "unknown",
     }
+    warnings_list: list[str] = []
+    confidence: dict[str, str] = {}
 
-    def _first_match(patterns: List[str]) -> Optional[str]:
+    def _rank_role(pattern_key: str, *, prefer_monotonic: bool = False) -> list[dict[str, object]]:
+        ranked: list[dict[str, object]] = []
         for col in cols:
-            for pat in patterns:
-                if re.search(pat, col):
-                    return col
-        return None
+            score = 0
+            pattern_hits = _count_pattern_hits(col, _PATTERNS[pattern_key])
+            if pattern_hits:
+                score += 10 + pattern_hits * 2
+            header_lower = str(col).lower()
+            if pattern_key == "temperature" and any(token in header_lower for token in ("°c", "degc", "celsius", "kelvin", "°k")):
+                score += 8
+            if pattern_key == "time" and any(token in header_lower for token in ("time", "min", "sec", "hour", "hours")):
+                score += 8
+            if col in numeric_cols:
+                score += 2
+            if prefer_monotonic and col in numeric_cols and _is_mostly_monotonic_increasing(df[col]):
+                score += 4
+            ranked.append({"column": col, "score": score, "pattern_hits": pattern_hits})
+        ranked.sort(key=lambda item: (int(item["score"]), str(item["column"])), reverse=True)
+        return ranked
 
-    result["temperature"] = _first_match(_PATTERNS["temperature"])
-    result["time"] = _first_match(_PATTERNS["time"])
+    temp_ranked = _rank_role("temperature", prefer_monotonic=True)
+    time_ranked = _rank_role("time", prefer_monotonic=True)
+    result["candidates"]["temperature"] = temp_ranked[:3]
+    result["candidates"]["time"] = time_ranked[:3]
 
-    # Signal: try specific types in priority order
-    dsc_col = _first_match(_PATTERNS["signal_dsc"])
-    tga_col = _first_match(_PATTERNS["signal_tga"])
-    dta_col = _first_match(_PATTERNS["signal_dta"])
-
-    if dsc_col:
-        result["signal"] = dsc_col
-        result["data_type"] = "DSC"
-    elif tga_col:
-        result["signal"] = tga_col
-        result["data_type"] = "TGA"
-    elif dta_col:
-        result["signal"] = dta_col
-        result["data_type"] = "DTA"
+    if temp_ranked and (int(temp_ranked[0]["pattern_hits"]) > 0 or int(temp_ranked[0]["score"]) >= 10):
+        result["temperature"] = str(temp_ranked[0]["column"])
+        confidence["temperature"] = "high"
+        if len(temp_ranked) > 1 and int(temp_ranked[1]["score"]) >= int(temp_ranked[0]["score"]) - 1 and int(temp_ranked[1]["score"]) > 0:
+            confidence["temperature"] = "medium"
+            warnings_list.append(
+                f"Temperature-column inference is close between '{temp_ranked[0]['column']}' and '{temp_ranked[1]['column']}'."
+            )
     else:
-        # Fallback: use the first numeric column that is not already assigned
-        assigned = {result["temperature"], result["time"]}
         for col in cols:
-            if col not in assigned and _is_mostly_numeric(df[col]):
-                result["signal"] = col
-                break
-
-    # If temperature not found, try heuristic: first numeric column not used as signal
-    if result["temperature"] is None:
-        assigned = {result["signal"], result["time"]}
-        for col in cols:
-            if col not in assigned and _is_mostly_numeric(df[col]):
+            signal_like = any(_count_pattern_hits(col, _PATTERNS[key]) > 0 for key in ("signal_dsc", "signal_tga", "signal_dta"))
+            signal_like = signal_like or bool(re.search(r"signal|heat|weight|mass|dsc|tga|dta", str(col), flags=re.IGNORECASE))
+            if col in numeric_cols and not signal_like:
                 result["temperature"] = col
+                confidence["temperature"] = "review"
+                warnings_list.append(
+                    f"Temperature column was inferred by numeric fallback as '{col}'; verify the column mapping."
+                )
                 break
+        else:
+            confidence["temperature"] = "review"
 
+    if time_ranked and (int(time_ranked[0]["pattern_hits"]) > 0 or int(time_ranked[0]["score"]) >= 10) and str(time_ranked[0]["column"]) != result["temperature"]:
+        result["time"] = str(time_ranked[0]["column"])
+        confidence["time"] = "high"
+        if len(time_ranked) > 1 and int(time_ranked[1]["score"]) >= int(time_ranked[0]["score"]) - 1 and int(time_ranked[1]["score"]) > 0:
+            confidence["time"] = "medium"
+    else:
+        confidence["time"] = "review" if any(int(item["score"]) > 0 for item in time_ranked) else "medium"
+
+    assigned = {result["temperature"], result["time"]}
+    signal_candidates: dict[str, list[dict[str, object]]] = {analysis_type: [] for analysis_type in _ANALYSIS_TYPE_KEYS}
+    for analysis_type in _ANALYSIS_TYPE_KEYS:
+        pattern_key = _TYPE_PATTERN_KEYS[analysis_type]
+        for col in cols:
+            if col in assigned:
+                continue
+            score = 0
+            pattern_hits = _count_pattern_hits(col, _PATTERNS[pattern_key])
+            if pattern_hits:
+                score += 10 + pattern_hits * 2
+            signal_unit = _extract_unit(col, "signal")
+            if analysis_type == "DSC" and signal_unit in {"mW", "mW/mg", "W/g"}:
+                score += 4
+            if analysis_type == "TGA" and signal_unit in {"%", "mg"}:
+                score += 4
+            if analysis_type == "DTA" and signal_unit in {"µV", "mV"}:
+                score += 4
+            if col in numeric_cols and score > 0:
+                score += 2
+            signal_candidates[analysis_type].append(
+                {
+                    "column": col,
+                    "score": score,
+                    "pattern_hits": pattern_hits,
+                    "signal_unit": signal_unit,
+                }
+            )
+        signal_candidates[analysis_type].sort(
+            key=lambda item: (int(item["score"]), str(item["column"])),
+            reverse=True,
+        )
+        result["candidates"][analysis_type.lower()] = signal_candidates[analysis_type][:3]
+
+    type_scores = []
+    for analysis_type, ranked in signal_candidates.items():
+        if ranked:
+            top = ranked[0]
+            type_scores.append((analysis_type, int(top["score"]), str(top["column"]), str(top["signal_unit"])))
+    type_scores.sort(key=lambda item: (item[1], item[0]), reverse=True)
+
+    if type_scores and type_scores[0][1] > 0:
+        best_type, best_score, best_col, best_unit = type_scores[0]
+        ambiguous_type = False
+        same_column_conflict = len(type_scores) > 1 and type_scores[1][2] == best_col and type_scores[1][1] > 0
+        if len(type_scores) > 1 and ((type_scores[1][1] >= best_score - 2 and type_scores[1][1] > 0) or same_column_conflict):
+            ambiguous_type = True
+            warnings_list.append(
+                f"Analysis-type inference is ambiguous between {best_type} and {type_scores[1][0]}; review the selected signal column."
+            )
+        result["signal"] = best_col
+        result["inferred_signal_unit"] = best_unit or "unknown"
+        result["inferred_analysis_type"] = "unknown" if ambiguous_type else best_type
+        result["data_type"] = result["inferred_analysis_type"]
+        confidence["signal"] = "medium" if ambiguous_type else "high"
+        confidence["data_type"] = "review" if ambiguous_type else "high"
+        if ambiguous_type:
+            warnings_list.append("Analysis type remains unknown after import heuristics; review the selected signal column.")
+    else:
+        fallback_signal = None
+        for col in cols:
+            if col not in assigned and col in numeric_cols:
+                fallback_signal = col
+                break
+        result["signal"] = fallback_signal
+        result["data_type"] = "unknown"
+        result["inferred_analysis_type"] = "unknown"
+        result["inferred_signal_unit"] = _extract_unit(fallback_signal, "signal") if fallback_signal else "unknown"
+        confidence["signal"] = "review"
+        confidence["data_type"] = "review"
+        if fallback_signal is not None:
+            warnings_list.append(
+                f"Signal column was inferred by numeric fallback as '{fallback_signal}'; analysis type remains unknown."
+            )
+
+    if result["signal"]:
+        signal_unit = _extract_unit(str(result["signal"]), "signal")
+        result["inferred_signal_unit"] = signal_unit or "unknown"
+        inferred_type = str(result["data_type"]).upper()
+        if inferred_type == "TGA" and signal_unit not in {"%", "mg"}:
+            warnings_list.append(
+                f"TGA signal unit could not be confirmed from column '{result['signal']}'; review whether the signal is % or absolute mass."
+            )
+            confidence["signal"] = "review"
+        elif inferred_type == "DSC" and signal_unit in {"a.u.", "unknown"}:
+            warnings_list.append(
+                f"DSC signal unit could not be confirmed from column '{result['signal']}'; verify whether the signal is mW, mW/mg, or W/g."
+            )
+            confidence["signal"] = "medium"
+        elif inferred_type == "unknown":
+            warnings_list.append("Analysis type remains unresolved after import heuristics; review the file before stable analysis.")
+
+    result["warnings"] = warnings_list
+    result["confidence"] = {
+        "temperature": confidence.get("temperature", "review"),
+        "time": confidence.get("time", "review"),
+        "signal": confidence.get("signal", "review"),
+        "data_type": confidence.get("data_type", "review"),
+        "overall": _classify_import_confidence(
+            confidence.get("temperature", "review"),
+            confidence.get("signal", "review"),
+            confidence.get("data_type", "review"),
+        ),
+    }
     return result
 
 
@@ -521,24 +711,59 @@ _SIGNAL_UNIT_KEYWORDS = {
 _TIME_UNIT_MAP = {"min": "min", "s": "s", "sec": "s", "h": "h"}
 
 
-def detect_vendor(source_name: str = "", columns: list[str] | None = None) -> str:
-    """Heuristically classify common vendor exports."""
+def detect_vendor_info(source_name: str = "", columns: list[str] | None = None) -> dict[str, object]:
+    """Return vendor inference details for common thermal-analysis exports."""
     source_name = (source_name or "").lower()
     column_text = " ".join(str(col).lower() for col in (columns or []))
     combined = f"{source_name} {column_text}"
 
-    netzsch_tokens = ("netzsch", "proteus", "sta449", "dsc/(mw", "tg/%")
-    ta_tokens = ("ta instruments", "trios", "q200", "q20", "q500", "heat flow (", "weight (%)")
+    scores: dict[str, tuple[int, list[str]]] = {}
+    for vendor, tokens in _VENDOR_TOKEN_SETS.items():
+        matched = [token for token in tokens if token in combined]
+        score = 0
+        for token in matched:
+            score += 3 if token in source_name else 2
+        scores[vendor] = (score, matched)
 
-    if any(token in combined for token in netzsch_tokens):
-        return "NETZSCH"
-    if any(token in combined for token in ta_tokens):
-        return "TA"
-    return "Generic"
+    ranked = sorted(scores.items(), key=lambda item: (item[1][0], item[0]), reverse=True)
+    warnings_list: list[str] = []
+    if not ranked or ranked[0][1][0] <= 0:
+        warnings_list.append("Vendor detection remained generic; confirm the export source if vendor-specific conventions matter.")
+        return {
+            "vendor": "Generic",
+            "confidence": "review",
+            "warnings": warnings_list,
+            "matched_tokens": [],
+        }
+
+    best_vendor, (best_score, matched_tokens) = ranked[0]
+    confidence = "high" if best_score >= 4 else "medium"
+    if len(ranked) > 1 and ranked[1][1][0] >= best_score - 1 and ranked[1][1][0] > 0:
+        warnings_list.append(
+            f"Vendor inference is close between {best_vendor} and {ranked[1][0]}; review the source file naming and column headers."
+        )
+        confidence = "review"
+    elif confidence == "medium":
+        warnings_list.append(
+            f"Vendor '{best_vendor}' was inferred from limited header/file-name evidence; review before relying on vendor conventions."
+        )
+
+    return {
+        "vendor": best_vendor,
+        "confidence": confidence,
+        "warnings": warnings_list,
+        "matched_tokens": matched_tokens,
+    }
+
+
+def detect_vendor(source_name: str = "", columns: list[str] | None = None) -> str:
+    """Heuristically classify common vendor exports."""
+    return str(detect_vendor_info(source_name=source_name, columns=columns).get("vendor", "Generic"))
 
 
 def _extract_unit(col_name: str, role: str) -> str:
     """Try to extract a unit string from a column name like 'Temp/°C'."""
+    col_name = str(col_name)
     m = _UNIT_RE.search(col_name)
     unit_str = m.group(1).strip() if m else ""
     unit_lower = unit_str.lower()
@@ -549,6 +774,9 @@ def _extract_unit(col_name: str, role: str) -> str:
         for key, val in _SIGNAL_UNIT_KEYWORDS.items():
             if key in unit_lower:
                 return val
+        normalized_col = col_name.strip().lower()
+        if unit_lower == normalized_col or re.fullmatch(r"[a-zA-Z\s]+", unit_str or ""):
+            return "a.u."
         return unit_str or "a.u."
     if role == "time":
         return _TIME_UNIT_MAP.get(unit_lower, "s")
@@ -629,6 +857,9 @@ def read_thermal_data(
     # ------------------------------------------------------------------
     # Column mapping
     # ------------------------------------------------------------------
+    import_warnings: list[str] = []
+    import_confidence = "high"
+    inferred_analysis_type = "unknown"
     if column_mapping is None:
         guessed = guess_columns(raw_df)
         col_map = {
@@ -636,10 +867,16 @@ def read_thermal_data(
             for k, v in guessed.items()
             if k in ("temperature", "time", "signal") and v is not None
         }
-        detected_type = guessed.get("data_type", "unknown")
+        detected_type = str(guessed.get("data_type", "unknown"))
+        inferred_analysis_type = str(guessed.get("inferred_analysis_type", detected_type or "unknown"))
+        import_warnings.extend(str(item) for item in guessed.get("warnings", []))
+        import_confidence = str((guessed.get("confidence") or {}).get("overall", "review"))
     else:
         col_map = {k: v for k, v in column_mapping.items() if v is not None}
         detected_type = "unknown"
+        inferred_analysis_type = "unknown"
+        import_confidence = "medium"
+        import_warnings.append("Column mapping was supplied manually; verify the selected data type and units.")
 
     # Validate required columns
     if "temperature" not in col_map:
@@ -701,12 +938,33 @@ def read_thermal_data(
     if resolved_type not in ("DSC", "TGA", "DTA", "UNKNOWN"):
         logger.warning("Unrecognised data_type %r; falling back to 'unknown'.", resolved_type)
         resolved_type = "unknown"
+    if data_type and inferred_analysis_type not in ("unknown", resolved_type):
+        import_warnings.append(
+            f"Manual data type override '{resolved_type}' differs from the inferred analysis type '{inferred_analysis_type}'."
+        )
+        import_confidence = _classify_import_confidence(import_confidence, "medium")
 
     # ------------------------------------------------------------------
     # Final metadata
     # ------------------------------------------------------------------
-    vendor = detect_vendor(source_name=source_name, columns=list(raw_df.columns))
+    vendor_info = detect_vendor_info(source_name=source_name, columns=list(raw_df.columns))
+    vendor = str(vendor_info["vendor"])
+    import_warnings.extend(str(item) for item in vendor_info.get("warnings", []))
+    import_confidence = _classify_import_confidence(import_confidence, str(vendor_info.get("confidence", "review")))
     display_name = metadata.get("display_name") or os.path.basename(source_name) or metadata.get("sample_name", "")
+    inferred_signal_unit = _extract_unit(col_map["signal"], "signal") if "signal" in col_map else "unknown"
+    if resolved_type == "TGA" and inferred_signal_unit not in {"%", "mg"}:
+        import_warnings.append(
+            f"TGA signal unit could not be confirmed from column '{col_map['signal']}'; review whether the signal is % or absolute mass."
+        )
+        import_confidence = _classify_import_confidence(import_confidence, "review")
+    elif resolved_type == "DSC" and inferred_signal_unit in {"a.u.", ""}:
+        import_warnings.append(
+            f"DSC signal unit could not be confirmed from column '{col_map['signal']}'; review whether the signal is mW, mW/mg, or W/g."
+        )
+        import_confidence = _classify_import_confidence(import_confidence, "medium")
+
+    import_warnings = list(dict.fromkeys(warning for warning in import_warnings if warning))
 
     base_meta: dict = {
         "sample_name": metadata.get("sample_name", ""),
@@ -716,6 +974,19 @@ def read_thermal_data(
         "vendor": metadata.get("vendor", vendor),
         "display_name": display_name,
         "source_data_hash": _hash_dataframe(out_df),
+        "import_method": "manual_mapping" if column_mapping else "auto",
+        "import_confidence": import_confidence,
+        "import_review_required": bool(import_warnings or import_confidence == "review"),
+        "import_warnings": import_warnings,
+        "inferred_analysis_type": inferred_analysis_type,
+        "inferred_signal_unit": inferred_signal_unit,
+        "inferred_vendor": vendor,
+        "vendor_detection_confidence": vendor_info.get("confidence", "review"),
+        "import_format": "xlsx" if fmt["is_xlsx"] else "delimited_text",
+        "import_delimiter": fmt.get("delimiter") or ("xlsx" if fmt["is_xlsx"] else ""),
+        "import_decimal_sep": fmt.get("decimal_sep", "."),
+        "import_header_row": fmt.get("header_row", 0),
+        "import_data_start_row": fmt.get("data_start_row", 1),
     }
     for optional_key in ("atmosphere", "operator", "calibration_id", "method_template_id"):
         if metadata.get(optional_key) not in (None, ""):

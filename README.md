@@ -1,8 +1,8 @@
 # ThermoAnalyzer
 
-**Vendor-independent thermal analysis data processing tool for DSC, TGA, and DTA.**
+**Vendor-independent thermal analysis workbench with a stable DSC/TGA beta workflow and preview-only exploratory modules.**
 
-ThermoAnalyzer is an open-source, browser-based application built with Streamlit that imports, processes, and reports thermal analysis data from any instrument. It replaces proprietary vendor software with a modern, standards-compliant workflow -- from raw data upload to publication-ready Excel and Word exports.
+ThermoAnalyzer is an open-source, browser-based application built with Streamlit that imports, processes, and reports thermal analysis data from exported lab files. The current stable beta scope is DSC, TGA, Compare Workspace, Batch Template Runner, report/export, and project archive workflows. DTA, kinetics, and deconvolution remain preview modules for exploratory evaluation only.
 
 ---
 
@@ -10,18 +10,20 @@ ThermoAnalyzer is an open-source, browser-based application built with Streamlit
 
 ### Data Import & Processing
 - **Universal file support** -- CSV, TXT, TSV, and Excel files with automatic delimiter, encoding, and column detection
-- **Vendor-independent** -- works with data exported from TA Instruments, NETZSCH, Mettler Toledo, PerkinElmer, Shimadzu, and others
-- **Intelligent column mapping** -- regex-based auto-detection with manual override for temperature, signal, time, and mass columns
+- **Vendor-independent** -- best current support is for generic delimited exports plus common TA / NETZSCH-style text exports
+- **Review-aware import** -- ambiguous type, column, unit, and vendor guesses are flagged for review instead of being presented as fully trusted
+- **Intelligent column mapping** -- regex- and score-based auto-detection with manual override for temperature, signal, and time columns
 
 ### Analysis Modules
 
 | Module | Description |
 |---|---|
-| **DSC Analysis** | Smoothing, mass normalization, baseline correction (AsLS, AirPLS, SNIP, polynomial, rubber band, spline), peak detection with tangent-construction onset/endset, enthalpy integration, and glass transition (Tg) detection |
-| **TGA Analysis** | DTG curve computation, multi-step decomposition detection via tangent-intersection method, mass-loss quantification, and residue calculation |
-| **DTA Analysis** | Baseline correction, exothermic/endothermic peak identification, and qualitative thermal event characterization |
-| **Kinetic Analysis** | Kissinger, Ozawa-Flynn-Wall (OFW), and Friedman isoconversional methods with automatic Ea determination and regression diagnostics |
-| **Peak Deconvolution** | Multi-peak fitting with Gaussian, Lorentzian, and pseudo-Voigt profiles using lmfit; automatic initial parameter estimation |
+| **DSC Analysis (Stable Beta)** | Smoothing, mass normalization, baseline correction, peak detection, enthalpy integration, and glass-transition detection inside the current reproducible export/project workflow |
+| **TGA Analysis (Stable Beta)** | DTG curve computation, step detection, mass-loss quantification, residue calculation, and explicit unit-mode review context |
+| **Compare Workspace + Batch Template Runner (Stable Beta)** | Multi-run overlays and repeatable DSC/TGA template application across compatible datasets |
+| **DTA Analysis (Preview)** | Exploratory baseline correction and qualitative thermal-event characterization outside the stable beta promise |
+| **Kinetic Analysis (Preview)** | Exploratory Kissinger / OFW / Friedman workflows, not part of the stable commercial beta surface |
+| **Peak Deconvolution (Preview)** | Exploratory multi-peak fitting workflow, not part of the stable commercial beta surface |
 
 ### Export & Reporting
 - **Excel export** -- multi-sheet XLSX workbooks with raw and processed data
@@ -29,7 +31,7 @@ ThermoAnalyzer is an open-source, browser-based application built with Streamlit
 - **CSV summaries** -- flat-file export of all numeric results for downstream analysis
 
 ### User Interface
-- Multi-page navigation: Data Upload, Analysis (DSC/TGA/DTA/Kinetics/Deconvolution), Export & Report
+- Multi-page navigation with a stable primary workflow and preview modules behind an explicit toggle
 - Interactive Plotly charts with scientific axis labeling
 - Analysis pipeline history tracker
 - Professional dark sidebar theme with corporate styling
@@ -85,9 +87,9 @@ The application will open in your default browser at `http://localhost:8501`.
 
 1. Navigate to **Import Data** and upload a CSV/Excel file from your thermal analyzer
 2. Verify the auto-detected column mapping (temperature, signal, time)
-3. Select an analysis module (DSC, TGA, or DTA) from the sidebar
-4. Configure processing parameters (smoothing, baseline method, peak detection)
-5. Export results as Excel, Word, or CSV from the **Export & Report** page
+3. Review the import confidence, inferred data type, and signal unit before accepting the run
+4. Use **Compare Workspace** and then **DSC** or **TGA** for the stable beta workflow
+5. Export results as Excel, Word, or CSV from the **Export & Report** page, or save a `.thermozip` project archive
 
 Sample datasets are included in the `sample_data/` directory for testing:
 - `dsc_polymer_melting.csv` -- DSC polymer melting curve

@@ -42,6 +42,18 @@ def test_validate_thermal_dataset_warns_when_required_metadata_missing():
     assert any("Recommended metadata missing" in warning for warning in summary["warnings"])
 
 
+def test_validate_thermal_dataset_surfaces_import_review_context():
+    dataset = read_thermal_data(io.StringIO("Temperature,Weight\n30.0,100.0\n50.0,95.0\n70.0,90.0\n"))
+
+    summary = validate_thermal_dataset(dataset, analysis_type="TGA")
+
+    assert summary["checks"]["import_confidence"] == "review"
+    assert summary["checks"]["import_review_required"] is True
+    assert summary["checks"]["inferred_analysis_type"] == "TGA"
+    assert summary["checks"]["inferred_signal_unit"] == "a.u."
+    assert any("Import heuristics require review" in warning for warning in summary["warnings"])
+
+
 def test_ensure_processing_payload_backfills_legacy_workflow_template_label():
     processing = ensure_processing_payload({"workflow_template": "Polymer Tg"}, analysis_type="DSC")
 

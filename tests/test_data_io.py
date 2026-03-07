@@ -28,6 +28,7 @@ if _ROOT not in sys.path:
 from core.data_io import (
     ThermalDataset,
     detect_vendor,
+    detect_vendor_info,
     guess_columns,
     read_thermal_data,
     export_results_csv,
@@ -154,6 +155,45 @@ class TestGuessColumns:
         assert detect_vendor("trios.csv", ["Temperature (°C)", "Heat Flow (W/g)"]) == "TA"
         assert detect_vendor("generic.csv", ["Temperature", "Signal"]) == "Generic"
 
+    def test_detect_vendor_info_reports_review_for_generic_headers(self):
+        info = detect_vendor_info("generic.csv", ["Temperature", "Signal"])
+
+        assert info["vendor"] == "Generic"
+        assert info["confidence"] == "review"
+        assert info["warnings"]
+
+    def test_guess_columns_ambiguous_signal_column_warns_and_leaves_type_unknown(self):
+        df = pd.DataFrame(
+            {
+                "Temperature": [30.0, 50.0, 70.0],
+                "Signal": [0.1, 0.2, 0.3],
+                "Reference": [1.0, 1.0, 1.0],
+            }
+        )
+
+        result = guess_columns(df)
+
+        assert result["temperature"] == "Temperature"
+        assert result["signal"] == "Signal"
+        assert result["data_type"] == "unknown"
+        assert result["confidence"]["overall"] == "review"
+        assert any("analysis type remains unknown" in warning.lower() for warning in result["warnings"])
+
+    def test_guess_columns_misleading_header_warns_instead_of_overclaiming(self):
+        df = pd.DataFrame(
+            {
+                "Temp": [30.0, 50.0, 70.0],
+                "Weight (mW)": [1.0, 0.8, 0.5],
+            }
+        )
+
+        result = guess_columns(df)
+
+        assert result["temperature"] == "Temp"
+        assert result["signal"] == "Weight (mW)"
+        assert result["data_type"] == "unknown"
+        assert any("ambiguous" in warning.lower() for warning in result["warnings"])
+
 
 # ---------------------------------------------------------------------------
 # read_thermal_data with a temporary CSV file
@@ -247,6 +287,87 @@ class TestReadCSV:
         assert isinstance(ds, ThermalDataset)
         assert len(ds.data) == 3
         assert ds.metadata["vendor"] == "Generic"
+
+    def test_read_semicolon_delimited_generic_csv_records_import_review(self):
+        buf = io.StringIO(
+            "Temperature (°C);Signal\n"
+            "30.0;0.1\n"
+            "50.0;0.5\n"
+            "70.0;0.2\n"
+        )
+
+        ds = read_thermal_data(buf)
+
+        assert isinstance(ds, ThermalDataset)
+        assert len(ds.data) == 3
+        assert ds.metadata["import_delimiter"] == ";"
+        assert ds.metadata["import_confidence"] == "review"
+        assert ds.metadata["import_review_required"] is True
+
+    def test_read_tab_delimited_netzsch_like_export_is_unambiguous(self):
+        buf = io.StringIO(
+            "Temp./°C\tDSC/(mW/mg)\n"
+            "30.0\t0.10\n"
+            "50.0\t0.50\n"
+            "70.0\t0.15\n"
+        )
+
+        ds = read_thermal_data(buf)
+
+        assert ds.data_type == "DSC"
+        assert ds.units["signal"] == "mW/mg"
+        assert ds.metadata["vendor"] == "NETZSCH"
+        assert ds.metadata["vendor_detection_confidence"] in {"high", "medium"}
+        assert ds.metadata["import_delimiter"] == "\t"
+
+    def test_read_ta_like_export_sets_inferred_vendor_and_type(self):
+        buf = io.StringIO(
+            "Temperature (°C),Heat Flow (W/g)\n"
+            "30.0,0.10\n"
+            "50.0,0.50\n"
+            "70.0,0.15\n"
+        )
+
+        ds = read_thermal_data(buf)
+
+        assert ds.data_type == "DSC"
+        assert ds.units["signal"] == "W/g"
+        assert ds.metadata["vendor"] == "TA"
+        assert ds.metadata["inferred_vendor"] == "TA"
+        assert ds.metadata["import_confidence"] in {"high", "medium"}
+
+    def test_read_ambiguous_weight_column_requires_review(self):
+        buf = io.StringIO(
+            "Temperature,Weight\n"
+            "30.0,100.0\n"
+            "50.0,95.0\n"
+            "70.0,90.0\n"
+        )
+
+        ds = read_thermal_data(buf)
+
+        assert ds.data_type == "TGA"
+        assert ds.units["signal"] == "a.u."
+        assert ds.metadata["import_review_required"] is True
+        assert ds.metadata["import_confidence"] == "review"
+        assert any("absolute mass" in warning.lower() for warning in ds.metadata["import_warnings"])
+
+    def test_read_missing_metadata_still_populates_import_context(self):
+        buf = io.StringIO(
+            "Temperature (°C),Heat Flow (mW)\n"
+            "30.0,0.1\n"
+            "50.0,0.4\n"
+            "70.0,0.2\n"
+        )
+
+        ds = read_thermal_data(buf)
+
+        assert ds.metadata["import_method"] == "auto"
+        assert "import_confidence" in ds.metadata
+        assert "inferred_analysis_type" in ds.metadata
+        assert "inferred_signal_unit" in ds.metadata
+        assert "inferred_vendor" in ds.metadata
+        assert isinstance(ds.metadata["import_warnings"], list)
 
     def test_read_csv_raises_on_missing_temperature(self):
         """read_thermal_data should raise ValueError when temperature cannot be identified."""

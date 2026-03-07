@@ -25,8 +25,8 @@ def render():
     render_home_workflow_guide()
     st.info(
         tx(
-            "Kararlı ticari akış bu build'de Veri Alma -> Karşılaştırma Alanı -> DSC/TGA Analizi -> Rapor/Proje Kaydı zinciridir. DTA, kinetik ve dekonvolüsyon preview kapsamındadır.",
-            "The stable commercial workflow in this build is Import -> Compare Workspace -> DSC/TGA Analysis -> Report/Project Save. DTA, kinetics, and deconvolution remain preview modules.",
+            "Bu beta build'de kararlı akış Veri Alma -> Karşılaştırma Alanı -> DSC/TGA Analizi -> Batch Template Runner -> Rapor/Proje Kaydı zinciridir. DTA, kinetik ve dekonvolüsyon preview kapsamındadır.",
+            "In this beta build, the stable workflow is Import -> Compare Workspace -> DSC/TGA Analysis -> Batch Template Runner -> Report/Project Save. DTA, kinetics, and deconvolution remain preview modules.",
         )
     )
 
@@ -144,8 +144,27 @@ def render():
                             points=len(dataset.data),
                         )
                     )
-                    for warning in validation["warnings"]:
-                        st.warning(warning)
+                    if dataset.metadata.get("import_review_required"):
+                        st.warning(
+                            tx(
+                                "İçe aktarma otomatik ama inceleme gerektiriyor. Veri tipi, kolonlar ve sinyal birimini analizden önce kontrol edin.",
+                                "Import completed with review flags. Confirm the data type, columns, and signal unit before analysis.",
+                            )
+                        )
+                    st.caption(
+                        tx(
+                            "İçe aktarım güveni: {confidence} | Algılanan tip: {analysis_type} | Algılanan vendor: {vendor}",
+                            "Import confidence: {confidence} | Inferred type: {analysis_type} | Inferred vendor: {vendor}",
+                            confidence=str(dataset.metadata.get("import_confidence", "n/a")).upper(),
+                            analysis_type=dataset.metadata.get("inferred_analysis_type", dataset.data_type),
+                            vendor=dataset.metadata.get("inferred_vendor", dataset.metadata.get("vendor", "Generic")),
+                        )
+                    )
+                    emitted_warnings = []
+                    for warning in (dataset.metadata.get("import_warnings", []) or []) + (validation["warnings"] or []):
+                        if warning and warning not in emitted_warnings:
+                            emitted_warnings.append(warning)
+                            st.warning(warning)
 
                 except Exception as error:
                     error_id = record_exception(
@@ -275,8 +294,18 @@ def render():
                             parameters={"validation_status": validation["status"]},
                         )
                         st.success(tx("**{label}** yüklendi.", "Loaded **{label}**.", label=label))
-                        for warning in validation["warnings"]:
-                            st.warning(warning)
+                        st.caption(
+                            tx(
+                                "İçe aktarım güveni: {confidence}",
+                                "Import confidence: {confidence}",
+                                confidence=str(dataset.metadata.get("import_confidence", "n/a")).upper(),
+                            )
+                        )
+                        emitted_warnings = []
+                        for warning in (dataset.metadata.get("import_warnings", []) or []) + (validation["warnings"] or []):
+                            if warning and warning not in emitted_warnings:
+                                emitted_warnings.append(warning)
+                                st.warning(warning)
                         st.rerun()
                     except Exception as error:
                         error_id = record_exception(

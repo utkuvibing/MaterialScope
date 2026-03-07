@@ -87,6 +87,31 @@ def _processing_section(processing: dict[str, Any] | None, key: str) -> dict[str
     return value if isinstance(value, dict) else {}
 
 
+def _check_import_context(
+    *,
+    metadata: dict[str, Any],
+    checks: dict[str, Any],
+    warnings: list[str],
+) -> None:
+    import_confidence = metadata.get("import_confidence") or "not recorded"
+    import_review_required = bool(metadata.get("import_review_required"))
+    import_warnings = [str(item) for item in (metadata.get("import_warnings") or []) if item]
+    checks["import_confidence"] = import_confidence
+    checks["import_review_required"] = import_review_required
+    checks["inferred_analysis_type"] = metadata.get("inferred_analysis_type") or "not recorded"
+    checks["inferred_signal_unit"] = metadata.get("inferred_signal_unit") or "not recorded"
+    checks["inferred_vendor"] = metadata.get("inferred_vendor") or "not recorded"
+    checks["vendor_detection_confidence"] = metadata.get("vendor_detection_confidence") or "not recorded"
+
+    if import_confidence == "review":
+        warnings.append("Import heuristics require review before stable interpretation.")
+    elif import_confidence == "medium":
+        warnings.append("Import heuristics were partially inferred; verify columns, units, and analysis type.")
+
+    for warning in import_warnings:
+        warnings.append(f"Import review: {warning}")
+
+
 def _check_dsc_workflow(
     *,
     metadata: dict[str, Any],
@@ -351,6 +376,8 @@ def validate_thermal_dataset(
             f"Signal unit '{signal_unit}' is unusual for {normalized_analysis_type}; verify instrument/export settings."
         )
     checks["signal_unit"] = signal_unit or "unspecified"
+
+    _check_import_context(metadata=metadata, checks=checks, warnings=warnings)
 
     missing_metadata = [field for field in RECOMMENDED_METADATA_FIELDS if not metadata.get(field)]
     if missing_metadata:

@@ -34,6 +34,10 @@ def render_home_workflow_guide() -> None:
                         "Analiz sonuçlarını, grafikleri, rapor çıktısını ve proje arşivini aynı oturum içinde yönetir.",
                         "Keeps analysis results, figures, report exports, and project archives in the same session.",
                     ),
+                    tx(
+                        "Belirsiz import durumlarında review uyarıları üretir; kolon, tip ve sinyal birimi tahminlerini gizli kesinlik gibi sunmaz.",
+                        "Generates review warnings for ambiguous imports instead of presenting type, column, or signal-unit guesses as hidden certainty.",
+                    ),
                 ],
             )
 
@@ -45,6 +49,10 @@ def render_home_workflow_guide() -> None:
                     tx(
                         "2. Kolon eşlemesini, numune adını, numune kütlesini ve ısıtma hızını kontrol edin.",
                         "2. Review the column mapping, sample name, sample mass, and heating rate.",
+                    ),
+                    tx(
+                        "2a. İçe aktarım güveni review ise veri tipini ve sinyal birimini manuel olarak doğrulayın.",
+                        "2a. If the import confidence is review, manually confirm the data type and signal unit before continuing.",
                     ),
                     tx(
                         "3. Hızlı Görünüm veya Karşılaştırma Alanı ile koşunun beklediğiniz sinyali verdiğini doğrulayın.",
@@ -63,8 +71,8 @@ def render_home_workflow_guide() -> None:
 
         st.caption(
             tx(
-                "Yan çubuktaki dil seçici bu rehberi ve yeni açıklama metinlerini Türkçe/İngilizce arasında değiştirir.",
-                "The sidebar language selector switches this guide and the new explanatory text between Turkish and English.",
+                "Kararlı beta kapsamı: DSC, TGA, Karşılaştırma Alanı, Batch Template Runner, rapor/export ve proje arşivi. DTA, kinetik ve dekonvolüsyon preview kalır.",
+                "Stable beta scope: DSC, TGA, Compare Workspace, Batch Template Runner, report/export, and project archive flows. DTA, kinetics, and deconvolution remain preview.",
             )
         )
 
