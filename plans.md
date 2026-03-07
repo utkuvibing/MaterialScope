@@ -552,3 +552,4 @@ Prepare the current Streamlit-based ThermoAnalyzer build for professor beta dist
 - Chosen path: PyInstaller `onedir` + Inno Setup, so the current Streamlit app stays browser-based but installs like a normal Windows beta application.
 - Verification complete: `python -m py_compile` passed for the launcher/spec/runtime support files, `pytest tests/test_diagnostics.py -q` passed, and `pytest -q` passed with `198 passed, 5 warnings`.
 - Full installer generation was not executed in this environment because Inno Setup (`ISCC.exe`) was not present on the machine, but the build scripts and installer config were added and path-checked.
+- GitHub Actions automation now reuses the same packaging path through `.github/workflows/windows-beta-installer.yml` and uploads `ThermoAnalyzer_Beta_Setup_<APP_VERSION>.exe` as an artifact.

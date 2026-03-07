@@ -8,6 +8,7 @@ Professor-facing docs:
 - [Profesor Kurulum ve Kullanim Kilavuzu](PROFESOR_KURULUM_VE_KULLANIM_KILAVUZU.md)
 - [Professor Setup and Usage Guide](PROFESSOR_SETUP_AND_USAGE_GUIDE.md)
 - [Professor Beta Guide](PROFESSOR_BETA_GUIDE.md)
+- [Windows Beta Packaging](packaging/windows/README.md)
 
 ---
 

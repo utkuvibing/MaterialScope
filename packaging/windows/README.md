@@ -46,6 +46,52 @@ If Inno Setup is not installed in the default location, pass the compiler path:
 powershell -ExecutionPolicy Bypass -File packaging\windows\build_beta_installer.ps1 -IsccPath "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 ```
 
+## Build the installer in GitHub Actions
+
+The repo now includes a GitHub Actions workflow:
+
+```text
+Build Windows Beta Installer
+```
+
+### Manual trigger
+
+1. Open the repository on GitHub.
+2. Go to **Actions**.
+3. Select **Build Windows Beta Installer**.
+4. Click **Run workflow**.
+5. Wait for the Windows job to finish.
+6. Open the completed run and download the artifact from the **Artifacts** section.
+
+### Automatic trigger
+
+The same workflow also runs when you push a tag that starts with:
+
+```text
+v*
+```
+
+Example:
+
+```powershell
+git tag v2.0.0-beta1
+git push origin v2.0.0-beta1
+```
+
+## Expected artifact
+
+GitHub Actions uploads the final installer as an artifact named:
+
+```text
+ThermoAnalyzer_Beta_Setup_<APP_VERSION>.exe
+```
+
+Example:
+
+```text
+ThermoAnalyzer_Beta_Setup_2.0.exe
+```
+
 ## Output
 
 The final installer is written to:
