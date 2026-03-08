@@ -108,8 +108,8 @@ function Assert-PackagedRuntime {
 Write-Host "==> ThermoAnalyzer Windows beta build"
 Write-Host "Repo root: $repoRoot"
 
-& $PythonExe -c "import PyInstaller" 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) {
+$pyInstallerPresent = (& $PythonExe -c "import importlib.util; print('1' if importlib.util.find_spec('PyInstaller') else '0')" 2>$null | Out-String).Trim()
+if ($pyInstallerPresent -ne "1") {
     Write-Host "PyInstaller not found in the current environment. Installing it..."
     & $PythonExe -m pip install pyinstaller
     if ($LASTEXITCODE -ne 0) {

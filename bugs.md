@@ -235,3 +235,29 @@ Update `packaging/windows/build_beta_installer.ps1` to download or accept a loca
 - Run `pytest -q`
 - Manually confirm the installer script now references `vc_redist.x64.exe`, free-space checks, and writable `%LOCALAPPDATA%` runtime validation
 - Confirm GitHub Actions still builds the same `ThermoAnalyzer_Beta_Setup_<APP_VERSION>.exe` artifact through the unchanged workflow entry point
+
+### Title
+GitHub Actions Windows packaging failed on PyInstaller presence probe in PowerShell
+
+### Date
+2026-03-08
+
+### Repro
+1. Run the `Build Windows Beta Installer` workflow on `windows-latest`.
+2. Reach the `Build Windows beta installer` step.
+3. Observe failure in `packaging/windows/build_beta_installer.ps1` at `& $PythonExe -c "import PyInstaller" 2>$null | Out-Null`.
+
+### Suspected Cause
+The probe intentionally depends on a non-zero native exit code when `PyInstaller` is missing, but under CI PowerShell settings this emits a `NativeCommandError` and aborts before the script can evaluate `$LASTEXITCODE`.
+
+### Attempted Fix
+Keep the same packaging path and install behavior, but avoid a failing native-command probe by replacing `import PyInstaller` with a `find_spec()`-based check that reports presence via stdout.
+
+### Actual Fix
+In `packaging/windows/build_beta_installer.ps1`, replace the non-zero-exit `import PyInstaller` probe with `importlib.util.find_spec('PyInstaller')` output parsing (`"1"` present, otherwise install), leaving the existing `pip install pyinstaller` path unchanged.
+
+### Verification
+- Reproduce `NativeCommandError` behavior with a failing Python import under PowerShell `Stop` mode and native-command error handling enabled.
+- Verify the new `find_spec` probe returns `present=0` without throwing in the same PowerShell mode.
+- Run script syntax check: `powershell -NoProfile -Command "[void][ScriptBlock]::Create((Get-Content 'packaging/windows/build_beta_installer.ps1' -Raw))"`.
+- Residual risk: if Python itself is unavailable/broken, the script still fails early, which is correct for packaging.
