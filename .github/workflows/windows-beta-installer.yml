@@ -7,7 +7,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-windows-installer:
@@ -67,3 +67,24 @@ jobs:
           name: ${{ steps.meta.outputs.installer_file }}
           path: release/${{ steps.meta.outputs.installer_file }}
           if-no-files-found: error
+
+      - name: Publish installer to GitHub Release (tag builds)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          INSTALLER_FILE: ${{ steps.meta.outputs.installer_file }}
+        run: |
+          $installerPath = Join-Path (Resolve-Path .\release) $env:INSTALLER_FILE
+          if (-not (Test-Path $installerPath)) {
+            throw "Expected installer was not found: $installerPath"
+          }
+
+          gh release view $env:TAG_NAME *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:TAG_NAME $installerPath --title $env:TAG_NAME --notes "Automated Windows installer build for $env:TAG_NAME."
+          }
+          else {
+            gh release upload $env:TAG_NAME $installerPath --clobber
+          }
