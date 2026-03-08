@@ -2,7 +2,8 @@ param(
     [string]$PythonExe = "python",
     [string]$IsccPath = "",
     [string]$VcRedistPath = "",
-    [string]$VcRedistUrl = "https://aka.ms/vs/17/release/vc_redist.x64.exe"
+    [string]$VcRedistUrl = "https://aka.ms/vs/17/release/vc_redist.x64.exe",
+    [string]$SetupBaseName = "ThermoAnalyzer_Setup"
 )
 
 $ErrorActionPreference = "Stop"
@@ -121,6 +122,12 @@ $appVersion = (& $PythonExe -c "from utils.license_manager import APP_VERSION; p
 if (-not $appVersion) {
     throw "APP_VERSION could not be resolved."
 }
+if (-not $SetupBaseName -or $SetupBaseName.Trim().Length -eq 0) {
+    throw "SetupBaseName cannot be empty."
+}
+$SetupBaseName = $SetupBaseName.Trim()
+$expectedInstallerName = "{0}_{1}.exe" -f $SetupBaseName, $appVersion
+$expectedInstallerPath = Join-Path $releaseRoot $expectedInstallerName
 
 if (Test-Path $distRoot) {
     Remove-Item -Recurse -Force $distRoot
@@ -151,11 +158,14 @@ $resolvedVcRedist = Resolve-VcRedist -ExplicitPath $VcRedistPath -DownloadUrl $V
 
 $resolvedIscc = Resolve-Iscc -ExplicitPath $IsccPath
 Write-Host "==> Running Inno Setup: $resolvedIscc"
-& $resolvedIscc "/DMyAppVersion=$appVersion" "/DMySourceDist=$sourceDist" "/DMyRepoRoot=$repoRoot" "/DMyVcRedistPath=$resolvedVcRedist" $issPath
+& $resolvedIscc "/DMyAppVersion=$appVersion" "/DMySourceDist=$sourceDist" "/DMyRepoRoot=$repoRoot" "/DMyVcRedistPath=$resolvedVcRedist" "/DMySetupBaseName=$SetupBaseName" $issPath
 if ($LASTEXITCODE -ne 0) {
     throw "Inno Setup installer build failed."
+}
+if (-not (Test-Path $expectedInstallerPath)) {
+    throw "Installer output was not found at the expected path: $expectedInstallerPath"
 }
 
 Write-Host ""
 Write-Host "Build complete."
-Write-Host "Installer output: $(Join-Path $releaseRoot ("ThermoAnalyzer_Beta_Setup_" + $appVersion + ".exe"))"
+Write-Host "Installer output: $expectedInstallerPath"

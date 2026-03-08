@@ -9,6 +9,7 @@ Professor-facing docs:
 - [Professor Setup and Usage Guide](PROFESSOR_SETUP_AND_USAGE_GUIDE.md)
 - [Professor Beta Guide](PROFESSOR_BETA_GUIDE.md)
 - [Windows Beta Packaging](packaging/windows/README.md)
+- [Local Windows Release Prep](packaging/windows/RELEASE_PREP_LOCAL.md)
 
 ---
 

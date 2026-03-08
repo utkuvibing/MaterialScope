@@ -21,17 +21,19 @@ Onizleme durumunda olan ve uretim-guveni ile yorumlanmamasi gereken kisimlar:
 ## 2. Hocalar icin gerekli olan seyler
 
 - Windows bilgisayar
-- size verilen `ThermoAnalyzer_Beta_Setup.exe` dosyasi
+- ekip tarafindan paylasilan GitHub Release sayfasi baglantisi
+- `ThermoAnalyzer_Setup_<surum>.exe` dosyasi
 
 Bu beta dagitiminda **Python, pip veya terminal kullanmaniz gerekmez**.
 Kurulum dosyasi gerekli yerel onkosullari da otomatik olarak kontrol eder.
 
 ## 3. Kurulum
 
-1. `ThermoAnalyzer_Beta_Setup.exe` dosyasini cift tiklayin.
-2. Kurulum sihirbazinda `Ileri / Next` adimlarini izleyin.
-3. Istiyorsaniz masaustu kisayolu secenegini acik birakin.
-4. `Bitir / Finish` sonrasinda uygulamayi hemen baslatabilirsiniz.
+1. Size verilen GitHub Release sayfasina gidin ve **Assets** altindan `ThermoAnalyzer_Setup_<surum>.exe` dosyasini indirin.
+2. `ThermoAnalyzer_Setup_<surum>.exe` dosyasini cift tiklayin.
+3. Kurulum sihirbazinda `Ileri / Next` adimlarini izleyin.
+4. Istiyorsaniz masaustu kisayolu secenegini acik birakin.
+5. `Bitir / Finish` sonrasinda uygulamayi hemen baslatabilirsiniz.
 
 Eger Windows makinesinde paketli bilimsel kutuphanelerin kullandigi Microsoft uyumluluk bileseni eksikse, kurulum bunu otomatik algilar ve tek seferlik bir izin penceresiyle kendisi kurar. Ayrica ayri bir indirme yapmaniz gerekmez.
 

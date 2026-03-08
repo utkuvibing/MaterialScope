@@ -1,153 +1,100 @@
-# Windows Beta Packaging
+# Windows Setup Packaging (Local-First)
 
-This folder contains the minimum-risk Windows beta packaging flow for the current Streamlit-based ThermoAnalyzer repo.
+This folder defines the primary Windows distribution flow for ThermoAnalyzer:
 
-## Chosen packaging path
+1. Build locally on Windows.
+2. Produce one installer: `ThermoAnalyzer_Setup_<APP_VERSION>.exe`.
+3. Upload that `.exe` to GitHub Releases.
+4. End users only download and run `Setup.exe`.
 
-- **Runtime packaging:** PyInstaller `onedir`
-- **Installer:** Inno Setup 6
-- **Launch model:** small Windows launcher executable that starts the local Streamlit app and opens the default browser
+For the short release checklist, see [RELEASE_PREP_LOCAL.md](RELEASE_PREP_LOCAL.md).
 
-Why this path was chosen:
+## Packaging model (kept intentionally stable)
 
-- it keeps the current app and repo structure intact
-- it does not require a desktop-framework rewrite
-- it is more reliable for Streamlit, SciPy, Plotly, Kaleido, and report dependencies than a fragile `onefile` beta build
-- it gives professors an installer, a Start Menu entry, and an optional desktop shortcut
-- it allows prerequisite checks and compatibility-runtime bootstrapping without changing the app itself
+- Runtime packaging: PyInstaller `onedir`
+- Installer: Inno Setup 6
+- Launch model: local launcher that starts Streamlit and opens the default browser
 
-## Build prerequisites
+No architecture rewrite, no framework migration, and no data-contract changes are required.
 
-Build on a Windows machine with:
+## Prerequisites (build machine only)
 
+- Windows machine
 - Python 3.10+ available on PATH
-- the repo checked out locally
-- dependencies installed with `pip install -r requirements.txt`
-- Inno Setup 6 installed
-- internet access to download the official Microsoft VC++ Redistributable during packaging, unless you pass a local signed copy with `-VcRedistPath`
+- Repository checked out locally
+- Dependencies installed with `pip install -r requirements.txt`
+- Inno Setup 6 installed (`ISCC.exe`)
+- Internet access during build to download official Microsoft `vc_redist.x64.exe` (unless `-VcRedistPath` is provided)
 
-PyInstaller is installed automatically by the build script if it is missing from the active Python environment.
-The build script also downloads the current official `vc_redist.x64.exe` from Microsoft, verifies the Authenticode signature, and embeds it into the installer as a compatibility prerequisite.
+## Primary build commands (local Windows)
 
-## Build the installer
+From repo root:
 
-From the repo root:
+```powershell
+pip install -r requirements.txt
+powershell -ExecutionPolicy Bypass -File packaging\windows\build_beta_installer.ps1
+```
+
+Shortcut alternative:
 
 ```powershell
 packaging\windows\build_beta_installer.bat
 ```
 
-Or directly:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File packaging\windows\build_beta_installer.ps1
-```
-
-If you already have a local official VC++ redistributable installer, you can reuse it:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File packaging\windows\build_beta_installer.ps1 -VcRedistPath "C:\installers\vc_redist.x64.exe"
-```
-
-If Inno Setup is not installed in the default location, pass the compiler path:
+Optional flags:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging\windows\build_beta_installer.ps1 -IsccPath "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+powershell -ExecutionPolicy Bypass -File packaging\windows\build_beta_installer.ps1 -VcRedistPath "C:\installers\vc_redist.x64.exe"
+powershell -ExecutionPolicy Bypass -File packaging\windows\build_beta_installer.ps1 -SetupBaseName "ThermoAnalyzer_Setup"
 ```
 
-## Build the installer in GitHub Actions
+## Expected output
 
-The repo now includes a GitHub Actions workflow:
+Final installer:
 
 ```text
-Build Windows Beta Installer
-```
-
-### Manual trigger
-
-1. Open the repository on GitHub.
-2. Go to **Actions**.
-3. Select **Build Windows Beta Installer**.
-4. Click **Run workflow**.
-5. Wait for the Windows job to finish.
-6. Open the completed run and download the artifact from the **Artifacts** section.
-
-### Automatic trigger
-
-The same workflow also runs when you push a tag that starts with:
-
-```text
-v*
-```
-
-Example:
-
-```powershell
-git tag v2.0.0-beta1
-git push origin v2.0.0-beta1
-```
-
-## Expected artifact
-
-GitHub Actions uploads the final installer as an artifact named:
-
-```text
-ThermoAnalyzer_Beta_Setup_<APP_VERSION>.exe
+release\ThermoAnalyzer_Setup_<APP_VERSION>.exe
 ```
 
 Example:
 
 ```text
-ThermoAnalyzer_Beta_Setup_2.0.exe
+release\ThermoAnalyzer_Setup_2.0.exe
 ```
 
-## Output
-
-The final installer is written to:
-
-```text
-release\ThermoAnalyzer_Beta_Setup_<APP_VERSION>.exe
-```
-
-Intermediate PyInstaller output is written to:
+Intermediate build folders:
 
 ```text
 packaging\windows\dist\
 packaging\windows\build\
 ```
 
-## What the packaged app does
+## GitHub Release publish (manual, no Actions required)
 
-- installs a local launcher executable
-- stores writable runtime data under `%LOCALAPPDATA%\ThermoAnalyzer Beta`
-- seeds `.streamlit\config.toml` into the user runtime directory on first launch
-- starts the app on `127.0.0.1` and opens the browser automatically
-- keeps support logs out of `Program Files`
-- performs install-time sanity checks for free disk space and the writable per-user runtime directory
-- checks for the Microsoft Visual C++ runtime and attempts to install the official compatibility package automatically if the system copy is missing
+1. Open GitHub repository -> **Releases** -> **Draft a new release**.
+2. Tag/version the release (for example `v2.0.0-beta1`).
+3. Upload `release\ThermoAnalyzer_Setup_<APP_VERSION>.exe` as asset.
+4. Publish release.
 
-## What the professor sees
+Professor/end user path is then:
 
-1. Double-click `ThermoAnalyzer_Beta_Setup_<APP_VERSION>.exe`
-2. Click `Next`
-3. Click `Install`
-4. If Windows does not already have the required Microsoft compatibility runtime, Setup may show one Windows permission prompt for the bundled official runtime installer
-5. Click `Finish`
-6. Launch ThermoAnalyzer from the final page, the Start Menu, or the optional desktop shortcut
+- Release page
+- Download `ThermoAnalyzer_Setup_<APP_VERSION>.exe`
+- Double-click -> `Next` -> `Install` -> `Finish`
 
-Professors still do **not** need Python, pip, PATH edits, or terminal commands.
-The installed docs folder now also includes a simple Turkish `README.txt` and a Turkish `HELP.html`, and the Start Menu help shortcut points to the Turkish HTML help by default.
+## Optional: Actions path (secondary only)
 
-## Legal / distribution notes
+The repo still includes `.github/workflows/windows-beta-installer.yml` as an optional automation path. It is not required for the primary release model above.
 
-- The installer embeds the unmodified official Microsoft Visual C++ Redistributable installer.
-- ThermoAnalyzer does **not** vendor that binary in the git repo; it is staged during the build.
-- Redistribution and use remain subject to Microsoft's Visual Studio / Visual C++ redistributable license terms.
-- If your organization requires legal review, point them to Microsoft's current redistributable downloads and license terms before distribution.
+## End-user behavior
 
-## Known beta limitations
+- No Python, pip, PATH edits, terminal, or PowerShell needed on end-user machines.
+- Installer can auto-attempt Microsoft VC++ runtime compatibility install when missing.
+- Application runs locally and opens in browser (accepted beta behavior).
 
-- the app still runs in the browser; the installer does not turn it into a native desktop UI
-- some Windows systems may still show a first-launch firewall or browser prompt
-- if the machine is missing the Microsoft VC++ runtime, Windows may show a one-time permission prompt while Setup installs the bundled compatibility package
-- the packaged folder is larger than a simple script bundle because `onedir` is used for reliability
+## Known limitations
+
+- UI still opens in a browser tab (not a native desktop shell).
+- Some systems may show one-time Windows prompts (browser/firewall/runtime).
+- Installer size remains larger due to `onedir` reliability choice.

@@ -23,17 +23,19 @@ Preview-only areas that should not be treated as production-ready:
 ## 2. What professors need
 
 - A Windows computer
-- The provided `ThermoAnalyzer_Beta_Setup.exe` installer
+- GitHub Release page link provided by the team
+- The installer file `ThermoAnalyzer_Setup_<version>.exe`
 
 For the beta distribution, **no Python, pip, dependency installation, or terminal usage is required**.
 The installer also checks the local runtime prerequisites automatically.
 
 ## 3. Installation
 
-1. Double-click `ThermoAnalyzer_Beta_Setup.exe`.
-2. Follow the installer steps with `Next`.
-3. Leave the desktop-shortcut option enabled if you want quick access.
-4. Click `Finish` to complete the installation and optionally launch the app immediately.
+1. Open the provided GitHub Release page and download `ThermoAnalyzer_Setup_<version>.exe` from **Assets**.
+2. Double-click `ThermoAnalyzer_Setup_<version>.exe`.
+3. Follow the installer steps with `Next`.
+4. Leave the desktop-shortcut option enabled if you want quick access.
+5. Click `Finish` to complete the installation and optionally launch the app immediately.
 
 If the Windows machine is missing a Microsoft compatibility runtime used by packaged scientific libraries, Setup may show a single permission prompt and install it automatically. No manual download is required.
 

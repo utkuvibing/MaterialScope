@@ -18,6 +18,10 @@
   #error "MyVcRedistPath must point to the official VC++ redistributable installer."
 #endif
 
+#ifndef MySetupBaseName
+  #define MySetupBaseName "ThermoAnalyzer_Setup"
+#endif
+
 [Setup]
 AppId={{A1F0F66E-37BF-4F0D-B4CF-6C87601A5D6D}
 AppName={#MyAppName}
@@ -33,7 +37,7 @@ Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 OutputDir={#MyRepoRoot}\release
-OutputBaseFilename=ThermoAnalyzer_Beta_Setup_{#MyAppVersion}
+OutputBaseFilename={#MySetupBaseName}_{#MyAppVersion}
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]

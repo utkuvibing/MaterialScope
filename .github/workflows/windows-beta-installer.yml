@@ -43,7 +43,7 @@ jobs:
           if (-not $appVersion) {
             throw "APP_VERSION could not be resolved."
           }
-          $installerFile = "ThermoAnalyzer_Beta_Setup_$appVersion.exe"
+          $installerFile = "ThermoAnalyzer_Setup_$appVersion.exe"
           "app_version=$appVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "installer_file=$installerFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
