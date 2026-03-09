@@ -59,13 +59,34 @@
       white-space: pre-wrap;
       word-break: break-word;
     }
+    select {
+      min-width: 180px;
+      padding: 6px;
+    }
+    .small {
+      font-size: 0.9rem;
+      color: #4b5563;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    th, td {
+      border: 1px solid #dbe3ed;
+      padding: 6px 8px;
+      text-align: left;
+    }
+    th {
+      background: #eef2f7;
+    }
     .ok { color: #0f766e; }
     .fail { color: #b91c1c; }
   </style>
 </head>
 <body>
   <main>
-    <h1>ThermoAnalyzer Desktop Bootstrap</h1>
+    <h1>ThermoAnalyzer Desktop Workflow Skeleton</h1>
     <div class="card">
       <div id="bootstrap"></div>
       <div id="health"></div>
@@ -74,11 +95,72 @@
 
     <div class="card">
       <div class="row">
+        <button id="newWorkspaceBtn">New Workspace</button>
         <button id="openProjectBtn">Open .thermozip</button>
-        <button id="saveProjectBtn" disabled>Save Loaded Project</button>
+        <button id="saveProjectBtn" disabled>Save Workspace</button>
       </div>
-      <p id="projectInfo">No project loaded yet.</p>
+      <p id="projectInfo">No workspace active.</p>
       <pre id="projectSummary"></pre>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <button id="importDatasetBtn" disabled>Import Dataset</button>
+        <label for="datasetTypeSelect" class="small">Import Type Override:</label>
+        <select id="datasetTypeSelect">
+          <option value="">Auto</option>
+          <option value="DSC">DSC</option>
+          <option value="TGA">TGA</option>
+          <option value="DTA">DTA</option>
+        </select>
+      </div>
+      <p class="small">Datasets</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Use</th>
+            <th>Key</th>
+            <th>Type</th>
+            <th>Sample</th>
+            <th>Validation</th>
+            <th>Warnings</th>
+            <th>Issues</th>
+          </tr>
+        </thead>
+        <tbody id="datasetsBody"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <label for="analysisTypeSelect">Analysis:</label>
+        <select id="analysisTypeSelect">
+          <option value="DSC">DSC</option>
+          <option value="TGA">TGA</option>
+        </select>
+        <button id="runAnalysisBtn" disabled>Run Analysis</button>
+      </div>
+      <p id="analysisInfo" class="small">No analysis executed yet.</p>
+      <pre id="analysisSummary"></pre>
+    </div>
+
+    <div class="card">
+      <p class="small">Results</p>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Dataset</th>
+            <th>Validation</th>
+            <th>Calib</th>
+            <th>Reference</th>
+            <th>Saved At (UTC)</th>
+          </tr>
+        </thead>
+        <tbody id="resultsBody"></tbody>
+      </table>
     </div>
 
     <div class="card">
@@ -89,4 +171,3 @@
   <script src="./renderer.js"></script>
 </body>
 </html>
-

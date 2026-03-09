@@ -1,4 +1,4 @@
-"""Minimal DTOs for the tranche-1 backend surface."""
+"""Minimal DTOs for backend desktop workflow tranches."""
 
 from __future__ import annotations
 
@@ -44,3 +44,90 @@ class ProjectSaveResponse(BaseModel):
     file_name: str
     archive_base64: str
 
+
+class WorkspaceCreateResponse(BaseModel):
+    project_id: str
+    summary: ProjectSummary
+
+
+class WorkspaceSummaryResponse(BaseModel):
+    project_id: str
+    summary: ProjectSummary
+
+
+class DatasetSummary(BaseModel):
+    key: str
+    display_name: str
+    data_type: str
+    points: int
+    vendor: str
+    sample_name: str
+    heating_rate: float | None = None
+    import_confidence: str | None = None
+    validation_status: str
+    warning_count: int
+    issue_count: int
+
+
+class DatasetsListResponse(BaseModel):
+    project_id: str
+    active_dataset: str | None = None
+    datasets: list[DatasetSummary]
+
+
+class ResultSummary(BaseModel):
+    id: str
+    analysis_type: str
+    status: str
+    dataset_key: str | None = None
+    validation_status: str | None = None
+    warning_count: int = 0
+    issue_count: int = 0
+    workflow_template: str | None = None
+    saved_at_utc: str | None = None
+    calibration_state: str | None = None
+    reference_state: str | None = None
+
+
+class ResultsListResponse(BaseModel):
+    project_id: str
+    results: list[ResultSummary]
+
+
+class DatasetImportRequest(BaseModel):
+    project_id: str = Field(..., min_length=1)
+    file_name: str = Field(..., min_length=1)
+    file_base64: str = Field(..., min_length=1)
+    data_type: str | None = None
+
+
+class ValidationSummary(BaseModel):
+    status: str
+    warning_count: int = 0
+    issue_count: int = 0
+
+
+class DatasetImportResponse(BaseModel):
+    project_id: str
+    dataset: DatasetSummary
+    validation: ValidationSummary
+    summary: ProjectSummary
+
+
+class AnalysisRunRequest(BaseModel):
+    project_id: str = Field(..., min_length=1)
+    dataset_key: str = Field(..., min_length=1)
+    analysis_type: str = Field(..., min_length=1)
+    workflow_template_id: str | None = None
+
+
+class AnalysisRunResponse(BaseModel):
+    project_id: str
+    dataset_key: str
+    analysis_type: str
+    execution_status: str
+    result_id: str | None = None
+    failure_reason: str | None = None
+    validation: ValidationSummary
+    provenance: dict[str, str | None]
+    summary: ProjectSummary

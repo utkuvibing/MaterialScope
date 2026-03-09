@@ -711,10 +711,73 @@ Create the smallest safe foundation for brownfield migration from Streamlit shel
   - `pytest -q`
 
 ### Progress Log
-- [ ] Add backend service skeleton
-- [ ] Add Electron bootstrap shell
-- [ ] Add backend API/startup tests
-- [ ] Run focused and full pytest suites
+- [x] Add backend service skeleton
+- [x] Add Electron bootstrap shell
+- [x] Add backend API/startup tests
+- [x] Run focused and full pytest suites
 
 ### Notes
 - Fallback/rollback remains immediate: continue using `streamlit run app.py` and current Windows packaging scripts until later migration phases complete.
+
+---
+
+## Title
+Electron Migration Tranche 2 - Minimal Desktop Workflow Skeleton
+
+### Objective
+Establish the first usable desktop workflow (still minimal) by extending backend and Electron UI to cover import, dataset/result listing, single-run DSC/TGA analysis trigger, and project save/load continuity.
+
+### Definition Of Done
+- Backend exposes minimal additional endpoints for:
+  - workspace summary retrieval
+  - dataset import and listing
+  - result listing
+  - single-run DSC/TGA analysis trigger on selected dataset
+- Electron window moves beyond status-only screen and supports:
+  - create/load workspace
+  - import dataset file
+  - list datasets/results
+  - run DSC/TGA analysis on selected dataset
+  - save workspace archive
+- Analysis endpoints reuse existing core stable-path logic and preserve normalized result records.
+- `.thermozip` compatibility remains unchanged.
+- Streamlit fallback path remains intact.
+
+### Constraints
+- No full feature parity push in this tranche.
+- No report/export parity or batch-runner parity in desktop UI.
+- No preview-module desktop migration.
+- No numerical algorithm rewrites.
+- No normalized result/export contract changes.
+- No `.thermozip` format changes.
+
+### Impact Analysis
+- Backend files: `backend/app.py`, `backend/models.py`, `backend/store.py`, plus a small workspace helper module.
+- Desktop files: `desktop/electron/main.js`, `desktop/electron/preload.js`, `desktop/electron/index.html`, `desktop/electron/renderer.js`.
+- Tests: backend API contract and workflow integration coverage for import + analysis path.
+
+### Risks
+- Dataset import in desktop path depends on file-name/context provided by Electron IPC payload.
+- Single-step analysis endpoint should remain conservative and template-driven to avoid silent behavior drift.
+- In-memory backend state remains non-persistent between app sessions (expected for now).
+
+### Migration / Rollout Strategy
+- Add backend endpoints first, reusing existing core contracts and orchestration.
+- Wire a simple, explicit Electron UI around those endpoints.
+- Keep scope to stable DSC/TGA workflow skeleton only.
+- Preserve Streamlit and existing packaging path as immediate rollback.
+
+### Test Strategy
+- Run focused workflow/API tests:
+  - `pytest tests/test_backend_api.py tests/test_backend_workflow.py tests/test_backend_startup.py -q`
+- Run full suite:
+  - `pytest -q`
+
+### Progress Log
+- [x] Extend backend endpoints for minimal workflow
+- [x] Extend Electron UI to workflow skeleton
+- [x] Add workflow integration tests (import + analysis)
+- [x] Run focused and full test suites
+
+### Notes
+- This tranche is intentionally correctness-first and UI-minimal; appearance and broader parity are deferred.

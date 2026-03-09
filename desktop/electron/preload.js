@@ -44,8 +44,23 @@ contextBridge.exposeInMainWorld("taDesktop", {
   async getVersion() {
     return apiCall("/version", { method: "GET" });
   },
+  async createWorkspace() {
+    return apiCall("/workspace/new", { method: "POST" });
+  },
+  async getWorkspaceSummary(projectId) {
+    return apiCall(`/workspace/${encodeURIComponent(projectId)}`, { method: "GET" });
+  },
+  async listDatasets(projectId) {
+    return apiCall(`/workspace/${encodeURIComponent(projectId)}/datasets`, { method: "GET" });
+  },
+  async listResults(projectId) {
+    return apiCall(`/workspace/${encodeURIComponent(projectId)}/results`, { method: "GET" });
+  },
   async pickProjectArchive() {
     return ipcRenderer.invoke("ta:pick-project-archive");
+  },
+  async pickDatasetFile() {
+    return ipcRenderer.invoke("ta:pick-dataset-file");
   },
   async loadProjectArchive(archiveBase64) {
     return apiCall("/project/load", {
@@ -59,6 +74,27 @@ contextBridge.exposeInMainWorld("taDesktop", {
       body: JSON.stringify({ project_id: projectId }),
     });
   },
+  async importDataset(projectId, fileName, fileBase64, dataType) {
+    return apiCall("/dataset/import", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: projectId,
+        file_name: fileName,
+        file_base64: fileBase64,
+        data_type: dataType || null,
+      }),
+    });
+  },
+  async runAnalysis(projectId, datasetKey, analysisType) {
+    return apiCall("/analysis/run", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: projectId,
+        dataset_key: datasetKey,
+        analysis_type: analysisType,
+      }),
+    });
+  },
   async persistProjectArchive(defaultName, archiveBase64) {
     return ipcRenderer.invoke("ta:save-project-archive", {
       defaultName,
@@ -66,4 +102,3 @@ contextBridge.exposeInMainWorld("taDesktop", {
     });
   },
 });
-

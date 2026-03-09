@@ -103,3 +103,20 @@ def test_project_save_rejects_unknown_project_id():
     assert response.status_code == 404
     assert "Unknown project_id" in response.json()["detail"]
 
+
+def test_workspace_new_and_summary():
+    app = create_app(api_token="test-token")
+    client = TestClient(app)
+
+    create_response = client.post("/workspace/new", headers=_auth_headers())
+    assert create_response.status_code == 200
+    payload = create_response.json()
+    project_id = payload["project_id"]
+    assert payload["summary"]["dataset_count"] == 0
+    assert payload["summary"]["result_count"] == 0
+
+    summary_response = client.get(f"/workspace/{project_id}", headers=_auth_headers())
+    assert summary_response.status_code == 200
+    summary = summary_response.json()["summary"]
+    assert summary["dataset_count"] == 0
+    assert summary["result_count"] == 0

@@ -152,6 +152,29 @@ ipcMain.handle("ta:save-project-archive", async (_event, payload) => {
   return { canceled: false, filePath: result.filePath };
 });
 
+ipcMain.handle("ta:pick-dataset-file", async () => {
+  const result = await dialog.showOpenDialog({
+    title: "Import Dataset",
+    properties: ["openFile"],
+    filters: [
+      { name: "Thermal Data", extensions: ["csv", "txt", "tsv", "xlsx", "xls"] },
+      { name: "All Files", extensions: ["*"] },
+    ],
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return { canceled: true };
+  }
+
+  const filePath = result.filePaths[0];
+  const fileBuffer = fs.readFileSync(filePath);
+  return {
+    canceled: false,
+    filePath,
+    fileName: path.basename(filePath),
+    fileBase64: fileBuffer.toString("base64"),
+  };
+});
+
 app.whenReady().then(async () => {
   try {
     await startBackend();
@@ -174,4 +197,3 @@ app.on("window-all-closed", () => {
 app.on("before-quit", () => {
   stopBackend();
 });
-

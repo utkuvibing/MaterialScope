@@ -24,3 +24,9 @@ class ProjectStore:
         with self._lock:
             return self._projects.get(project_id)
 
+    def set(self, project_id: str, project_state: dict[str, Any]) -> bool:
+        with self._lock:
+            if project_id not in self._projects:
+                return False
+            self._projects[project_id] = project_state
+            return True

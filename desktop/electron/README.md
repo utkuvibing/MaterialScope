@@ -1,16 +1,21 @@
-# Electron Bootstrap (Tranche 1)
+# Electron Desktop Skeleton (Tranche 2)
 
-This directory contains a minimal desktop bootstrap shell for the first migration tranche.
+This directory contains a minimal desktop workflow shell for early migration tranches.
 
 What it does:
 - launches local Python backend (`backend/main.py`)
 - waits for `/health`
 - opens an Electron window
 - shows backend status + version
-- provides `.thermozip` open/save smoke actions through backend `/project/load` and `/project/save`
+- supports a minimal workflow:
+  - create/load workspace (`.thermozip`)
+  - list datasets and results
+  - import a dataset file
+  - run one DSC/TGA analysis on a selected dataset
+  - save workspace to `.thermozip`
 
 What it does not do:
-- does not migrate Streamlit pages
+- does not migrate full Streamlit page parity
 - does not change scientific algorithms
 - does not replace current Windows packaging flow yet
 
@@ -26,4 +31,3 @@ npm start
 
 Optional environment variable:
 - `TA_PYTHON` to override Python executable used for backend launch.
-
