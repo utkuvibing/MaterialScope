@@ -10,9 +10,18 @@ import uuid
 from fastapi import FastAPI, Header, HTTPException
 
 from backend import BACKEND_API_VERSION
+from backend.detail import (
+    build_dataset_detail,
+    build_result_detail,
+    normalize_compare_workspace,
+    update_compare_workspace,
+)
 from backend.models import (
     AnalysisRunRequest,
     AnalysisRunResponse,
+    CompareWorkspaceResponse,
+    CompareWorkspaceUpdateRequest,
+    DatasetDetailResponse,
     DatasetImportRequest,
     DatasetImportResponse,
     DatasetsListResponse,
@@ -22,6 +31,7 @@ from backend.models import (
     ProjectSaveRequest,
     ProjectSaveResponse,
     ProjectSummary,
+    ResultDetailResponse,
     ResultsListResponse,
     ValidationSummary,
     VersionResponse,
@@ -175,6 +185,66 @@ def create_app(*, api_token: str | None = None, store: ProjectStore | None = Non
         items = [summarize_result(record) for record in valid_results.values()]
         items.sort(key=lambda item: item.id)
         return ResultsListResponse(project_id=project_id, results=items)
+
+    @app.get("/workspace/{project_id}/datasets/{dataset_key}", response_model=DatasetDetailResponse)
+    def dataset_detail(
+        project_id: str,
+        dataset_key: str,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> DatasetDetailResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        try:
+            payload = build_dataset_detail(state, dataset_key)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return DatasetDetailResponse(project_id=project_id, **payload)
+
+    @app.get("/workspace/{project_id}/results/{result_id}", response_model=ResultDetailResponse)
+    def result_detail(
+        project_id: str,
+        result_id: str,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> ResultDetailResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        try:
+            payload = build_result_detail(state, result_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return ResultDetailResponse(project_id=project_id, **payload)
+
+    @app.get("/workspace/{project_id}/compare", response_model=CompareWorkspaceResponse)
+    def compare_workspace_get(
+        project_id: str,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> CompareWorkspaceResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        payload = normalize_compare_workspace(state)
+        return CompareWorkspaceResponse(project_id=project_id, compare_workspace=payload)
+
+    @app.put("/workspace/{project_id}/compare", response_model=CompareWorkspaceResponse)
+    def compare_workspace_put(
+        project_id: str,
+        request: CompareWorkspaceUpdateRequest,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> CompareWorkspaceResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        try:
+            payload = update_compare_workspace(
+                state,
+                analysis_type=request.analysis_type,
+                selected_datasets=request.selected_datasets,
+                notes=request.notes,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        project_store.set(project_id, state)
+        return CompareWorkspaceResponse(project_id=project_id, compare_workspace=payload)
 
     @app.post("/dataset/import", response_model=DatasetImportResponse)
     def dataset_import(

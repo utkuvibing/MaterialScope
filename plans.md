@@ -781,3 +781,57 @@ Establish the first usable desktop workflow (still minimal) by extending backend
 
 ### Notes
 - This tranche is intentionally correctness-first and UI-minimal; appearance and broader parity are deferred.
+
+---
+
+## Title
+Electron Migration Tranche 3 - Workflow Detail Visibility
+
+### Objective
+Improve desktop stable-workflow usability by exposing dataset/result details and basic compare workspace visibility/editing, while keeping contracts and scope tightly controlled.
+
+### Definition Of Done
+- Backend exposes minimal detail endpoints for dataset and result inspection.
+- Backend exposes minimal compare workspace read/write endpoints using existing stored state shape.
+- Electron renderer surfaces:
+  - dataset detail (validation/metadata/units/preview)
+  - result detail (summary/processing/validation/provenance/review)
+  - basic compare workspace selection visibility and note editing
+- Streamlit fallback remains untouched.
+- No schema/format changes to normalized results or `.thermozip`.
+
+### Constraints
+- No full parity, no report/export parity, no batch parity, no preview modules.
+- No numerical algorithm changes.
+- No packaging/signing work.
+
+### Impact Analysis
+- Backend files: `backend/models.py`, `backend/app.py`, `backend/detail.py`.
+- Desktop files: `desktop/electron/preload.js`, `desktop/electron/index.html`, `desktop/electron/renderer.js`, `desktop/electron/README.md`.
+- Tests: backend API/detail coverage and workflow integration assertions.
+
+### Risks
+- Detail payload size may grow with richer metadata/validation payloads.
+- Compare selection is basic and intentionally does not include batch execution behavior.
+- In-memory backend store remains non-persistent across app restarts (known limitation).
+
+### Migration / Rollout Strategy
+- Add read-oriented detail endpoints first.
+- Add small compare state read/write endpoint pair.
+- Wire renderer to inspect/edit these details without introducing a frontend framework.
+
+### Test Strategy
+- Run focused backend tests:
+  - `pytest tests/test_backend_api.py tests/test_backend_details.py tests/test_backend_workflow.py tests/test_backend_startup.py -q`
+- Run full regression suite:
+  - `pytest -q`
+
+### Progress Log
+- [x] Add dataset/result detail endpoints
+- [x] Add compare workspace read/write endpoints
+- [x] Improve desktop renderer detail visibility
+- [x] Add/expand endpoint and integration tests
+- [x] Run focused and full test suites
+
+### Notes
+- This tranche deepens usability for DSC/TGA desktop testing while preserving strict scope limits and compatibility constraints.

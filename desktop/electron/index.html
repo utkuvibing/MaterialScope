@@ -119,6 +119,7 @@
         <thead>
           <tr>
             <th>Use</th>
+            <th>Inspect</th>
             <th>Key</th>
             <th>Type</th>
             <th>Sample</th>
@@ -129,6 +130,8 @@
         </thead>
         <tbody id="datasetsBody"></tbody>
       </table>
+      <p id="datasetDetailInfo" class="small">No dataset detail selected.</p>
+      <pre id="datasetDetail"></pre>
     </div>
 
     <div class="card">
@@ -149,6 +152,7 @@
       <table>
         <thead>
           <tr>
+            <th>Inspect</th>
             <th>ID</th>
             <th>Type</th>
             <th>Status</th>
@@ -161,6 +165,27 @@
         </thead>
         <tbody id="resultsBody"></tbody>
       </table>
+      <p id="resultDetailInfo" class="small">No result detail selected.</p>
+      <pre id="resultDetail"></pre>
+    </div>
+
+    <div class="card">
+      <p class="small">Compare Workspace (Basic)</p>
+      <div class="row">
+        <label for="compareTypeSelect">Type:</label>
+        <select id="compareTypeSelect">
+          <option value="DSC">DSC</option>
+          <option value="TGA">TGA</option>
+        </select>
+      </div>
+      <div id="compareDatasetChecks" class="small"></div>
+      <label for="compareNotes">Notes</label>
+      <textarea id="compareNotes" rows="4" style="width:100%;"></textarea>
+      <div class="row">
+        <button id="refreshCompareBtn" disabled>Refresh Compare</button>
+        <button id="saveCompareBtn" disabled>Save Compare Selection</button>
+      </div>
+      <pre id="compareSummary"></pre>
     </div>
 
     <div class="card">

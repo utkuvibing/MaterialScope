@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -131,3 +133,45 @@ class AnalysisRunResponse(BaseModel):
     validation: ValidationSummary
     provenance: dict[str, str | None]
     summary: ProjectSummary
+
+
+class DatasetDetailResponse(BaseModel):
+    project_id: str
+    dataset: DatasetSummary
+    validation: dict[str, Any]
+    metadata: dict[str, Any]
+    units: dict[str, Any]
+    original_columns: dict[str, Any]
+    data_preview: list[dict[str, Any]]
+    compare_selected: bool = False
+
+
+class ResultDetailResponse(BaseModel):
+    project_id: str
+    result: ResultSummary
+    summary: dict[str, Any]
+    processing: dict[str, Any]
+    provenance: dict[str, Any]
+    validation: dict[str, Any]
+    review: dict[str, Any]
+    rows_preview: list[dict[str, Any]]
+    row_count: int
+
+
+class CompareWorkspacePayload(BaseModel):
+    analysis_type: str = "DSC"
+    selected_datasets: list[str] = Field(default_factory=list)
+    notes: str = ""
+    figure_key: str | None = None
+    saved_at: str | None = None
+
+
+class CompareWorkspaceResponse(BaseModel):
+    project_id: str
+    compare_workspace: CompareWorkspacePayload
+
+
+class CompareWorkspaceUpdateRequest(BaseModel):
+    analysis_type: str | None = None
+    selected_datasets: list[str] | None = None
+    notes: str | None = None

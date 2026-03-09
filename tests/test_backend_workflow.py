@@ -70,6 +70,17 @@ def test_workspace_import_run_analysis_and_save_roundtrip(thermal_dataset):
     assert results[0]["id"] == run_payload["result_id"]
     assert results[0]["analysis_type"] == "DSC"
 
+    result_detail_response = client.get(
+        f"/workspace/{project_id}/results/{run_payload['result_id']}",
+        headers=_headers(),
+    )
+    assert result_detail_response.status_code == 200
+    result_detail = result_detail_response.json()
+    assert result_detail["result"]["id"] == run_payload["result_id"]
+    assert "processing" in result_detail
+    assert "validation" in result_detail
+    assert "provenance" in result_detail
+
     save_response = client.post(
         "/project/save",
         headers=_headers(),

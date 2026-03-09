@@ -120,3 +120,13 @@ def test_workspace_new_and_summary():
     summary = summary_response.json()["summary"]
     assert summary["dataset_count"] == 0
     assert summary["result_count"] == 0
+
+
+def test_dataset_detail_rejects_unknown_dataset():
+    app = create_app(api_token="test-token")
+    client = TestClient(app)
+    project_id = client.post("/workspace/new", headers=_auth_headers()).json()["project_id"]
+
+    response = client.get(f"/workspace/{project_id}/datasets/missing", headers=_auth_headers())
+    assert response.status_code == 404
+    assert "Unknown dataset_key" in response.json()["detail"]

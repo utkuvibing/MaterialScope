@@ -53,8 +53,29 @@ contextBridge.exposeInMainWorld("taDesktop", {
   async listDatasets(projectId) {
     return apiCall(`/workspace/${encodeURIComponent(projectId)}/datasets`, { method: "GET" });
   },
+  async getDatasetDetail(projectId, datasetKey) {
+    return apiCall(
+      `/workspace/${encodeURIComponent(projectId)}/datasets/${encodeURIComponent(datasetKey)}`,
+      { method: "GET" }
+    );
+  },
   async listResults(projectId) {
     return apiCall(`/workspace/${encodeURIComponent(projectId)}/results`, { method: "GET" });
+  },
+  async getResultDetail(projectId, resultId) {
+    return apiCall(
+      `/workspace/${encodeURIComponent(projectId)}/results/${encodeURIComponent(resultId)}`,
+      { method: "GET" }
+    );
+  },
+  async getCompareWorkspace(projectId) {
+    return apiCall(`/workspace/${encodeURIComponent(projectId)}/compare`, { method: "GET" });
+  },
+  async updateCompareWorkspace(projectId, payload) {
+    return apiCall(`/workspace/${encodeURIComponent(projectId)}/compare`, {
+      method: "PUT",
+      body: JSON.stringify(payload || {}),
+    });
   },
   async pickProjectArchive() {
     return ipcRenderer.invoke("ta:pick-project-archive");
