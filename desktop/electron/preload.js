@@ -1,0 +1,69 @@
+const { contextBridge, ipcRenderer } = require("electron");
+
+function readArgValue(name) {
+  const prefix = `--${name}=`;
+  const token = process.argv.find((item) => item.startsWith(prefix));
+  return token ? token.slice(prefix.length) : "";
+}
+
+const backendUrl = readArgValue("ta-backend-url");
+const backendToken = readArgValue("ta-backend-token");
+
+async function apiCall(pathname, options) {
+  const headers = {
+    "Content-Type": "application/json",
+    "X-TA-Token": backendToken,
+    ...(options && options.headers ? options.headers : {}),
+  };
+  const response = await fetch(`${backendUrl}${pathname}`, {
+    ...(options || {}),
+    headers,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const detail = payload && payload.detail ? payload.detail : `${response.status}`;
+    throw new Error(detail);
+  }
+  return payload;
+}
+
+contextBridge.exposeInMainWorld("taDesktop", {
+  getBackendBootstrap() {
+    return {
+      backendUrl,
+      hasToken: Boolean(backendToken),
+    };
+  },
+  async checkHealth() {
+    const response = await fetch(`${backendUrl}/health`);
+    if (!response.ok) {
+      throw new Error(`Health check failed (${response.status})`);
+    }
+    return response.json();
+  },
+  async getVersion() {
+    return apiCall("/version", { method: "GET" });
+  },
+  async pickProjectArchive() {
+    return ipcRenderer.invoke("ta:pick-project-archive");
+  },
+  async loadProjectArchive(archiveBase64) {
+    return apiCall("/project/load", {
+      method: "POST",
+      body: JSON.stringify({ archive_base64: archiveBase64 }),
+    });
+  },
+  async saveProjectArchive(projectId) {
+    return apiCall("/project/save", {
+      method: "POST",
+      body: JSON.stringify({ project_id: projectId }),
+    });
+  },
+  async persistProjectArchive(defaultName, archiveBase64) {
+    return ipcRenderer.invoke("ta:save-project-archive", {
+      defaultName,
+      archiveBase64,
+    });
+  },
+});
+

@@ -21,3 +21,4 @@ Thumbs.db
 release/
 packaging/windows/build/
 packaging/windows/dist/
+desktop/electron/node_modules/

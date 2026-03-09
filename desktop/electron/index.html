@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ThermoAnalyzer Desktop Bootstrap</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: #f3f6f9;
+      color: #1f2937;
+    }
+    main {
+      max-width: 900px;
+      margin: 24px auto;
+      padding: 0 16px 32px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.4rem;
+    }
+    .card {
+      background: white;
+      border: 1px solid #dbe3ed;
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+    }
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    button {
+      background: #0e7490;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    code {
+      background: #eef2f7;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 10px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .ok { color: #0f766e; }
+    .fail { color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>ThermoAnalyzer Desktop Bootstrap</h1>
+    <div class="card">
+      <div id="bootstrap"></div>
+      <div id="health"></div>
+      <div id="version"></div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <button id="openProjectBtn">Open .thermozip</button>
+        <button id="saveProjectBtn" disabled>Save Loaded Project</button>
+      </div>
+      <p id="projectInfo">No project loaded yet.</p>
+      <pre id="projectSummary"></pre>
+    </div>
+
+    <div class="card">
+      <strong>Log</strong>
+      <pre id="log"></pre>
+    </div>
+  </main>
+  <script src="./renderer.js"></script>
+</body>
+</html>
+

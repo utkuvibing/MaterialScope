@@ -658,3 +658,63 @@ Replace the Markdown-only packaged help surface with simpler Turkish-first end-u
 - The installer now copies `packaging/windows/end_user_docs/README.txt` and `packaging/windows/end_user_docs/HELP.html` into `{app}\docs`.
 - Start Menu help exposure is now Turkish-first: `Yardim` opens the HTML help page and `Hizli Baslangic` opens the TXT quick guide.
 - Verification complete: `pytest -q` passed with `199 passed, 5 warnings`.
+
+---
+
+## Title
+Electron Migration Tranche 1 - Backend Skeleton and Desktop Bootstrap
+
+### Objective
+Create the smallest safe foundation for brownfield migration from Streamlit shell to Electron desktop shell without touching scientific algorithms, normalized result/export contracts, or `.thermozip` compatibility.
+
+### Definition Of Done
+- Minimal Python backend entrypoint exists and serves only:
+  - `GET /health`
+  - `GET /version`
+  - `POST /project/load`
+  - `POST /project/save`
+- Backend project load/save routes reuse `core.project_io.load_project_archive` and `core.project_io.save_project_archive` directly.
+- Minimal Electron app starts local Python backend, waits for readiness, opens a desktop window, and shows:
+  - backend connected state
+  - app version
+  - project open/save smoke actions
+- Streamlit `app.py` flow remains untouched and runnable as fallback.
+- API compatibility tests cover project archive load/save roundtrip behavior at the API boundary.
+
+### Constraints
+- No DSC/TGA UI migration in this tranche.
+- No numerical algorithm changes.
+- No normalized result/export schema changes.
+- No `.thermozip` format changes.
+- No packaging/windows migration yet (existing path remains fallback).
+
+### Impact Analysis
+- New backend modules under `backend/`.
+- New Electron bootstrap files under `desktop/electron/`.
+- New tests for backend API and startup smoke.
+- Minimal dependency additions for backend service runtime.
+
+### Risks
+- Local desktop bootstrap depends on a Python executable being available on PATH in development.
+- Backend store is intentionally in-memory for tranche 1; persistence model is deferred.
+- Electron boot path is dev-focused and not yet integrated with Windows installer packaging.
+
+### Migration / Rollout Strategy
+- Introduce backend skeleton first while preserving Streamlit runtime.
+- Add Electron bootstrap shell that only validates connectivity and project I/O smoke path.
+- Keep rollout reversible by retaining existing Streamlit entrypoint and packaging workflow.
+
+### Test Strategy
+- Run focused backend tests:
+  - `pytest tests/test_backend_api.py tests/test_backend_startup.py -q`
+- Run full regression suite:
+  - `pytest -q`
+
+### Progress Log
+- [ ] Add backend service skeleton
+- [ ] Add Electron bootstrap shell
+- [ ] Add backend API/startup tests
+- [ ] Run focused and full pytest suites
+
+### Notes
+- Fallback/rollback remains immediate: continue using `streamlit run app.py` and current Windows packaging scripts until later migration phases complete.

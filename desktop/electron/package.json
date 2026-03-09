@@ -1,0 +1,14 @@
+{
+  "name": "thermoanalyzer-desktop-bootstrap",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tranche-1 Electron bootstrap shell for ThermoAnalyzer backend connectivity",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^36.0.0"
+  }
+}
+
