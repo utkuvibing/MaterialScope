@@ -301,6 +301,7 @@ def test_generate_docx_report_renders_method_validation_and_provenance_sections(
 
     assert "Executive Summary" in xml
     assert xml.index("Executive Summary") < xml.index("Experimental Conditions")
+    assert "This report summarizes" in xml
     assert "Comparison Overview" in xml
     assert "Comparison Interpretation" in xml
     assert "Methodology" in xml
@@ -316,6 +317,7 @@ def test_generate_docx_report_renders_method_validation_and_provenance_sections(
     assert "Tin (Sn)" in xml
     assert "Major Decomposition Events" in xml
     assert "Full Raw Data Table" in xml
+    assert "Final Conclusion" in xml
     assert "Appendix A" in xml
     assert "Batch remains within envelope." in xml
 
@@ -323,22 +325,20 @@ def test_generate_docx_report_renders_method_validation_and_provenance_sections(
     assert xml.index("Source Data Hash") > appendix_index
     assert xml.index("Batch Run ID") > appendix_index
     assert xml.index("Full Raw Data Table") > appendix_index
+    if "Dataset Key" in xml:
+        assert xml.index("Dataset Key") > appendix_index
+    if "Import Confidence" in xml:
+        assert xml.index("Import Confidence") > appendix_index
 
 
 def test_generate_docx_report_renders_tga_comparison_interpretation(temperature_range, tga_percent_signal):
     first_record, first_dataset = _make_tga_record(temperature_range, tga_percent_signal)
-    second_record = copy.deepcopy(first_record)
-    second_record["id"] = "tga_synthetic_tga_b"
-    second_record["dataset_key"] = "synthetic_tga_b"
-    second_record["summary"]["total_mass_loss_percent"] = float(first_record["summary"]["total_mass_loss_percent"]) + 4.0
-    second_record["summary"]["residue_percent"] = float(first_record["summary"]["residue_percent"]) - 4.0
-    second_record["summary"]["step_count"] = max(1, int(first_record["summary"]["step_count"]) - 1)
     second_dataset = copy.deepcopy(first_dataset)
-    second_dataset.metadata["display_name"] = "Synthetic TGA B"
+    second_dataset.metadata["display_name"] = "Pending Metrics Run"
     second_dataset.metadata["atmosphere"] = ""
 
     docx_bytes = generate_docx_report(
-        results={first_record["id"]: first_record, second_record["id"]: second_record},
+        results={first_record["id"]: first_record},
         datasets={"synthetic_tga": first_dataset, "synthetic_tga_b": second_dataset},
         comparison_workspace={
             "analysis_type": "TGA",
@@ -352,9 +352,10 @@ def test_generate_docx_report_renders_tga_comparison_interpretation(temperature_
 
     assert "Comparison Overview" in xml
     assert "Comparison Interpretation" in xml
-    assert "Compared with" in xml
+    assert "only Synthetic TGA Run produced reportable TGA summary metrics" in xml
     assert "total mass loss" in xml
-    assert "comparative rather than definitive" in xml
+    assert "Excluded from metric comparison" in xml
+    assert "partial rather than comprehensive" in xml
 
 
 def test_generate_docx_report_suppresses_empty_experimental_section(thermal_dataset):
@@ -369,6 +370,21 @@ def test_generate_docx_report_suppresses_empty_experimental_section(thermal_data
 
     assert "Experimental Analyses" not in xml
     assert "No experimental analysis results available." not in xml
+
+
+def test_generate_docx_report_hides_operational_fields_from_experimental_conditions(thermal_dataset):
+    dataset = thermal_dataset.copy()
+    dataset.metadata["import_confidence"] = "high"
+    dataset.metadata.pop("instrument", None)
+    docx_bytes = generate_docx_report(results={}, datasets={"synthetic_dsc": dataset})
+
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "Experimental Conditions" in xml
+    assert "Dataset Key" not in xml
+    assert "Import Confidence" not in xml
+    assert "Not recorded" in xml
 
 
 def test_generate_docx_report_condenses_and_deduplicates_warnings(thermal_dataset):
@@ -393,8 +409,41 @@ def test_generate_docx_report_condenses_and_deduplicates_warnings(thermal_datase
 
     assert "Data Completeness Warnings" in xml
     assert "Methodological Limitations" in xml
-    assert xml.count("Atmosphere is not recorded for this dataset.") == 2
-    assert xml.count("Interpretation requires independent method validation.") == 1
+    appendix_index = xml.index("Appendix A")
+    main_xml = xml[:appendix_index]
+    assert "Atmosphere is not recorded for this dataset." not in main_xml
+    assert "Key metadata were not recorded" in main_xml
+    assert main_xml.count("Interpretation requires independent method validation.") == 1
+
+
+def test_generate_docx_report_renders_tga_scientific_prose_not_metric_label_pattern(temperature_range, tga_percent_signal):
+    tga_record, tga_dataset = _make_tga_record(temperature_range, tga_percent_signal)
+    docx_bytes = generate_docx_report(
+        results={tga_record["id"]: tga_record},
+        datasets={"synthetic_tga": tga_dataset},
+    )
+
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "dominant primary mass-loss event" in xml or "multiple decomposition events" in xml
+    assert "Step Count:" not in xml
+
+
+def test_generate_docx_report_preserves_turkish_labels(temperature_range, tga_percent_signal):
+    tga_record, tga_dataset = _make_tga_record(temperature_range, tga_percent_signal)
+    tga_record["processing"]["workflow_template_label"] = "Çok Adımlı Ayrışma"
+
+    docx_bytes = generate_docx_report(
+        results={tga_record["id"]: tga_record},
+        datasets={"synthetic_tga": tga_dataset},
+    )
+
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "Çok Adımlı Ayrışma" in xml
+    assert "□" not in xml
 
 
 def test_generate_csv_summary_uses_normalized_flat_contract(thermal_dataset):

@@ -221,6 +221,7 @@ def test_generate_docx_report_separates_stable_and_experimental(thermal_dataset)
 
     assert "Acme Customer Report" in xml
     assert "Executive Summary" in xml
+    assert "This report summarizes" in xml
     assert "Stable Analyses" in xml
     assert "Experimental Analyses" in xml
     assert "Skipped Records" in xml
@@ -235,6 +236,7 @@ def test_generate_docx_report_separates_stable_and_experimental(thermal_dataset)
     assert "Fit Quality" in xml
     assert "Warnings and Limitations" in xml
     assert "Methodological Limitations" in xml
+    assert "Final Conclusion" in xml
     assert "Appendix A" in xml
     assert "Single-Step Decomposition" in xml
     assert "Major Decomposition Events" in xml

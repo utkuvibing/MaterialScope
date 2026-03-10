@@ -5,12 +5,19 @@ from __future__ import annotations
 import csv
 import io
 import datetime
+import os
 from typing import Any, Optional, Union
 
 from core.batch_runner import normalize_batch_summary_rows, summarize_batch_outcomes
 from core.processing_schema import ensure_processing_payload
 from core.result_serialization import flatten_result_records, partition_results_by_status, split_valid_results
-from core.scientific_sections import condense_warning_limitations, scientific_context_to_report_sections
+from core.scientific_sections import (
+    build_tga_scientific_narrative,
+    condense_warning_limitations,
+    normalize_report_text,
+    normalize_scientific_context,
+    scientific_context_to_report_sections,
+)
 from utils.reference_data import find_nearest_reference
 
 try:
@@ -68,7 +75,7 @@ def _set_cell_bg(cell, hex_color: str) -> None:
 
 
 def _add_heading(doc: Document, text: str, level: int = 1) -> None:
-    doc.add_heading(text, level=level)
+    doc.add_heading(normalize_report_text(text), level=level)
 
 
 def _add_key_value_table(doc: Document, data: dict) -> None:
@@ -77,8 +84,8 @@ def _add_key_value_table(doc: Document, data: dict) -> None:
     table.alignment = WD_TABLE_ALIGNMENT.LEFT
 
     hdr_cells = table.rows[0].cells
-    hdr_cells[0].text = "Parameter"
-    hdr_cells[1].text = "Value"
+    hdr_cells[0].text = normalize_report_text("Parameter")
+    hdr_cells[1].text = normalize_report_text("Value")
     for cell in hdr_cells:
         _set_cell_bg(cell, "4472C4")
         for para in cell.paragraphs:
@@ -88,8 +95,8 @@ def _add_key_value_table(doc: Document, data: dict) -> None:
 
     for key, value in data.items():
         row_cells = table.add_row().cells
-        row_cells[0].text = str(key)
-        row_cells[1].text = str(value)
+        row_cells[0].text = normalize_report_text(key)
+        row_cells[1].text = normalize_report_text(value)
 
 
 def _add_results_table(doc: Document, headers: list[str], rows: list[list]) -> None:
@@ -98,7 +105,7 @@ def _add_results_table(doc: Document, headers: list[str], rows: list[list]) -> N
 
     hdr_cells = table.rows[0].cells
     for i, header in enumerate(headers):
-        hdr_cells[i].text = header
+        hdr_cells[i].text = normalize_report_text(header)
         _set_cell_bg(hdr_cells[i], "4472C4")
         for para in hdr_cells[i].paragraphs:
             run = para.runs[0] if para.runs else para.add_run(hdr_cells[i].text)
@@ -108,7 +115,7 @@ def _add_results_table(doc: Document, headers: list[str], rows: list[list]) -> N
     for row_idx, row_data in enumerate(rows):
         row_cells = table.add_row().cells
         for i, value in enumerate(row_data):
-            row_cells[i].text = str(value)
+            row_cells[i].text = normalize_report_text(value)
             if row_idx % 2 == 1:
                 _set_cell_bg(row_cells[i], "DCE6F1")
 
@@ -125,14 +132,14 @@ def _format_value(value):
     try:
         return f"{float(value):.4f}"
     except (TypeError, ValueError):
-        return str(value)
+        return normalize_report_text(value)
 
 
 def _record_title(record: dict) -> str:
     dataset_key = record.get("dataset_key")
     if dataset_key:
-        return f"{record['analysis_type']} - {dataset_key}"
-    return record["analysis_type"]
+        return normalize_report_text(f"{record['analysis_type']} - {dataset_key}")
+    return normalize_report_text(record["analysis_type"])
 
 
 def _record_headers(record: dict) -> list[str]:
@@ -181,26 +188,26 @@ def _dataset_label(dataset_key: str | None, datasets: dict) -> str:
     if dataset is None:
         return dataset_key
     metadata = getattr(dataset, "metadata", {}) or {}
-    return str(metadata.get("display_name") or metadata.get("sample_name") or metadata.get("file_name") or dataset_key)
+    return normalize_report_text(metadata.get("display_name") or metadata.get("sample_name") or metadata.get("file_name") or dataset_key)
 
 
 def _main_conditions_payload(dataset_key: str, dataset) -> dict[str, str]:
     metadata = getattr(dataset, "metadata", {}) or {}
-    payload = {
-        "Dataset": _dataset_label(dataset_key, {dataset_key: dataset}),
-        "Dataset Key": dataset_key,
-        "Sample Name": metadata.get("sample_name"),
-        "Sample Mass": metadata.get("sample_mass"),
-        "Heating Rate": metadata.get("heating_rate"),
-        "Instrument": metadata.get("instrument"),
-        "Vendor": metadata.get("vendor"),
-        "Atmosphere": metadata.get("atmosphere"),
-        "Source File": metadata.get("file_name") or metadata.get("display_name"),
-        "Import Confidence": metadata.get("import_confidence_label") or metadata.get("import_confidence"),
+    def value_or_not_recorded(value: Any) -> str:
+        if value in (None, "", [], {}):
+            return "Not recorded"
+        return _format_value(value)
+
+    return {
+        "Dataset": value_or_not_recorded(_dataset_label(dataset_key, {dataset_key: dataset})),
+        "Source File": value_or_not_recorded(metadata.get("file_name") or metadata.get("display_name")),
+        "Sample Name": value_or_not_recorded(metadata.get("sample_name")),
+        "Sample Mass": value_or_not_recorded(metadata.get("sample_mass")),
+        "Heating Rate": value_or_not_recorded(metadata.get("heating_rate")),
+        "Instrument": value_or_not_recorded(metadata.get("instrument")),
+        "Vendor": value_or_not_recorded(metadata.get("vendor")),
+        "Atmosphere": value_or_not_recorded(metadata.get("atmosphere")),
     }
-    if payload.get("Import Confidence") in (None, "") and metadata.get("inferred_analysis_type"):
-        payload["Import Confidence"] = f"Inferred type: {metadata.get('inferred_analysis_type')}"
-    return _table_payload(payload)
 
 
 def _appendix_dataset_metadata(metadata: dict | None) -> dict[str, str]:
@@ -363,74 +370,91 @@ def _select_record_for_dataset(records: list[dict], dataset_key: str, analysis_t
     return stable[0] if stable else candidates[0]
 
 
-def _comparison_metadata_note(selected: list[str], datasets: dict) -> str:
+def _comparison_missing_metadata(selected: list[str], datasets: dict) -> list[str]:
     missing: list[str] = []
-    for key, label in (("heating_rate", "heating-rate"), ("atmosphere", "atmosphere")):
+    for key, label in (("heating_rate", "heating rate"), ("atmosphere", "atmosphere")):
         if any(not ((getattr(datasets.get(dataset_key), "metadata", {}) or {}).get(key)) for dataset_key in selected):
             missing.append(label)
-    if not missing:
-        return ""
-    if len(missing) == 1:
-        return f"Because {missing[0]} metadata are incomplete, this interpretation should be treated as comparative rather than definitive."
-    return f"Because {', '.join(missing[:-1])}, and {missing[-1]} metadata are incomplete, this interpretation should be treated as comparative rather than definitive."
+    return missing
 
 
-def _build_tga_comparison_interpretation(metrics: list[dict[str, Any]], metadata_note: str) -> str:
-    valid = [item for item in metrics if item.get("mass_loss") is not None and item.get("residue") is not None and item.get("step_count") is not None]
-    if len(valid) >= 2:
-        left = valid[0]
-        right = valid[1]
-        left_loss = float(left["mass_loss"])
-        right_loss = float(right["mass_loss"])
-        left_residue = float(left["residue"])
-        right_residue = float(right["residue"])
-        left_steps = int(left["step_count"])
-        right_steps = int(right["step_count"])
-
-        step_phrase = "fewer" if right_steps < left_steps else "more" if right_steps > left_steps else "a similar number of"
-        loss_phrase = "higher" if right_loss > left_loss else "lower" if right_loss < left_loss else "similar"
-        residue_phrase = "lower" if right_residue < left_residue else "higher" if right_residue > left_residue else "similar"
-
-        if right_loss > left_loss and right_residue < left_residue:
-            implication = "suggesting a more complete mass-loss process under the recorded conditions"
-        elif right_loss < left_loss and right_residue > left_residue:
-            implication = "suggesting comparatively lower decomposition extent under the recorded conditions"
-        else:
-            implication = "indicating a materially different decomposition profile under the recorded conditions"
-
-        text = (
-            f"Compared with {left['dataset']}, {right['dataset']} shows {step_phrase} decomposition steps, "
-            f"{loss_phrase} total mass loss ({right_loss:.2f}% vs {left_loss:.2f}%), and "
-            f"{residue_phrase} final residue ({right_residue:.2f}% vs {left_residue:.2f}%), {implication}."
+def _comparison_limitation_sentence(*, missing_metadata: list[str], excluded_labels: list[str], partial: bool) -> str:
+    fragments = []
+    if excluded_labels:
+        fragments.append(
+            "comparable metrics are not yet available for "
+            + (excluded_labels[0] if len(excluded_labels) == 1 else f"{', '.join(excluded_labels[:-1])}, and {excluded_labels[-1]}")
         )
-    elif valid:
-        only = valid[0]
+    if missing_metadata:
+        fragments.append(
+            "key metadata are incomplete, including "
+            + (missing_metadata[0] if len(missing_metadata) == 1 else f"{', '.join(missing_metadata[:-1])}, and {missing_metadata[-1]}")
+        )
+    if not fragments:
+        return ""
+    scope = "partial rather than comprehensive" if partial else "comparative rather than definitive"
+    return f"Because {'; '.join(fragments)}, this interpretation should be treated as {scope}."
+
+
+def _build_tga_comparison_interpretation(
+    metrics: list[dict[str, Any]],
+    *,
+    excluded_labels: list[str],
+    missing_metadata: list[str],
+) -> str:
+    if len(metrics) >= 2:
+        mass_losses = [float(item["mass_loss"]) for item in metrics]
+        residues = [float(item["residue"]) for item in metrics]
+        step_counts = [int(item["step_count"]) for item in metrics]
+        highest_loss = max(metrics, key=lambda item: float(item["mass_loss"]))
+        lowest_loss = min(metrics, key=lambda item: float(item["mass_loss"]))
+
         text = (
-            f"{only['dataset']} reports total mass loss of {float(only['mass_loss']):.2f}%, "
-            f"final residue of {float(only['residue']):.2f}%, and {int(only['step_count'])} resolved decomposition steps."
+            f"Across the reportable TGA datasets, total mass loss spans {min(mass_losses):.2f}% to {max(mass_losses):.2f}%, "
+            f"final residue spans {min(residues):.2f}% to {max(residues):.2f}%, and resolved step counts range from {min(step_counts)} to {max(step_counts)}. "
+            f"{highest_loss['dataset']} shows the highest overall mass-loss extent, whereas {lowest_loss['dataset']} retains comparatively higher residue."
+        )
+    elif len(metrics) == 1:
+        only = metrics[0]
+        text = (
+            f"Within the current comparison workspace, only {only['dataset']} produced reportable TGA summary metrics. "
+            f"That dataset shows total mass loss of {float(only['mass_loss']):.2f}%, final residue of {float(only['residue']):.2f}%, "
+            f"and {int(only['step_count'])} resolved decomposition steps, indicating extensive decomposition over the recorded range."
         )
     else:
-        text = "Comparison metrics could not be resolved from the available TGA analysis results."
+        text = "None of the selected datasets currently provide reportable TGA comparison metrics."
 
-    if metadata_note:
-        text = f"{text} {metadata_note}"
-    return text
+    limitation = _comparison_limitation_sentence(
+        missing_metadata=missing_metadata,
+        excluded_labels=excluded_labels,
+        partial=len(metrics) <= 1 or bool(excluded_labels),
+    )
+    return f"{text} {limitation}".strip()
 
 
-def _build_generic_comparison_interpretation(analysis_type: str, metrics: list[dict[str, Any]], metadata_note: str) -> str:
+def _build_generic_comparison_interpretation(
+    analysis_type: str,
+    metrics: list[dict[str, Any]],
+    *,
+    excluded_labels: list[str],
+    missing_metadata: list[str],
+) -> str:
     if len(metrics) >= 2:
         text = (
             f"The {analysis_type} comparison shows measurable differences across the selected datasets. "
             "Review key metrics together with method context before drawing definitive mechanistic conclusions."
         )
-    elif metrics:
-        text = f"The selected {analysis_type} dataset was summarized successfully for comparison reporting."
+    elif len(metrics) == 1:
+        text = f"Only one {analysis_type} dataset currently has reportable metrics, so cross-dataset interpretation remains partial."
     else:
         text = f"No {analysis_type} metrics were available for comparison interpretation."
 
-    if metadata_note:
-        text = f"{text} {metadata_note}"
-    return text
+    limitation = _comparison_limitation_sentence(
+        missing_metadata=missing_metadata,
+        excluded_labels=excluded_labels,
+        partial=len(metrics) <= 1 or bool(excluded_labels),
+    )
+    return f"{text} {limitation}".strip()
 
 
 def _build_comparison_payload(comparison_workspace: dict | None, datasets: dict, records: list[dict]) -> dict[str, Any] | None:
@@ -450,7 +474,9 @@ def _build_comparison_payload(comparison_workspace: dict | None, datasets: dict,
 
     metric_headers: list[str]
     metric_rows: list[list[str]] = []
-    metric_records: list[dict[str, Any]] = []
+    reportable_metric_records: list[dict[str, Any]] = []
+    excluded_dataset_labels: list[str] = []
+    missing_metadata = _comparison_missing_metadata(selected, datasets)
 
     if normalized_analysis == "TGA":
         metric_headers = ["Dataset", "Total Mass Loss (%)", "Final Residue (%)", "Step Count"]
@@ -462,14 +488,16 @@ def _build_comparison_payload(comparison_workspace: dict | None, datasets: dict,
             residue = _safe_float(summary.get("residue_percent"))
             step_count_raw = summary.get("step_count")
             step_count = int(step_count_raw) if isinstance(step_count_raw, (int, float)) else None
-            metric_records.append(
-                {
-                    "dataset": dataset_name,
-                    "mass_loss": mass_loss,
-                    "residue": residue,
-                    "step_count": step_count,
-                }
-            )
+            if mass_loss is None or residue is None or step_count is None:
+                excluded_dataset_labels.append(dataset_name)
+                continue
+            payload = {
+                "dataset": dataset_name,
+                "mass_loss": mass_loss,
+                "residue": residue,
+                "step_count": step_count,
+            }
+            reportable_metric_records.append(payload)
             metric_rows.append(
                 [
                     dataset_name,
@@ -478,16 +506,28 @@ def _build_comparison_payload(comparison_workspace: dict | None, datasets: dict,
                     _format_value(step_count),
                 ]
             )
-        interpretation = _build_tga_comparison_interpretation(metric_records, _comparison_metadata_note(selected, datasets))
+        interpretation = _build_tga_comparison_interpretation(
+            reportable_metric_records,
+            excluded_labels=excluded_dataset_labels,
+            missing_metadata=missing_metadata,
+        )
     else:
         metric_headers = ["Dataset", "Primary Metrics"]
         for dataset_key in selected:
             dataset_name = _dataset_label(dataset_key, datasets)
             record = _select_record_for_dataset(records, dataset_key, normalized_analysis)
-            metric = _record_metric_snapshot(record or {}) if record else "No matching analysis result"
+            if record is None:
+                excluded_dataset_labels.append(dataset_name)
+                continue
+            metric = _record_metric_snapshot(record or {})
+            reportable_metric_records.append({"dataset": dataset_name})
             metric_rows.append([dataset_name, metric])
-            metric_records.append({"dataset": dataset_name})
-        interpretation = _build_generic_comparison_interpretation(analysis_type, metric_records, _comparison_metadata_note(selected, datasets))
+        interpretation = _build_generic_comparison_interpretation(
+            analysis_type,
+            reportable_metric_records,
+            excluded_labels=excluded_dataset_labels,
+            missing_metadata=missing_metadata,
+        )
 
     appendix_overview = _table_payload(
         {
@@ -505,9 +545,49 @@ def _build_comparison_payload(comparison_workspace: dict | None, datasets: dict,
         "metric_headers": metric_headers,
         "metric_rows": metric_rows,
         "interpretation": interpretation,
+        "reportable_count": len(reportable_metric_records),
+        "missing_metadata": missing_metadata,
+        "excluded_labels": excluded_dataset_labels,
+        "excluded_note": (
+            "Excluded from metric comparison (pending or not reportable): "
+            + ", ".join(excluded_dataset_labels)
+            if excluded_dataset_labels
+            else ""
+        ),
         "appendix_overview": appendix_overview,
         "appendix_batch_rows": _comparison_batch_rows(comparison_workspace),
     }
+
+
+def _build_executive_summary_intro(records: list[dict], datasets: dict, comparison_payload: dict[str, Any] | None) -> str:
+    if not records:
+        return "This report currently has no analyzable records."
+
+    reportable_tga = [
+        record for record in records
+        if str(record.get("analysis_type") or "").upper() == "TGA"
+        and _safe_float((record.get("summary") or {}).get("total_mass_loss_percent")) is not None
+        and _safe_float((record.get("summary") or {}).get("residue_percent")) is not None
+    ]
+    main_line = "This report summarizes the processed thermal-analysis outputs for the selected datasets."
+    if reportable_tga:
+        lead = max(reportable_tga, key=lambda record: float((record.get("summary") or {}).get("total_mass_loss_percent") or 0.0))
+        lead_summary = lead.get("summary") or {}
+        lead_name = _dataset_label(lead.get("dataset_key"), datasets) if lead.get("dataset_key") else (lead.get("id") or "the leading dataset")
+        main_line = (
+            "This report summarizes thermogravimetric and related thermal-analysis outputs for the selected datasets. "
+            f"Among the processed runs, {lead_name} shows total mass loss of approximately {float(lead_summary.get('total_mass_loss_percent')):.1f}% "
+            f"with final residue near {float(lead_summary.get('residue_percent')):.1f}%."
+        )
+
+    limitation = "Interpretation is strongest for reportable runs and should be qualified by dataset completeness."
+    if comparison_payload:
+        limitation = _comparison_limitation_sentence(
+            missing_metadata=comparison_payload.get("missing_metadata") or [],
+            excluded_labels=comparison_payload.get("excluded_labels") or [],
+            partial=(comparison_payload.get("reportable_count") or 0) <= 1 or bool(comparison_payload.get("excluded_labels")),
+        ) or limitation
+    return normalize_report_text(f"{main_line} {limitation}")
 
 
 def _build_executive_summary_rows(records: list[dict], datasets: dict, comparison_payload: dict[str, Any] | None) -> list[list[str]]:
@@ -534,23 +614,50 @@ def _build_executive_summary_rows(records: list[dict], datasets: dict, compariso
         )
 
     if comparison_payload:
+        excluded = comparison_payload.get("excluded_labels") or []
+        compared = comparison_payload.get("reportable_count") or 0
         rows.append(
             [
                 "Comparison Set",
                 "Cross-dataset comparison",
-                "; ".join(
-                    [
-                        f"{comparison_payload['metric_headers'][idx]} captured"
-                        for idx in range(1, len(comparison_payload.get("metric_headers") or []))
-                    ]
-                )
-                or "Comparison metrics summarized",
+                f"Reportable datasets: {compared}; pending/not reportable: {len(excluded)}",
                 comparison_payload.get("interpretation") or "Comparison interpretation unavailable",
-                "Comparative interpretation depends on metadata completeness and method parity.",
+                comparison_payload.get("excluded_note") or "Comparative interpretation depends on metadata completeness and method parity.",
             ]
         )
 
     return rows
+
+
+def _build_final_conclusion_paragraph(records: list[dict], comparison_payload: dict[str, Any] | None) -> str:
+    if not records:
+        return "No validated analysis results were available to support a final scientific conclusion."
+
+    tga_records = [
+        record for record in records
+        if str(record.get("analysis_type") or "").upper() == "TGA"
+        and _safe_float((record.get("summary") or {}).get("total_mass_loss_percent")) is not None
+        and _safe_float((record.get("summary") or {}).get("residue_percent")) is not None
+    ]
+    if tga_records:
+        lead = max(tga_records, key=lambda record: float((record.get("summary") or {}).get("total_mass_loss_percent") or 0.0))
+        summary = lead.get("summary") or {}
+        sentence = (
+            f"The present TGA findings are consistent with substantial decomposition, with total mass loss near {float(summary.get('total_mass_loss_percent')):.1f}% "
+            f"and final residue near {float(summary.get('residue_percent')):.1f}%."
+        )
+    else:
+        stable_count = len([record for record in records if record.get("status") == "stable"])
+        sentence = f"The report consolidates {stable_count} stable analysis result(s) and captures the dominant thermal trends observed in the processed datasets."
+
+    limitation = "Interpretation should be treated as preliminary pending fuller metadata and broader cross-dataset comparability."
+    if comparison_payload:
+        limitation = _comparison_limitation_sentence(
+            missing_metadata=comparison_payload.get("missing_metadata") or [],
+            excluded_labels=comparison_payload.get("excluded_labels") or [],
+            partial=(comparison_payload.get("reportable_count") or 0) <= 1 or bool(comparison_payload.get("excluded_labels")),
+        ) or limitation
+    return normalize_report_text(f"{sentence} {limitation}")
 
 
 def _processing_step(processing: dict | None, key: str) -> dict:
@@ -787,13 +894,34 @@ def _record_main_sections(record: dict) -> list[tuple[str, dict[str, Any]]]:
     if methodology_payload:
         sections.append(("Methodology", _table_payload(methodology_payload)))
 
+    if str(record.get("analysis_type") or "").upper() == "TGA":
+        tga_narrative = build_tga_scientific_narrative(
+            summary=record.get("summary") or {},
+            rows=record.get("rows") or [],
+            metadata=record.get("metadata") or {},
+            validation=record.get("validation") or {},
+        )
+        if tga_narrative:
+            ordered_sections = [
+                section for section in ordered_sections
+                if section[0] != "Scientific Interpretation"
+            ]
+            insert_index = 1 if (ordered_sections and ordered_sections[0][0] == "Equations and Formulation") else 0
+            ordered_sections.insert(
+                insert_index,
+                (
+                    "Scientific Interpretation",
+                    {f"Observation {idx}": line for idx, line in enumerate(tga_narrative, start=1)},
+                ),
+            )
+
     sections.extend(ordered_sections)
 
     grouped = condense_warning_limitations(
         record.get("scientific_context"),
         validation=record.get("validation"),
-        max_data_warnings=4,
-        max_method_limits=4,
+        max_data_warnings=3,
+        max_method_limits=2,
     )
     warning_payload: dict[str, Any] = {}
     if grouped.get("data_completeness_warnings"):
@@ -816,6 +944,14 @@ def _record_appendix_sections(record: dict) -> list[tuple[str, dict[str, str]]]:
     review_payload = _table_payload(record.get("review"))
     if review_payload:
         sections.append(("Internal Review Context", review_payload))
+
+    context = normalize_scientific_context(record.get("scientific_context"))
+    context_warnings = {f"Warning {idx}": normalize_report_text(item) for idx, item in enumerate(context.get("warnings") or [], start=1)}
+    if context_warnings:
+        sections.append(("Scientific Context Warnings (Extended)", context_warnings))
+    context_limits = {f"Limitation {idx}": normalize_report_text(item) for idx, item in enumerate(context.get("limitations") or [], start=1)}
+    if context_limits:
+        sections.append(("Scientific Context Limitations (Extended)", context_limits))
     return sections
 
 
@@ -824,21 +960,21 @@ def _render_record_mapping(doc: Document, title: str, payload: dict | None) -> N
     if not payload:
         return
 
-    doc.add_paragraph(title, style="Heading 3")
+    doc.add_paragraph(normalize_report_text(title), style="Heading 3")
     if title == "Scientific Interpretation":
         for value in payload.values():
-            doc.add_paragraph(str(value), style="List Bullet")
+            doc.add_paragraph(normalize_report_text(value), style="List Bullet")
         doc.add_paragraph()
         return
 
     if title == "Warnings and Limitations":
         for group, values in payload.items():
-            doc.add_paragraph(str(group), style="Heading 4")
+            doc.add_paragraph(normalize_report_text(group), style="Heading 4")
             if isinstance(values, list):
                 for item in values:
-                    doc.add_paragraph(str(item), style="List Bullet")
+                    doc.add_paragraph(normalize_report_text(item), style="List Bullet")
             else:
-                doc.add_paragraph(str(values), style="List Bullet")
+                doc.add_paragraph(normalize_report_text(values), style="List Bullet")
         doc.add_paragraph()
         return
 
@@ -958,7 +1094,7 @@ def _add_cover_page(doc: Document, branding: dict | None, license_state: dict | 
     title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     title = branding.get("report_title") or "ThermoAnalyzer Professional Report"
-    title_run = title_para.add_run(title)
+    title_run = title_para.add_run(normalize_report_text(title))
     title_run.bold = True
     title_run.font.size = Pt(20)
 
@@ -974,20 +1110,20 @@ def _add_cover_page(doc: Document, branding: dict | None, license_state: dict | 
     subtitle_bits = [branding.get("company_name"), branding.get("lab_name")]
     subtitle = " | ".join(bit for bit in subtitle_bits if bit)
     if subtitle:
-        subtitle_para.add_run(subtitle)
+        subtitle_para.add_run(normalize_report_text(subtitle))
 
     meta_para = doc.add_paragraph()
     meta_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
     analyst = branding.get("analyst_name") or "Analyst not specified"
     meta_para.add_run(
-        f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d  %H:%M')} | Analyst: {analyst}"
+        normalize_report_text(f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d  %H:%M')} | Analyst: {analyst}")
     )
 
     if license_state and license_state.get("status") in {"trial", "activated"}:
         license_para = doc.add_paragraph()
         license_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         sku = (license_state.get("license") or {}).get("sku", "Professional")
-        license_para.add_run(f"License status: {license_state['status']} ({sku})")
+        license_para.add_run(normalize_report_text(f"License status: {license_state['status']} ({sku})"))
 
     doc.add_page_break()
 
@@ -1007,11 +1143,16 @@ def generate_docx_report(
     all_records = stable_results + experimental_results
     comparison_payload = _build_comparison_payload(comparison_workspace, datasets, all_records)
     executive_rows = _build_executive_summary_rows(all_records, datasets, comparison_payload)
+    executive_intro = _build_executive_summary_intro(all_records, datasets, comparison_payload)
+    final_conclusion = _build_final_conclusion_paragraph(all_records, comparison_payload)
 
     doc = Document()
     _add_cover_page(doc, branding, license_state)
 
     _add_heading(doc, "Executive Summary", level=1)
+    if executive_intro:
+        doc.add_paragraph(normalize_report_text(executive_intro))
+        doc.add_paragraph()
     if executive_rows:
         _add_results_table(
             doc,
@@ -1043,9 +1184,13 @@ def generate_docx_report(
         if comparison_payload.get("metric_rows"):
             _add_results_table(doc, comparison_payload["metric_headers"], comparison_payload["metric_rows"])
             doc.add_paragraph()
+        if comparison_payload.get("excluded_note"):
+            doc.add_paragraph("Comparison Coverage Note", style="Heading 2")
+            doc.add_paragraph(normalize_report_text(comparison_payload["excluded_note"]))
+            doc.add_paragraph()
         if comparison_payload.get("interpretation"):
             doc.add_paragraph("Comparison Interpretation", style="Heading 2")
-            doc.add_paragraph(str(comparison_payload["interpretation"]))
+            doc.add_paragraph(normalize_report_text(comparison_payload["interpretation"]))
             doc.add_paragraph()
 
     _add_heading(doc, "Stable Analyses", level=1)
@@ -1082,6 +1227,11 @@ def generate_docx_report(
             except Exception:
                 doc.add_paragraph("Figure could not be embedded and was skipped.")
             doc.add_paragraph()
+
+    if final_conclusion:
+        _add_heading(doc, "Final Conclusion", level=1)
+        doc.add_paragraph(normalize_report_text(final_conclusion))
+        doc.add_paragraph()
 
     _render_appendix_docx(doc, records=all_records, datasets=datasets, comparison_payload=comparison_payload)
 
@@ -1149,6 +1299,37 @@ def pdf_export_available() -> bool:
     return True
 
 
+def _configure_pdf_font(styles) -> str | None:
+    """Register a Unicode-capable PDF font when available."""
+    try:  # pragma: no cover - optional dependency path
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+    except Exception:
+        return None
+
+    candidates = [
+        ("DejaVuSans", os.path.join("C:\\", "Windows", "Fonts", "DejaVuSans.ttf")),
+        ("Arial", os.path.join("C:\\", "Windows", "Fonts", "arial.ttf")),
+        ("SegoeUI", os.path.join("C:\\", "Windows", "Fonts", "segoeui.ttf")),
+        ("Calibri", os.path.join("C:\\", "Windows", "Fonts", "calibri.ttf")),
+        ("NotoSans", "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"),
+        ("DejaVuSans", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    ]
+    for font_name, font_path in candidates:
+        if not os.path.exists(font_path):
+            continue
+        try:
+            if font_name not in pdfmetrics.getRegisteredFontNames():
+                pdfmetrics.registerFont(TTFont(font_name, font_path))
+            for style_name in ("Normal", "Title", "Heading1", "Heading2", "Heading3", "Heading4"):
+                if style_name in styles:
+                    styles[style_name].fontName = font_name
+            return font_name
+        except Exception:
+            continue
+    return None
+
+
 def generate_pdf_report(
     results: dict,
     datasets: dict,
@@ -1173,8 +1354,11 @@ def generate_pdf_report(
     all_records = stable_results + experimental_results
     comparison_payload = _build_comparison_payload(comparison_workspace, datasets, all_records)
     executive_rows = _build_executive_summary_rows(all_records, datasets, comparison_payload)
+    executive_intro = _build_executive_summary_intro(all_records, datasets, comparison_payload)
+    final_conclusion = _build_final_conclusion_paragraph(all_records, comparison_payload)
 
     styles = getSampleStyleSheet()
+    pdf_font_name = _configure_pdf_font(styles)
     story = []
 
     def add_kv_table(payload: dict[str, Any]) -> None:
@@ -1188,6 +1372,7 @@ def generate_pdf_report(
                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                     ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
                     ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#EEF3F8")]),
+                    *([("FONTNAME", (0, 0), (-1, -1), pdf_font_name)] if pdf_font_name else []),
                 ]
             )
         )
@@ -1203,59 +1388,60 @@ def generate_pdf_report(
                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                     ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
                     ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#EEF3F8")]),
+                    *([("FONTNAME", (0, 0), (-1, -1), pdf_font_name)] if pdf_font_name else []),
                 ]
             )
         )
         story.append(table)
 
     def append_main_record(record: dict) -> None:
-        story.append(Paragraph(_record_title(record), styles["Heading2"]))
+        story.append(Paragraph(normalize_report_text(_record_title(record)), styles["Heading2"]))
         key_results = _record_key_results(record)
         if key_results:
-            story.append(Paragraph("Key Results", styles["Heading3"]))
+            story.append(Paragraph(normalize_report_text("Key Results"), styles["Heading3"]))
             add_kv_table(key_results)
             story.append(Spacer(1, 0.08 * inch))
 
         for title, payload in _record_main_sections(record):
-            story.append(Paragraph(title, styles["Heading3"]))
+            story.append(Paragraph(normalize_report_text(title), styles["Heading3"]))
             if title == "Scientific Interpretation":
                 for value in payload.values():
-                    story.append(Paragraph(f"- {value}", styles["Normal"]))
+                    story.append(Paragraph(normalize_report_text(f"- {value}"), styles["Normal"]))
             elif title == "Warnings and Limitations":
                 for group, values in payload.items():
-                    story.append(Paragraph(str(group), styles["Heading4"]))
+                    story.append(Paragraph(normalize_report_text(group), styles["Heading4"]))
                     if isinstance(values, list):
                         for item in values:
-                            story.append(Paragraph(f"- {item}", styles["Normal"]))
+                            story.append(Paragraph(normalize_report_text(f"- {item}"), styles["Normal"]))
                     else:
-                        story.append(Paragraph(f"- {values}", styles["Normal"]))
+                        story.append(Paragraph(normalize_report_text(f"- {values}"), styles["Normal"]))
             else:
                 add_kv_table({str(key): _format_value(value) for key, value in payload.items()})
             story.append(Spacer(1, 0.08 * inch))
 
         major_events = _tga_major_events(record)
         if major_events:
-            story.append(Paragraph("Major Decomposition Events", styles["Heading3"]))
+            story.append(Paragraph(normalize_report_text("Major Decomposition Events"), styles["Heading3"]))
             add_matrix_table(["Event", "Midpoint Temperature (°C)", "Mass Loss (%)", "Final Residue (%)"], major_events)
             story.append(Spacer(1, 0.08 * inch))
         else:
             compact = _record_compact_rows(record)
             if compact:
                 headers, rows = compact
-                story.append(Paragraph("Compact Key Table", styles["Heading3"]))
+                story.append(Paragraph(normalize_report_text("Compact Key Table"), styles["Heading3"]))
                 add_matrix_table(headers, rows)
                 story.append(Spacer(1, 0.08 * inch))
 
     title = (branding or {}).get("report_title") or "ThermoAnalyzer Professional Report"
-    story.append(Paragraph(title, styles["Title"]))
-    story.append(Paragraph(datetime.datetime.now().strftime("Generated: %Y-%m-%d %H:%M"), styles["Normal"]))
+    story.append(Paragraph(normalize_report_text(title), styles["Title"]))
+    story.append(Paragraph(normalize_report_text(datetime.datetime.now().strftime("Generated: %Y-%m-%d %H:%M")), styles["Normal"]))
     if branding:
         header_bits = [branding.get("company_name"), branding.get("lab_name"), branding.get("analyst_name")]
         header = " | ".join(bit for bit in header_bits if bit)
         if header:
-            story.append(Paragraph(header, styles["Normal"]))
+            story.append(Paragraph(normalize_report_text(header), styles["Normal"]))
     if license_state and license_state.get("status"):
-        story.append(Paragraph(f"License: {license_state['status']}", styles["Normal"]))
+        story.append(Paragraph(normalize_report_text(f"License: {license_state['status']}"), styles["Normal"]))
     story.append(Spacer(1, 0.2 * inch))
 
     if branding and branding.get("logo_bytes"):
@@ -1265,70 +1451,81 @@ def generate_pdf_report(
         except Exception:
             pass
 
-    story.append(Paragraph("Executive Summary", styles["Heading1"]))
+    story.append(Paragraph(normalize_report_text("Executive Summary"), styles["Heading1"]))
+    if executive_intro:
+        story.append(Paragraph(normalize_report_text(executive_intro), styles["Normal"]))
+        story.append(Spacer(1, 0.08 * inch))
     if executive_rows:
         add_matrix_table(["Dataset / Set", "Analysis Type", "Key Metrics", "Scientific Interpretation", "Confidence / Limitation"], executive_rows)
     else:
-        story.append(Paragraph("No analysis results were available for executive summarization.", styles["Normal"]))
+        story.append(Paragraph(normalize_report_text("No analysis results were available for executive summarization."), styles["Normal"]))
     story.append(Spacer(1, 0.15 * inch))
 
-    story.append(Paragraph("Experimental Conditions", styles["Heading1"]))
+    story.append(Paragraph(normalize_report_text("Experimental Conditions"), styles["Heading1"]))
     if not datasets:
-        story.append(Paragraph("No dataset metadata available.", styles["Normal"]))
+        story.append(Paragraph(normalize_report_text("No dataset metadata available."), styles["Normal"]))
     else:
         for dataset_key, dataset in datasets.items():
-            story.append(Paragraph(_dataset_label(dataset_key, datasets), styles["Heading2"]))
+            story.append(Paragraph(normalize_report_text(_dataset_label(dataset_key, datasets)), styles["Heading2"]))
             payload = _main_conditions_payload(dataset_key, dataset)
             if payload:
                 add_kv_table(payload)
             else:
-                story.append(Paragraph("No reader-facing experimental metadata available.", styles["Normal"]))
+                story.append(Paragraph(normalize_report_text("No reader-facing experimental metadata available."), styles["Normal"]))
             story.append(Spacer(1, 0.08 * inch))
 
     if comparison_payload:
-        story.append(Paragraph("Comparison Overview", styles["Heading1"]))
+        story.append(Paragraph(normalize_report_text("Comparison Overview"), styles["Heading1"]))
         if comparison_payload.get("overview"):
             add_kv_table(comparison_payload["overview"])
             story.append(Spacer(1, 0.08 * inch))
         if comparison_payload.get("metric_rows"):
             add_matrix_table(comparison_payload["metric_headers"], comparison_payload["metric_rows"])
             story.append(Spacer(1, 0.08 * inch))
+        if comparison_payload.get("excluded_note"):
+            story.append(Paragraph(normalize_report_text("Comparison Coverage Note"), styles["Heading2"]))
+            story.append(Paragraph(normalize_report_text(comparison_payload["excluded_note"]), styles["Normal"]))
+            story.append(Spacer(1, 0.08 * inch))
         if comparison_payload.get("interpretation"):
-            story.append(Paragraph("Comparison Interpretation", styles["Heading2"]))
-            story.append(Paragraph(str(comparison_payload["interpretation"]), styles["Normal"]))
+            story.append(Paragraph(normalize_report_text("Comparison Interpretation"), styles["Heading2"]))
+            story.append(Paragraph(normalize_report_text(comparison_payload["interpretation"]), styles["Normal"]))
             story.append(Spacer(1, 0.08 * inch))
 
-    story.append(Paragraph("Stable Analyses", styles["Heading1"]))
+    story.append(Paragraph(normalize_report_text("Stable Analyses"), styles["Heading1"]))
     if stable_results:
         for record in stable_results:
             append_main_record(record)
     else:
-        story.append(Paragraph("No stable analysis results available.", styles["Normal"]))
+        story.append(Paragraph(normalize_report_text("No stable analysis results available."), styles["Normal"]))
 
     if experimental_results:
-        story.append(Paragraph("Experimental Analyses", styles["Heading1"]))
-        story.append(Paragraph("These results are included for reference but remain outside the stable workflow guarantee.", styles["Normal"]))
+        story.append(Paragraph(normalize_report_text("Experimental Analyses"), styles["Heading1"]))
+        story.append(Paragraph(normalize_report_text("These results are included for reference but remain outside the stable workflow guarantee."), styles["Normal"]))
         for record in experimental_results:
             append_main_record(record)
 
     if (branding or {}).get("report_notes"):
-        story.append(Paragraph("Analyst Notes", styles["Heading1"]))
-        story.append(Paragraph(str((branding or {})["report_notes"]), styles["Normal"]))
+        story.append(Paragraph(normalize_report_text("Analyst Notes"), styles["Heading1"]))
+        story.append(Paragraph(normalize_report_text((branding or {})["report_notes"]), styles["Normal"]))
 
     if issues:
-        story.append(Paragraph("Skipped Records", styles["Heading1"]))
+        story.append(Paragraph(normalize_report_text("Skipped Records"), styles["Heading1"]))
         for issue in issues:
-            story.append(Paragraph(f"- {issue}", styles["Normal"]))
+            story.append(Paragraph(normalize_report_text(f"- {issue}"), styles["Normal"]))
 
     if figures:
-        story.append(Paragraph("Figures", styles["Heading1"]))
+        story.append(Paragraph(normalize_report_text("Figures"), styles["Heading1"]))
         for caption, png_bytes in figures.items():
-            story.append(Paragraph(caption, styles["Heading2"]))
+            story.append(Paragraph(normalize_report_text(caption), styles["Heading2"]))
             try:
                 story.append(Image(io.BytesIO(png_bytes), width=5.5 * inch, height=3.4 * inch))
             except Exception:
                 continue
             story.append(Spacer(1, 0.12 * inch))
+
+    if final_conclusion:
+        story.append(Paragraph(normalize_report_text("Final Conclusion"), styles["Heading1"]))
+        story.append(Paragraph(normalize_report_text(final_conclusion), styles["Normal"]))
 
     dataset_sections = []
     for dataset_key, dataset in datasets.items():
@@ -1345,17 +1542,17 @@ def generate_pdf_report(
 
     comparison_has_content = bool(comparison_payload and (comparison_payload.get("appendix_overview") or comparison_payload.get("appendix_batch_rows")))
     if dataset_sections or record_sections or comparison_has_content:
-        story.append(Paragraph("Appendix A - Reproducibility and Audit Trail", styles["Heading1"]))
+        story.append(Paragraph(normalize_report_text("Appendix A - Reproducibility and Audit Trail"), styles["Heading1"]))
 
         if dataset_sections:
-            story.append(Paragraph("Dataset Import and Metadata Technical Details", styles["Heading2"]))
+            story.append(Paragraph(normalize_report_text("Dataset Import and Metadata Technical Details"), styles["Heading2"]))
             for dataset_key, payload in dataset_sections:
-                story.append(Paragraph(_dataset_label(dataset_key, datasets), styles["Heading3"]))
+                story.append(Paragraph(normalize_report_text(_dataset_label(dataset_key, datasets)), styles["Heading3"]))
                 add_kv_table(payload)
                 story.append(Spacer(1, 0.08 * inch))
 
         if comparison_has_content:
-            story.append(Paragraph("Comparison Workspace Technical Context", styles["Heading2"]))
+            story.append(Paragraph(normalize_report_text("Comparison Workspace Technical Context"), styles["Heading2"]))
             if comparison_payload.get("appendix_overview"):
                 add_kv_table(comparison_payload["appendix_overview"])
                 story.append(Spacer(1, 0.08 * inch))
@@ -1392,14 +1589,14 @@ def generate_pdf_report(
                 story.append(Spacer(1, 0.08 * inch))
 
         for record, sections, full_rows in record_sections:
-            story.append(Paragraph(_record_title(record), styles["Heading2"]))
+            story.append(Paragraph(normalize_report_text(_record_title(record)), styles["Heading2"]))
             for title, payload in sections:
-                story.append(Paragraph(title, styles["Heading3"]))
+                story.append(Paragraph(normalize_report_text(title), styles["Heading3"]))
                 add_kv_table(payload)
                 story.append(Spacer(1, 0.08 * inch))
             if full_rows:
                 headers, rows = full_rows
-                story.append(Paragraph("Full Raw Data Table", styles["Heading3"]))
+                story.append(Paragraph(normalize_report_text("Full Raw Data Table"), styles["Heading3"]))
                 add_matrix_table(headers, rows)
                 story.append(Spacer(1, 0.08 * inch))
 

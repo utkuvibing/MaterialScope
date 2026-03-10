@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import unicodedata
 from typing import Any, Iterable
 
 
@@ -54,6 +55,11 @@ def _clean_text(value: Any) -> str:
     return " ".join(text.split())
 
 
+def normalize_report_text(value: Any) -> str:
+    """Normalize report text for Unicode-safe rendering."""
+    return unicodedata.normalize("NFC", _clean_text(value))
+
+
 def _dedupe_preserve_order(values: Iterable[str]) -> list[str]:
     deduped: list[str] = []
     seen: set[str] = set()
@@ -92,12 +98,47 @@ def _value_with_unit(value: Any, unit: str | None) -> str:
 
 
 def _sentence(text: str) -> str:
-    cleaned = _clean_text(text)
+    cleaned = normalize_report_text(text)
     if not cleaned:
         return ""
     if cleaned[-1] in ".!?":
         return cleaned
     return f"{cleaned}."
+
+
+def _sentence_list(values: Iterable[str]) -> list[str]:
+    return [_sentence(value) for value in values if _sentence(value)]
+
+
+def _metadata_warning_summary(data_warnings: list[str]) -> tuple[str | None, list[str]]:
+    fields = []
+    patterns = (
+        ("sample mass", "sample mass"),
+        ("heating rate", "heating rate"),
+        ("instrument", "instrument"),
+        ("atmosphere", "atmosphere"),
+        ("vendor", "vendor"),
+    )
+    remaining = []
+    for warning in data_warnings:
+        lower = warning.casefold()
+        matched = False
+        for token, label in patterns:
+            if token in lower:
+                if label not in fields:
+                    fields.append(label)
+                matched = True
+        if not matched:
+            remaining.append(warning)
+    if not fields:
+        return None, data_warnings
+    if len(fields) == 1:
+        summary = f"Key metadata were not recorded, including {fields[0]}."
+    elif len(fields) == 2:
+        summary = f"Key metadata were not recorded, including {fields[0]} and {fields[1]}."
+    else:
+        summary = f"Key metadata were not recorded, including {', '.join(fields[:-1])}, and {fields[-1]}."
+    return summary, remaining
 
 
 def build_equation(
@@ -232,7 +273,7 @@ def build_scientific_interpretation_lines(
         implication = _sentence(item.get("implication") or "")
 
         if metric and value:
-            sentence = f"{statement} {metric}: {value}."
+            sentence = f"{statement} Reported {metric.lower()} was {value}."
         elif value:
             sentence = f"{statement} Observed value: {value}."
         else:
@@ -251,8 +292,8 @@ def condense_warning_limitations(
     scientific_context: dict[str, Any] | None,
     *,
     validation: dict[str, Any] | None = None,
-    max_data_warnings: int = 4,
-    max_method_limits: int = 4,
+    max_data_warnings: int = 3,
+    max_method_limits: int = 2,
 ) -> dict[str, list[str]]:
     """Group warnings into concise, deduplicated reader-facing categories."""
     context = normalize_scientific_context(scientific_context)
@@ -271,10 +312,118 @@ def condense_warning_limitations(
     for item in raw_limits:
         method_limits.append(_sentence(item))
 
+    metadata_summary, remaining_data = _metadata_warning_summary(data_warnings)
+    data_output = []
+    if metadata_summary:
+        data_output.append(metadata_summary)
+    data_output.extend(remaining_data)
+
     return {
-        "data_completeness_warnings": _dedupe_preserve_order(data_warnings)[:max_data_warnings],
-        "methodological_limitations": _dedupe_preserve_order(method_limits)[:max_method_limits],
+        "data_completeness_warnings": _dedupe_preserve_order(_sentence_list(data_output))[:max_data_warnings],
+        "methodological_limitations": _dedupe_preserve_order(_sentence_list(method_limits))[:max_method_limits],
     }
+
+
+def build_tga_scientific_narrative(
+    *,
+    summary: dict[str, Any] | None,
+    rows: list[dict[str, Any]] | None,
+    metadata: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
+) -> list[str]:
+    """Return domain-aware narrative statements for TGA interpretation."""
+    summary = summary or {}
+    rows = [row for row in (rows or []) if isinstance(row, dict)]
+    metadata = metadata or {}
+    validation = validation or {}
+
+    step_count = summary.get("step_count")
+    total_mass_loss = summary.get("total_mass_loss_percent")
+    residue = summary.get("residue_percent")
+
+    def row_mass_loss(row: dict[str, Any]) -> float:
+        try:
+            value = row.get("mass_loss_percent")
+            if value is None:
+                return float("-inf")
+            return float(value)
+        except (TypeError, ValueError):
+            return float("-inf")
+
+    sorted_rows = sorted(rows, key=row_mass_loss, reverse=True)
+    top_event = sorted_rows[0] if sorted_rows else {}
+    second_event = sorted_rows[1] if len(sorted_rows) > 1 else {}
+
+    lead_mass_loss = top_event.get("mass_loss_percent")
+    lead_midpoint = top_event.get("midpoint_temperature")
+    secondary_midpoint = second_event.get("midpoint_temperature")
+    secondary_mass_loss = second_event.get("mass_loss_percent")
+
+    lines: list[str] = []
+    try:
+        if lead_mass_loss is not None and secondary_mass_loss is not None and float(lead_mass_loss) >= 1.5 * float(secondary_mass_loss):
+            event_line = (
+                f"The thermogram indicates a dominant primary mass-loss event centered near {float(lead_midpoint):.0f} °C, "
+                f"followed by minor secondary decomposition behavior."
+            )
+            if secondary_midpoint is not None:
+                event_line = (
+                    f"The thermogram indicates a dominant primary mass-loss event centered near {float(lead_midpoint):.0f} °C, "
+                    f"followed by a weaker secondary event near {float(secondary_midpoint):.0f} °C."
+                )
+        elif rows:
+            event_line = "The thermogram indicates multiple decomposition events with comparable contribution across the measured range."
+        else:
+            event_line = "The thermogram could not resolve detailed step-wise decomposition behavior from the available step payload."
+    except (TypeError, ValueError):
+        event_line = "The thermogram indicates step-wise decomposition behavior, but event dominance could not be ranked robustly."
+    lines.append(_sentence(event_line))
+
+    try:
+        loss_value = float(total_mass_loss) if total_mass_loss is not None else None
+    except (TypeError, ValueError):
+        loss_value = None
+    try:
+        residue_value = float(residue) if residue is not None else None
+    except (TypeError, ValueError):
+        residue_value = None
+
+    if loss_value is not None and residue_value is not None:
+        if loss_value >= 90 and residue_value <= 5:
+            interpretation = "are consistent with near-complete decomposition across the measured range"
+        elif loss_value >= 70 and residue_value <= 20:
+            interpretation = "suggest substantial thermal degradation with limited residual material"
+        elif residue_value >= 30:
+            interpretation = "suggest residue-forming behavior and incomplete decomposition under the recorded conditions"
+        else:
+            interpretation = "indicate partial decomposition behavior within the measured range"
+        lines.append(
+            _sentence(
+                f"The total mass loss (~{loss_value:.1f}%) and final residue (~{residue_value:.1f}%) {interpretation}"
+            )
+        )
+    elif step_count is not None:
+        lines.append(_sentence(f"The analysis resolved {step_count} decomposition steps, but full mass-balance interpretation remains limited by incomplete summary metrics"))
+
+    missing_fields = []
+    for key, label in (
+        ("sample_mass", "sample mass"),
+        ("heating_rate", "heating rate"),
+        ("atmosphere", "atmosphere"),
+        ("instrument", "instrument"),
+    ):
+        if not metadata.get(key):
+            missing_fields.append(label)
+    if missing_fields:
+        if len(missing_fields) == 1:
+            caveat = f"Because {missing_fields[0]} was not recorded, this interpretation should be treated as condition-limited rather than fully definitive."
+        else:
+            caveat = f"Because {', '.join(missing_fields[:-1])}, and {missing_fields[-1]} were not recorded, this interpretation should be treated as condition-limited rather than fully definitive."
+        lines.append(_sentence(caveat))
+    elif (validation.get("status") or "").lower() == "warn":
+        lines.append(_sentence("Validation warnings were present, so this interpretation should be treated as moderate-confidence"))
+
+    return [normalize_report_text(line) for line in lines if line]
 
 
 def scientific_context_to_report_sections(scientific_context: dict[str, Any] | None) -> list[tuple[str, dict[str, Any]]]:
