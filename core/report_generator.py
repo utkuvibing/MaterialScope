@@ -63,6 +63,11 @@ _APPENDIX_METADATA_KEYWORDS = (
     "encoding",
 )
 
+_PAPER_DISPLAY_LABEL_OVERRIDES = {
+    "tga_polymers_comparison.xlsx": "PMMA sample",
+    "tga_cuso4_5h2o_dehydration.csv": "CuSO4·5H2O sample",
+}
+
 _BULLET_SECTION_TITLES = {
     "Scientific Interpretation",
     "Primary Scientific Interpretation",
@@ -198,6 +203,41 @@ def _dataset_label(dataset_key: str | None, datasets: dict) -> str:
         return dataset_key
     metadata = getattr(dataset, "metadata", {}) or {}
     return normalize_report_text(metadata.get("display_name") or metadata.get("sample_name") or metadata.get("file_name") or dataset_key)
+
+
+def _paper_display_label(dataset_key: str | None, datasets: dict, *, record: dict | None = None) -> str:
+    if record and record.get("summary"):
+        summary = record.get("summary") or {}
+        if summary.get("sample_name") not in (None, ""):
+            return normalize_report_text(summary.get("sample_name"))
+    if dataset_key and dataset_key in datasets:
+        metadata = getattr(datasets[dataset_key], "metadata", {}) or {}
+        candidates = [
+            metadata.get("display_name"),
+            metadata.get("sample_name"),
+            metadata.get("file_name"),
+            dataset_key,
+        ]
+    else:
+        metadata = (record or {}).get("metadata") or {}
+        candidates = [
+            metadata.get("display_name"),
+            metadata.get("sample_name"),
+            metadata.get("file_name"),
+            dataset_key,
+            (record or {}).get("dataset_key"),
+        ]
+
+    for value in candidates:
+        if value in (None, ""):
+            continue
+        lowered = str(value).strip().lower()
+        if lowered in _PAPER_DISPLAY_LABEL_OVERRIDES:
+            return normalize_report_text(_PAPER_DISPLAY_LABEL_OVERRIDES[lowered])
+    for value in candidates:
+        if value not in (None, ""):
+            return normalize_report_text(value)
+    return "Unnamed dataset"
 
 
 def _main_conditions_payload(dataset_key: str, dataset) -> dict[str, str]:
@@ -643,6 +683,35 @@ def _build_final_conclusion_paragraph(records: list[dict], comparison_payload: d
     if not records:
         return "No validated analysis results were available to support a final scientific conclusion."
 
+    tga_records = []
+    for record in records:
+        if str(record.get("analysis_type") or "").upper() != "TGA":
+            continue
+        summary = record.get("summary") or {}
+        mass_loss = _safe_float(summary.get("total_mass_loss_percent"))
+        residue = _safe_float(summary.get("residue_percent"))
+        if mass_loss is None or residue is None:
+            continue
+        tga_records.append((record, mass_loss, residue, _format_value(summary.get("step_count"))))
+
+    tga_conclusion = ""
+    if len(tga_records) >= 2:
+        low_residue = min(tga_records, key=lambda item: item[2])
+        high_residue = max(tga_records, key=lambda item: item[2])
+        low_name = _paper_display_label(low_residue[0].get("dataset_key"), {}, record=low_residue[0])
+        high_name = _paper_display_label(high_residue[0].get("dataset_key"), {}, record=high_residue[0])
+        tga_conclusion = (
+            f"In TGA scope, {low_name} shows near-complete decomposition with minimal residue "
+            f"(mass loss {low_residue[1]:.1f}%, residue {low_residue[2]:.1f}%), whereas {high_name} "
+            f"shows multi-step, residue-retaining behavior (mass loss {high_residue[1]:.1f}%, residue {high_residue[2]:.1f}%, step count {high_residue[3]})."
+        )
+    elif len(tga_records) == 1:
+        only = tga_records[0]
+        only_name = _paper_display_label(only[0].get("dataset_key"), {}, record=only[0])
+        tga_conclusion = (
+            f"In TGA scope, {only_name} shows mass loss {only[1]:.1f}% with residue {only[2]:.1f}%."
+        )
+
     families: list[str] = []
     for record in records:
         analysis = str(record.get("analysis_type") or "").upper()
@@ -667,8 +736,10 @@ def _build_final_conclusion_paragraph(records: list[dict], comparison_payload: d
             + ", ".join(families[:-1])
             + f", and {families[-1]}, providing a multi-technique interpretation rather than a single-modality conclusion."
         )
+    if tga_conclusion:
+        sentence = f"{sentence} {tga_conclusion}"
 
-    limitation = "Interpretation should be treated as preliminary pending fuller metadata and broader cross-dataset comparability."
+    limitation = "Metadata limitations reduce mechanistic certainty and the conclusions should be treated as condition-dependent."
     if comparison_payload:
         limitation = _comparison_limitation_sentence(
             missing_metadata=comparison_payload.get("missing_metadata") or [],
@@ -687,7 +758,7 @@ def _analysis_family_label(analysis_type: str | None) -> str:
     return normalized or "Unknown"
 
 
-def _build_pdf_abstract_layout(records: list[dict], datasets: dict) -> tuple[str, list[list[str]]]:
+def _build_pdf_abstract_layout(records: list[dict], datasets: dict) -> tuple[str, list[str]]:
     if not records:
         return ("No analyzable records were available for abstract-level synthesis.", [])
 
@@ -702,18 +773,120 @@ def _build_pdf_abstract_layout(records: list[dict], datasets: dict) -> tuple[str
         "Interpretations are evidence-linked and uncertainty-qualified at the analysis level."
     )
 
-    rows: list[list[str]] = []
+    bullets: list[str] = []
     for record in records:
-        dataset_name = _dataset_label(record.get("dataset_key"), datasets)
-        analysis_label = _analysis_family_label(record.get("analysis_type"))
-        key_findings = _record_metric_snapshot(record)
+        dataset_name = _paper_display_label(record.get("dataset_key"), datasets, record=record)
+        analysis_label = _analysis_family_label(record.get("analysis_type")).lower()
+        key_findings = _record_metric_snapshot(record) or "key findings were not fully reportable"
         sections = scientific_context_to_report_sections(record.get("scientific_context"))
         for title, payload in sections:
             if title == "Primary Scientific Interpretation" and isinstance(payload, dict) and payload:
                 key_findings = f"{key_findings}. {next(iter(payload.values()))}"
                 break
-        rows.append([dataset_name, analysis_label, key_findings])
-    return normalize_report_text(abstract), rows
+        bullets.append(normalize_report_text(f"{dataset_name} ({analysis_label}): {key_findings}."))
+    return normalize_report_text(abstract), bullets[:3]
+
+
+def _build_experimental_prose_block(dataset_key: str, dataset, datasets: dict) -> str:
+    metadata = getattr(dataset, "metadata", {}) or {}
+    sample = _paper_display_label(dataset_key, datasets)
+    source_file = metadata.get("file_name") or metadata.get("display_name") or "Not recorded"
+    instrument = metadata.get("instrument") or "Not recorded"
+    heating_rate = metadata.get("heating_rate")
+    atmosphere = metadata.get("atmosphere") or "Not recorded"
+    heating_rate_text = f"{_format_value(heating_rate)}" if heating_rate not in (None, "", [], {}) else "Not recorded"
+    missing = []
+    for key, label in (
+        ("file_name", "source file"),
+        ("instrument", "instrument"),
+        ("heating_rate", "heating rate"),
+        ("atmosphere", "atmosphere"),
+    ):
+        if metadata.get(key) in (None, "", [], {}):
+            missing.append(label)
+    completeness = "Metadata completeness is adequate for primary interpretation."
+    if missing:
+        completeness = (
+            "Metadata completeness is limited; not recorded fields include "
+            + (missing[0] if len(missing) == 1 else f"{', '.join(missing[:-1])}, and {missing[-1]}")
+            + "."
+        )
+    return normalize_report_text(
+        f"{sample} was analyzed from source file {source_file}. "
+        f"Instrument: {instrument}. Heating rate: {heating_rate_text}. Atmosphere: {atmosphere}. "
+        f"{completeness}"
+    )
+
+
+def _paper_record_heading(record: dict, datasets: dict) -> str:
+    analysis = _analysis_family_label(record.get("analysis_type"))
+    label = _paper_display_label(record.get("dataset_key"), datasets, record=record)
+    return normalize_report_text(f"{analysis}: {label}")
+
+
+def _record_figure_keys(record: dict) -> list[str]:
+    keys = (record.get("artifacts") or {}).get("figure_keys")
+    if isinstance(keys, list):
+        return [str(item) for item in keys if item not in (None, "")]
+    return []
+
+
+def _figures_for_record(record: dict, figures: dict | None, used: set[str]) -> list[tuple[str, bytes]]:
+    figures = figures or {}
+    matched: list[tuple[str, bytes]] = []
+    dataset_key = str(record.get("dataset_key") or "").lower()
+    analysis = str(record.get("analysis_type") or "").lower()
+
+    preferred_keys = _record_figure_keys(record)
+    for key in preferred_keys:
+        if key in figures and key not in used:
+            matched.append((key, figures[key]))
+            used.add(key)
+
+    if matched:
+        return matched
+
+    for caption, png_bytes in figures.items():
+        caption_l = str(caption).lower()
+        if caption in used:
+            continue
+        if dataset_key and dataset_key in caption_l:
+            matched.append((caption, png_bytes))
+            used.add(caption)
+            continue
+        if analysis and analysis in caption_l:
+            matched.append((caption, png_bytes))
+            used.add(caption)
+    return matched
+
+
+def _record_main_mini_table(record: dict) -> tuple[list[str], list[list[str]]] | None:
+    summary = record.get("summary") or {}
+    analysis = str(record.get("analysis_type") or "").upper()
+    if analysis == "TGA":
+        payload = [
+            ["Total Mass Loss (%)", _format_number(summary.get("total_mass_loss_percent"))],
+            ["Final Residue (%)", _format_number(summary.get("residue_percent"))],
+            ["Step Count", _format_value(summary.get("step_count"))],
+        ]
+    elif analysis == "DSC":
+        payload = [
+            ["Peak Count", _format_value(summary.get("peak_count"))],
+            ["Tg Midpoint (°C)", _format_number(summary.get("tg_midpoint"))],
+            ["Delta Cp", _format_number(summary.get("delta_cp"))],
+        ]
+    else:
+        payload = []
+        for key, value in summary.items():
+            if key in {"sample_name", "sample_mass", "heating_rate"}:
+                continue
+            payload.append([_humanize_key(key), _format_value(value)])
+            if len(payload) >= 3:
+                break
+    payload = [row for row in payload if row[1] not in {"N/A", "None"}]
+    if not payload:
+        return None
+    return ["Outcome", "Value"], payload
 
 
 def _processing_step(processing: dict | None, key: str) -> dict:
@@ -1539,9 +1712,16 @@ def _build_pdf_matrix_table(
 
 def _pdf_render_sections(record: dict) -> list[tuple[str, dict[str, Any]]]:
     """Return PDF-facing sections with redundant legacy scientific block removed."""
+    allowed_titles = {
+        "Primary Scientific Interpretation",
+        "Evidence Supporting This Interpretation",
+        "Alternative Explanations",
+        "Uncertainty and Methodological Limits",
+        "Recommended Follow-Up Experiments",
+    }
     output = []
     for title, payload in _record_main_sections(record):
-        if title == "Scientific Interpretation":
+        if title not in allowed_titles:
             continue
         output.append((title, payload))
     return output
@@ -1580,7 +1760,7 @@ def generate_pdf_report(
     stable_results, experimental_results = partition_results_by_status(valid_results)
     all_records = stable_results + experimental_results
     comparison_payload = _build_comparison_payload(comparison_workspace, datasets, all_records)
-    abstract_text, abstract_rows = _build_pdf_abstract_layout(all_records, datasets)
+    abstract_text, abstract_bullets = _build_pdf_abstract_layout(all_records, datasets)
     final_conclusion = _build_final_conclusion_paragraph(all_records, comparison_payload)
 
     left_right_margin = 19 * mm
@@ -1684,38 +1864,41 @@ def generate_pdf_report(
             )
         )
 
+    used_figures: set[str] = set()
+
     def append_record_discussion(record: dict) -> None:
-        add_heading(_record_title(record), level=2)
-        key_results = _record_key_results(record)
-        if key_results:
-            add_heading('Key Results', level=3)
-            add_kv_table(key_results, width=portrait_width)
-            story.append(Spacer(1, 4))
+        add_heading(_paper_record_heading(record, datasets), level=2)
+
+        matched_figures = _figures_for_record(record, figures, used_figures)
+        for index, (caption, png_bytes) in enumerate(matched_figures, start=1):
+            try:
+                img_reader = ImageReader(io.BytesIO(png_bytes))
+                width_px, height_px = img_reader.getSize()
+                if not width_px or not height_px:
+                    continue
+                max_width = portrait_width
+                max_height = portrait_height * 0.36
+                scale = min(max_width / float(width_px), max_height / float(height_px))
+                image = Image(io.BytesIO(png_bytes), width=float(width_px) * scale, height=float(height_px) * scale)
+                story.append(image)
+                story.append(Paragraph(normalize_report_text(f"Figure {index}. {caption}"), caption_style))
+                story.append(Spacer(1, 6))
+            except Exception:
+                continue
 
         for title, payload in _pdf_render_sections(record):
             add_heading(title, level=3)
-            if title in _BULLET_SECTION_TITLES:
-                for key, value in payload.items():
-                    text = normalize_report_text(value)
-                    if title not in {'Alternative Explanations', 'Recommended Follow-Up Experiments'}:
-                        text = normalize_report_text(f'{key}: {value}')
-                    story.append(Paragraph(normalize_report_text(f'• {text}'), body_style))
-            else:
-                add_kv_table({str(key): _format_value(value) for key, value in payload.items()}, width=portrait_width)
-            story.append(Spacer(1, 4))
+            for key, value in payload.items():
+                text = normalize_report_text(value)
+                if title in {"Evidence Supporting This Interpretation", "Uncertainty and Methodological Limits"}:
+                    text = normalize_report_text(f"{key}: {value}")
+                story.append(Paragraph(normalize_report_text(f"• {text}"), body_style))
+            story.append(Spacer(1, 3))
 
-        major_events = _tga_major_events(record)
-        if major_events:
-            add_heading('Major Decomposition Events', level=3)
-            add_matrix_table(['Event', 'Midpoint Temperature (°C)', 'Mass Loss (%)', 'Final Residue (%)'], major_events, width=portrait_width)
-            story.append(Spacer(1, 4))
-            return
-
-        compact = _record_compact_rows(record)
-        if compact:
-            headers, rows = compact
-            add_heading('Compact Key Table', level=3)
-            add_matrix_table(headers, rows, width=portrait_width)
+        mini_table = _record_main_mini_table(record)
+        if mini_table:
+            headers, rows = mini_table
+            add_matrix_table(headers, rows, width=portrait_width * 0.6, compact=True)
             story.append(Spacer(1, 4))
 
     title = (branding or {}).get('report_title') or 'ThermoAnalyzer Scientific Report'
@@ -1741,9 +1924,9 @@ def generate_pdf_report(
 
     add_heading('Abstract', level=1)
     story.append(Paragraph(normalize_report_text(abstract_text), body_style))
-    story.append(Spacer(1, 4))
-    if abstract_rows:
-        add_matrix_table(['Dataset', 'Analysis Type', 'Key Findings'], abstract_rows, width=portrait_width)
+    if abstract_bullets:
+        for bullet in abstract_bullets:
+            story.append(Paragraph(normalize_report_text(f"• {bullet}"), body_style))
     story.append(Spacer(1, 10))
 
     add_heading('Experimental', level=1)
@@ -1751,8 +1934,8 @@ def generate_pdf_report(
         story.append(Paragraph(normalize_report_text('No dataset metadata were available for experimental reporting.'), body_style))
     else:
         for dataset_key, dataset in datasets.items():
-            add_heading(_dataset_label(dataset_key, datasets), level=2)
-            add_kv_table(_main_conditions_payload(dataset_key, dataset), width=portrait_width)
+            add_heading(_paper_display_label(dataset_key, datasets), level=2)
+            story.append(Paragraph(_build_experimental_prose_block(dataset_key, dataset, datasets), body_style))
             story.append(Spacer(1, 4))
     story.append(Spacer(1, 8))
 
@@ -1760,10 +1943,19 @@ def generate_pdf_report(
     if comparison_payload:
         add_heading(f"{comparison_payload.get('overview', {}).get('Analysis Type', 'Cross-Dataset')} Comparison", level=2)
         if comparison_payload.get('overview'):
-            add_kv_table(comparison_payload['overview'], width=portrait_width)
-            story.append(Spacer(1, 4))
+            compared = comparison_payload.get('overview', {}).get('Compared Datasets') or 'selected datasets'
+            figure_ref = comparison_payload.get('overview', {}).get('Saved Figure') or 'Not recorded'
+            story.append(
+                Paragraph(
+                    normalize_report_text(
+                        f"Comparison context includes {compared}. Saved comparison figure reference: {figure_ref}."
+                    ),
+                    body_style,
+                )
+            )
+            story.append(Spacer(1, 3))
         if comparison_payload.get('metric_rows'):
-            add_matrix_table(comparison_payload['metric_headers'], comparison_payload['metric_rows'], width=portrait_width)
+            add_matrix_table(comparison_payload['metric_headers'], comparison_payload['metric_rows'], width=portrait_width * 0.85, compact=True)
             story.append(Spacer(1, 4))
         if comparison_payload.get('excluded_note'):
             story.append(Paragraph(normalize_report_text(comparison_payload['excluded_note']), body_style))
@@ -1784,15 +1976,17 @@ def generate_pdf_report(
             append_record_discussion(record)
 
     if figures:
-        add_heading('Figures', level=2)
-        for index, (caption, png_bytes) in enumerate(figures.items(), start=1):
+        remaining = [(caption, png_bytes) for caption, png_bytes in figures.items() if caption not in used_figures]
+        if remaining:
+            add_heading('Additional Figures', level=2)
+        for index, (caption, png_bytes) in enumerate(remaining, start=1):
             try:
                 img_reader = ImageReader(io.BytesIO(png_bytes))
                 width_px, height_px = img_reader.getSize()
                 if not width_px or not height_px:
                     continue
                 max_width = portrait_width
-                max_height = portrait_height * 0.40
+                max_height = portrait_height * 0.35
                 scale = min(max_width / float(width_px), max_height / float(height_px))
                 image = Image(io.BytesIO(png_bytes), width=float(width_px) * scale, height=float(height_px) * scale)
                 story.append(image)

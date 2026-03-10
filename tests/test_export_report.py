@@ -13,9 +13,12 @@ from core.provenance import build_calibration_reference_context
 from core.report_generator import (
     _build_final_conclusion_paragraph,
     _build_pdf_abstract_layout,
+    _build_experimental_prose_block,
     _build_pdf_matrix_table,
+    _record_appendix_sections,
     _choose_portrait_or_landscape_table_layout,
     _insert_soft_breaks,
+    _paper_display_label,
     _pdf_render_sections,
     generate_csv_summary,
     generate_docx_report,
@@ -305,21 +308,22 @@ def test_batch_summary_preview_frame_exposes_failure_reason_and_error_id():
     assert frame.iloc[0]["Reason"] == "Processor exploded."
 
 
-def test_pdf_abstract_layout_uses_compact_three_column_structure(thermal_dataset):
+def test_pdf_abstract_layout_uses_narrative_and_bullets_without_table_rows(thermal_dataset):
     dsc_result = _make_dsc_result(thermal_dataset)
     tga_result = _make_tga_result(
         thermal_dataset.data["temperature"].values,
         thermal_dataset.data["signal"].values * 0 + 100,
     )
 
-    abstract, rows = _build_pdf_abstract_layout(
+    abstract, bullets = _build_pdf_abstract_layout(
         [dsc_result, tga_result],
         {"synthetic_dsc": thermal_dataset},
     )
 
     assert "scientific synthesis" in abstract
-    assert rows
-    assert all(len(row) == 3 for row in rows)
+    assert bullets
+    assert isinstance(bullets[0], str)
+    assert len(bullets) <= 3
 
 
 def test_pdf_soft_break_insertion_wraps_long_hash_tokens():
@@ -377,19 +381,79 @@ def test_pdf_render_sections_suppresses_redundant_scientific_interpretation():
     titles = [title for title, _ in _pdf_render_sections(record)]
     assert "Primary Scientific Interpretation" in titles
     assert "Scientific Interpretation" not in titles
+    assert "Methodology" not in titles
+    assert "Equations and Formulation" not in titles
 
 
-def test_final_conclusion_covers_multiple_analysis_families():
+def test_experimental_block_uses_compact_prose_not_key_value_layout(thermal_dataset):
+    prose = _build_experimental_prose_block("synthetic_dsc", thermal_dataset, {"synthetic_dsc": thermal_dataset})
+    assert "Instrument:" in prose
+    assert "Heating rate:" in prose
+    assert "Atmosphere:" in prose
+    assert "Metadata completeness" in prose
+
+
+def test_appendix_retains_technical_method_tables():
+    record = {
+        "analysis_type": "TGA",
+        "processing": {
+            "workflow_template": "tga.general",
+            "analysis_type": "TGA",
+            "method_context": {"tga_unit_mode_label": "Percent"},
+        },
+        "validation": {"status": "pass", "issues": [], "warnings": []},
+        "provenance": {"source_data_hash": "abc123", "saved_at_utc": "2026-03-07T10:00:00+00:00"},
+        "review": {"commercial_scope": "stable_tga"},
+        "scientific_context": {"warnings": ["x"], "limitations": ["y"]},
+        "metadata": {"delimiter": ",", "header_row": 1},
+    }
+    sections = _record_appendix_sections(record)
+    titles = [title for title, _ in sections]
+    assert "Method Context" in titles
+    assert "Provenance" in titles
+
+
+def test_paper_display_label_prefers_user_friendly_mapping():
+    datasets = {
+        "run1": SimpleNamespace(metadata={"file_name": "tga_polymers_comparison.xlsx", "display_name": ""}),
+    }
+    assert _paper_display_label("run1", datasets) == "PMMA sample"
+
+
+def test_final_conclusion_explicitly_contrasts_two_tga_behaviors():
     conclusion = _build_final_conclusion_paragraph(
         [
-            {"analysis_type": "DSC", "status": "stable", "summary": {}},
-            {"analysis_type": "TGA", "status": "stable", "summary": {"total_mass_loss_percent": 90.0, "residue_percent": 5.0}},
+            {
+                "analysis_type": "TGA",
+                "status": "stable",
+                "dataset_key": "run_low_residue",
+                "summary": {
+                    "sample_name": "Low-Residue Sample",
+                    "step_count": 2,
+                    "total_mass_loss_percent": 98.1,
+                    "residue_percent": 1.9,
+                },
+            },
+            {
+                "analysis_type": "TGA",
+                "status": "stable",
+                "dataset_key": "run_high_residue",
+                "summary": {
+                    "sample_name": "High-Residue Sample",
+                    "step_count": 4,
+                    "total_mass_loss_percent": 63.5,
+                    "residue_percent": 36.2,
+                },
+            },
         ],
         comparison_payload=None,
     )
 
-    assert "DSC" in conclusion
-    assert "TGA" in conclusion
+    assert "near-complete decomposition with minimal residue" in conclusion
+    assert "multi-step, residue-retaining behavior" in conclusion
+    assert "Low-Residue Sample" in conclusion
+    assert "High-Residue Sample" in conclusion
+    assert "metadata limitations reduce mechanistic certainty" in conclusion.lower()
 
 
 def test_generate_pdf_report_uses_paper_structure_and_hides_executive_summary(thermal_dataset):
