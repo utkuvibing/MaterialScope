@@ -149,6 +149,79 @@ function renderRowsPreview(rows) {
     .join("")}</tbody></table>`;
 }
 
+function asArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string" && value.trim()) return [value.trim()];
+  return [];
+}
+
+function toneBadgeClass(statusToken) {
+  const token = String(statusToken || "").toLowerCase();
+  if (token === "pass" || token === "ok" || token === "saved") return "badge badge-ok";
+  if (token === "warn" || token === "warning" || token === "blocked") return "badge badge-warn";
+  if (token === "fail" || token === "error" || token === "failed") return "badge badge-fail";
+  return "badge badge-neutral";
+}
+
+function renderCompareSelectionChips(selectedKeys) {
+  const keys = selectedKeys || [];
+  if (!keys.length) {
+    setHtml("compareSelectedDatasetsPanel", '<span class="dataset-chip">No compare-selected datasets.</span>');
+    return;
+  }
+  const chips = keys
+    .map((key) => {
+      const dataset = currentDatasets.find((item) => item.key === key);
+      const suffix = dataset ? `${dataset.data_type}` : "unknown";
+      return `<span class="dataset-chip">${escapeHtml(key)} (${escapeHtml(suffix)})</span>`;
+    })
+    .join("");
+  setHtml("compareSelectedDatasetsPanel", chips);
+}
+
+function renderHomeWorkflowSteps(context) {
+  const summary = (context && context.summary) || {};
+  const compareWorkspace = (context && context.compare_workspace) || {};
+  const datasetCount = Number(summary.dataset_count || 0);
+  const resultCount = Number(summary.result_count || 0);
+  const selectedCompareCount = (compareWorkspace.selected_datasets || []).length;
+
+  setText("homeStepWorkspaceStatus", activeProjectId ? "Workspace ready" : "Create/open workspace");
+  setText("homeStepImportStatus", datasetCount > 0 ? `${datasetCount} dataset(s) imported` : "Import at least one dataset");
+  setText("homeStepCompareStatus", selectedCompareCount > 0 ? `${selectedCompareCount} selected for compare` : "Select compare datasets");
+  setText("homeStepRunStatus", resultCount > 0 ? `${resultCount} result(s) saved` : "Run DSC/TGA analysis");
+
+  let nextStep = "Create or open a workspace.";
+  if (activeProjectId) nextStep = "Import your first dataset.";
+  if (datasetCount > 0) nextStep = "Inspect validation and set compare selection.";
+  if (selectedCompareCount > 0) nextStep = "Run DSC/TGA analysis or batch from Compare.";
+  if (resultCount > 0) nextStep = "Save project or continue with export.";
+  setText("homeNextStepValue", nextStep);
+}
+
+function renderCompareWorkspaceSummary(compareWorkspace) {
+  const payload = compareWorkspace || {};
+  const selectedCount = (payload.selected_datasets || []).length;
+  setHtml(
+    "compareSummaryPanel",
+    `
+    ${keyGrid([
+      { label: "Analysis Type", value: valueOr(payload.analysis_type, "DSC") },
+      { label: "Selected Count", value: String(selectedCount) },
+      { label: "Saved At", value: valueOr(payload.saved_at, "N/A") },
+      { label: "Batch Run ID", value: valueOr(payload.batch_run_id, "none") },
+      { label: "Batch Template", value: valueOr(payload.batch_template_id, "none") },
+      { label: "Notes", value: valueOr(payload.notes, "(empty)") },
+    ])}
+    <div style="margin-top:8px;">
+      <span class="${toneBadgeClass(selectedCount > 0 ? "ok" : "warning")}">Selected: ${selectedCount}</span>
+      <span class="${toneBadgeClass(payload.batch_run_id ? "saved" : "neutral")}">Batch: ${payload.batch_run_id ? "available" : "not run"}</span>
+    </div>
+    `
+  );
+  renderCompareSelectionChips(payload.selected_datasets || []);
+}
+
 function applyWorkspaceContext(context) {
   currentActiveDatasetKey = context.active_dataset_key || null;
   compareSelectedDatasetKeys = new Set((context.compare_workspace && context.compare_workspace.selected_datasets) || []);
@@ -162,6 +235,8 @@ function applyWorkspaceContext(context) {
     "homeProjectInfo",
     `Workspace ${activeProjectId} | datasets=${context.summary.dataset_count} | results=${context.summary.result_count}`
   );
+  setText("homeDatasetCountValue", String(context.summary.dataset_count || 0));
+  setText("homeResultCountValue", String(context.summary.result_count || 0));
   setText(
     "projectViewInfo",
     `Workspace ${activeProjectId} | figures=${context.summary.figure_count} | history=${context.summary.analysis_history_count}`
@@ -174,19 +249,8 @@ function applyWorkspaceContext(context) {
     "compareMeta",
     `Selected datasets: ${compareCount} | Saved at: ${valueOr(compareWorkspace.saved_at, "N/A")}`
   );
-  setHtml(
-    "compareSummaryPanel",
-    `
-    ${keyGrid([
-      { label: "Analysis Type", value: valueOr(compareWorkspace.analysis_type, "DSC") },
-      { label: "Selected Count", value: String(compareCount) },
-      { label: "Saved At", value: valueOr(compareWorkspace.saved_at, "N/A") },
-      { label: "Batch Run ID", value: valueOr(compareWorkspace.batch_run_id, "none") },
-      { label: "Batch Template", value: valueOr(compareWorkspace.batch_template_id, "none") },
-      { label: "Notes", value: valueOr(compareWorkspace.notes, "(empty)") },
-    ])}
-    `
-  );
+  renderCompareWorkspaceSummary(compareWorkspace);
+  renderHomeWorkflowSteps(context);
   setDiagnostic("workspace", {
     summary: context.summary,
     active_dataset: context.active_dataset,
@@ -201,7 +265,7 @@ function applyWorkspaceContext(context) {
 function renderCompareDatasetChecks(selectedDatasets) {
   const container = el("compareDatasetChecks");
   if (!currentDatasets.length) {
-    container.innerHTML = "No datasets available.";
+    container.innerHTML = "<div class='panel-soft small'>No datasets available.</div>";
     return;
   }
 
@@ -209,7 +273,22 @@ function renderCompareDatasetChecks(selectedDatasets) {
   container.innerHTML = currentDatasets
     .map((dataset) => {
       const checked = selected.has(dataset.key) ? "checked" : "";
-      return `<label style="display:block;"><input type="checkbox" class="compare-dataset-check" value="${escapeHtml(dataset.key)}" ${checked}> ${escapeHtml(dataset.key)} (${escapeHtml(dataset.data_type)})</label>`;
+      const cardClass = selected.has(dataset.key) ? "compare-pick selected" : "compare-pick";
+      const isActive = dataset.key === currentActiveDatasetKey ? "Active workspace dataset" : "Not active";
+      return `
+      <label class="${cardClass}">
+        <div class="small">
+          <input type="checkbox" class="compare-dataset-check" value="${escapeHtml(dataset.key)}" ${checked}>
+          <strong>${escapeHtml(dataset.key)}</strong> (${escapeHtml(dataset.data_type)})
+        </div>
+        <div class="small muted">${escapeHtml(valueOr(dataset.sample_name, "sample not named"))}</div>
+        <div class="small">
+          <span class="${toneBadgeClass(dataset.validation_status)}">Validation: ${escapeHtml(valueOr(dataset.validation_status, "unknown"))}</span>
+          <span class="badge badge-neutral">Warnings: ${escapeHtml(valueOr(dataset.warning_count, "0"))}</span>
+          <span class="badge badge-neutral">Issues: ${escapeHtml(valueOr(dataset.issue_count, "0"))}</span>
+        </div>
+        <div class="small muted">${escapeHtml(isActive)}</div>
+      </label>`;
     })
     .join("");
 }
@@ -231,9 +310,45 @@ async function loadDatasetDetail(datasetKey) {
   try {
     const detail = await window.taDesktop.getDatasetDetail(activeProjectId, datasetKey);
     const validation = detail.validation || {};
+    const metadata = detail.metadata || {};
+    const importWarnings = asArray(metadata.import_warnings);
+    const confidence = valueOr(metadata.import_confidence || metadata.import_confidence_level || "not_recorded", "not_recorded");
+    const reviewRequired = Boolean(metadata.import_review_required);
+    const inferredType = valueOr(metadata.inferred_analysis_type, "n/a");
+    const inferredUnit = valueOr(metadata.inferred_signal_unit, "n/a");
+    const inferredVendor = valueOr(metadata.inferred_vendor, "n/a");
     setText(
       "datasetDetailInfo",
       `Dataset ${detail.dataset.key} | Type ${detail.dataset.data_type} | Validation ${validation.status || "unknown"}`
+    );
+    setHtml(
+      "homeSelectedDatasetPanel",
+      `
+      ${keyGrid([
+        { label: "Selected Dataset", value: detail.dataset.key },
+        { label: "Type", value: detail.dataset.data_type },
+        { label: "Sample", value: valueOr(detail.dataset.sample_name) },
+        { label: "Validation", value: valueOr(validation.status, "unknown") },
+        { label: "Warnings", value: String((validation.warnings || []).length) },
+        { label: "Issues", value: String((validation.issues || []).length) },
+      ])}
+      `
+    );
+    setHtml(
+      "homeImportQualityPanel",
+      `
+      <div>
+        <span class="${toneBadgeClass(validation.status)}">Validation: ${escapeHtml(valueOr(validation.status, "unknown"))}</span>
+        <span class="${toneBadgeClass(reviewRequired ? "warning" : "ok")}">Review Required: ${reviewRequired ? "yes" : "no"}</span>
+        <span class="badge badge-neutral">Import Confidence: ${escapeHtml(confidence)}</span>
+      </div>
+      ${keyGrid([
+        { label: "Inferred Type", value: inferredType },
+        { label: "Inferred Signal Unit", value: inferredUnit },
+        { label: "Inferred Vendor", value: inferredVendor },
+      ])}
+      ${renderIssueList("Import warnings", importWarnings)}
+      `
     );
     setHtml(
       "datasetDetailPanel",
@@ -269,6 +384,7 @@ async function loadDatasetDetail(datasetKey) {
   } catch (error) {
     setText("datasetDetailInfo", `Dataset detail failed: ${error}`);
     setHtml("datasetDetailPanel", "<p class='fail'>Dataset detail unavailable.</p>");
+    setHtml("homeImportQualityPanel", "<p class='fail'>Import confidence details unavailable.</p>");
     setDiagnostic("dataset", { error: String(error) });
   }
 }
@@ -327,6 +443,8 @@ function renderDatasets(datasets) {
     updateAnalysisActionState();
     setText("datasetDetailInfo", "No dataset detail selected.");
     setHtml("datasetDetailPanel", "Select a dataset to inspect metadata, validation, and preview rows.");
+    setHtml("homeSelectedDatasetPanel", "No active dataset selected.");
+    setHtml("homeImportQualityPanel", "Import confidence and review guidance will appear here after dataset inspection.");
     setDiagnostic("dataset", {});
     renderCompareDatasetChecks([]);
     return;
@@ -518,6 +636,19 @@ function renderBatchWorkspaceState(compareWorkspace) {
   } else {
     setText("batchInfo", `Ready for batch run on ${selectedCount} compare-selected dataset(s).`);
   }
+  setHtml(
+    "compareBatchStatsPanel",
+    `
+    <div>
+      <span class="badge badge-neutral">Selected datasets: ${selectedCount}</span>
+      <span class="badge badge-ok">Saved: ${feedback.saved || 0}</span>
+      <span class="badge badge-warn">Blocked: ${feedback.blocked || 0}</span>
+      <span class="badge badge-fail">Failed: ${feedback.failed || 0}</span>
+      <span class="badge badge-neutral">Template: ${escapeHtml(valueOr(payload.batch_template_id, "n/a"))}</span>
+      <span class="badge badge-neutral">Run ID: ${escapeHtml(valueOr(payload.batch_run_id, "not run"))}</span>
+    </div>
+    `
+  );
   renderBatchSummaryRows(payload.batch_summary || []);
   setDiagnostic("batch", {
     batch_run_id: payload.batch_run_id,
@@ -534,6 +665,8 @@ async function refreshCompareWorkspace() {
   if (!activeProjectId) {
     setText("compareMeta", "No compare metadata loaded.");
     setHtml("compareSummaryPanel", "Compare workspace summary will appear here.");
+    setHtml("compareBatchStatsPanel", "");
+    renderCompareSelectionChips([]);
     setDiagnostic("compare", {});
     return;
   }
@@ -544,15 +677,7 @@ async function refreshCompareWorkspace() {
     el("batchAnalysisTypeSelect").value = compare.compare_workspace.analysis_type || "DSC";
     el("compareNotes").value = compare.compare_workspace.notes || "";
     renderCompareDatasetChecks(compare.compare_workspace.selected_datasets || []);
-    setHtml(
-      "compareSummaryPanel",
-      keyGrid([
-        { label: "Analysis Type", value: valueOr(compare.compare_workspace.analysis_type, "DSC") },
-        { label: "Selected Count", value: String((compare.compare_workspace.selected_datasets || []).length) },
-        { label: "Saved At", value: valueOr(compare.compare_workspace.saved_at, "N/A") },
-        { label: "Batch Run ID", value: valueOr(compare.compare_workspace.batch_run_id, "none") },
-      ])
-    );
+    renderCompareWorkspaceSummary(compare.compare_workspace);
     setText(
       "compareMeta",
       `Selected datasets: ${(compare.compare_workspace.selected_datasets || []).length} | Saved at: ${valueOr(compare.compare_workspace.saved_at, "N/A")}`
@@ -565,6 +690,8 @@ async function refreshCompareWorkspace() {
   } catch (error) {
     setText("compareMeta", "Compare metadata unavailable.");
     setHtml("compareSummaryPanel", `<p class='fail'>Compare workspace read failed: ${escapeHtml(String(error))}</p>`);
+    setHtml("compareBatchStatsPanel", "");
+    renderCompareSelectionChips([]);
     setText("batchInfo", "Batch summary unavailable.");
     renderBatchSummaryRows([]);
     setDiagnostic("compare", { error: String(error) });
@@ -588,15 +715,7 @@ async function refreshWorkspaceContext() {
       "compareMeta",
       `Selected datasets: ${(context.compare_workspace.selected_datasets || []).length} | Saved at: ${valueOr(context.compare_workspace.saved_at, "N/A")}`
     );
-    setHtml(
-      "compareSummaryPanel",
-      keyGrid([
-        { label: "Analysis Type", value: valueOr(context.compare_workspace.analysis_type, "DSC") },
-        { label: "Selected Count", value: String((context.compare_workspace.selected_datasets || []).length) },
-        { label: "Saved At", value: valueOr(context.compare_workspace.saved_at, "N/A") },
-        { label: "Batch Run ID", value: valueOr(context.compare_workspace.batch_run_id, "none") },
-      ])
-    );
+    renderCompareWorkspaceSummary(context.compare_workspace);
     renderBatchWorkspaceState(context.compare_workspace);
     setDiagnostic("compare", context.compare_workspace);
     if (currentDatasets.length) {
@@ -633,15 +752,7 @@ async function updateCompareSelection(operation, datasetKeys) {
     "compareMeta",
     `Selected datasets: ${(response.compare_workspace.selected_datasets || []).length} | Saved at: ${valueOr(response.compare_workspace.saved_at, "N/A")}`
   );
-  setHtml(
-    "compareSummaryPanel",
-    keyGrid([
-      { label: "Analysis Type", value: valueOr(response.compare_workspace.analysis_type, "DSC") },
-      { label: "Selected Count", value: String((response.compare_workspace.selected_datasets || []).length) },
-      { label: "Saved At", value: valueOr(response.compare_workspace.saved_at, "N/A") },
-      { label: "Batch Run ID", value: valueOr(response.compare_workspace.batch_run_id, "none") },
-    ])
-  );
+  renderCompareWorkspaceSummary(response.compare_workspace);
   setDiagnostic("compare", response.compare_workspace);
   renderBatchWorkspaceState(response.compare_workspace);
   renderDatasets(currentDatasets);
@@ -733,20 +844,32 @@ async function refreshWorkspaceViews() {
     selectedDatasetKey = null;
     selectedResultId = null;
     setText("homeProjectInfo", "No workspace active.");
+    setText("homeDatasetCountValue", "0");
+    setText("homeResultCountValue", "0");
     setText("homeActiveDatasetValue", "none");
     setText("homeLatestResultValue", "none");
     setText("homeCompareCountValue", "0");
+    setText("homeNextStepValue", "Create or open a workspace.");
     setText("homeWorkspaceSavedAtValue", "N/A");
+    setText("homeStepWorkspaceStatus", "Create/open workspace");
+    setText("homeStepImportStatus", "Import at least one dataset");
+    setText("homeStepCompareStatus", "Select compare datasets");
+    setText("homeStepRunStatus", "Run DSC/TGA analysis");
     setText("projectViewInfo", "No workspace active.");
     renderDatasets([]);
     renderResults([]);
     setText("compareMeta", "No compare metadata loaded.");
     setHtml("compareSummaryPanel", "Compare workspace summary will appear here.");
+    setHtml("compareSelectedDatasetsPanel", "<span class='dataset-chip'>No compare-selected datasets.</span>");
+    setHtml("compareBatchStatsPanel", "");
     setText("batchInfo", "No batch run executed.");
     renderBatchSummaryRows([]);
     setText("exportPrepInfo", "No export preparation data loaded.");
     setHtml("exportPrepPanel", "Export summary metadata will appear here.");
     setHtml("exportActionPanel", "");
+    setHtml("homeImportFeedbackPanel", "No import action yet.");
+    setHtml("homeImportQualityPanel", "Import confidence and review guidance will appear here after dataset inspection.");
+    setHtml("homeSelectedDatasetPanel", "No active dataset selected.");
     setHtml("datasetDetailPanel", "Select a dataset to inspect metadata, validation, and preview rows.");
     setHtml("resultDetailPanel", "Select a saved result to inspect processing, provenance, and validation.");
     renderExportableResults([]);
@@ -784,15 +907,7 @@ async function refreshWorkspaceViews() {
     "compareMeta",
     `Selected datasets: ${(context.compare_workspace.selected_datasets || []).length} | Saved at: ${valueOr(context.compare_workspace.saved_at, "N/A")}`
   );
-  setHtml(
-    "compareSummaryPanel",
-    keyGrid([
-      { label: "Analysis Type", value: valueOr(context.compare_workspace.analysis_type, "DSC") },
-      { label: "Selected Count", value: String((context.compare_workspace.selected_datasets || []).length) },
-      { label: "Saved At", value: valueOr(context.compare_workspace.saved_at, "N/A") },
-      { label: "Batch Run ID", value: valueOr(context.compare_workspace.batch_run_id, "none") },
-    ])
-  );
+  renderCompareWorkspaceSummary(context.compare_workspace);
   setDiagnostic("compare", context.compare_workspace);
   renderBatchWorkspaceState(context.compare_workspace);
   updateAnalysisActionState();
@@ -871,12 +986,27 @@ async function onImportDataset() {
       picked.fileBase64,
       dataType
     );
+    setHtml(
+      "homeImportFeedbackPanel",
+      `
+      <div>
+        <span class="${toneBadgeClass(imported.validation.status)}">Validation: ${escapeHtml(valueOr(imported.validation.status, "unknown"))}</span>
+        <span class="badge badge-neutral">Warnings: ${escapeHtml(valueOr(imported.validation.warning_count, "0"))}</span>
+        <span class="badge badge-neutral">Issues: ${escapeHtml(valueOr(imported.validation.issue_count, "0"))}</span>
+      </div>
+      <p class="small">Imported <strong>${escapeHtml(imported.dataset.key)}</strong> (${escapeHtml(imported.dataset.data_type)}) from <strong>${escapeHtml(picked.fileName)}</strong>.</p>
+      `
+    );
     selectedDatasetKey = imported.dataset.key;
     await refreshWorkspaceViews();
     appendLog(
       `Imported dataset ${imported.dataset.key} (${imported.dataset.data_type}) from ${picked.filePath}. Validation=${imported.validation.status}`
     );
   } catch (error) {
+    setHtml(
+      "homeImportFeedbackPanel",
+      `<span class="badge badge-fail">Import failed</span><p class="small">${escapeHtml(String(error))}</p>`
+    );
     appendLog(`Import dataset failed: ${error}`);
   }
 }
@@ -918,15 +1048,7 @@ async function onSaveCompareSelection() {
       "compareMeta",
       `Selected datasets: ${(response.compare_workspace.selected_datasets || []).length} | Saved at: ${valueOr(response.compare_workspace.saved_at, "N/A")}`
     );
-    setHtml(
-      "compareSummaryPanel",
-      keyGrid([
-        { label: "Analysis Type", value: valueOr(response.compare_workspace.analysis_type, "DSC") },
-        { label: "Selected Count", value: String((response.compare_workspace.selected_datasets || []).length) },
-        { label: "Saved At", value: valueOr(response.compare_workspace.saved_at, "N/A") },
-        { label: "Batch Run ID", value: valueOr(response.compare_workspace.batch_run_id, "none") },
-      ])
-    );
+    renderCompareWorkspaceSummary(response.compare_workspace);
     setDiagnostic("compare", response.compare_workspace);
     renderBatchWorkspaceState(response.compare_workspace);
     renderDatasets(currentDatasets);

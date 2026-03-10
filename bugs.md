@@ -336,3 +336,29 @@ Restore the last known-good renderer from git baseline, then apply incremental s
 - Run `npm run test:desktop-smoke`
 - Run `pytest -q`
 - Residual risk: deeper per-page UI/UX parity with Streamlit is still pending in future tranches
+
+### Title
+Electron dev backend launch failed with `ModuleNotFoundError: No module named 'backend'`
+
+### Date
+2026-03-10
+
+### Repro
+1. Run `npm start` under `desktop/electron`.
+2. Backend starts in development mode with `python C:\thermoanalyzer\backend\main.py`.
+3. Backend crashes with `ModuleNotFoundError: No module named 'backend'`.
+
+### Suspected Cause
+Running `backend/main.py` as a script sets `sys.path[0]` to `.../backend`, so absolute import `from backend.app import create_app` fails because repo root is not on import path.
+
+### Attempted Fix
+Keep backend code unchanged and fix only Electron development launch path resolution.
+
+### Actual Fix
+Update `desktop/electron/backend_locator.js` development launch args from script path to module mode: `python -m backend.main` (with `cwd` at repo root). Update locator smoke test accordingly.
+
+### Verification
+- Run `npm run test:startup-paths`
+- Run `npm run test:desktop-smoke`
+- Run `python -m backend.main --help` from repo root
+- Residual risk: this fix is for development mode; packaged mode was already using bundled executable and unaffected

@@ -140,6 +140,164 @@
       padding: 14px 16px;
       margin-bottom: 14px;
     }
+    .hero-card {
+      background: linear-gradient(130deg, #0e7490 0%, #155e75 100%);
+      color: #eaf8fb;
+      border-color: #0f5f75;
+    }
+    .hero-card .small,
+    .hero-card .muted {
+      color: #d8f2f8;
+    }
+    .hero-title {
+      margin: 0 0 8px;
+      font-size: 1.35rem;
+      font-weight: 700;
+    }
+    .hero-copy {
+      margin: 0 0 12px;
+      font-size: 0.93rem;
+    }
+    .hero-actions {
+      margin: 10px 0 12px;
+    }
+    .hero-actions button {
+      background: #f8fdff;
+      color: #0f4f63;
+    }
+    .hero-actions button:hover {
+      background: #e8f5fb;
+    }
+    .hero-actions button:disabled {
+      opacity: 0.55;
+      color: #0f4f63;
+    }
+    .section-title {
+      margin: 0 0 8px;
+      font-size: 1rem;
+      font-weight: 700;
+    }
+    .section-subtitle {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .split-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .split-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .step-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 8px;
+    }
+    .step-item {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #f8fafc;
+      padding: 8px 10px;
+    }
+    .step-label {
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .step-value {
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-size: 0.76rem;
+      font-weight: 600;
+      margin-right: 6px;
+      margin-bottom: 6px;
+    }
+    .badge-ok {
+      background: #e6f8f1;
+      color: #0f766e;
+      border-color: #9de4cf;
+    }
+    .badge-warn {
+      background: #fff8e8;
+      color: #9a5808;
+      border-color: #f6d18b;
+    }
+    .badge-fail {
+      background: #fdecec;
+      color: #b91c1c;
+      border-color: #f3b0b0;
+    }
+    .badge-neutral {
+      background: #edf2f8;
+      color: #475569;
+      border-color: #ced8e5;
+    }
+    .panel-soft {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+    }
+    .dataset-chip-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .dataset-chip {
+      background: #edf2f8;
+      border: 1px solid #cfdae8;
+      border-radius: 999px;
+      padding: 4px 9px;
+      font-size: 0.78rem;
+    }
+    .table-wrap {
+      overflow-x: auto;
+    }
+    .compare-picks {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .compare-pick {
+      display: block;
+      border: 1px solid var(--border);
+      background: #f8fafc;
+      border-radius: 8px;
+      padding: 8px 10px;
+      cursor: pointer;
+    }
+    .compare-pick.selected {
+      border-color: #6db9ca;
+      background: #ecf7fa;
+    }
+    .compare-pick input {
+      margin-right: 6px;
+    }
+    .compare-flow {
+      border-left: 4px solid #0e7490;
+      padding-left: 10px;
+      margin-bottom: 10px;
+    }
+    .compare-step {
+      margin: 0 0 8px;
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
     .row {
       display: flex;
       gap: 10px;
@@ -263,6 +421,10 @@
       .topbar {
         position: static;
       }
+      .split-2,
+      .split-3 {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
@@ -308,11 +470,13 @@
 
       <main class="content">
         <section class="view active" id="view-home">
-          <h2 class="view-title">Import Workspace</h2>
-          <p class="view-copy">Create or open a project archive, import datasets, and select the active run for analysis pages.</p>
+          <h2 class="view-title">Home / Import</h2>
+          <p class="view-copy">Set up your workspace, import lab runs, and prepare compare-ready datasets for stable DSC/TGA workflows.</p>
 
-          <div class="card">
-            <div class="row">
+          <div class="card hero-card">
+            <h3 class="hero-title">ThermoAnalyzer Desktop Workflow</h3>
+            <p class="hero-copy">Use this page as your daily start point: open your project, import thermal data, and verify quality before analysis or compare.</p>
+            <div class="row hero-actions">
               <button id="newWorkspaceBtn">New Workspace</button>
               <button id="openProjectBtn">Open .thermozip</button>
               <button id="saveProjectBtn" disabled>Save Workspace</button>
@@ -320,6 +484,14 @@
             </div>
             <p id="homeProjectInfo" class="small">No workspace active.</p>
             <div class="kv-grid">
+              <div class="kv-item">
+                <div class="kv-label">Dataset Count</div>
+                <div class="kv-value" id="homeDatasetCountValue">0</div>
+              </div>
+              <div class="kv-item">
+                <div class="kv-label">Result Count</div>
+                <div class="kv-value" id="homeResultCountValue">0</div>
+              </div>
               <div class="kv-item">
                 <div class="kv-label">Active Dataset</div>
                 <div class="kv-value" id="homeActiveDatasetValue">none</div>
@@ -333,6 +505,10 @@
                 <div class="kv-value" id="homeCompareCountValue">0</div>
               </div>
               <div class="kv-item">
+                <div class="kv-label">Recommended Next Step</div>
+                <div class="kv-value" id="homeNextStepValue">Create or open a workspace.</div>
+              </div>
+              <div class="kv-item">
                 <div class="kv-label">Saved At</div>
                 <div class="kv-value" id="homeWorkspaceSavedAtValue">N/A</div>
               </div>
@@ -340,9 +516,34 @@
           </div>
 
           <div class="card">
+            <h3 class="section-title">Workflow Guidance</h3>
+            <p class="section-subtitle">Follow these steps for a stable workflow before running analysis.</p>
+            <div class="step-list">
+              <div class="step-item">
+                <div class="step-label">Step 1</div>
+                <div class="step-value" id="homeStepWorkspaceStatus">Create/open workspace</div>
+              </div>
+              <div class="step-item">
+                <div class="step-label">Step 2</div>
+                <div class="step-value" id="homeStepImportStatus">Import at least one dataset</div>
+              </div>
+              <div class="step-item">
+                <div class="step-label">Step 3</div>
+                <div class="step-value" id="homeStepCompareStatus">Select compare datasets</div>
+              </div>
+              <div class="step-item">
+                <div class="step-label">Step 4</div>
+                <div class="step-value" id="homeStepRunStatus">Run DSC/TGA analysis</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3 class="section-title">Import Dataset</h3>
+            <p class="section-subtitle">Bring in a run file, review import confidence and validation, then decide whether it is analysis-ready.</p>
             <div class="row">
               <button id="importDatasetBtn" disabled>Import Dataset</button>
-              <label for="datasetTypeSelect" class="small">Import Type Override:</label>
+              <label for="datasetTypeSelect" class="small">Type Override</label>
               <select id="datasetTypeSelect">
                 <option value="">Auto</option>
                 <option value="DSC">DSC</option>
@@ -350,27 +551,39 @@
                 <option value="DTA">DTA</option>
               </select>
             </div>
-            <p class="small">Datasets</p>
-            <table>
-              <thead>
-                <tr>
-                  <th>Use</th>
-                  <th>Active</th>
-                  <th>Compare</th>
-                  <th>Inspect</th>
-                  <th>Key</th>
-                  <th>Type</th>
-                  <th>Sample</th>
-                  <th>Validation</th>
-                  <th>Warnings</th>
-                  <th>Issues</th>
-                </tr>
-              </thead>
-              <tbody id="datasetsBody"></tbody>
-            </table>
+            <div class="split-2" style="margin-top:10px;">
+              <div class="panel-soft" id="homeImportFeedbackPanel">No import action yet.</div>
+              <div class="panel-soft" id="homeImportQualityPanel">Import confidence and review guidance will appear here after dataset inspection.</div>
+            </div>
           </div>
 
           <div class="card">
+            <h3 class="section-title">Workspace Datasets</h3>
+            <p class="section-subtitle">Choose the active dataset, adjust compare selection, and inspect validation status.</p>
+            <div id="homeSelectedDatasetPanel" class="panel-soft">No active dataset selected.</div>
+            <div class="table-wrap" style="margin-top:10px;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Use</th>
+                    <th>Active</th>
+                    <th>Compare</th>
+                    <th>Inspect</th>
+                    <th>Key</th>
+                    <th>Type</th>
+                    <th>Sample</th>
+                    <th>Validation</th>
+                    <th>Warnings</th>
+                    <th>Issues</th>
+                  </tr>
+                </thead>
+                <tbody id="datasetsBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3 class="section-title">Selected Dataset Detail</h3>
             <p id="datasetDetailInfo" class="small">No dataset detail selected.</p>
             <div id="datasetDetailPanel" class="muted">Select a dataset to inspect metadata, validation, and preview rows.</div>
           </div>
@@ -378,12 +591,23 @@
 
         <section class="view" id="view-compare">
           <h2 class="view-title">Compare Workspace</h2>
-          <p class="view-copy">Manage compare-selected datasets, notes, and run stable batch templates across selected runs.</p>
+          <p class="view-copy">Build a compare-focused workspace: choose compatible datasets, capture notes, then run one shared template in batch.</p>
 
           <div class="card">
-            <p class="small">Compare Selection</p>
+            <div class="compare-flow">
+              <p class="compare-step">Step 1 - Review compare workspace status</p>
+              <p id="compareMeta" class="small">No compare metadata loaded.</p>
+            </div>
+            <div id="compareSummaryPanel" class="muted">Compare workspace summary will appear here.</div>
+            <div id="compareSelectedDatasetsPanel" class="dataset-chip-wrap"></div>
+          </div>
+
+          <div class="card">
+            <div class="compare-flow">
+              <p class="compare-step">Step 2 - Manage selected datasets and notes</p>
+            </div>
             <div class="row">
-              <label for="compareTypeSelect">Type:</label>
+              <label for="compareTypeSelect">Analysis Type</label>
               <select id="compareTypeSelect">
                 <option value="DSC">DSC</option>
                 <option value="TGA">TGA</option>
@@ -392,42 +616,47 @@
               <button id="removeSelectedFromCompareBtn" disabled>Remove Selected Dataset</button>
               <button id="clearCompareSelectionBtn" disabled>Clear Compare Selection</button>
             </div>
-            <div id="compareDatasetChecks" class="small"></div>
-            <label for="compareNotes">Notes</label>
+            <div id="compareDatasetChecks" class="compare-picks"></div>
+            <label for="compareNotes" style="display:block;margin-top:10px;">Workspace Notes</label>
             <textarea id="compareNotes" rows="4" style="width:100%;"></textarea>
-            <div class="row">
+            <div class="row" style="margin-top:10px;">
               <button id="refreshCompareBtn" disabled>Refresh Compare</button>
               <button id="saveCompareBtn" disabled>Save Compare Selection</button>
             </div>
-            <p id="compareMeta" class="small">No compare metadata loaded.</p>
-            <div id="compareSummaryPanel" class="muted">Compare workspace summary will appear here.</div>
           </div>
 
           <div class="card">
-            <p class="small">Batch Runner (Stable)</p>
+            <div class="compare-flow">
+              <p class="compare-step">Step 3 - Run batch template on selected datasets</p>
+            </div>
             <div class="row">
-              <label for="batchAnalysisTypeSelect">Analysis:</label>
+              <label for="batchAnalysisTypeSelect">Analysis</label>
               <select id="batchAnalysisTypeSelect">
                 <option value="DSC">DSC</option>
                 <option value="TGA">TGA</option>
               </select>
-              <label for="batchTemplateIdInput">Template ID:</label>
+              <label for="batchTemplateIdInput">Template ID</label>
               <input id="batchTemplateIdInput" value="dsc.general" style="min-width:220px;" />
               <button id="runBatchBtn" disabled>Run Batch On Compare Selection</button>
             </div>
-            <p id="batchInfo" class="small">No batch run executed.</p>
-            <table>
-              <thead>
-                <tr>
-                  <th>Dataset</th>
-                  <th>Status</th>
-                  <th>Validation</th>
-                  <th>Result ID</th>
-                  <th>Failure Reason</th>
-                </tr>
-              </thead>
-              <tbody id="batchSummaryBody"></tbody>
-            </table>
+            <div id="compareBatchSummaryPanel" class="panel-soft" style="margin-top:10px;">
+              <div id="compareBatchStatsPanel"></div>
+              <p id="batchInfo" class="small">No batch run executed.</p>
+            </div>
+            <div class="table-wrap" style="margin-top:10px;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Dataset</th>
+                    <th>Status</th>
+                    <th>Validation</th>
+                    <th>Result ID</th>
+                    <th>Failure Reason</th>
+                  </tr>
+                </thead>
+                <tbody id="batchSummaryBody"></tbody>
+              </table>
+            </div>
           </div>
         </section>
 

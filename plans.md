@@ -1226,3 +1226,62 @@ Replace the desktop debug-style single-page layout with a product-like shell (si
 
 ### Notes
 - This tranche is intentionally UI-structure-first; deeper visual parity and page-by-page Streamlit behavior parity remain for later phases.
+
+---
+
+## Title
+Electron UI Parity Tranche 2 - Home/Import and Compare Product-Facing UX
+
+### Objective
+Improve first-impression desktop UX for tomorrow's professor demo by making Home/Import and Compare pages feel closer to product workflows (guidance-first, clearer hierarchy, less dashboard/debug feel) without touching Streamlit or backend contracts.
+
+### Definition Of Done
+- Home/Import view includes:
+  - hero/introduction section
+  - workflow-step guidance with recommended next step
+  - user-facing import feedback panel
+  - clearer selected-dataset and import-confidence/review presentation
+- Compare view includes:
+  - stronger workspace summary hierarchy
+  - clearer selected-dataset visibility
+  - notes and compare selection grouped as a workflow step
+  - batch runner positioned as a compare workflow step with summary badges
+- Existing desktop actions remain intact with the same backend API contracts.
+- Diagnostics/raw payload views stay outside normal product-facing pages.
+
+### Constraints
+- Do not modify `app.py` or `ui/*`.
+- No core numerical logic changes.
+- No normalized result/export contract changes.
+- No `.thermozip` compatibility changes.
+- No packaging work.
+
+### Impact Analysis
+- Desktop UI files:
+  - `desktop/electron/index.html`
+  - `desktop/electron/renderer.js`
+- Planning log:
+  - `plans.md`
+
+### Risks
+- UI markup changes can break renderer element bindings if IDs drift.
+- Added guidance panels must remain display-only and not alter backend behavior.
+
+### Migration / Rollout Strategy
+- Keep Electron preload/backend calls unchanged.
+- Rework only Home/Import and Compare layout and renderer presentation logic.
+- Preserve existing control IDs for actions and verify with desktop smoke tests.
+
+### Test Strategy
+- `node --check desktop/electron/renderer.js`
+- `npm run test:desktop-smoke` (from `desktop/electron`)
+- `pytest -q`
+
+### Progress Log
+- [x] Rework Home/Import structure with hero, guidance, and quality visibility
+- [x] Rework Compare structure with selected-dataset and batch workflow hierarchy
+- [x] Keep existing desktop action wiring intact
+- [x] Run desktop smoke and full regression tests
+
+### Notes
+- This tranche intentionally stops at Home/Import + Compare parity improvements for demo impression; DSC/TGA deep page parity is deferred.

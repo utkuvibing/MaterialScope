@@ -23,7 +23,7 @@ function resolveBackendLaunch(options) {
     return {
       mode: "development",
       command: pythonExe,
-      args: [path.join(repoRoot, "backend", "main.py")],
+      args: ["-m", "backend.main"],
       cwd: repoRoot,
       resolvedPath: pythonExe,
       candidates: [],

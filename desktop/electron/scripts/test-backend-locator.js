@@ -1,5 +1,4 @@
 const assert = require("assert");
-const path = require("path");
 const { resolveBackendLaunch } = require("../backend_locator");
 
 function testDevelopmentDefaultPython() {
@@ -13,7 +12,7 @@ function testDevelopmentDefaultPython() {
   });
   assert.strictEqual(launch.mode, "development");
   assert.strictEqual(launch.command, "python");
-  assert.deepStrictEqual(launch.args, [path.join(repoRoot, "backend", "main.py")]);
+  assert.deepStrictEqual(launch.args, ["-m", "backend.main"]);
   assert.strictEqual(launch.cwd, repoRoot);
 }
 
