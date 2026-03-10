@@ -548,11 +548,11 @@
               </div>
               <div class="kv-item">
                 <div class="kv-label">Aktif Veri Seti</div>
-                <div class="kv-value" id="homeActiveDatasetValue">none</div>
+                <div class="kv-value" id="homeActiveDatasetValue">yok</div>
               </div>
               <div class="kv-item">
                 <div class="kv-label">Son Sonuç</div>
-                <div class="kv-value" id="homeLatestResultValue">none</div>
+                <div class="kv-value" id="homeLatestResultValue">yok</div>
               </div>
               <div class="kv-item">
                 <div class="kv-label">Karşılaştırma Seçimi</div>
@@ -715,111 +715,111 @@
         </section>
 
         <section class="view" id="view-dsc">
-          <h2 class="view-title">DSC Analysis</h2>
-          <p class="view-copy">Run a guided DSC workflow with dataset context, validation visibility, processing template awareness, and saved-result continuity.</p>
+          <h2 class="view-title" id="dscViewTitle">DSC Analizi</h2>
+          <p class="view-copy" id="dscViewCopy">Veri seti bağlamı, doğrulama görünürlüğü ve şablon sürekliliği ile DSC akışını adım adım yürüt.</p>
           <div class="card">
             <div class="analysis-step">
-              <p class="analysis-step-title">Step 1 - Active dataset and method context</p>
+              <p class="analysis-step-title" id="dscStep1Title">Adım 1 - Aktif veri seti ve yöntem bağlamı</p>
             </div>
-            <div id="dscActiveDatasetContextPanel" class="panel-soft">Select a dataset from Home / Import to begin DSC context.</div>
-            <div id="dscMethodContextPanel" class="panel-soft" style="margin-top:10px;">DSC processing context will appear here.</div>
+            <div id="dscActiveDatasetContextPanel" class="panel-soft">DSC bağlamını başlatmak için Veri Al sayfasından bir veri seti seç.</div>
+            <div id="dscMethodContextPanel" class="panel-soft" style="margin-top:10px;">DSC işlem bağlamı burada görünecek.</div>
           </div>
 
           <div class="card">
             <div class="analysis-step">
-              <p class="analysis-step-title">Step 2 - Validation and readiness checks</p>
+              <p class="analysis-step-title" id="dscStep2Title">Adım 2 - Doğrulama ve hazır olma kontrolleri</p>
             </div>
-            <div id="dscValidationPanel" class="panel-soft">Validation summary will appear after dataset inspection.</div>
+            <div id="dscValidationPanel" class="panel-soft">Doğrulama özeti, veri seti incelendikten sonra görünür.</div>
           </div>
 
           <div class="card">
             <div class="analysis-step">
-              <p class="analysis-step-title">Step 3 - Run DSC analysis</p>
+              <p class="analysis-step-title" id="dscStep3Title">Adım 3 - DSC analizini çalıştır</p>
             </div>
-            <div id="dscTemplateContextPanel" class="panel-soft">Workflow template context will appear here.</div>
+            <div id="dscTemplateContextPanel" class="panel-soft">İş akışı şablon bağlamı burada görünecek.</div>
             <div class="row" style="margin-top:10px;">
-              <button id="runDscAnalysisBtn" disabled>Run DSC Analysis</button>
-              <button id="inspectSelectedDatasetBtn">Inspect Selected Dataset</button>
+              <button id="runDscAnalysisBtn" disabled>DSC Analizini Çalıştır</button>
+              <button id="inspectSelectedDatasetBtn">Seçili Veri Setini İncele</button>
             </div>
-            <p id="dscAnalysisInfo" class="small">No DSC analysis executed yet.</p>
+            <p id="dscAnalysisInfo" class="small">Henüz DSC analizi çalıştırılmadı.</p>
           </div>
 
           <div class="card">
             <div class="analysis-step">
-              <p class="analysis-step-title">Step 4 - Saved result context</p>
+              <p class="analysis-step-title" id="dscStep4Title">Adım 4 - Kayıtlı sonuç bağlamı</p>
             </div>
-            <div id="dscResultSummaryPanel" class="panel-soft">No DSC result context yet.</div>
+            <div id="dscResultSummaryPanel" class="panel-soft">Henüz DSC sonuç bağlamı yok.</div>
           </div>
         </section>
 
         <section class="view" id="view-tga">
-          <h2 class="view-title">TGA Analysis</h2>
-          <p class="view-copy">Run a guided TGA workflow with unit/review context, validation checks, processing template visibility, and saved-result continuity.</p>
+          <h2 class="view-title" id="tgaViewTitle">TGA Analizi</h2>
+          <p class="view-copy" id="tgaViewCopy">Birim/review bağlamı, doğrulama kontrolleri ve şablon görünürlüğü ile TGA akışını adım adım yürüt.</p>
           <div class="card">
             <div class="analysis-step">
-              <p class="analysis-step-title">Step 1 - Active dataset and unit context</p>
+              <p class="analysis-step-title" id="tgaStep1Title">Adım 1 - Aktif veri seti ve birim bağlamı</p>
             </div>
-            <div id="tgaActiveDatasetContextPanel" class="panel-soft">Select a dataset from Home / Import to begin TGA context.</div>
-            <div id="tgaUnitContextPanel" class="panel-soft" style="margin-top:10px;">TGA unit and import-review context will appear here.</div>
+            <div id="tgaActiveDatasetContextPanel" class="panel-soft">TGA bağlamını başlatmak için Veri Al sayfasından bir veri seti seç.</div>
+            <div id="tgaUnitContextPanel" class="panel-soft" style="margin-top:10px;">TGA birim ve import-review bağlamı burada görünecek.</div>
           </div>
 
           <div class="card">
             <div class="analysis-step">
-              <p class="analysis-step-title">Step 2 - Validation and review warnings</p>
+              <p class="analysis-step-title" id="tgaStep2Title">Adım 2 - Doğrulama ve review uyarıları</p>
             </div>
-            <div id="tgaValidationPanel" class="panel-soft">Validation summary will appear after dataset inspection.</div>
+            <div id="tgaValidationPanel" class="panel-soft">Doğrulama özeti, veri seti incelendikten sonra görünür.</div>
           </div>
 
           <div class="card">
             <div class="analysis-step">
-              <p class="analysis-step-title">Step 3 - Run TGA analysis</p>
+              <p class="analysis-step-title" id="tgaStep3Title">Adım 3 - TGA analizini çalıştır</p>
             </div>
-            <div id="tgaTemplateContextPanel" class="panel-soft">Workflow template context will appear here.</div>
+            <div id="tgaTemplateContextPanel" class="panel-soft">İş akışı şablon bağlamı burada görünecek.</div>
             <div class="row" style="margin-top:10px;">
-              <button id="runTgaAnalysisBtn" disabled>Run TGA Analysis</button>
-              <button id="inspectSelectedDatasetBtn2">Inspect Selected Dataset</button>
+              <button id="runTgaAnalysisBtn" disabled>TGA Analizini Çalıştır</button>
+              <button id="inspectSelectedDatasetBtn2">Seçili Veri Setini İncele</button>
             </div>
-            <p id="tgaAnalysisInfo" class="small">No TGA analysis executed yet.</p>
+            <p id="tgaAnalysisInfo" class="small">Henüz TGA analizi çalıştırılmadı.</p>
           </div>
 
           <div class="card">
             <div class="analysis-step">
-              <p class="analysis-step-title">Step 4 - Saved result context</p>
+              <p class="analysis-step-title" id="tgaStep4Title">Adım 4 - Kayıtlı sonuç bağlamı</p>
             </div>
-            <div id="tgaResultSummaryPanel" class="panel-soft">No TGA result context yet.</div>
+            <div id="tgaResultSummaryPanel" class="panel-soft">Henüz TGA sonuç bağlamı yok.</div>
           </div>
         </section>
 
         <section class="view" id="view-export">
-          <h2 class="view-title">Export & Reports</h2>
-          <p class="view-copy">Prepare a clean export set from saved results, then generate professor-ready CSV and DOCX artifacts.</p>
+          <h2 class="view-title" id="exportViewTitle">Rapor Merkezi</h2>
+          <p class="view-copy" id="exportViewCopy">Kayıtlı sonuçlardan export paketini hazırla ve CSV/DOCX çıktıları üret.</p>
 
           <div class="card">
             <div class="analysis-step">
-              <p class="analysis-step-title">Step 1 - Prepare export context</p>
+              <p class="analysis-step-title" id="exportStep1Title">Adım 1 - Export bağlamını hazırla</p>
             </div>
             <div class="row">
-              <button id="refreshExportPrepBtn" disabled>Refresh Export Context</button>
+              <button id="refreshExportPrepBtn" disabled>Export Bağlamını Yenile</button>
             </div>
-            <p id="exportPrepInfo" class="small">No export context loaded yet.</p>
-            <div id="exportPrepPanel" class="muted">Export summary metadata will appear here.</div>
+            <p id="exportPrepInfo" class="small">Henüz export bağlamı yüklenmedi.</p>
+            <div id="exportPrepPanel" class="muted">Export özet metadata burada görünecek.</div>
           </div>
 
           <div class="card">
             <div class="analysis-step">
-              <p class="analysis-step-title">Step 2 - Choose saved results</p>
+              <p class="analysis-step-title" id="exportStep2Title">Adım 2 - Kayıtlı sonuçları seç</p>
             </div>
-            <p id="exportSelectionHint" class="small">Select the saved results to include in your export package.</p>
+            <p id="exportSelectionHint" class="small">Export paketine eklenecek kayıtlı sonuçları seç.</p>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Include</th>
-                    <th>Result ID</th>
-                    <th>Type</th>
-                    <th>Status</th>
-                    <th>Validation</th>
-                    <th>Saved At (UTC)</th>
+                    <th>Dahil Et</th>
+                    <th>Sonuç ID</th>
+                    <th>Tip</th>
+                    <th>Durum</th>
+                    <th>Doğrulama</th>
+                    <th>Kaydedilme (UTC)</th>
                   </tr>
                 </thead>
                 <tbody id="exportResultsBody"></tbody>
@@ -829,70 +829,70 @@
 
           <div class="card">
             <div class="analysis-step">
-              <p class="analysis-step-title">Step 3 - Generate deliverables</p>
+              <p class="analysis-step-title" id="exportStep3Title">Adım 3 - Çıktıları üret</p>
             </div>
             <div class="row">
-              <button id="exportCsvBtn" disabled>Generate Results CSV</button>
-              <button id="exportDocxBtn" disabled>Generate DOCX Report</button>
+              <button id="exportCsvBtn" disabled>Sonuç CSV Üret</button>
+              <button id="exportDocxBtn" disabled>DOCX Rapor Üret</button>
             </div>
-            <p class="small">Artifacts are generated from the current workspace and saved to your chosen path.</p>
+            <p class="small" id="exportStep3Hint">Çıktılar mevcut çalışma alanından üretilir ve seçilen dosya yoluna kaydedilir.</p>
             <div id="exportActionPanel" class="muted"></div>
           </div>
         </section>
 
         <section class="view" id="view-project">
-          <h2 class="view-title">Project Workspace</h2>
-          <p class="view-copy">Manage archive confidence for your current workspace, inspect saved results, and persist project state safely.</p>
+          <h2 class="view-title" id="projectViewTitle">Proje Alanı</h2>
+          <p class="view-copy" id="projectViewCopy">Arşiv güvenini yönet, kayıtlı sonuçları denetle ve proje durumunu güvenle kalıcılaştır.</p>
 
           <div class="card">
             <div class="analysis-step">
-              <p class="analysis-step-title">Project archive controls</p>
+              <p class="analysis-step-title" id="projectStep1Title">Proje arşivi kontrolleri</p>
             </div>
             <div class="row">
-              <button id="saveProjectBtnProjectView" disabled>Save Workspace</button>
-              <button id="refreshWorkspaceContextBtnProjectView" disabled>Refresh Context</button>
+              <button id="saveProjectBtnProjectView" disabled>Projeyi Kaydet</button>
+              <button id="refreshWorkspaceContextBtnProjectView" disabled>Bağlamı Yenile</button>
             </div>
-            <p id="projectViewInfo" class="small">No workspace active.</p>
+            <p id="projectViewInfo" class="small">Aktif çalışma alanı yok.</p>
             <div class="kv-grid">
               <div class="kv-item">
-                <div class="kv-label">Datasets</div>
+                <div class="kv-label">Veri Seti</div>
                 <div class="kv-value" id="projectDatasetCountValue">0</div>
               </div>
               <div class="kv-item">
-                <div class="kv-label">Saved Results</div>
+                <div class="kv-label">Kayıtlı Sonuç</div>
                 <div class="kv-value" id="projectResultCountValue">0</div>
               </div>
               <div class="kv-item">
-                <div class="kv-label">History Entries</div>
+                <div class="kv-label">Geçmiş Adımı</div>
                 <div class="kv-value" id="projectHistoryCountValue">0</div>
               </div>
               <div class="kv-item">
-                <div class="kv-label">Figures</div>
+                <div class="kv-label">Görsel</div>
                 <div class="kv-value" id="projectFigureCountValue">0</div>
               </div>
             </div>
-            <p id="projectConfidenceMessage" class="small">Open or create a workspace to establish project archive context.</p>
+            <p id="projectConfidenceMessage" class="small">Proje arşivi bağlamı için çalışma alanı aç veya oluştur.</p>
           </div>
 
           <div class="card">
             <div class="analysis-step">
-              <p class="analysis-step-title">Saved results archive</p>
+              <p class="analysis-step-title" id="projectStep2Title">Kayıtlı sonuç arşivi</p>
             </div>
-            <p class="small">Inspect saved records, verify validation/provenance status, and select a result for deeper review.</p>
+            <p class="small" id="projectStep2Hint">Kayıtları denetle, doğrulama/provenance durumunu doğrula ve detay inceleme için bir sonuç seç.</p>
             <div class="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Selected</th>
-                    <th>Inspect</th>
+                    <th>Seçili</th>
+                    <th>İncele</th>
                     <th>ID</th>
-                    <th>Type</th>
-                    <th>Status</th>
-                    <th>Dataset</th>
-                    <th>Validation</th>
-                    <th>Calib</th>
-                    <th>Reference</th>
-                    <th>Saved At (UTC)</th>
+                    <th>Tip</th>
+                    <th>Durum</th>
+                    <th>Veri Seti</th>
+                    <th>Doğrulama</th>
+                    <th>Kalibrasyon</th>
+                    <th>Referans</th>
+                    <th>Kaydedilme (UTC)</th>
                   </tr>
                 </thead>
                 <tbody id="resultsBody"></tbody>
@@ -902,46 +902,46 @@
 
           <div class="card">
             <div class="analysis-step">
-              <p class="analysis-step-title">Selected result detail</p>
+              <p class="analysis-step-title" id="projectStep3Title">Seçili sonuç detayı</p>
             </div>
-            <p id="resultDetailInfo" class="small">No result detail selected.</p>
-            <div id="resultDetailPanel" class="muted">Select a saved result to inspect processing, provenance, and validation.</div>
+            <p id="resultDetailInfo" class="small">Sonuç detayı seçilmedi.</p>
+            <div id="resultDetailPanel" class="muted">İşleme, provenance ve doğrulama detayları için kayıtlı bir sonuç seç.</div>
           </div>
         </section>
 
         <section class="view" id="view-license">
-          <h2 class="view-title">Product & License</h2>
-          <p class="view-copy">ThermoAnalyzer Desktop build information, release scope, and professor-demo notes.</p>
+          <h2 class="view-title" id="licenseViewTitle">Lisans ve Marka</h2>
+          <p class="view-copy" id="licenseViewCopy">Masaüstü build bilgisi, yayın kapsamı ve demo notları.</p>
           <div class="card">
             <div class="kv-grid">
               <div class="kv-item">
-                <div class="kv-label">App Version</div>
-                <div class="kv-value" id="licenseVersionValue">unknown</div>
+                <div class="kv-label" id="licenseVersionLabel">Uygulama Sürümü</div>
+                <div class="kv-value" id="licenseVersionValue">bilinmiyor</div>
               </div>
               <div class="kv-item">
-                <div class="kv-label">Project Extension</div>
-                <div class="kv-value" id="licenseProjectExtValue">unknown</div>
+                <div class="kv-label" id="licenseProjectExtLabel">Proje Uzantısı</div>
+                <div class="kv-value" id="licenseProjectExtValue">bilinmiyor</div>
               </div>
               <div class="kv-item">
-                <div class="kv-label">Desktop Release Focus</div>
-                <div class="kv-value">Stable DSC/TGA workflows, compare workspace, project archive, CSV/DOCX outputs</div>
+                <div class="kv-label" id="licenseFocusLabel">Desktop Build Odağı</div>
+                <div class="kv-value" id="licenseFocusValue">Kararlı DSC/TGA akışları, karşılaştırma alanı, proje arşivi ve CSV/DOCX çıktıları</div>
               </div>
             </div>
           </div>
           <div class="card">
-            <p class="section-title">Professor Demo Notes</p>
-            <p class="section-subtitle">This desktop build is optimized for stable teaching/demo workflows.</p>
-            <ul class="list-box">
-              <li>Stable focus: DSC/TGA analysis, compare workspace, save/load project archives, CSV/DOCX artifacts.</li>
-              <li>Preview modules (DTA, kinetics, deconvolution) are intentionally out of scope for demo promise.</li>
-              <li>Streamlit remains available as fallback/reference implementation without modification.</li>
+            <p class="section-title" id="licenseNotesTitle">Profesör Demo Notları</p>
+            <p class="section-subtitle" id="licenseNotesSubtitle">Bu masaüstü build kararlı öğretim/demo akışları için optimize edildi.</p>
+            <ul class="list-box" id="licenseNotesList">
+              <li>Kararlı odak: DSC/TGA analizi, karşılaştırma alanı, proje arşivi kaydet/yükle, CSV/DOCX çıktıları.</li>
+              <li>Önizleme modülleri (DTA, kinetik, dekonvolüsyon) demo sözü kapsamı dışındadır.</li>
+              <li>Streamlit fallback/reference implementation olarak dokunulmadan korunur.</li>
             </ul>
           </div>
         </section>
 
         <section class="view" id="view-diagnostics">
-          <h2 class="view-title">Diagnostics</h2>
-          <p class="view-copy">Technical payloads and logs for troubleshooting. Not part of the normal product-facing workflow.</p>
+          <h2 class="view-title" id="diagnosticsViewTitle">Tanılama</h2>
+          <p class="view-copy" id="diagnosticsViewCopy">Sorun giderme için teknik payload ve log alanı. Normal ürün akışının parçası değildir.</p>
 
           <div class="card">
             <div id="diagBootstrap"></div>
@@ -950,37 +950,37 @@
           </div>
 
           <div class="card">
-            <strong>Workspace Context Payload</strong>
+            <strong id="diagWorkspaceTitle">Çalışma Alanı Bağlam Payload</strong>
             <pre id="diagWorkspaceContext"></pre>
           </div>
 
           <div class="card">
-            <strong>Dataset Detail Payload</strong>
+            <strong id="diagDatasetTitle">Veri Seti Detay Payload</strong>
             <pre id="diagDatasetDetail"></pre>
           </div>
 
           <div class="card">
-            <strong>Result Detail Payload</strong>
+            <strong id="diagResultTitle">Sonuç Detay Payload</strong>
             <pre id="diagResultDetail"></pre>
           </div>
 
           <div class="card">
-            <strong>Compare Payload</strong>
+            <strong id="diagCompareTitle">Karşılaştırma Payload</strong>
             <pre id="diagComparePayload"></pre>
           </div>
 
           <div class="card">
-            <strong>Batch Payload</strong>
+            <strong id="diagBatchTitle">Batch Payload</strong>
             <pre id="diagBatchPayload"></pre>
           </div>
 
           <div class="card">
-            <strong>Export Payload</strong>
+            <strong id="diagExportTitle">Export Payload</strong>
             <pre id="diagExportPayload"></pre>
           </div>
 
           <div class="card">
-            <strong>Log</strong>
+            <strong id="diagLogTitle">Log</strong>
             <pre id="log"></pre>
           </div>
         </section>

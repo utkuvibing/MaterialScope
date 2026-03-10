@@ -209,14 +209,11 @@ function setLanguage(lang) {
   applyStaticLanguage();
   switchView(activeView);
   refreshStatus().catch(() => undefined);
-  if (activeProjectId) {
-    refreshWorkspaceViews().catch(() => undefined);
-  } else {
-    updateStatusWorkspace();
-  }
+  refreshWorkspaceViews().catch(() => undefined);
 }
 
 function applyStaticLanguage() {
+  document.documentElement.lang = currentLanguage === "tr" ? "tr" : "en";
   const trBtn = el("langTrBtn");
   const enBtn = el("langEnBtn");
   if (trBtn && enBtn) {
@@ -343,6 +340,126 @@ function applyStaticLanguage() {
   setText("batchAnalysisLabel", currentLanguage === "tr" ? "Analiz" : "Analysis");
   setText("batchTemplateLabel", currentLanguage === "tr" ? "Şablon ID" : "Template ID");
   setText("runBatchBtn", currentLanguage === "tr" ? "Karşılaştırma Seçiminde Batch Çalıştır" : "Run Batch On Compare Selection");
+
+  setText("dscViewTitle", currentLanguage === "tr" ? "DSC Analizi" : "DSC Analysis");
+  setText(
+    "dscViewCopy",
+    currentLanguage === "tr"
+      ? "Veri seti bağlamı, doğrulama görünürlüğü ve şablon sürekliliği ile DSC akışını adım adım yürüt."
+      : "Run guided DSC workflow with dataset context, validation visibility, and template continuity."
+  );
+  setText("dscStep1Title", currentLanguage === "tr" ? "Adım 1 - Aktif veri seti ve yöntem bağlamı" : "Step 1 - Active dataset and method context");
+  setText("dscStep2Title", currentLanguage === "tr" ? "Adım 2 - Doğrulama ve hazır olma kontrolleri" : "Step 2 - Validation and readiness checks");
+  setText("dscStep3Title", currentLanguage === "tr" ? "Adım 3 - DSC analizini çalıştır" : "Step 3 - Run DSC analysis");
+  setText("dscStep4Title", currentLanguage === "tr" ? "Adım 4 - Kayıtlı sonuç bağlamı" : "Step 4 - Saved result context");
+  setText("runDscAnalysisBtn", currentLanguage === "tr" ? "DSC Analizini Çalıştır" : "Run DSC Analysis");
+  setText("inspectSelectedDatasetBtn", currentLanguage === "tr" ? "Seçili Veri Setini İncele" : "Inspect Selected Dataset");
+
+  setText("tgaViewTitle", currentLanguage === "tr" ? "TGA Analizi" : "TGA Analysis");
+  setText(
+    "tgaViewCopy",
+    currentLanguage === "tr"
+      ? "Birim/review bağlamı, doğrulama kontrolleri ve şablon görünürlüğü ile TGA akışını adım adım yürüt."
+      : "Run guided TGA workflow with unit/review context, validation checks, and template visibility."
+  );
+  setText("tgaStep1Title", currentLanguage === "tr" ? "Adım 1 - Aktif veri seti ve birim bağlamı" : "Step 1 - Active dataset and unit context");
+  setText("tgaStep2Title", currentLanguage === "tr" ? "Adım 2 - Doğrulama ve review uyarıları" : "Step 2 - Validation and review warnings");
+  setText("tgaStep3Title", currentLanguage === "tr" ? "Adım 3 - TGA analizini çalıştır" : "Step 3 - Run TGA analysis");
+  setText("tgaStep4Title", currentLanguage === "tr" ? "Adım 4 - Kayıtlı sonuç bağlamı" : "Step 4 - Saved result context");
+  setText("runTgaAnalysisBtn", currentLanguage === "tr" ? "TGA Analizini Çalıştır" : "Run TGA Analysis");
+  setText("inspectSelectedDatasetBtn2", currentLanguage === "tr" ? "Seçili Veri Setini İncele" : "Inspect Selected Dataset");
+
+  setText("exportViewTitle", currentLanguage === "tr" ? "Rapor Merkezi" : "Report Center");
+  setText(
+    "exportViewCopy",
+    currentLanguage === "tr"
+      ? "Kayıtlı sonuçlardan export paketini hazırla ve CSV/DOCX çıktıları üret."
+      : "Prepare exports from saved results and generate CSV/DOCX deliverables."
+  );
+  setText("exportStep1Title", currentLanguage === "tr" ? "Adım 1 - Export bağlamını hazırla" : "Step 1 - Prepare export context");
+  setText("exportStep2Title", currentLanguage === "tr" ? "Adım 2 - Kayıtlı sonuçları seç" : "Step 2 - Choose saved results");
+  setText("exportStep3Title", currentLanguage === "tr" ? "Adım 3 - Çıktıları üret" : "Step 3 - Generate deliverables");
+  setText("refreshExportPrepBtn", currentLanguage === "tr" ? "Export Bağlamını Yenile" : "Refresh Export Context");
+  setText("exportCsvBtn", currentLanguage === "tr" ? "Sonuç CSV Üret" : "Generate Results CSV");
+  setText("exportDocxBtn", currentLanguage === "tr" ? "DOCX Rapor Üret" : "Generate DOCX Report");
+  setText(
+    "exportStep3Hint",
+    currentLanguage === "tr"
+      ? "Çıktılar mevcut çalışma alanından üretilir ve seçilen dosya yoluna kaydedilir."
+      : "Artifacts are generated from the current workspace and saved to your chosen path."
+  );
+
+  setText("projectViewTitle", currentLanguage === "tr" ? "Proje Alanı" : "Project Workspace");
+  setText(
+    "projectViewCopy",
+    currentLanguage === "tr"
+      ? "Arşiv güvenini yönet, kayıtlı sonuçları denetle ve proje durumunu güvenle kalıcılaştır."
+      : "Manage archive confidence, inspect saved results, and persist project state safely."
+  );
+  setText("projectStep1Title", currentLanguage === "tr" ? "Proje arşivi kontrolleri" : "Project archive controls");
+  setText("projectStep2Title", currentLanguage === "tr" ? "Kayıtlı sonuç arşivi" : "Saved results archive");
+  setText("projectStep3Title", currentLanguage === "tr" ? "Seçili sonuç detayı" : "Selected result detail");
+  setText(
+    "projectStep2Hint",
+    currentLanguage === "tr"
+      ? "Kayıtları denetle, doğrulama/provenance durumunu doğrula ve detay inceleme için bir sonuç seç."
+      : "Inspect saved records, verify validation/provenance, and open result details."
+  );
+  setText("saveProjectBtnProjectView", currentLanguage === "tr" ? "Projeyi Kaydet" : "Save Workspace");
+  setText("refreshWorkspaceContextBtnProjectView", currentLanguage === "tr" ? "Bağlamı Yenile" : "Refresh Context");
+
+  setText("licenseViewTitle", currentLanguage === "tr" ? "Lisans ve Marka" : "License & Branding");
+  setText(
+    "licenseViewCopy",
+    currentLanguage === "tr"
+      ? "Masaüstü build bilgisi, yayın kapsamı ve demo notları."
+      : "Desktop build information, release scope, and demo notes."
+  );
+  setText("licenseVersionLabel", currentLanguage === "tr" ? "Uygulama Sürümü" : "App Version");
+  setText("licenseProjectExtLabel", currentLanguage === "tr" ? "Proje Uzantısı" : "Project Extension");
+  setText("licenseFocusLabel", currentLanguage === "tr" ? "Desktop Build Odağı" : "Desktop Release Focus");
+  setText(
+    "licenseFocusValue",
+    currentLanguage === "tr"
+      ? "Kararlı DSC/TGA akışları, karşılaştırma alanı, proje arşivi ve CSV/DOCX çıktıları"
+      : "Stable DSC/TGA workflows, compare workspace, project archive, and CSV/DOCX outputs"
+  );
+  setText("licenseNotesTitle", currentLanguage === "tr" ? "Profesör Demo Notları" : "Professor Demo Notes");
+  setText(
+    "licenseNotesSubtitle",
+    currentLanguage === "tr"
+      ? "Bu masaüstü build kararlı öğretim/demo akışları için optimize edildi."
+      : "This desktop build is optimized for stable teaching/demo workflows."
+  );
+  const notesList = el("licenseNotesList");
+  if (notesList) {
+    notesList.innerHTML = currentLanguage === "tr"
+      ? [
+          "<li>Kararlı odak: DSC/TGA analizi, karşılaştırma alanı, proje arşivi kaydet/yükle, CSV/DOCX çıktıları.</li>",
+          "<li>Önizleme modülleri (DTA, kinetik, dekonvolüsyon) demo sözü kapsamı dışındadır.</li>",
+          "<li>Streamlit fallback/reference implementation olarak dokunulmadan korunur.</li>",
+        ].join("")
+      : [
+          "<li>Stable focus: DSC/TGA analysis, compare workspace, save/load project archives, CSV/DOCX artifacts.</li>",
+          "<li>Preview modules (DTA, kinetics, deconvolution) remain outside the demo promise.</li>",
+          "<li>Streamlit remains available as untouched fallback/reference implementation.</li>",
+        ].join("");
+  }
+
+  setText("diagnosticsViewTitle", currentLanguage === "tr" ? "Tanılama" : "Diagnostics");
+  setText(
+    "diagnosticsViewCopy",
+    currentLanguage === "tr"
+      ? "Sorun giderme için teknik payload ve log alanı. Normal ürün akışının parçası değildir."
+      : "Technical payloads and logs for troubleshooting. Not part of the normal product flow."
+  );
+  setText("diagWorkspaceTitle", currentLanguage === "tr" ? "Çalışma Alanı Bağlam Payload" : "Workspace Context Payload");
+  setText("diagDatasetTitle", currentLanguage === "tr" ? "Veri Seti Detay Payload" : "Dataset Detail Payload");
+  setText("diagResultTitle", currentLanguage === "tr" ? "Sonuç Detay Payload" : "Result Detail Payload");
+  setText("diagCompareTitle", currentLanguage === "tr" ? "Karşılaştırma Payload" : "Compare Payload");
+  setText("diagBatchTitle", currentLanguage === "tr" ? "Batch Payload" : "Batch Payload");
+  setText("diagExportTitle", currentLanguage === "tr" ? "Export Payload" : "Export Payload");
+  setText("diagLogTitle", currentLanguage === "tr" ? "Log" : "Log");
 }
 
 function appendLog(message) {
@@ -554,6 +671,7 @@ function findLatestResultByType(analysisType) {
 function renderAnalysisPage(analysisType) {
   const token = String(analysisType || "").toUpperCase();
   const isDsc = token === "DSC";
+  const isTr = currentLanguage === "tr";
   const prefix = isDsc ? "dsc" : "tga";
   const defaultTemplate = isDsc ? "dsc.general" : "tga.general";
   const dataset = (currentDatasets || []).find((item) => item.key === selectedDatasetKey) || null;
@@ -567,7 +685,7 @@ function renderAnalysisPage(analysisType) {
   const issues = validation.issues || [];
   const warnings = validation.warnings || [];
   const reviewRequired = Boolean(metadata.import_review_required);
-  const confidence = valueOr(metadata.import_confidence || metadata.import_confidence_level, "not_recorded");
+  const confidence = valueOr(metadata.import_confidence || metadata.import_confidence_level, isTr ? "kayıt_yok" : "not_recorded");
   const eligible = dataset ? isDatasetEligibleForAnalysis(token, dataset.data_type) : false;
 
   const latestResult = findLatestResultByType(token);
@@ -581,16 +699,16 @@ function renderAnalysisPage(analysisType) {
     dataset
       ? `
       ${keyGrid([
-        { label: "Dataset Key", value: valueOr(dataset.key) },
-        { label: "Dataset Type", value: valueOr(dataset.data_type, "unknown") },
-        { label: "Sample", value: valueOr(dataset.sample_name, "not named") },
-        { label: "Active In Workspace", value: dataset.key === currentActiveDatasetKey ? "yes" : "no" },
+        { label: isTr ? "Veri Seti Anahtarı" : "Dataset Key", value: valueOr(dataset.key) },
+        { label: isTr ? "Veri Seti Tipi" : "Dataset Type", value: valueOr(dataset.data_type, isTr ? "bilinmiyor" : "unknown") },
+        { label: isTr ? "Numune" : "Sample", value: valueOr(dataset.sample_name, isTr ? "adlandırılmamış" : "not named") },
+        { label: isTr ? "Çalışma Alanında Aktif" : "Active In Workspace", value: dataset.key === currentActiveDatasetKey ? (isTr ? "evet" : "yes") : (isTr ? "hayır" : "no") },
       ])}
       <div style="margin-top:8px;">
-        <span class="${toneBadgeClass(eligible ? "ok" : "warning")}">${token} eligibility: ${eligible ? "compatible" : "review dataset type"}</span>
+        <span class="${toneBadgeClass(eligible ? "ok" : "warning")}">${token} ${isTr ? "uygunluk" : "eligibility"}: ${eligible ? (isTr ? "uyumlu" : "compatible") : (isTr ? "veri tipini gözden geçir" : "review dataset type")}</span>
       </div>
       `
-      : "Select a dataset from Home / Import to begin analysis context."
+      : (isTr ? "Analiz bağlamını başlatmak için Veri Al sayfasından bir veri seti seç." : "Select a dataset from Home / Import to begin analysis context.")
   );
 
   setHtml(
@@ -598,29 +716,29 @@ function renderAnalysisPage(analysisType) {
     isDsc
       ? `
       ${keyGrid([
-        { label: "Suggested Workflow Template", value: defaultTemplate },
-        { label: "Selected Dataset Type", value: valueOr(dataset && dataset.data_type, "none") },
-        { label: "Validation Status", value: valueOr(validation.status, dataset ? dataset.validation_status : "unknown") },
+        { label: isTr ? "Önerilen İş Akışı Şablonu" : "Suggested Workflow Template", value: defaultTemplate },
+        { label: isTr ? "Seçili Veri Tipi" : "Selected Dataset Type", value: valueOr(dataset && dataset.data_type, t("common.none")) },
+        { label: isTr ? "Doğrulama Durumu" : "Validation Status", value: valueOr(validation.status, dataset ? dataset.validation_status : t("common.unknown")) },
       ])}
       `
       : `
       ${keyGrid([
-        { label: "Suggested Workflow Template", value: defaultTemplate },
-        { label: "Selected Dataset Type", value: valueOr(dataset && dataset.data_type, "none") },
-        { label: "Signal Unit", value: valueOr(units.signal, "n/a") },
+        { label: isTr ? "Önerilen İş Akışı Şablonu" : "Suggested Workflow Template", value: defaultTemplate },
+        { label: isTr ? "Seçili Veri Tipi" : "Selected Dataset Type", value: valueOr(dataset && dataset.data_type, t("common.none")) },
+        { label: isTr ? "Sinyal Birimi" : "Signal Unit", value: valueOr(units.signal, "n/a") },
       ])}
       `
   );
 
   const validationContextHtml = `
     <div>
-      <span class="${toneBadgeClass(validation.status || (dataset && dataset.validation_status))}">Validation: ${escapeHtml(valueOr(validation.status || (dataset && dataset.validation_status), "unknown"))}</span>
-      <span class="${toneBadgeClass(reviewRequired ? "warning" : "ok")}">Import Review Required: ${reviewRequired ? "yes" : "no"}</span>
-      <span class="badge badge-neutral">Import Confidence: ${escapeHtml(confidence)}</span>
+      <span class="${toneBadgeClass(validation.status || (dataset && dataset.validation_status))}">${isTr ? "Doğrulama" : "Validation"}: ${escapeHtml(valueOr(validation.status || (dataset && dataset.validation_status), t("common.unknown")))}</span>
+      <span class="${toneBadgeClass(reviewRequired ? "warning" : "ok")}">${isTr ? "Import Review Gerekli" : "Import Review Required"}: ${reviewRequired ? (isTr ? "evet" : "yes") : (isTr ? "hayır" : "no")}</span>
+      <span class="badge badge-neutral">${isTr ? "Import Güveni" : "Import Confidence"}: ${escapeHtml(confidence)}</span>
     </div>
-    ${renderIssueList("Validation warnings", warnings)}
-    ${renderIssueList("Validation issues", issues)}
-    ${renderIssueList("Import warnings", importWarnings)}
+    ${renderIssueList(isTr ? "Doğrulama uyarıları" : "Validation warnings", warnings)}
+    ${renderIssueList(isTr ? "Doğrulama sorunları" : "Validation issues", issues)}
+    ${renderIssueList(isTr ? "Import uyarıları" : "Import warnings", importWarnings)}
   `;
   setHtml(`${prefix}ValidationPanel`, validationContextHtml);
 
@@ -629,10 +747,10 @@ function renderAnalysisPage(analysisType) {
       "tgaUnitContextPanel",
       `
       ${keyGrid([
-        { label: "Temperature Unit", value: valueOr(units.temperature, "n/a") },
-        { label: "Signal Unit", value: valueOr(units.signal, "n/a") },
-        { label: "Inferred Signal Unit", value: valueOr(metadata.inferred_signal_unit, "n/a") },
-        { label: "Import Review Required", value: reviewRequired ? "yes" : "no" },
+        { label: isTr ? "Sıcaklık Birimi" : "Temperature Unit", value: valueOr(units.temperature, "n/a") },
+        { label: isTr ? "Sinyal Birimi" : "Signal Unit", value: valueOr(units.signal, "n/a") },
+        { label: isTr ? "Çıkarılan Sinyal Birimi" : "Inferred Signal Unit", value: valueOr(metadata.inferred_signal_unit, "n/a") },
+        { label: isTr ? "Import Review Gerekli" : "Import Review Required", value: reviewRequired ? (isTr ? "evet" : "yes") : (isTr ? "hayır" : "no") },
       ])}
       `
     );
@@ -645,11 +763,11 @@ function renderAnalysisPage(analysisType) {
     `${prefix}TemplateContextPanel`,
     `
     ${keyGrid([
-      { label: "Template ID", value: templateFromResult },
-      { label: "Page Analysis Type", value: token },
-      { label: "Ready To Run", value: dataset && eligible ? "yes" : "select compatible dataset" },
+      { label: isTr ? "Şablon ID" : "Template ID", value: templateFromResult },
+      { label: isTr ? "Sayfa Analiz Tipi" : "Page Analysis Type", value: token },
+      { label: isTr ? "Çalıştırmaya Hazır" : "Ready To Run", value: dataset && eligible ? (isTr ? "evet" : "yes") : (isTr ? "uyumlu veri seti seç" : "select compatible dataset") },
     ])}
-    <p class="small">Run will save into the same project result store and preserve validation/provenance context.</p>
+    <p class="small">${isTr ? "Çalıştırma, aynı proje sonuç deposuna kaydeder ve doğrulama/provenance bağlamını korur." : "Run will save into the same project result store and preserve validation/provenance context."}</p>
     `
   );
 
@@ -659,16 +777,16 @@ function renderAnalysisPage(analysisType) {
       resultPanelId,
       `
       ${keyGrid([
-        { label: "Focused Result ID", value: valueOr(focusedResult.result.id) },
-        { label: "Status", value: valueOr(focusedResult.result.status) },
-        { label: "Dataset", value: valueOr(focusedResult.result.dataset_key) },
-        { label: "Template", value: valueOr(focusedResult.processing && focusedResult.processing.workflow_template_id, "n/a") },
-        { label: "Saved At (UTC)", value: valueOr(focusedResult.provenance && focusedResult.provenance.saved_at_utc, "n/a") },
+        { label: isTr ? "Odak Sonuç ID" : "Focused Result ID", value: valueOr(focusedResult.result.id) },
+        { label: isTr ? "Durum" : "Status", value: valueOr(focusedResult.result.status) },
+        { label: isTr ? "Veri Seti" : "Dataset", value: valueOr(focusedResult.result.dataset_key) },
+        { label: isTr ? "Şablon" : "Template", value: valueOr(focusedResult.processing && focusedResult.processing.workflow_template_id, "n/a") },
+        { label: isTr ? "Kaydedilme (UTC)" : "Saved At (UTC)", value: valueOr(focusedResult.provenance && focusedResult.provenance.saved_at_utc, "n/a") },
       ])}
       <div style="margin-top:8px;">
-        <span class="${toneBadgeClass(focusedResult.validation && focusedResult.validation.status)}">Validation: ${escapeHtml(valueOr(focusedResult.validation && focusedResult.validation.status, "unknown"))}</span>
-        <span class="badge badge-neutral">Calibration: ${escapeHtml(valueOr(focusedResult.provenance && focusedResult.provenance.calibration_state, "unknown"))}</span>
-        <span class="badge badge-neutral">Reference: ${escapeHtml(valueOr(focusedResult.provenance && focusedResult.provenance.reference_state, "unknown"))}</span>
+        <span class="${toneBadgeClass(focusedResult.validation && focusedResult.validation.status)}">${isTr ? "Doğrulama" : "Validation"}: ${escapeHtml(valueOr(focusedResult.validation && focusedResult.validation.status, t("common.unknown")))}</span>
+        <span class="badge badge-neutral">${isTr ? "Kalibrasyon" : "Calibration"}: ${escapeHtml(valueOr(focusedResult.provenance && focusedResult.provenance.calibration_state, t("common.unknown")))}</span>
+        <span class="badge badge-neutral">${isTr ? "Referans" : "Reference"}: ${escapeHtml(valueOr(focusedResult.provenance && focusedResult.provenance.reference_state, t("common.unknown")))}</span>
       </div>
       `
     );
@@ -677,24 +795,26 @@ function renderAnalysisPage(analysisType) {
       resultPanelId,
       `
       ${keyGrid([
-        { label: "Latest Saved Result", value: valueOr(latestResult.id) },
-        { label: "Status", value: valueOr(latestResult.status) },
-        { label: "Dataset", value: valueOr(latestResult.dataset_key) },
-        { label: "Validation", value: valueOr(latestResult.validation_status, "unknown") },
-        { label: "Saved At (UTC)", value: valueOr(latestResult.saved_at_utc, "n/a") },
+        { label: isTr ? "Son Kayıtlı Sonuç" : "Latest Saved Result", value: valueOr(latestResult.id) },
+        { label: isTr ? "Durum" : "Status", value: valueOr(latestResult.status) },
+        { label: isTr ? "Veri Seti" : "Dataset", value: valueOr(latestResult.dataset_key) },
+        { label: isTr ? "Doğrulama" : "Validation", value: valueOr(latestResult.validation_status, t("common.unknown")) },
+        { label: isTr ? "Kaydedilme (UTC)" : "Saved At (UTC)", value: valueOr(latestResult.saved_at_utc, "n/a") },
       ])}
-      <p class="small">Open this result from Project page to inspect full processing/provenance details.</p>
+      <p class="small">${isTr ? "Tam işleme/provenance detayları için bu sonucu Proje Alanı'ndan aç." : "Open this result from Project page to inspect full processing/provenance details."}</p>
       `
     );
   } else {
-    setHtml(resultPanelId, `No ${token} result context yet.`);
+    setHtml(resultPanelId, isTr ? `Henüz ${token} sonuç bağlamı yok.` : `No ${token} result context yet.`);
   }
 
   if (runInfo) {
-    const infoText = `${token} on ${runInfo.dataset_key}: ${runInfo.execution_status}${runInfo.result_id ? ` (${runInfo.result_id})` : ""}${runInfo.failure_reason ? ` - ${runInfo.failure_reason}` : ""}`;
+    const infoText = isTr
+      ? `${token} ${runInfo.dataset_key}: ${runInfo.execution_status}${runInfo.result_id ? ` (${runInfo.result_id})` : ""}${runInfo.failure_reason ? ` - ${runInfo.failure_reason}` : ""}`
+      : `${token} on ${runInfo.dataset_key}: ${runInfo.execution_status}${runInfo.result_id ? ` (${runInfo.result_id})` : ""}${runInfo.failure_reason ? ` - ${runInfo.failure_reason}` : ""}`;
     setText(`${prefix}AnalysisInfo`, infoText);
   } else if (!dataset) {
-    setText(`${prefix}AnalysisInfo`, `No ${token} analysis executed yet.`);
+    setText(`${prefix}AnalysisInfo`, isTr ? `Henüz ${token} analizi çalıştırılmadı.` : `No ${token} analysis executed yet.`);
   }
 }
 
@@ -814,6 +934,7 @@ function collectSelectedExportResultIds() {
 async function loadDatasetDetail(datasetKey) {
   if (!activeProjectId || !datasetKey) return;
   try {
+    const isTr = currentLanguage === "tr";
     const detail = await window.taDesktop.getDatasetDetail(activeProjectId, datasetKey);
     currentDatasetDetail = detail;
     const validation = detail.validation || {};
@@ -826,18 +947,20 @@ async function loadDatasetDetail(datasetKey) {
     const inferredVendor = valueOr(metadata.inferred_vendor, "n/a");
     setText(
       "datasetDetailInfo",
-      `Dataset ${detail.dataset.key} | Type ${detail.dataset.data_type} | Validation ${validation.status || "unknown"}`
+      isTr
+        ? `Veri seti ${detail.dataset.key} | Tip ${detail.dataset.data_type} | Doğrulama ${validation.status || "bilinmiyor"}`
+        : `Dataset ${detail.dataset.key} | Type ${detail.dataset.data_type} | Validation ${validation.status || "unknown"}`
     );
     setHtml(
       "homeSelectedDatasetPanel",
       `
       ${keyGrid([
-        { label: "Selected Dataset", value: detail.dataset.key },
-        { label: "Type", value: detail.dataset.data_type },
-        { label: "Sample", value: valueOr(detail.dataset.sample_name) },
-        { label: "Validation", value: valueOr(validation.status, "unknown") },
-        { label: "Warnings", value: String((validation.warnings || []).length) },
-        { label: "Issues", value: String((validation.issues || []).length) },
+        { label: isTr ? "Seçili Veri Seti" : "Selected Dataset", value: detail.dataset.key },
+        { label: isTr ? "Tip" : "Type", value: detail.dataset.data_type },
+        { label: isTr ? "Numune" : "Sample", value: valueOr(detail.dataset.sample_name) },
+        { label: isTr ? "Doğrulama" : "Validation", value: valueOr(validation.status, t("common.unknown")) },
+        { label: isTr ? "Uyarı" : "Warnings", value: String((validation.warnings || []).length) },
+        { label: isTr ? "Sorun" : "Issues", value: String((validation.issues || []).length) },
       ])}
       `
     );
@@ -845,55 +968,56 @@ async function loadDatasetDetail(datasetKey) {
       "homeImportQualityPanel",
       `
       <div>
-        <span class="${toneBadgeClass(validation.status)}">Validation: ${escapeHtml(valueOr(validation.status, "unknown"))}</span>
-        <span class="${toneBadgeClass(reviewRequired ? "warning" : "ok")}">Review Required: ${reviewRequired ? "yes" : "no"}</span>
-        <span class="badge badge-neutral">Import Confidence: ${escapeHtml(confidence)}</span>
+        <span class="${toneBadgeClass(validation.status)}">${isTr ? "Doğrulama" : "Validation"}: ${escapeHtml(valueOr(validation.status, t("common.unknown")))}</span>
+        <span class="${toneBadgeClass(reviewRequired ? "warning" : "ok")}">${isTr ? "Review Gerekli" : "Review Required"}: ${reviewRequired ? t("common.yes") : t("common.no")}</span>
+        <span class="badge badge-neutral">${isTr ? "Import Güveni" : "Import Confidence"}: ${escapeHtml(confidence)}</span>
       </div>
       ${keyGrid([
-        { label: "Inferred Type", value: inferredType },
-        { label: "Inferred Signal Unit", value: inferredUnit },
-        { label: "Inferred Vendor", value: inferredVendor },
+        { label: isTr ? "Çıkarılan Tip" : "Inferred Type", value: inferredType },
+        { label: isTr ? "Çıkarılan Sinyal Birimi" : "Inferred Signal Unit", value: inferredUnit },
+        { label: isTr ? "Çıkarılan Cihaz/Vendor" : "Inferred Vendor", value: inferredVendor },
       ])}
-      ${renderIssueList("Import warnings", importWarnings)}
+      ${renderIssueList(isTr ? "Import uyarıları" : "Import warnings", importWarnings)}
       `
     );
     setHtml(
       "datasetDetailPanel",
       `
       ${keyGrid([
-        { label: "Dataset Key", value: detail.dataset.key },
-        { label: "Type", value: detail.dataset.data_type },
-        { label: "Sample", value: valueOr(detail.dataset.sample_name) },
-        { label: "Validation", value: valueOr(validation.status, "unknown") },
-        { label: "Warnings", value: String((validation.warnings || []).length) },
-        { label: "Issues", value: String((validation.issues || []).length) },
+        { label: isTr ? "Veri Seti Anahtarı" : "Dataset Key", value: detail.dataset.key },
+        { label: isTr ? "Tip" : "Type", value: detail.dataset.data_type },
+        { label: isTr ? "Numune" : "Sample", value: valueOr(detail.dataset.sample_name) },
+        { label: isTr ? "Doğrulama" : "Validation", value: valueOr(validation.status, t("common.unknown")) },
+        { label: isTr ? "Uyarı" : "Warnings", value: String((validation.warnings || []).length) },
+        { label: isTr ? "Sorun" : "Issues", value: String((validation.issues || []).length) },
       ])}
-      ${renderIssueList("Warnings", validation.warnings || [])}
-      ${renderIssueList("Issues", validation.issues || [])}
+      ${renderIssueList(isTr ? "Uyarılar" : "Warnings", validation.warnings || [])}
+      ${renderIssueList(isTr ? "Sorunlar" : "Issues", validation.issues || [])}
       <p class="small"><strong>Metadata</strong></p>
       ${keyGrid(
         Object.entries(detail.metadata || {})
           .slice(0, 8)
           .map(([key, value]) => ({ label: key, value: valueOr(value) }))
       )}
-      <p class="small"><strong>Units / Columns</strong></p>
+      <p class="small"><strong>${isTr ? "Birimler / Kolonlar" : "Units / Columns"}</strong></p>
       ${keyGrid([
-        { label: "Temperature Unit", value: valueOr(detail.units && detail.units.temperature) },
-        { label: "Signal Unit", value: valueOr(detail.units && detail.units.signal) },
-        { label: "Original Columns", value: valueOr((detail.original_columns || []).join(", "), "none") },
-        { label: "Compare Selected", value: detail.compare_selected ? "yes" : "no" },
+        { label: isTr ? "Sıcaklık Birimi" : "Temperature Unit", value: valueOr(detail.units && detail.units.temperature) },
+        { label: isTr ? "Sinyal Birimi" : "Signal Unit", value: valueOr(detail.units && detail.units.signal) },
+        { label: isTr ? "Orijinal Kolonlar" : "Original Columns", value: valueOr((detail.original_columns || []).join(", "), t("common.none")) },
+        { label: isTr ? "Karşılaştırmada Seçili" : "Compare Selected", value: detail.compare_selected ? t("common.yes") : t("common.no") },
       ])}
-      <p class="small"><strong>Data Preview</strong></p>
+      <p class="small"><strong>${isTr ? "Veri Önizleme" : "Data Preview"}</strong></p>
       ${renderRowsPreview(detail.data_preview || [])}
       `
     );
     setDiagnostic("dataset", detail);
     renderAnalysisPages();
   } catch (error) {
+    const isTr = currentLanguage === "tr";
     currentDatasetDetail = null;
-    setText("datasetDetailInfo", `Dataset detail failed: ${error}`);
-    setHtml("datasetDetailPanel", "<p class='fail'>Dataset detail unavailable.</p>");
-    setHtml("homeImportQualityPanel", "<p class='fail'>Import confidence details unavailable.</p>");
+    setText("datasetDetailInfo", isTr ? `Veri seti detayı okunamadı: ${error}` : `Dataset detail failed: ${error}`);
+    setHtml("datasetDetailPanel", isTr ? "<p class='fail'>Veri seti detayı kullanılamıyor.</p>" : "<p class='fail'>Dataset detail unavailable.</p>");
+    setHtml("homeImportQualityPanel", isTr ? "<p class='fail'>Import güveni detayı kullanılamıyor.</p>" : "<p class='fail'>Import confidence details unavailable.</p>");
     setDiagnostic("dataset", { error: String(error) });
     renderAnalysisPages();
   }
@@ -902,6 +1026,7 @@ async function loadDatasetDetail(datasetKey) {
 async function loadResultDetail(resultId) {
   if (!activeProjectId || !resultId) return;
   try {
+    const isTr = currentLanguage === "tr";
     const detail = await window.taDesktop.getResultDetail(activeProjectId, resultId);
     currentResultDetail = detail;
     const validation = detail.validation || {};
@@ -909,40 +1034,43 @@ async function loadResultDetail(resultId) {
     const provenance = detail.provenance || {};
     setText(
       "resultDetailInfo",
-      `Result ${detail.result.id} | ${detail.result.analysis_type} | status=${detail.result.status}`
+      isTr
+        ? `Sonuç ${detail.result.id} | ${detail.result.analysis_type} | durum=${detail.result.status}`
+        : `Result ${detail.result.id} | ${detail.result.analysis_type} | status=${detail.result.status}`
     );
     setHtml(
       "resultDetailPanel",
       `
       ${keyGrid([
-        { label: "Result ID", value: detail.result.id },
-        { label: "Analysis Type", value: detail.result.analysis_type },
-        { label: "Status", value: detail.result.status },
-        { label: "Dataset", value: detail.result.dataset_key },
-        { label: "Validation", value: valueOr(validation.status, "unknown") },
-        { label: "Saved At (UTC)", value: valueOr(provenance.saved_at_utc) },
+        { label: isTr ? "Sonuç ID" : "Result ID", value: detail.result.id },
+        { label: isTr ? "Analiz Tipi" : "Analysis Type", value: detail.result.analysis_type },
+        { label: isTr ? "Durum" : "Status", value: detail.result.status },
+        { label: isTr ? "Veri Seti" : "Dataset", value: detail.result.dataset_key },
+        { label: isTr ? "Doğrulama" : "Validation", value: valueOr(validation.status, t("common.unknown")) },
+        { label: isTr ? "Kaydedilme (UTC)" : "Saved At (UTC)", value: valueOr(provenance.saved_at_utc) },
       ])}
-      <p class="small"><strong>Processing / Template</strong></p>
+      <p class="small"><strong>${isTr ? "İşleme / Şablon" : "Processing / Template"}</strong></p>
       ${keyGrid([
-        { label: "Template ID", value: valueOr(processing.workflow_template_id, "n/a") },
-        { label: "Template Label", value: valueOr(processing.workflow_template_label, "n/a") },
-        { label: "Schema Version", value: valueOr(processing.schema_version, "n/a") },
-        { label: "Calibration", value: valueOr(provenance.calibration_state, "unknown") },
-        { label: "Reference", value: valueOr(provenance.reference_state, "unknown") },
-        { label: "Row Count", value: valueOr(detail.row_count, "0") },
+        { label: isTr ? "Şablon ID" : "Template ID", value: valueOr(processing.workflow_template_id, "n/a") },
+        { label: isTr ? "Şablon Etiketi" : "Template Label", value: valueOr(processing.workflow_template_label, "n/a") },
+        { label: isTr ? "Şema Sürümü" : "Schema Version", value: valueOr(processing.schema_version, "n/a") },
+        { label: isTr ? "Kalibrasyon" : "Calibration", value: valueOr(provenance.calibration_state, t("common.unknown")) },
+        { label: isTr ? "Referans" : "Reference", value: valueOr(provenance.reference_state, t("common.unknown")) },
+        { label: isTr ? "Satır Sayısı" : "Row Count", value: valueOr(detail.row_count, "0") },
       ])}
-      ${renderIssueList("Warnings", validation.warnings || [])}
-      ${renderIssueList("Issues", validation.issues || [])}
-      <p class="small"><strong>Rows Preview</strong></p>
+      ${renderIssueList(isTr ? "Uyarılar" : "Warnings", validation.warnings || [])}
+      ${renderIssueList(isTr ? "Sorunlar" : "Issues", validation.issues || [])}
+      <p class="small"><strong>${isTr ? "Satır Önizleme" : "Rows Preview"}</strong></p>
       ${renderRowsPreview(detail.rows_preview || [])}
       `
     );
     setDiagnostic("result", detail);
     renderAnalysisPages();
   } catch (error) {
+    const isTr = currentLanguage === "tr";
     currentResultDetail = null;
-    setText("resultDetailInfo", `Result detail failed: ${error}`);
-    setHtml("resultDetailPanel", "<p class='fail'>Result detail unavailable.</p>");
+    setText("resultDetailInfo", isTr ? `Sonuç detayı okunamadı: ${error}` : `Result detail failed: ${error}`);
+    setHtml("resultDetailPanel", isTr ? "<p class='fail'>Sonuç detayı kullanılamıyor.</p>" : "<p class='fail'>Result detail unavailable.</p>");
     setDiagnostic("result", { error: String(error) });
     renderAnalysisPages();
   }
@@ -951,15 +1079,16 @@ async function loadResultDetail(resultId) {
 function renderDatasets(datasets) {
   const body = el("datasetsBody");
   currentDatasets = datasets;
+  const isTr = currentLanguage === "tr";
   if (!datasets.length) {
-    body.innerHTML = "<tr><td colspan='10'>No datasets loaded.</td></tr>";
+    body.innerHTML = `<tr><td colspan='10'>${isTr ? "Yüklü veri seti yok." : "No datasets loaded."}</td></tr>`;
     selectedDatasetKey = null;
     currentDatasetDetail = null;
     updateAnalysisActionState();
-    setText("datasetDetailInfo", "No dataset detail selected.");
-    setHtml("datasetDetailPanel", "Select a dataset to inspect metadata, validation, and preview rows.");
-    setHtml("homeSelectedDatasetPanel", "No active dataset selected.");
-    setHtml("homeImportQualityPanel", "Import confidence and review guidance will appear here after dataset inspection.");
+    setText("datasetDetailInfo", isTr ? "Veri seti detayı seçilmedi." : "No dataset detail selected.");
+    setHtml("datasetDetailPanel", isTr ? "Metadata, doğrulama ve önizleme satırları için bir veri seti seç." : "Select a dataset to inspect metadata, validation, and preview rows.");
+    setHtml("homeSelectedDatasetPanel", isTr ? "Aktif veri seti seçilmedi." : "No active dataset selected.");
+    setHtml("homeImportQualityPanel", isTr ? "Import güveni ve review rehberi, veri seti incelendikten sonra burada görünür." : "Import confidence and review guidance will appear here after dataset inspection.");
     setDiagnostic("dataset", {});
     renderCompareDatasetChecks([]);
     renderAnalysisPages();
@@ -974,20 +1103,20 @@ function renderDatasets(datasets) {
   body.innerHTML = datasets
     .map((item) => {
       const checked = item.key === selectedDatasetKey ? "checked" : "";
-      const active = item.key === currentActiveDatasetKey ? "Active" : "";
+      const active = item.key === currentActiveDatasetKey ? (isTr ? "Aktif" : "Active") : "";
       const compareSelected = compareSelectedDatasetKeys.has(item.key);
       return `
       <tr>
         <td><input type="radio" name="datasetPick" value="${escapeHtml(item.key)}" ${checked}></td>
         <td>
-          <button class="set-active-btn" data-dataset-key="${escapeHtml(item.key)}">Set Active</button>
+          <button class="set-active-btn" data-dataset-key="${escapeHtml(item.key)}">${isTr ? "Aktif Yap" : "Set Active"}</button>
           <div class="small">${escapeHtml(active)}</div>
         </td>
         <td>
-          <button class="toggle-compare-btn" data-dataset-key="${escapeHtml(item.key)}">${compareSelected ? "Remove" : "Add"}</button>
-          <div class="small">${compareSelected ? "Selected" : "Not selected"}</div>
+          <button class="toggle-compare-btn" data-dataset-key="${escapeHtml(item.key)}">${compareSelected ? (isTr ? "Çıkar" : "Remove") : (isTr ? "Ekle" : "Add")}</button>
+          <div class="small">${compareSelected ? (isTr ? "Seçili" : "Selected") : (isTr ? "Seçili değil" : "Not selected")}</div>
         </td>
-        <td><button class="inspect-dataset-btn" data-dataset-key="${escapeHtml(item.key)}">View</button></td>
+        <td><button class="inspect-dataset-btn" data-dataset-key="${escapeHtml(item.key)}">${isTr ? "İncele" : "View"}</button></td>
         <td>${escapeHtml(item.key)}</td>
         <td>${escapeHtml(item.data_type)}</td>
         <td>${escapeHtml(item.sample_name)}</td>
@@ -1003,7 +1132,7 @@ function renderDatasets(datasets) {
     node.addEventListener("change", async (event) => {
       selectedDatasetKey = event.target.value;
       updateAnalysisActionState();
-      appendLog(`Selected dataset: ${selectedDatasetKey}`);
+      appendLog(currentLanguage === "tr" ? `Seçili veri seti: ${selectedDatasetKey}` : `Selected dataset: ${selectedDatasetKey}`);
       await loadDatasetDetail(selectedDatasetKey);
     });
   });
@@ -1039,12 +1168,13 @@ function renderDatasets(datasets) {
 function renderResults(results) {
   const body = el("resultsBody");
   currentResults = results;
+  const isTr = currentLanguage === "tr";
   if (!results.length) {
-    body.innerHTML = "<tr><td colspan='10'>No results saved.</td></tr>";
+    body.innerHTML = `<tr><td colspan='10'>${isTr ? "Kayıtlı sonuç yok." : "No results saved."}</td></tr>`;
     selectedResultId = null;
     currentResultDetail = null;
-    setText("resultDetailInfo", "No result detail selected.");
-    setHtml("resultDetailPanel", "Select a saved result to inspect processing, provenance, and validation.");
+    setText("resultDetailInfo", isTr ? "Sonuç detayı seçilmedi." : "No result detail selected.");
+    setHtml("resultDetailPanel", isTr ? "İşleme, provenance ve doğrulama detayları için kayıtlı bir sonuç seç." : "Select a saved result to inspect processing, provenance, and validation.");
     setDiagnostic("result", {});
     renderAnalysisPages();
     return;
@@ -1061,8 +1191,8 @@ function renderResults(results) {
     .map(
       (item) => `
       <tr>
-        <td>${item.id === selectedResultId ? "Selected" : ""}</td>
-        <td><button class="inspect-result-btn" data-result-id="${escapeHtml(item.id)}">View</button></td>
+        <td>${item.id === selectedResultId ? (isTr ? "Seçili" : "Selected") : ""}</td>
+        <td><button class="inspect-result-btn" data-result-id="${escapeHtml(item.id)}">${isTr ? "İncele" : "View"}</button></td>
         <td>${escapeHtml(item.id)}</td>
         <td>${escapeHtml(item.analysis_type)}</td>
         <td>${escapeHtml(item.status)}</td>
@@ -1086,7 +1216,9 @@ function renderResults(results) {
       if (!context) {
         setText(
           "homeProjectInfo",
-          `Active dataset: ${currentActiveDatasetKey || "none"} | Selected result: ${selectedResultId || "none"}`
+          currentLanguage === "tr"
+            ? `Aktif veri seti: ${currentActiveDatasetKey || t("common.none")} | Seçili sonuç: ${selectedResultId || t("common.none")}`
+            : `Active dataset: ${currentActiveDatasetKey || "none"} | Selected result: ${selectedResultId || "none"}`
         );
       }
       renderAnalysisPages();
@@ -1098,9 +1230,10 @@ function renderResults(results) {
 function renderExportableResults(results) {
   const body = el("exportResultsBody");
   exportableResults = results || [];
+  const isTr = currentLanguage === "tr";
   if (!exportableResults.length) {
-    body.innerHTML = "<tr><td colspan='6'>No saved results are currently available for export. Run analysis and save results first.</td></tr>";
-    setText("exportSelectionHint", "No exportable saved results yet. Generate at least one stable result first.");
+    body.innerHTML = `<tr><td colspan='6'>${isTr ? "Export için uygun kayıtlı sonuç yok. Önce analiz çalıştırıp sonuç kaydedin." : "No saved results are currently available for export. Run analysis and save results first."}</td></tr>`;
+    setText("exportSelectionHint", isTr ? "Henüz exporta uygun kayıtlı sonuç yok. Önce en az bir kararlı sonuç üret." : "No exportable saved results yet. Generate at least one stable result first.");
     setDisabled("exportCsvBtn", true);
     setDisabled("exportDocxBtn", true);
     return;
@@ -1122,7 +1255,9 @@ function renderExportableResults(results) {
     .join("");
   setText(
     "exportSelectionHint",
-    `Select the saved results to include. ${exportableResults.length} result(s) currently eligible for export/report generation.`
+    isTr
+      ? `Dahil edilecek kayıtlı sonuçları seçin. Şu anda ${exportableResults.length} sonuç export/rapor üretimine uygun.`
+      : `Select the saved results to include. ${exportableResults.length} result(s) currently eligible for export/report generation.`
   );
   setDisabled("exportCsvBtn", false);
   setDisabled("exportDocxBtn", false);
@@ -1132,7 +1267,7 @@ function renderBatchSummaryRows(rows) {
   const body = el("batchSummaryBody");
   const items = rows || [];
   if (!items.length) {
-    body.innerHTML = "<tr><td colspan='5'>No batch summary rows.</td></tr>";
+    body.innerHTML = `<tr><td colspan='5'>${currentLanguage === "tr" ? "Batch özet satırı yok." : "No batch summary rows."}</td></tr>`;
     return;
   }
   body.innerHTML = items
@@ -1281,10 +1416,10 @@ async function onSetActiveDataset(datasetKey) {
   try {
     const response = await window.taDesktop.setActiveDataset(activeProjectId, datasetKey);
     currentActiveDatasetKey = response.active_dataset_key;
-    appendLog(`Active dataset set to ${response.active_dataset_key}.`);
+    appendLog(currentLanguage === "tr" ? `Aktif veri seti güncellendi: ${response.active_dataset_key}.` : `Active dataset set to ${response.active_dataset_key}.`);
     await refreshWorkspaceViews();
   } catch (error) {
-    appendLog(`Set active dataset failed: ${error}`);
+    appendLog(currentLanguage === "tr" ? `Aktif veri seti güncellenemedi: ${error}` : `Set active dataset failed: ${error}`);
   }
 }
 
@@ -1313,17 +1448,18 @@ async function onToggleCompareDataset(datasetKey) {
   const operation = compareSelectedDatasetKeys.has(datasetKey) ? "remove" : "add";
   try {
     await updateCompareSelection(operation, [datasetKey]);
-    appendLog(`Compare selection ${operation}: ${datasetKey}`);
+    appendLog(currentLanguage === "tr" ? `Karşılaştırma seçimi ${operation === "add" ? "eklendi" : "çıkarıldı"}: ${datasetKey}` : `Compare selection ${operation}: ${datasetKey}`);
   } catch (error) {
-    appendLog(`Compare selection update failed: ${error}`);
+    appendLog(currentLanguage === "tr" ? `Karşılaştırma seçimi güncellenemedi: ${error}` : `Compare selection update failed: ${error}`);
   }
 }
 
 async function refreshExportPreparation() {
   if (!activeProjectId) {
-    setText("exportPrepInfo", "Open or create a workspace to prepare export context.");
-    setText("exportSelectionHint", "Select the saved results to include in your export package.");
-    setHtml("exportPrepPanel", "Refresh export context after loading or analyzing datasets.");
+    const isTr = currentLanguage === "tr";
+    setText("exportPrepInfo", isTr ? "Export hazırlığı için çalışma alanı aç veya oluştur." : "Open or create a workspace to prepare export context.");
+    setText("exportSelectionHint", isTr ? "Export paketine eklenecek kayıtlı sonuçları seç." : "Select the saved results to include in your export package.");
+    setHtml("exportPrepPanel", isTr ? "Veri yükleme veya analiz sonrası export bağlamını yenile." : "Refresh export context after loading or analyzing datasets.");
     setHtml("exportActionPanel", "");
     renderExportableResults([]);
     setDiagnostic("export", {});
@@ -1331,28 +1467,31 @@ async function refreshExportPreparation() {
   }
 
   try {
+    const isTr = currentLanguage === "tr";
     const prep = await window.taDesktop.getExportPreparation(activeProjectId);
     renderExportableResults(prep.exportable_results || []);
     setText(
       "exportPrepInfo",
-      `Export context ready: ${(prep.exportable_results || []).length} exportable result(s), ${(prep.skipped_record_issues || []).length} skipped invalid record issue(s).`
+      isTr
+        ? `Export bağlamı hazır: ${(prep.exportable_results || []).length} exporta uygun sonuç, ${(prep.skipped_record_issues || []).length} atlanan geçersiz kayıt sorunu.`
+        : `Export context ready: ${(prep.exportable_results || []).length} exportable result(s), ${(prep.skipped_record_issues || []).length} skipped invalid record issue(s).`
     );
     setHtml(
       "exportPrepPanel",
       `
       ${keyGrid([
-        { label: "Supported Outputs", value: valueOr((prep.supported_outputs || []).join(", "), "none") },
-        { label: "Exportable Results", value: String((prep.exportable_results || []).length) },
-        { label: "Skipped Invalid Records", value: String((prep.skipped_record_issues || []).length) },
-        { label: "Compare Analysis", value: valueOr(prep.compare_workspace && prep.compare_workspace.analysis_type, "N/A") },
+        { label: isTr ? "Desteklenen Çıktılar" : "Supported Outputs", value: valueOr((prep.supported_outputs || []).join(", "), t("common.none")) },
+        { label: isTr ? "Exporta Uygun Sonuçlar" : "Exportable Results", value: String((prep.exportable_results || []).length) },
+        { label: isTr ? "Atlanan Geçersiz Kayıt" : "Skipped Invalid Records", value: String((prep.skipped_record_issues || []).length) },
+        { label: isTr ? "Karşılaştırma Analizi" : "Compare Analysis", value: valueOr(prep.compare_workspace && prep.compare_workspace.analysis_type, "N/A") },
       ])}
-      ${renderIssueList("Skipped record issues", prep.skipped_record_issues || [])}
+      ${renderIssueList(isTr ? "Atlanan kayıt sorunları" : "Skipped record issues", prep.skipped_record_issues || [])}
       `
     );
     setDiagnostic("export", prep);
   } catch (error) {
-    setText("exportPrepInfo", `Export preparation failed: ${error}`);
-    setHtml("exportPrepPanel", "<p class='fail'>Export preparation unavailable.</p>");
+    setText("exportPrepInfo", currentLanguage === "tr" ? `Export hazırlığı başarısız: ${error}` : `Export preparation failed: ${error}`);
+    setHtml("exportPrepPanel", currentLanguage === "tr" ? "<p class='fail'>Export hazırlığı kullanılamıyor.</p>" : "<p class='fail'>Export preparation unavailable.</p>");
     renderExportableResults([]);
     setDiagnostic("export", { error: String(error) });
   }
@@ -1382,6 +1521,8 @@ async function refreshStatus() {
     setHtml("diagVersion", `${currentLanguage === "tr" ? "ThermoAnalyzer uygulama sürümü" : "ThermoAnalyzer app version"}: <strong>${escapeHtml(version.app_version)}</strong> | ${currentLanguage === "tr" ? "Proje uzantısı" : "Project extension"}: <code>${escapeHtml(version.project_extension)}</code>`);
   } catch (error) {
     setText("statusVersion", t("status.versionFailed"));
+    setText("licenseVersionValue", t("common.unknown"));
+    setText("licenseProjectExtValue", t("common.unknown"));
     setHtml("diagVersion", `${currentLanguage === "tr" ? "Sürüm çağrısı başarısız" : "Version call failed"}: <span class="fail">${escapeHtml(String(error))}</span>`);
   }
 }
@@ -1502,9 +1643,9 @@ async function onNewWorkspace() {
     selectedResultId = null;
     activeProjectDefaultName = "thermoanalyzer_project.thermozip";
     await refreshWorkspaceViews();
-    appendLog(`Created workspace ${activeProjectId}.`);
+    appendLog(currentLanguage === "tr" ? `Çalışma alanı oluşturuldu: ${activeProjectId}.` : `Created workspace ${activeProjectId}.`);
   } catch (error) {
-    appendLog(`Create workspace failed: ${error}`);
+    appendLog(currentLanguage === "tr" ? `Çalışma alanı oluşturulamadı: ${error}` : `Create workspace failed: ${error}`);
   }
 }
 
@@ -1512,7 +1653,7 @@ async function onOpenProject() {
   try {
     const picked = await window.taDesktop.pickProjectArchive();
     if (!picked || picked.canceled) {
-      appendLog("Open project canceled.");
+      appendLog(currentLanguage === "tr" ? "Proje açma işlemi iptal edildi." : "Open project canceled.");
       return;
     }
     const loaded = await window.taDesktop.loadProjectArchive(picked.archiveBase64);
@@ -1521,15 +1662,15 @@ async function onOpenProject() {
     selectedResultId = null;
     activeProjectDefaultName = `thermoanalyzer_project${loaded.project_extension}`;
     await refreshWorkspaceViews();
-    appendLog(`Loaded project from ${picked.filePath}.`);
+    appendLog(currentLanguage === "tr" ? `Proje yüklendi: ${picked.filePath}.` : `Loaded project from ${picked.filePath}.`);
   } catch (error) {
-    appendLog(`Open project failed: ${error}`);
+    appendLog(currentLanguage === "tr" ? `Proje açılamadı: ${error}` : `Open project failed: ${error}`);
   }
 }
 
 async function onSaveProject() {
   if (!activeProjectId) {
-    appendLog("Save skipped: no workspace active.");
+    appendLog(currentLanguage === "tr" ? "Kaydetme atlandı: aktif çalışma alanı yok." : "Save skipped: no workspace active.");
     return;
   }
   try {
@@ -1539,24 +1680,24 @@ async function onSaveProject() {
       archive.archive_base64
     );
     if (!persisted || persisted.canceled) {
-      appendLog("Save workspace canceled.");
+      appendLog(currentLanguage === "tr" ? "Çalışma alanı kaydetme iptal edildi." : "Save workspace canceled.");
       return;
     }
-    appendLog(`Saved workspace archive to ${persisted.filePath}.`);
+    appendLog(currentLanguage === "tr" ? `Çalışma alanı arşivi kaydedildi: ${persisted.filePath}.` : `Saved workspace archive to ${persisted.filePath}.`);
   } catch (error) {
-    appendLog(`Save workspace failed: ${error}`);
+    appendLog(currentLanguage === "tr" ? `Çalışma alanı kaydedilemedi: ${error}` : `Save workspace failed: ${error}`);
   }
 }
 
 async function onImportDataset() {
   if (!activeProjectId) {
-    appendLog("Import skipped: no workspace active.");
+    appendLog(currentLanguage === "tr" ? "İçe aktarma atlandı: aktif çalışma alanı yok." : "Import skipped: no workspace active.");
     return;
   }
   try {
     const picked = await window.taDesktop.pickDatasetFile();
     if (!picked || picked.canceled) {
-      appendLog("Import dataset canceled.");
+      appendLog(currentLanguage === "tr" ? "Veri seti içe aktarma iptal edildi." : "Import dataset canceled.");
       return;
     }
     const dataType = el("datasetTypeSelect").value;
@@ -1570,30 +1711,36 @@ async function onImportDataset() {
       "homeImportFeedbackPanel",
       `
       <div>
-        <span class="${toneBadgeClass(imported.validation.status)}">Validation: ${escapeHtml(valueOr(imported.validation.status, "unknown"))}</span>
-        <span class="badge badge-neutral">Warnings: ${escapeHtml(valueOr(imported.validation.warning_count, "0"))}</span>
-        <span class="badge badge-neutral">Issues: ${escapeHtml(valueOr(imported.validation.issue_count, "0"))}</span>
+        <span class="${toneBadgeClass(imported.validation.status)}">${currentLanguage === "tr" ? "Doğrulama" : "Validation"}: ${escapeHtml(valueOr(imported.validation.status, t("common.unknown")))}</span>
+        <span class="badge badge-neutral">${currentLanguage === "tr" ? "Uyarılar" : "Warnings"}: ${escapeHtml(valueOr(imported.validation.warning_count, "0"))}</span>
+        <span class="badge badge-neutral">${currentLanguage === "tr" ? "Sorunlar" : "Issues"}: ${escapeHtml(valueOr(imported.validation.issue_count, "0"))}</span>
       </div>
-      <p class="small">Imported <strong>${escapeHtml(imported.dataset.key)}</strong> (${escapeHtml(imported.dataset.data_type)}) from <strong>${escapeHtml(picked.fileName)}</strong>.</p>
+      <p class="small">${currentLanguage === "tr"
+        ? `İçe aktarıldı: <strong>${escapeHtml(imported.dataset.key)}</strong> (${escapeHtml(imported.dataset.data_type)}) - <strong>${escapeHtml(picked.fileName)}</strong>.`
+        : `Imported <strong>${escapeHtml(imported.dataset.key)}</strong> (${escapeHtml(imported.dataset.data_type)}) from <strong>${escapeHtml(picked.fileName)}</strong>.`}</p>
       `
     );
     selectedDatasetKey = imported.dataset.key;
     await refreshWorkspaceViews();
     appendLog(
-      `Imported dataset ${imported.dataset.key} (${imported.dataset.data_type}) from ${picked.filePath}. Validation=${imported.validation.status}`
+      currentLanguage === "tr"
+        ? `Veri seti içe aktarıldı ${imported.dataset.key} (${imported.dataset.data_type}) | ${picked.filePath} | doğrulama=${imported.validation.status}`
+        : `Imported dataset ${imported.dataset.key} (${imported.dataset.data_type}) from ${picked.filePath}. Validation=${imported.validation.status}`
     );
   } catch (error) {
     setHtml(
       "homeImportFeedbackPanel",
-      `<span class="badge badge-fail">Import failed</span><p class="small">${escapeHtml(String(error))}</p>`
+      currentLanguage === "tr"
+        ? `<span class="badge badge-fail">İçe aktarma başarısız</span><p class="small">${escapeHtml(String(error))}</p>`
+        : `<span class="badge badge-fail">Import failed</span><p class="small">${escapeHtml(String(error))}</p>`
     );
-    appendLog(`Import dataset failed: ${error}`);
+    appendLog(currentLanguage === "tr" ? `Veri seti içe aktarılamadı: ${error}` : `Import dataset failed: ${error}`);
   }
 }
 
 async function onRunAnalysis(analysisType) {
   if (!activeProjectId || !selectedDatasetKey) {
-    appendLog(`Run ${analysisType} skipped: select a dataset first.`);
+    appendLog(currentLanguage === "tr" ? `${analysisType} çalıştırma atlandı: önce bir veri seti seçin.` : `Run ${analysisType} skipped: select a dataset first.`);
     return;
   }
   const infoId = analysisType === "DSC" ? "dscAnalysisInfo" : "tgaAnalysisInfo";
@@ -1605,12 +1752,16 @@ async function onRunAnalysis(analysisType) {
     };
     setText(
       infoId,
-      `${analysisType} on ${selectedDatasetKey}: ${run.execution_status}${run.result_id ? ` (${run.result_id})` : ""}`
+      currentLanguage === "tr"
+        ? `${analysisType} ${selectedDatasetKey}: ${run.execution_status}${run.result_id ? ` (${run.result_id})` : ""}`
+        : `${analysisType} on ${selectedDatasetKey}: ${run.execution_status}${run.result_id ? ` (${run.result_id})` : ""}`
     );
     if (run.result_id) selectedResultId = run.result_id;
     await refreshWorkspaceViews();
     appendLog(
-      `${analysisType} on ${selectedDatasetKey}: ${run.execution_status}${run.failure_reason ? ` - ${run.failure_reason}` : ""}`
+      currentLanguage === "tr"
+        ? `${analysisType} ${selectedDatasetKey}: ${run.execution_status}${run.failure_reason ? ` - ${run.failure_reason}` : ""}`
+        : `${analysisType} on ${selectedDatasetKey}: ${run.execution_status}${run.failure_reason ? ` - ${run.failure_reason}` : ""}`
     );
   } catch (error) {
     lastAnalysisRuns[analysisType] = {
@@ -1619,9 +1770,9 @@ async function onRunAnalysis(analysisType) {
       result_id: null,
       dataset_key: selectedDatasetKey,
     };
-    setText(infoId, `${analysisType} failed: ${error}`);
+    setText(infoId, currentLanguage === "tr" ? `${analysisType} başarısız: ${error}` : `${analysisType} failed: ${error}`);
     renderAnalysisPages();
-    appendLog(`Run ${analysisType} failed: ${error}`);
+    appendLog(currentLanguage === "tr" ? `${analysisType} çalıştırma başarısız: ${error}` : `Run ${analysisType} failed: ${error}`);
   }
 }
 
@@ -1646,35 +1797,39 @@ async function onSaveCompareSelection() {
     renderBatchWorkspaceState(response.compare_workspace);
     renderDatasets(currentDatasets);
     await refreshWorkspaceContext();
-    appendLog(`Saved compare workspace (${response.compare_workspace.analysis_type}) with ${response.compare_workspace.selected_datasets.length} dataset(s).`);
+    appendLog(
+      currentLanguage === "tr"
+        ? `Karşılaştırma alanı kaydedildi (${response.compare_workspace.analysis_type}), ${response.compare_workspace.selected_datasets.length} veri seti.`
+        : `Saved compare workspace (${response.compare_workspace.analysis_type}) with ${response.compare_workspace.selected_datasets.length} dataset(s).`
+    );
   } catch (error) {
-    appendLog(`Save compare workspace failed: ${error}`);
+    appendLog(currentLanguage === "tr" ? `Karşılaştırma alanı kaydedilemedi: ${error}` : `Save compare workspace failed: ${error}`);
   }
 }
 
 async function onAddSelectedToCompare() {
   if (!activeProjectId || !selectedDatasetKey) {
-    appendLog("Add to compare skipped: select a dataset first.");
+    appendLog(currentLanguage === "tr" ? "Karşılaştırmaya ekleme atlandı: önce veri seti seçin." : "Add to compare skipped: select a dataset first.");
     return;
   }
   try {
     await updateCompareSelection("add", [selectedDatasetKey]);
-    appendLog(`Added to compare: ${selectedDatasetKey}`);
+    appendLog(currentLanguage === "tr" ? `Karşılaştırmaya eklendi: ${selectedDatasetKey}` : `Added to compare: ${selectedDatasetKey}`);
   } catch (error) {
-    appendLog(`Add to compare failed: ${error}`);
+    appendLog(currentLanguage === "tr" ? `Karşılaştırmaya ekleme başarısız: ${error}` : `Add to compare failed: ${error}`);
   }
 }
 
 async function onRemoveSelectedFromCompare() {
   if (!activeProjectId || !selectedDatasetKey) {
-    appendLog("Remove from compare skipped: select a dataset first.");
+    appendLog(currentLanguage === "tr" ? "Karşılaştırmadan çıkarma atlandı: önce veri seti seçin." : "Remove from compare skipped: select a dataset first.");
     return;
   }
   try {
     await updateCompareSelection("remove", [selectedDatasetKey]);
-    appendLog(`Removed from compare: ${selectedDatasetKey}`);
+    appendLog(currentLanguage === "tr" ? `Karşılaştırmadan çıkarıldı: ${selectedDatasetKey}` : `Removed from compare: ${selectedDatasetKey}`);
   } catch (error) {
-    appendLog(`Remove from compare failed: ${error}`);
+    appendLog(currentLanguage === "tr" ? `Karşılaştırmadan çıkarma başarısız: ${error}` : `Remove from compare failed: ${error}`);
   }
 }
 
@@ -1682,9 +1837,9 @@ async function onClearCompareSelection() {
   if (!activeProjectId) return;
   try {
     await updateCompareSelection("clear", []);
-    appendLog("Cleared compare selected datasets.");
+    appendLog(currentLanguage === "tr" ? "Karşılaştırma seçimleri temizlendi." : "Cleared compare selected datasets.");
   } catch (error) {
-    appendLog(`Clear compare selection failed: ${error}`);
+    appendLog(currentLanguage === "tr" ? `Karşılaştırma seçimi temizlenemedi: ${error}` : `Clear compare selection failed: ${error}`);
   }
 }
 
@@ -1714,11 +1869,13 @@ async function onRunBatch() {
     setDiagnostic("batch", response);
     renderBatchSummaryRows(response.batch_summary || []);
     appendLog(
-      `Batch run ${response.batch_run_id} finished (saved=${response.outcomes.saved}, blocked=${response.outcomes.blocked}, failed=${response.outcomes.failed}).`
+      currentLanguage === "tr"
+        ? `Batch ${response.batch_run_id} tamamlandı (kaydedilen=${response.outcomes.saved}, bloklanan=${response.outcomes.blocked}, başarısız=${response.outcomes.failed}).`
+        : `Batch run ${response.batch_run_id} finished (saved=${response.outcomes.saved}, blocked=${response.outcomes.blocked}, failed=${response.outcomes.failed}).`
     );
     await refreshWorkspaceViews();
   } catch (error) {
-    appendLog(`Batch run failed: ${error}`);
+    appendLog(currentLanguage === "tr" ? `Batch çalıştırma başarısız: ${error}` : `Batch run failed: ${error}`);
   }
 }
 
@@ -1729,7 +1886,9 @@ async function onExportResultsCsv() {
     if (!selectedResultIds.length) {
       setHtml(
         "exportActionPanel",
-        "<span class='badge badge-warn'>No results selected</span><p class='small'>Select at least one saved result before generating CSV.</p>"
+        currentLanguage === "tr"
+          ? "<span class='badge badge-warn'>Sonuç seçilmedi</span><p class='small'>CSV üretmeden önce en az bir kayıtlı sonuç seç.</p>"
+          : "<span class='badge badge-warn'>No results selected</span><p class='small'>Select at least one saved result before generating CSV.</p>"
       );
       return;
     }
@@ -1738,21 +1897,25 @@ async function onExportResultsCsv() {
     setHtml(
       "exportActionPanel",
       `
-      <span class="badge badge-ok">CSV artifact generated</span>
+      <span class="badge badge-ok">${currentLanguage === "tr" ? "CSV çıktı üretildi" : "CSV artifact generated"}</span>
       ${keyGrid([
-        { label: "Artifact", value: artifact.file_name },
-        { label: "Included Results", value: String((artifact.included_result_ids || []).length) },
+        { label: currentLanguage === "tr" ? "Çıktı" : "Artifact", value: artifact.file_name },
+        { label: currentLanguage === "tr" ? "Dahil Edilen Sonuç" : "Included Results", value: String((artifact.included_result_ids || []).length) },
       ])}
       `
     );
     setDiagnostic("export", { action: "results_csv", artifact });
     if (!saved || saved.canceled) {
-      appendLog("Results CSV export canceled.");
+      appendLog(currentLanguage === "tr" ? "Sonuç CSV dışa aktarımı iptal edildi." : "Results CSV export canceled.");
       return;
     }
-    appendLog(`Results CSV exported to ${saved.filePath} (${artifact.included_result_ids.length} result(s)).`);
+    appendLog(
+      currentLanguage === "tr"
+        ? `Sonuç CSV dışa aktarıldı: ${saved.filePath} (${artifact.included_result_ids.length} sonuç).`
+        : `Results CSV exported to ${saved.filePath} (${artifact.included_result_ids.length} result(s)).`
+    );
   } catch (error) {
-    appendLog(`Results CSV export failed: ${error}`);
+    appendLog(currentLanguage === "tr" ? `Sonuç CSV dışa aktarımı başarısız: ${error}` : `Results CSV export failed: ${error}`);
   }
 }
 
@@ -1763,7 +1926,9 @@ async function onGenerateDocxReport() {
     if (!selectedResultIds.length) {
       setHtml(
         "exportActionPanel",
-        "<span class='badge badge-warn'>No results selected</span><p class='small'>Select at least one saved result before generating DOCX.</p>"
+        currentLanguage === "tr"
+          ? "<span class='badge badge-warn'>Sonuç seçilmedi</span><p class='small'>DOCX üretmeden önce en az bir kayıtlı sonuç seç.</p>"
+          : "<span class='badge badge-warn'>No results selected</span><p class='small'>Select at least one saved result before generating DOCX.</p>"
       );
       return;
     }
@@ -1772,21 +1937,25 @@ async function onGenerateDocxReport() {
     setHtml(
       "exportActionPanel",
       `
-      <span class="badge badge-ok">DOCX artifact generated</span>
+      <span class="badge badge-ok">${currentLanguage === "tr" ? "DOCX çıktı üretildi" : "DOCX artifact generated"}</span>
       ${keyGrid([
-        { label: "Artifact", value: artifact.file_name },
-        { label: "Included Results", value: String((artifact.included_result_ids || []).length) },
+        { label: currentLanguage === "tr" ? "Çıktı" : "Artifact", value: artifact.file_name },
+        { label: currentLanguage === "tr" ? "Dahil Edilen Sonuç" : "Included Results", value: String((artifact.included_result_ids || []).length) },
       ])}
       `
     );
     setDiagnostic("export", { action: "report_docx", artifact });
     if (!saved || saved.canceled) {
-      appendLog("DOCX report save canceled.");
+      appendLog(currentLanguage === "tr" ? "DOCX rapor kaydetme iptal edildi." : "DOCX report save canceled.");
       return;
     }
-    appendLog(`DOCX report saved to ${saved.filePath} (${artifact.included_result_ids.length} result(s)).`);
+    appendLog(
+      currentLanguage === "tr"
+        ? `DOCX rapor kaydedildi: ${saved.filePath} (${artifact.included_result_ids.length} sonuç).`
+        : `DOCX report saved to ${saved.filePath} (${artifact.included_result_ids.length} result(s)).`
+    );
   } catch (error) {
-    appendLog(`DOCX report generation failed: ${error}`);
+    appendLog(currentLanguage === "tr" ? `DOCX rapor üretimi başarısız: ${error}` : `DOCX report generation failed: ${error}`);
   }
 }
 
