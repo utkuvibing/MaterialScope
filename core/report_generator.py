@@ -1,16 +1,16 @@
-"""Report generation for normalized ThermoAnalyzer result records."""
+﻿"""Report generation for normalized ThermoAnalyzer result records."""
 
 from __future__ import annotations
 
 import csv
 import io
 import datetime
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from core.batch_runner import normalize_batch_summary_rows, summarize_batch_outcomes
 from core.processing_schema import ensure_processing_payload
 from core.result_serialization import flatten_result_records, partition_results_by_status, split_valid_results
-from core.scientific_sections import scientific_context_to_report_sections
+from core.scientific_sections import condense_warning_limitations, scientific_context_to_report_sections
 from utils.reference_data import find_nearest_reference
 
 try:
@@ -24,6 +24,37 @@ except ImportError as exc:  # pragma: no cover
     raise ImportError(
         "python-docx is required for DOCX report generation. Install it with: pip install python-docx"
     ) from exc
+
+
+_MAIN_METADATA_KEYS = (
+    "sample_name",
+    "sample_mass",
+    "heating_rate",
+    "instrument",
+    "vendor",
+    "atmosphere",
+    "display_name",
+    "file_name",
+    "import_confidence",
+    "import_confidence_label",
+    "inferred_analysis_type",
+)
+
+_APPENDIX_METADATA_KEYWORDS = (
+    "hash",
+    "delimiter",
+    "decimal",
+    "header",
+    "row",
+    "start",
+    "import",
+    "warning",
+    "heuristic",
+    "inferred",
+    "parser",
+    "dialect",
+    "encoding",
+)
 
 
 def _set_cell_bg(cell, hex_color: str) -> None:
@@ -127,6 +158,401 @@ def _table_payload(payload: dict | None) -> dict[str, str]:
     return table_rows
 
 
+def _safe_float(value: Any) -> float | None:
+    try:
+        if value in (None, ""):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_number(value: Any, *, digits: int = 2) -> str:
+    numeric = _safe_float(value)
+    if numeric is None:
+        return "N/A"
+    return f"{numeric:.{digits}f}"
+
+
+def _dataset_label(dataset_key: str | None, datasets: dict) -> str:
+    if not dataset_key:
+        return "N/A"
+    dataset = datasets.get(dataset_key)
+    if dataset is None:
+        return dataset_key
+    metadata = getattr(dataset, "metadata", {}) or {}
+    return str(metadata.get("display_name") or metadata.get("sample_name") or metadata.get("file_name") or dataset_key)
+
+
+def _main_conditions_payload(dataset_key: str, dataset) -> dict[str, str]:
+    metadata = getattr(dataset, "metadata", {}) or {}
+    payload = {
+        "Dataset": _dataset_label(dataset_key, {dataset_key: dataset}),
+        "Dataset Key": dataset_key,
+        "Sample Name": metadata.get("sample_name"),
+        "Sample Mass": metadata.get("sample_mass"),
+        "Heating Rate": metadata.get("heating_rate"),
+        "Instrument": metadata.get("instrument"),
+        "Vendor": metadata.get("vendor"),
+        "Atmosphere": metadata.get("atmosphere"),
+        "Source File": metadata.get("file_name") or metadata.get("display_name"),
+        "Import Confidence": metadata.get("import_confidence_label") or metadata.get("import_confidence"),
+    }
+    if payload.get("Import Confidence") in (None, "") and metadata.get("inferred_analysis_type"):
+        payload["Import Confidence"] = f"Inferred type: {metadata.get('inferred_analysis_type')}"
+    return _table_payload(payload)
+
+
+def _appendix_dataset_metadata(metadata: dict | None) -> dict[str, str]:
+    metadata = metadata or {}
+    appendix_payload = {}
+    for key, value in metadata.items():
+        if value in (None, "", [], {}):
+            continue
+        lower = str(key).lower()
+        if key in _MAIN_METADATA_KEYS:
+            continue
+        if any(token in lower for token in _APPENDIX_METADATA_KEYWORDS):
+            appendix_payload[key] = value
+    return _table_payload(appendix_payload)
+
+
+def _record_key_results(record: dict) -> dict[str, str]:
+    summary = record.get("summary") or {}
+    analysis_type = str(record.get("analysis_type") or "").upper()
+    if analysis_type == "TGA":
+        keep = ("step_count", "total_mass_loss_percent", "residue_percent", "sample_name", "sample_mass", "heating_rate")
+    elif analysis_type == "DSC":
+        keep = (
+            "peak_count",
+            "glass_transition_count",
+            "tg_midpoint",
+            "tg_onset",
+            "tg_endset",
+            "delta_cp",
+            "sample_name",
+            "sample_mass",
+            "heating_rate",
+        )
+    else:
+        keep = tuple(summary.keys())
+    return _table_payload({key: summary.get(key) for key in keep})
+
+
+def _record_metric_snapshot(record: dict) -> str:
+    summary = record.get("summary") or {}
+    analysis_type = str(record.get("analysis_type") or "").upper()
+    if analysis_type == "TGA":
+        return ", ".join(
+            [
+                f"total mass loss {_format_number(summary.get('total_mass_loss_percent'))}%",
+                f"residue {_format_number(summary.get('residue_percent'))}%",
+                f"step count {_format_value(summary.get('step_count'))}",
+            ]
+        )
+    if analysis_type == "DSC":
+        snapshot = [f"peak count {_format_value(summary.get('peak_count'))}"]
+        if summary.get("tg_midpoint") is not None:
+            snapshot.append(f"Tg midpoint {_format_number(summary.get('tg_midpoint'))} °C")
+        return ", ".join(snapshot)
+
+    parts = []
+    for key, value in summary.items():
+        if key in {"sample_name", "sample_mass", "heating_rate"}:
+            continue
+        parts.append(f"{_humanize_key(key)} {_format_value(value)}")
+        if len(parts) >= 3:
+            break
+    return ", ".join(parts) if parts else "Key metrics not available"
+
+
+def _record_confidence_note(record: dict) -> str:
+    grouped = condense_warning_limitations(
+        record.get("scientific_context"),
+        validation=record.get("validation"),
+        max_data_warnings=2,
+        max_method_limits=2,
+    )
+    data_warnings = grouped.get("data_completeness_warnings") or []
+    method_limits = grouped.get("methodological_limitations") or []
+    if data_warnings:
+        return data_warnings[0]
+    if method_limits:
+        return method_limits[0]
+
+    status = ((record.get("validation") or {}).get("status") or "").lower()
+    if status == "pass":
+        return "Validation checks did not flag material data-quality issues."
+    if status == "warn":
+        return "Validation generated warnings; interpret with moderate caution."
+    if status == "fail":
+        return "Validation failed; interpretation is not suitable for definitive conclusions."
+    return "No explicit confidence constraints were recorded."
+
+
+def _record_compact_rows(record: dict, *, max_rows: int = 5) -> tuple[list[str], list[list[str]]] | None:
+    rows = record.get("rows") or []
+    if not rows:
+        return None
+    if str(record.get("analysis_type") or "").upper() == "TGA":
+        return None
+
+    headers = _record_headers(record)
+    if not headers:
+        return None
+
+    if len(rows) <= max_rows:
+        return (
+            headers,
+            [[_format_value(row.get(header)) for header in headers] for row in rows],
+        )
+
+    top_headers = headers[: min(5, len(headers))]
+    top_rows = [[_format_value(row.get(header)) for header in top_headers] for row in rows[:max_rows]]
+    return top_headers, top_rows
+
+
+def _tga_major_events(record: dict, *, limit: int = 3) -> list[list[str]]:
+    if str(record.get("analysis_type") or "").upper() != "TGA":
+        return []
+
+    scored: list[tuple[float, dict]] = []
+    for row in (record.get("rows") or []):
+        if not isinstance(row, dict):
+            continue
+        loss = _safe_float(row.get("mass_loss_percent"))
+        scored.append((loss if loss is not None else float("-inf"), row))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    top = [row for _, row in scored[:limit] if row]
+
+    output = []
+    for idx, row in enumerate(top, start=1):
+        output.append(
+            [
+                f"Event {idx}",
+                _format_number(row.get("midpoint_temperature")),
+                _format_number(row.get("mass_loss_percent")),
+                _format_number(row.get("residual_percent")),
+            ]
+        )
+    return output
+
+
+def _record_full_rows(record: dict) -> tuple[list[str], list[list[str]]] | None:
+    headers = _record_headers(record)
+    if not headers:
+        return None
+    rows = [[_format_value(row.get(header)) for header in headers] for row in (record.get("rows") or [])]
+    if not rows:
+        return None
+    return headers, rows
+
+
+def _select_record_for_dataset(records: list[dict], dataset_key: str, analysis_type: str | None) -> dict | None:
+    candidates = [record for record in records if record.get("dataset_key") == dataset_key]
+    if not candidates:
+        return None
+    if analysis_type:
+        normalized = analysis_type.upper()
+        filtered = [record for record in candidates if str(record.get("analysis_type") or "").upper() == normalized]
+        if filtered:
+            stable = [record for record in filtered if record.get("status") == "stable"]
+            return stable[0] if stable else filtered[0]
+    stable = [record for record in candidates if record.get("status") == "stable"]
+    return stable[0] if stable else candidates[0]
+
+
+def _comparison_metadata_note(selected: list[str], datasets: dict) -> str:
+    missing: list[str] = []
+    for key, label in (("heating_rate", "heating-rate"), ("atmosphere", "atmosphere")):
+        if any(not ((getattr(datasets.get(dataset_key), "metadata", {}) or {}).get(key)) for dataset_key in selected):
+            missing.append(label)
+    if not missing:
+        return ""
+    if len(missing) == 1:
+        return f"Because {missing[0]} metadata are incomplete, this interpretation should be treated as comparative rather than definitive."
+    return f"Because {', '.join(missing[:-1])}, and {missing[-1]} metadata are incomplete, this interpretation should be treated as comparative rather than definitive."
+
+
+def _build_tga_comparison_interpretation(metrics: list[dict[str, Any]], metadata_note: str) -> str:
+    valid = [item for item in metrics if item.get("mass_loss") is not None and item.get("residue") is not None and item.get("step_count") is not None]
+    if len(valid) >= 2:
+        left = valid[0]
+        right = valid[1]
+        left_loss = float(left["mass_loss"])
+        right_loss = float(right["mass_loss"])
+        left_residue = float(left["residue"])
+        right_residue = float(right["residue"])
+        left_steps = int(left["step_count"])
+        right_steps = int(right["step_count"])
+
+        step_phrase = "fewer" if right_steps < left_steps else "more" if right_steps > left_steps else "a similar number of"
+        loss_phrase = "higher" if right_loss > left_loss else "lower" if right_loss < left_loss else "similar"
+        residue_phrase = "lower" if right_residue < left_residue else "higher" if right_residue > left_residue else "similar"
+
+        if right_loss > left_loss and right_residue < left_residue:
+            implication = "suggesting a more complete mass-loss process under the recorded conditions"
+        elif right_loss < left_loss and right_residue > left_residue:
+            implication = "suggesting comparatively lower decomposition extent under the recorded conditions"
+        else:
+            implication = "indicating a materially different decomposition profile under the recorded conditions"
+
+        text = (
+            f"Compared with {left['dataset']}, {right['dataset']} shows {step_phrase} decomposition steps, "
+            f"{loss_phrase} total mass loss ({right_loss:.2f}% vs {left_loss:.2f}%), and "
+            f"{residue_phrase} final residue ({right_residue:.2f}% vs {left_residue:.2f}%), {implication}."
+        )
+    elif valid:
+        only = valid[0]
+        text = (
+            f"{only['dataset']} reports total mass loss of {float(only['mass_loss']):.2f}%, "
+            f"final residue of {float(only['residue']):.2f}%, and {int(only['step_count'])} resolved decomposition steps."
+        )
+    else:
+        text = "Comparison metrics could not be resolved from the available TGA analysis results."
+
+    if metadata_note:
+        text = f"{text} {metadata_note}"
+    return text
+
+
+def _build_generic_comparison_interpretation(analysis_type: str, metrics: list[dict[str, Any]], metadata_note: str) -> str:
+    if len(metrics) >= 2:
+        text = (
+            f"The {analysis_type} comparison shows measurable differences across the selected datasets. "
+            "Review key metrics together with method context before drawing definitive mechanistic conclusions."
+        )
+    elif metrics:
+        text = f"The selected {analysis_type} dataset was summarized successfully for comparison reporting."
+    else:
+        text = f"No {analysis_type} metrics were available for comparison interpretation."
+
+    if metadata_note:
+        text = f"{text} {metadata_note}"
+    return text
+
+
+def _build_comparison_payload(comparison_workspace: dict | None, datasets: dict, records: list[dict]) -> dict[str, Any] | None:
+    comparison_workspace = comparison_workspace or {}
+    selected = comparison_workspace.get("selected_datasets") or []
+    if not selected:
+        return None
+
+    analysis_type = str(comparison_workspace.get("analysis_type") or "N/A")
+    normalized_analysis = analysis_type.upper()
+
+    overview = {
+        "Analysis Type": analysis_type,
+        "Compared Datasets": ", ".join(_dataset_label(dataset_key, datasets) for dataset_key in selected),
+        "Saved Figure": comparison_workspace.get("figure_key") or "Not recorded",
+    }
+
+    metric_headers: list[str]
+    metric_rows: list[list[str]] = []
+    metric_records: list[dict[str, Any]] = []
+
+    if normalized_analysis == "TGA":
+        metric_headers = ["Dataset", "Total Mass Loss (%)", "Final Residue (%)", "Step Count"]
+        for dataset_key in selected:
+            dataset_name = _dataset_label(dataset_key, datasets)
+            record = _select_record_for_dataset(records, dataset_key, normalized_analysis)
+            summary = (record or {}).get("summary") or {}
+            mass_loss = _safe_float(summary.get("total_mass_loss_percent"))
+            residue = _safe_float(summary.get("residue_percent"))
+            step_count_raw = summary.get("step_count")
+            step_count = int(step_count_raw) if isinstance(step_count_raw, (int, float)) else None
+            metric_records.append(
+                {
+                    "dataset": dataset_name,
+                    "mass_loss": mass_loss,
+                    "residue": residue,
+                    "step_count": step_count,
+                }
+            )
+            metric_rows.append(
+                [
+                    dataset_name,
+                    _format_number(mass_loss),
+                    _format_number(residue),
+                    _format_value(step_count),
+                ]
+            )
+        interpretation = _build_tga_comparison_interpretation(metric_records, _comparison_metadata_note(selected, datasets))
+    else:
+        metric_headers = ["Dataset", "Primary Metrics"]
+        for dataset_key in selected:
+            dataset_name = _dataset_label(dataset_key, datasets)
+            record = _select_record_for_dataset(records, dataset_key, normalized_analysis)
+            metric = _record_metric_snapshot(record or {}) if record else "No matching analysis result"
+            metric_rows.append([dataset_name, metric])
+            metric_records.append({"dataset": dataset_name})
+        interpretation = _build_generic_comparison_interpretation(analysis_type, metric_records, _comparison_metadata_note(selected, datasets))
+
+    appendix_overview = _table_payload(
+        {
+            "saved_at": comparison_workspace.get("saved_at"),
+            "notes": comparison_workspace.get("notes"),
+            "batch_run_id": comparison_workspace.get("batch_run_id"),
+            "batch_template_label": comparison_workspace.get("batch_template_label"),
+            "batch_template_id": comparison_workspace.get("batch_template_id"),
+            "batch_completed_at": comparison_workspace.get("batch_completed_at"),
+        }
+    )
+
+    return {
+        "overview": _table_payload(overview),
+        "metric_headers": metric_headers,
+        "metric_rows": metric_rows,
+        "interpretation": interpretation,
+        "appendix_overview": appendix_overview,
+        "appendix_batch_rows": _comparison_batch_rows(comparison_workspace),
+    }
+
+
+def _build_executive_summary_rows(records: list[dict], datasets: dict, comparison_payload: dict[str, Any] | None) -> list[list[str]]:
+    rows: list[list[str]] = []
+
+    for record in records:
+        dataset_name = _dataset_label(record.get("dataset_key"), datasets)
+        analysis_type = str(record.get("analysis_type") or "Analysis")
+        status = str(record.get("status") or "unknown")
+        interpretation_sections = scientific_context_to_report_sections(record.get("scientific_context"))
+        interpretation_line = "No interpretation statement recorded."
+        for title, payload in interpretation_sections:
+            if title == "Scientific Interpretation" and isinstance(payload, dict) and payload:
+                interpretation_line = str(next(iter(payload.values())))
+                break
+        rows.append(
+            [
+                dataset_name,
+                f"{analysis_type} ({status})",
+                _record_metric_snapshot(record),
+                interpretation_line,
+                _record_confidence_note(record),
+            ]
+        )
+
+    if comparison_payload:
+        rows.append(
+            [
+                "Comparison Set",
+                "Cross-dataset comparison",
+                "; ".join(
+                    [
+                        f"{comparison_payload['metric_headers'][idx]} captured"
+                        for idx in range(1, len(comparison_payload.get("metric_headers") or []))
+                    ]
+                )
+                or "Comparison metrics summarized",
+                comparison_payload.get("interpretation") or "Comparison interpretation unavailable",
+                "Comparative interpretation depends on metadata completeness and method parity.",
+            ]
+        )
+
+    return rows
+
+
 def _processing_step(processing: dict | None, key: str) -> dict:
     processing = processing or {}
     nested = processing.get("signal_pipeline") or {}
@@ -202,52 +628,26 @@ def _domain_method_summary(record: dict) -> dict[str, str] | None:
         return None
 
     processing = ensure_processing_payload(record.get("processing"), analysis_type=analysis_type) if record.get("processing") else {}
-    metadata = record.get("metadata") or {}
-    validation_checks = (record.get("validation") or {}).get("checks") or {}
     method_context = processing.get("method_context") or {}
-    provenance = record.get("provenance") or {}
 
     if analysis_type == "DSC":
         summary = {
             "Template": processing.get("workflow_template_label") or processing.get("workflow_template") or "Not recorded",
-            "Template ID": processing.get("workflow_template_id") or "Not recorded",
             "Sign Convention": method_context.get("sign_convention_label") or processing.get("sign_convention") or "Not recorded",
             "Smoothing": _format_processing_step(_processing_step(processing, "smoothing")),
             "Baseline": _format_processing_step(_processing_step(processing, "baseline")),
             "Peak Analysis Context": _format_processing_step(_processing_step(processing, "peak_detection")),
             "Glass Transition Context": _format_processing_step(_processing_step(processing, "glass_transition")),
-            "Calibration State": method_context.get("calibration_state") or provenance.get("calibration_state") or validation_checks.get("calibration_state") or "Not recorded",
-            "Calibration ID": metadata.get("calibration_id") or validation_checks.get("calibration_id") or "Not recorded",
-            "Calibration Status": metadata.get("calibration_status") or validation_checks.get("calibration_status") or "Not recorded",
-            "Reference State": method_context.get("reference_state") or provenance.get("reference_state") or validation_checks.get("reference_state") or "Not recorded",
-            "Reference Material": method_context.get("reference_name") or provenance.get("reference_name") or validation_checks.get("reference_name") or "Not recorded",
             "Reference Check": _reference_visibility(record),
         }
         return _table_payload(summary)
 
     summary = {
         "Template": processing.get("workflow_template_label") or processing.get("workflow_template") or "Not recorded",
-        "Template ID": processing.get("workflow_template_id") or "Not recorded",
-        "Declared Unit Mode": method_context.get("tga_unit_mode_label") or validation_checks.get("tga_unit_mode_declared") or "Not recorded",
-        "Resolved Unit Mode": method_context.get("tga_unit_mode_resolved_label") or validation_checks.get("tga_unit_mode_resolved") or "Not recorded",
-        "Auto Inference Used": method_context.get("tga_unit_auto_inference_used")
-        if "tga_unit_auto_inference_used" in method_context
-        else validation_checks.get("tga_unit_auto_inference_used"),
-        "Unit Interpretation": method_context.get("tga_unit_interpretation_status") or validation_checks.get("tga_unit_interpretation_status") or "Not recorded",
-        "Unit Inference Basis": method_context.get("tga_unit_inference_basis") or validation_checks.get("tga_unit_inference_basis") or "Not recorded",
-        "Unit Review Note": method_context.get("tga_unit_review_reason") or "Not recorded",
-        "Unit Reference Source": method_context.get("tga_unit_reference_source") or validation_checks.get("tga_unit_reference_source") or "Not recorded",
-        "Mass Unit": validation_checks.get("signal_unit") or (record.get("metadata") or {}).get("signal_unit") or "Not recorded",
-        "Unit Plausibility": validation_checks.get("unit_plausibility") or "Not recorded",
-        "Calibration State": method_context.get("calibration_state") or provenance.get("calibration_state") or validation_checks.get("calibration_state") or "Not recorded",
-        "Calibration ID": metadata.get("calibration_id") or validation_checks.get("calibration_id") or "Not recorded",
-        "Calibration Status": metadata.get("calibration_status") or validation_checks.get("calibration_status") or "Not recorded",
-        "Atmosphere": metadata.get("atmosphere") or validation_checks.get("atmosphere") or "Not recorded",
-        "Atmosphere Status": metadata.get("atmosphere_status") or validation_checks.get("atmosphere_status") or "Not recorded",
+        "Declared Unit Mode": method_context.get("tga_unit_mode_label") or "Not recorded",
+        "Resolved Unit Mode": method_context.get("tga_unit_mode_resolved_label") or "Not recorded",
         "Smoothing": _format_processing_step(_processing_step(processing, "smoothing")),
         "Step Analysis Context": _format_processing_step(_processing_step(processing, "step_detection")),
-        "Reference State": method_context.get("reference_state") or provenance.get("reference_state") or validation_checks.get("reference_state") or "Not recorded",
-        "Reference Material": method_context.get("reference_name") or provenance.get("reference_name") or validation_checks.get("reference_name") or "Not recorded",
         "Reference Check": _reference_visibility(record),
     }
     return _table_payload(summary)
@@ -259,8 +659,6 @@ def _generic_method_summary(processing: dict | None) -> dict[str, str]:
         {
             "analysis_type": processing.get("analysis_type"),
             "workflow_template": processing.get("workflow_template"),
-            "workflow_template_id": processing.get("workflow_template_id"),
-            "schema_version": processing.get("schema_version"),
             "method": processing.get("method"),
         }
     )
@@ -365,22 +763,59 @@ def _provenance_sections(provenance: dict | None) -> list[tuple[str, dict[str, s
     return sections
 
 
-def _record_sections(record: dict) -> list[tuple[str, dict[str, str]]]:
-    sections = []
-    method_summary = _domain_method_summary(record)
-    if method_summary:
-        sections.append(("Method Summary", method_summary))
-    else:
-        generic_summary = _generic_method_summary(record.get("processing"))
-        if generic_summary:
-            sections.append(("Method Summary", generic_summary))
-    sections.extend(scientific_context_to_report_sections(record.get("scientific_context")))
+def _record_main_sections(record: dict) -> list[tuple[str, dict[str, Any]]]:
+    context_sections = scientific_context_to_report_sections(record.get("scientific_context"))
+
+    methodology_payload: dict[str, Any] = {}
+    ordered_sections: list[tuple[str, dict[str, Any]]] = []
+
+    for title, payload in context_sections:
+        if title == "Methodology":
+            if isinstance(payload, dict):
+                methodology_payload.update(payload)
+            continue
+        if title == "Warnings and Limitations":
+            continue
+        ordered_sections.append((title, payload if isinstance(payload, dict) else {}))
+
+    domain_summary = _domain_method_summary(record)
+    if domain_summary is None:
+        domain_summary = _generic_method_summary(record.get("processing"))
+    methodology_payload.update(domain_summary or {})
+
+    sections: list[tuple[str, dict[str, Any]]] = []
+    if methodology_payload:
+        sections.append(("Methodology", _table_payload(methodology_payload)))
+
+    sections.extend(ordered_sections)
+
+    grouped = condense_warning_limitations(
+        record.get("scientific_context"),
+        validation=record.get("validation"),
+        max_data_warnings=4,
+        max_method_limits=4,
+    )
+    warning_payload: dict[str, Any] = {}
+    if grouped.get("data_completeness_warnings"):
+        warning_payload["Data Completeness Warnings"] = grouped["data_completeness_warnings"]
+    if grouped.get("methodological_limitations"):
+        warning_payload["Methodological Limitations"] = grouped["methodological_limitations"]
+    if warning_payload:
+        sections.append(("Warnings and Limitations", warning_payload))
+    return sections
+
+
+def _record_appendix_sections(record: dict) -> list[tuple[str, dict[str, str]]]:
+    sections: list[tuple[str, dict[str, str]]] = []
     sections.extend(_processing_sections(record.get("processing")))
     sections.extend(_validation_sections(record.get("validation")))
     sections.extend(_provenance_sections(record.get("provenance")))
+    metadata_payload = _appendix_dataset_metadata(record.get("metadata") or {})
+    if metadata_payload:
+        sections.append(("Dataset Metadata (Technical)", metadata_payload))
     review_payload = _table_payload(record.get("review"))
     if review_payload:
-        sections.append(("Review", review_payload))
+        sections.append(("Internal Review Context", review_payload))
     return sections
 
 
@@ -388,9 +823,133 @@ def _render_record_mapping(doc: Document, title: str, payload: dict | None) -> N
     payload = payload or {}
     if not payload:
         return
+
     doc.add_paragraph(title, style="Heading 3")
+    if title == "Scientific Interpretation":
+        for value in payload.values():
+            doc.add_paragraph(str(value), style="List Bullet")
+        doc.add_paragraph()
+        return
+
+    if title == "Warnings and Limitations":
+        for group, values in payload.items():
+            doc.add_paragraph(str(group), style="Heading 4")
+            if isinstance(values, list):
+                for item in values:
+                    doc.add_paragraph(str(item), style="List Bullet")
+            else:
+                doc.add_paragraph(str(values), style="List Bullet")
+        doc.add_paragraph()
+        return
+
     _add_key_value_table(doc, {key: _format_value(value) for key, value in payload.items()})
     doc.add_paragraph()
+
+
+def _render_main_record_docx(doc: Document, record: dict) -> None:
+    doc.add_paragraph(_record_title(record), style="Heading 2")
+    key_results = _record_key_results(record)
+    if key_results:
+        _render_record_mapping(doc, "Key Results", key_results)
+
+    for title, payload in _record_main_sections(record):
+        _render_record_mapping(doc, title, payload)
+
+    major_events = _tga_major_events(record)
+    if major_events:
+        doc.add_paragraph("Major Decomposition Events", style="Heading 3")
+        _add_results_table(doc, ["Event", "Midpoint Temperature (°C)", "Mass Loss (%)", "Final Residue (%)"], major_events)
+        doc.add_paragraph()
+    else:
+        compact = _record_compact_rows(record)
+        if compact:
+            headers, rows = compact
+            doc.add_paragraph("Compact Key Table", style="Heading 3")
+            _add_results_table(doc, headers, rows)
+            doc.add_paragraph()
+
+
+def _render_appendix_docx(
+    doc: Document,
+    *,
+    records: list[dict],
+    datasets: dict,
+    comparison_payload: dict[str, Any] | None,
+) -> None:
+    dataset_sections = []
+    for dataset_key, dataset in datasets.items():
+        payload = _appendix_dataset_metadata(getattr(dataset, "metadata", {}) or {})
+        if payload:
+            dataset_sections.append((dataset_key, payload))
+
+    record_sections = []
+    for record in records:
+        sections = _record_appendix_sections(record)
+        full_rows = _record_full_rows(record)
+        if sections or full_rows:
+            record_sections.append((record, sections, full_rows))
+
+    comparison_has_content = bool(comparison_payload and (comparison_payload.get("appendix_overview") or comparison_payload.get("appendix_batch_rows")))
+    if not (dataset_sections or record_sections or comparison_has_content):
+        return
+
+    _add_heading(doc, "Appendix A — Reproducibility and Audit Trail", level=1)
+
+    if dataset_sections:
+        doc.add_paragraph("Dataset Import and Metadata Technical Details", style="Heading 2")
+        for dataset_key, payload in dataset_sections:
+            doc.add_paragraph(_dataset_label(dataset_key, datasets), style="Heading 3")
+            _add_key_value_table(doc, payload)
+            doc.add_paragraph()
+
+    if comparison_has_content:
+        doc.add_paragraph("Comparison Workspace Technical Context", style="Heading 2")
+        if comparison_payload.get("appendix_overview"):
+            _add_key_value_table(doc, comparison_payload["appendix_overview"])
+            doc.add_paragraph()
+        batch_rows = comparison_payload.get("appendix_batch_rows") or []
+        if batch_rows:
+            batch_totals = summarize_batch_outcomes(batch_rows)
+            _add_key_value_table(
+                doc,
+                {
+                    "Batch Total": batch_totals["total"],
+                    "Saved": batch_totals["saved"],
+                    "Blocked": batch_totals["blocked"],
+                    "Failed": batch_totals["failed"],
+                },
+            )
+            doc.add_paragraph()
+            _add_results_table(
+                doc,
+                ["Run", "Sample", "Template", "Execution", "Validation", "Calibration", "Reference", "Result ID", "Error ID", "Reason"],
+                [
+                    [
+                        _format_value(row.get("dataset_key")),
+                        _format_value(row.get("sample_name")),
+                        _format_value(row.get("workflow_template")),
+                        _format_value(row.get("execution_status")),
+                        _format_value(row.get("validation_status")),
+                        _format_value(row.get("calibration_state")),
+                        _format_value(row.get("reference_state")),
+                        _format_value(row.get("result_id")),
+                        _format_value(row.get("error_id")),
+                        _format_value(row.get("failure_reason")),
+                    ]
+                    for row in batch_rows
+                ],
+            )
+            doc.add_paragraph()
+
+    for record, sections, full_rows in record_sections:
+        doc.add_paragraph(_record_title(record), style="Heading 2")
+        for title, payload in sections:
+            _render_record_mapping(doc, title, payload)
+        if full_rows:
+            headers, rows = full_rows
+            doc.add_paragraph("Full Raw Data Table", style="Heading 3")
+            _add_results_table(doc, headers, rows)
+            doc.add_paragraph()
 
 
 def _add_cover_page(doc: Document, branding: dict | None, license_state: dict | None) -> None:
@@ -433,86 +992,6 @@ def _add_cover_page(doc: Document, branding: dict | None, license_state: dict | 
     doc.add_page_break()
 
 
-def _render_comparison_workspace(
-    doc: Document,
-    comparison_workspace: dict | None,
-    datasets: dict,
-) -> None:
-    comparison_workspace = comparison_workspace or {}
-    selected = comparison_workspace.get("selected_datasets") or []
-    if not selected:
-        return
-
-    _add_heading(doc, "2. Compare Workspace", level=1)
-    overview = {
-        "Analysis Type": comparison_workspace.get("analysis_type", "N/A"),
-        "Selected Runs": ", ".join(selected),
-        "Saved Figure": comparison_workspace.get("figure_key") or "None",
-        "Saved At": comparison_workspace.get("saved_at") or "Not saved",
-    }
-    _add_key_value_table(doc, overview)
-    doc.add_paragraph()
-
-    rows = []
-    for dataset_key in selected:
-        dataset = datasets.get(dataset_key)
-        if dataset is None:
-            continue
-        rows.append(
-            [
-                dataset_key,
-                dataset.metadata.get("sample_name") or "Unnamed",
-                dataset.metadata.get("vendor", "Generic"),
-                dataset.metadata.get("heating_rate") or "—",
-                dataset.metadata.get("instrument") or "—",
-            ]
-        )
-    if rows:
-        _add_results_table(doc, ["Run", "Sample", "Vendor", "Heating Rate", "Instrument"], rows)
-        doc.add_paragraph()
-
-    if comparison_workspace.get("notes"):
-        doc.add_paragraph("Comparison Notes", style="Heading 2")
-        doc.add_paragraph(str(comparison_workspace["notes"]))
-
-    batch_rows = _comparison_batch_rows(comparison_workspace)
-    if batch_rows:
-        batch_totals = summarize_batch_outcomes(batch_rows)
-        doc.add_paragraph("Batch Template Runner", style="Heading 2")
-        batch_overview = {
-            "Batch Run ID": comparison_workspace.get("batch_run_id") or "Not recorded",
-            "Batch Template": comparison_workspace.get("batch_template_label") or comparison_workspace.get("batch_template_id") or "Not recorded",
-            "Template ID": comparison_workspace.get("batch_template_id") or "Not recorded",
-            "Completed At": comparison_workspace.get("batch_completed_at") or "Not recorded",
-            "Batch Total": batch_totals["total"],
-            "Saved": batch_totals["saved"],
-            "Blocked": batch_totals["blocked"],
-            "Failed": batch_totals["failed"],
-        }
-        _add_key_value_table(doc, batch_overview)
-        doc.add_paragraph()
-        _add_results_table(
-            doc,
-            ["Run", "Sample", "Template", "Execution", "Validation", "Calibration", "Reference", "Result ID", "Error ID", "Reason"],
-            [
-                [
-                    _format_value(row.get("dataset_key")),
-                    _format_value(row.get("sample_name")),
-                    _format_value(row.get("workflow_template")),
-                    _format_value(row.get("execution_status")),
-                    _format_value(row.get("validation_status")),
-                    _format_value(row.get("calibration_state")),
-                    _format_value(row.get("reference_state")),
-                    _format_value(row.get("result_id")),
-                    _format_value(row.get("error_id")),
-                    _format_value(row.get("failure_reason")),
-                ]
-                for row in batch_rows
-            ],
-        )
-        doc.add_paragraph()
-
-
 def generate_docx_report(
     results: dict,
     datasets: dict,
@@ -525,86 +1004,75 @@ def generate_docx_report(
     """Generate a DOCX report from normalized stable/experimental records."""
     valid_results, issues = split_valid_results(results)
     stable_results, experimental_results = partition_results_by_status(valid_results)
+    all_records = stable_results + experimental_results
+    comparison_payload = _build_comparison_payload(comparison_workspace, datasets, all_records)
+    executive_rows = _build_executive_summary_rows(all_records, datasets, comparison_payload)
 
     doc = Document()
     _add_cover_page(doc, branding, license_state)
 
-    _add_heading(doc, "1. Experimental Conditions", level=1)
+    _add_heading(doc, "Executive Summary", level=1)
+    if executive_rows:
+        _add_results_table(
+            doc,
+            ["Dataset / Set", "Analysis Type", "Key Metrics", "Scientific Interpretation", "Confidence / Limitation"],
+            executive_rows,
+        )
+    else:
+        doc.add_paragraph("No analysis results were available for executive summarization.")
+    doc.add_paragraph()
+
+    _add_heading(doc, "Experimental Conditions", level=1)
     if not datasets:
         doc.add_paragraph("No dataset metadata available.")
     else:
-        for ds_name, ds in datasets.items():
-            meta = getattr(ds, "metadata", {}) or {}
-            doc.add_paragraph(f"Dataset: {ds_name}", style="Heading 2")
-            if meta:
-                _add_key_value_table(doc, meta)
+        for dataset_key, dataset in datasets.items():
+            doc.add_paragraph(_dataset_label(dataset_key, datasets), style="Heading 2")
+            payload = _main_conditions_payload(dataset_key, dataset)
+            if payload:
+                _add_key_value_table(doc, payload)
             else:
-                doc.add_paragraph("No metadata available for this dataset.")
+                doc.add_paragraph("No reader-facing experimental metadata available.")
             doc.add_paragraph()
 
-    _render_comparison_workspace(doc, comparison_workspace, datasets)
+    if comparison_payload:
+        _add_heading(doc, "Comparison Overview", level=1)
+        if comparison_payload.get("overview"):
+            _add_key_value_table(doc, comparison_payload["overview"])
+            doc.add_paragraph()
+        if comparison_payload.get("metric_rows"):
+            _add_results_table(doc, comparison_payload["metric_headers"], comparison_payload["metric_rows"])
+            doc.add_paragraph()
+        if comparison_payload.get("interpretation"):
+            doc.add_paragraph("Comparison Interpretation", style="Heading 2")
+            doc.add_paragraph(str(comparison_payload["interpretation"]))
+            doc.add_paragraph()
 
-    _add_heading(doc, "3. Stable Analyses", level=1)
+    _add_heading(doc, "Stable Analyses", level=1)
     if not stable_results:
         doc.add_paragraph("No stable analysis results available.")
     else:
         for record in stable_results:
-            doc.add_paragraph(_record_title(record), style="Heading 2")
-            if record.get("summary"):
-                _add_key_value_table(
-                    doc,
-                    {key: _format_value(value) for key, value in record["summary"].items()},
-                )
-                doc.add_paragraph()
-            for title, payload in _record_sections(record):
-                _render_record_mapping(doc, title, payload)
-            headers = _record_headers(record)
-            if headers:
-                rows = [
-                    [_format_value(row.get(header)) for header in headers]
-                    for row in record["rows"]
-                ]
-                _add_results_table(doc, headers, rows)
-                doc.add_paragraph()
+            _render_main_record_docx(doc, record)
 
-    _add_heading(doc, "4. Experimental Analyses", level=1)
-    if not experimental_results:
-        doc.add_paragraph("No experimental analysis results available.")
-    else:
-        doc.add_paragraph(
-            "These results are included for reference but are outside the Phase 1 stability guarantee."
-        )
+    if experimental_results:
+        _add_heading(doc, "Experimental Analyses", level=1)
+        doc.add_paragraph("These results are included for reference but remain outside the stable workflow guarantee.")
         for record in experimental_results:
-            doc.add_paragraph(_record_title(record), style="Heading 2")
-            if record.get("summary"):
-                _add_key_value_table(
-                    doc,
-                    {key: _format_value(value) for key, value in record["summary"].items()},
-                )
-                doc.add_paragraph()
-            for title, payload in _record_sections(record):
-                _render_record_mapping(doc, title, payload)
-            headers = _record_headers(record)
-            if headers:
-                rows = [
-                    [_format_value(row.get(header)) for header in headers]
-                    for row in record["rows"]
-                ]
-                _add_results_table(doc, headers, rows)
-                doc.add_paragraph()
+            _render_main_record_docx(doc, record)
 
     report_notes = (branding or {}).get("report_notes")
     if report_notes:
-        _add_heading(doc, "5. Analyst Notes", level=1)
+        _add_heading(doc, "Analyst Notes", level=1)
         doc.add_paragraph(str(report_notes))
 
     if issues:
-        _add_heading(doc, "6. Skipped Records", level=1)
+        _add_heading(doc, "Skipped Records", level=1)
         for issue in issues:
             doc.add_paragraph(issue, style="List Bullet")
 
     if figures:
-        _add_heading(doc, "7. Figures", level=1)
+        _add_heading(doc, "Figures", level=1)
         for caption, png_bytes in figures.items():
             doc.add_paragraph(caption, style="Heading 2")
             try:
@@ -614,6 +1082,8 @@ def generate_docx_report(
             except Exception:
                 doc.add_paragraph("Figure could not be embedded and was skipped.")
             doc.add_paragraph()
+
+    _render_appendix_docx(doc, records=all_records, datasets=datasets, comparison_payload=comparison_payload)
 
     buffer = io.BytesIO()
     doc.save(buffer)
@@ -688,7 +1158,7 @@ def generate_pdf_report(
     comparison_workspace: Optional[dict] = None,
     license_state: Optional[dict] = None,
 ) -> bytes:
-    """Generate a simple branded PDF report when reportlab is available."""
+    """Generate a narrative PDF report when reportlab is available."""
     try:  # pragma: no cover - optional dependency
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import A4
@@ -700,8 +1170,81 @@ def generate_pdf_report(
 
     valid_results, issues = split_valid_results(results)
     stable_results, experimental_results = partition_results_by_status(valid_results)
+    all_records = stable_results + experimental_results
+    comparison_payload = _build_comparison_payload(comparison_workspace, datasets, all_records)
+    executive_rows = _build_executive_summary_rows(all_records, datasets, comparison_payload)
+
     styles = getSampleStyleSheet()
     story = []
+
+    def add_kv_table(payload: dict[str, Any]) -> None:
+        rows = [["Parameter", "Value"]]
+        rows.extend([[str(key), _format_value(value)] for key, value in payload.items()])
+        table = Table(rows, hAlign="LEFT")
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#EEF3F8")]),
+                ]
+            )
+        )
+        story.append(table)
+
+    def add_matrix_table(headers: list[str], rows: list[list[Any]]) -> None:
+        matrix = [headers] + [[_format_value(value) for value in row] for row in rows]
+        table = Table(matrix, hAlign="LEFT")
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#EEF3F8")]),
+                ]
+            )
+        )
+        story.append(table)
+
+    def append_main_record(record: dict) -> None:
+        story.append(Paragraph(_record_title(record), styles["Heading2"]))
+        key_results = _record_key_results(record)
+        if key_results:
+            story.append(Paragraph("Key Results", styles["Heading3"]))
+            add_kv_table(key_results)
+            story.append(Spacer(1, 0.08 * inch))
+
+        for title, payload in _record_main_sections(record):
+            story.append(Paragraph(title, styles["Heading3"]))
+            if title == "Scientific Interpretation":
+                for value in payload.values():
+                    story.append(Paragraph(f"- {value}", styles["Normal"]))
+            elif title == "Warnings and Limitations":
+                for group, values in payload.items():
+                    story.append(Paragraph(str(group), styles["Heading4"]))
+                    if isinstance(values, list):
+                        for item in values:
+                            story.append(Paragraph(f"- {item}", styles["Normal"]))
+                    else:
+                        story.append(Paragraph(f"- {values}", styles["Normal"]))
+            else:
+                add_kv_table({str(key): _format_value(value) for key, value in payload.items()})
+            story.append(Spacer(1, 0.08 * inch))
+
+        major_events = _tga_major_events(record)
+        if major_events:
+            story.append(Paragraph("Major Decomposition Events", styles["Heading3"]))
+            add_matrix_table(["Event", "Midpoint Temperature (°C)", "Mass Loss (%)", "Final Residue (%)"], major_events)
+            story.append(Spacer(1, 0.08 * inch))
+        else:
+            compact = _record_compact_rows(record)
+            if compact:
+                headers, rows = compact
+                story.append(Paragraph("Compact Key Table", styles["Heading3"]))
+                add_matrix_table(headers, rows)
+                story.append(Spacer(1, 0.08 * inch))
 
     title = (branding or {}).get("report_title") or "ThermoAnalyzer Professional Report"
     story.append(Paragraph(title, styles["Title"]))
@@ -722,128 +1265,51 @@ def generate_pdf_report(
         except Exception:
             pass
 
+    story.append(Paragraph("Executive Summary", styles["Heading1"]))
+    if executive_rows:
+        add_matrix_table(["Dataset / Set", "Analysis Type", "Key Metrics", "Scientific Interpretation", "Confidence / Limitation"], executive_rows)
+    else:
+        story.append(Paragraph("No analysis results were available for executive summarization.", styles["Normal"]))
+    story.append(Spacer(1, 0.15 * inch))
+
     story.append(Paragraph("Experimental Conditions", styles["Heading1"]))
-    for ds_name, ds in datasets.items():
-        story.append(Paragraph(ds_name, styles["Heading2"]))
-        meta_rows = [["Parameter", "Value"]]
-        for key, value in (getattr(ds, "metadata", {}) or {}).items():
-            meta_rows.append([str(key), str(value)])
-        table = Table(meta_rows, hAlign="LEFT")
-        table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
-                    ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#EEF3F8")]),
-                ]
-            )
-        )
-        story.append(table)
-        story.append(Spacer(1, 0.15 * inch))
+    if not datasets:
+        story.append(Paragraph("No dataset metadata available.", styles["Normal"]))
+    else:
+        for dataset_key, dataset in datasets.items():
+            story.append(Paragraph(_dataset_label(dataset_key, datasets), styles["Heading2"]))
+            payload = _main_conditions_payload(dataset_key, dataset)
+            if payload:
+                add_kv_table(payload)
+            else:
+                story.append(Paragraph("No reader-facing experimental metadata available.", styles["Normal"]))
+            story.append(Spacer(1, 0.08 * inch))
 
-    if comparison_workspace and comparison_workspace.get("selected_datasets"):
-        story.append(Paragraph("Compare Workspace", styles["Heading1"]))
-        story.append(Paragraph(", ".join(comparison_workspace["selected_datasets"]), styles["Normal"]))
-        if comparison_workspace.get("notes"):
-            story.append(Paragraph(str(comparison_workspace["notes"]), styles["Normal"]))
-        batch_rows = _comparison_batch_rows(comparison_workspace)
-        if batch_rows:
-            batch_totals = summarize_batch_outcomes(batch_rows)
-            story.append(Paragraph("Batch Template Runner", styles["Heading2"]))
-            batch_overview = [["Parameter", "Value"]]
-            batch_overview.append(["Batch Run ID", _format_value(comparison_workspace.get("batch_run_id"))])
-            batch_overview.append(["Batch Template", _format_value(comparison_workspace.get("batch_template_label") or comparison_workspace.get("batch_template_id"))])
-            batch_overview.append(["Template ID", _format_value(comparison_workspace.get("batch_template_id"))])
-            batch_overview.append(["Completed At", _format_value(comparison_workspace.get("batch_completed_at"))])
-            batch_overview.append(["Batch Total", _format_value(batch_totals["total"])])
-            batch_overview.append(["Saved", _format_value(batch_totals["saved"])])
-            batch_overview.append(["Blocked", _format_value(batch_totals["blocked"])])
-            batch_overview.append(["Failed", _format_value(batch_totals["failed"])])
-            batch_table = Table(batch_overview, hAlign="LEFT")
-            batch_table.setStyle(
-                TableStyle(
-                    [
-                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
-                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
-                    ]
-                )
-            )
-            story.append(batch_table)
-            batch_detail = [["Run", "Sample", "Template", "Execution", "Validation", "Calibration", "Reference", "Result ID", "Error ID", "Reason"]]
-            batch_detail.extend(
-                [
-                    [
-                        _format_value(row.get("dataset_key")),
-                        _format_value(row.get("sample_name")),
-                        _format_value(row.get("workflow_template")),
-                        _format_value(row.get("execution_status")),
-                        _format_value(row.get("validation_status")),
-                        _format_value(row.get("calibration_state")),
-                        _format_value(row.get("reference_state")),
-                        _format_value(row.get("result_id")),
-                        _format_value(row.get("error_id")),
-                        _format_value(row.get("failure_reason")),
-                    ]
-                    for row in batch_rows
-                ]
-            )
-            batch_detail_table = Table(batch_detail, hAlign="LEFT")
-            batch_detail_table.setStyle(
-                TableStyle(
-                    [
-                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
-                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
-                    ]
-                )
-            )
-            story.append(batch_detail_table)
-        story.append(Spacer(1, 0.15 * inch))
+    if comparison_payload:
+        story.append(Paragraph("Comparison Overview", styles["Heading1"]))
+        if comparison_payload.get("overview"):
+            add_kv_table(comparison_payload["overview"])
+            story.append(Spacer(1, 0.08 * inch))
+        if comparison_payload.get("metric_rows"):
+            add_matrix_table(comparison_payload["metric_headers"], comparison_payload["metric_rows"])
+            story.append(Spacer(1, 0.08 * inch))
+        if comparison_payload.get("interpretation"):
+            story.append(Paragraph("Comparison Interpretation", styles["Heading2"]))
+            story.append(Paragraph(str(comparison_payload["interpretation"]), styles["Normal"]))
+            story.append(Spacer(1, 0.08 * inch))
 
-    def _append_record_block(heading, record_list):
-        story.append(Paragraph(heading, styles["Heading1"]))
-        if not record_list:
-            story.append(Paragraph("No results available.", styles["Normal"]))
-            return
-        for record in record_list:
-            story.append(Paragraph(_record_title(record), styles["Heading2"]))
-            summary_rows = [["Parameter", "Value"]]
-            for key, value in record.get("summary", {}).items():
-                summary_rows.append([str(key), _format_value(value)])
-            if len(summary_rows) > 1:
-                summary_table = Table(summary_rows, hAlign="LEFT")
-                summary_table.setStyle(
-                    TableStyle(
-                        [
-                            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
-                            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
-                        ]
-                    )
-                )
-                story.append(summary_table)
-            for title, payload in _record_sections(record):
-                story.append(Paragraph(title, styles["Heading3"]))
-                section_rows = [["Parameter", "Value"]]
-                for key, value in payload.items():
-                    section_rows.append([str(key), value])
-                section_table = Table(section_rows, hAlign="LEFT")
-                section_table.setStyle(
-                    TableStyle(
-                        [
-                            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4472C4")),
-                            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#D1D5DB")),
-                        ]
-                    )
-                )
-                story.append(section_table)
-            story.append(Spacer(1, 0.1 * inch))
+    story.append(Paragraph("Stable Analyses", styles["Heading1"]))
+    if stable_results:
+        for record in stable_results:
+            append_main_record(record)
+    else:
+        story.append(Paragraph("No stable analysis results available.", styles["Normal"]))
 
-    _append_record_block("Stable Analyses", stable_results)
-    _append_record_block("Experimental Analyses", experimental_results)
+    if experimental_results:
+        story.append(Paragraph("Experimental Analyses", styles["Heading1"]))
+        story.append(Paragraph("These results are included for reference but remain outside the stable workflow guarantee.", styles["Normal"]))
+        for record in experimental_results:
+            append_main_record(record)
 
     if (branding or {}).get("report_notes"):
         story.append(Paragraph("Analyst Notes", styles["Heading1"]))
@@ -852,7 +1318,7 @@ def generate_pdf_report(
     if issues:
         story.append(Paragraph("Skipped Records", styles["Heading1"]))
         for issue in issues:
-            story.append(Paragraph(issue, styles["Normal"]))
+            story.append(Paragraph(f"- {issue}", styles["Normal"]))
 
     if figures:
         story.append(Paragraph("Figures", styles["Heading1"]))
@@ -863,6 +1329,79 @@ def generate_pdf_report(
             except Exception:
                 continue
             story.append(Spacer(1, 0.12 * inch))
+
+    dataset_sections = []
+    for dataset_key, dataset in datasets.items():
+        payload = _appendix_dataset_metadata(getattr(dataset, "metadata", {}) or {})
+        if payload:
+            dataset_sections.append((dataset_key, payload))
+
+    record_sections = []
+    for record in all_records:
+        sections = _record_appendix_sections(record)
+        full_rows = _record_full_rows(record)
+        if sections or full_rows:
+            record_sections.append((record, sections, full_rows))
+
+    comparison_has_content = bool(comparison_payload and (comparison_payload.get("appendix_overview") or comparison_payload.get("appendix_batch_rows")))
+    if dataset_sections or record_sections or comparison_has_content:
+        story.append(Paragraph("Appendix A - Reproducibility and Audit Trail", styles["Heading1"]))
+
+        if dataset_sections:
+            story.append(Paragraph("Dataset Import and Metadata Technical Details", styles["Heading2"]))
+            for dataset_key, payload in dataset_sections:
+                story.append(Paragraph(_dataset_label(dataset_key, datasets), styles["Heading3"]))
+                add_kv_table(payload)
+                story.append(Spacer(1, 0.08 * inch))
+
+        if comparison_has_content:
+            story.append(Paragraph("Comparison Workspace Technical Context", styles["Heading2"]))
+            if comparison_payload.get("appendix_overview"):
+                add_kv_table(comparison_payload["appendix_overview"])
+                story.append(Spacer(1, 0.08 * inch))
+            batch_rows = comparison_payload.get("appendix_batch_rows") or []
+            if batch_rows:
+                batch_totals = summarize_batch_outcomes(batch_rows)
+                add_kv_table(
+                    {
+                        "Batch Total": batch_totals["total"],
+                        "Saved": batch_totals["saved"],
+                        "Blocked": batch_totals["blocked"],
+                        "Failed": batch_totals["failed"],
+                    }
+                )
+                story.append(Spacer(1, 0.08 * inch))
+                add_matrix_table(
+                    ["Run", "Sample", "Template", "Execution", "Validation", "Calibration", "Reference", "Result ID", "Error ID", "Reason"],
+                    [
+                        [
+                            _format_value(row.get("dataset_key")),
+                            _format_value(row.get("sample_name")),
+                            _format_value(row.get("workflow_template")),
+                            _format_value(row.get("execution_status")),
+                            _format_value(row.get("validation_status")),
+                            _format_value(row.get("calibration_state")),
+                            _format_value(row.get("reference_state")),
+                            _format_value(row.get("result_id")),
+                            _format_value(row.get("error_id")),
+                            _format_value(row.get("failure_reason")),
+                        ]
+                        for row in batch_rows
+                    ],
+                )
+                story.append(Spacer(1, 0.08 * inch))
+
+        for record, sections, full_rows in record_sections:
+            story.append(Paragraph(_record_title(record), styles["Heading2"]))
+            for title, payload in sections:
+                story.append(Paragraph(title, styles["Heading3"]))
+                add_kv_table(payload)
+                story.append(Spacer(1, 0.08 * inch))
+            if full_rows:
+                headers, rows = full_rows
+                story.append(Paragraph("Full Raw Data Table", styles["Heading3"]))
+                add_matrix_table(headers, rows)
+                story.append(Spacer(1, 0.08 * inch))
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)

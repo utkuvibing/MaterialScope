@@ -220,24 +220,25 @@ def test_generate_docx_report_separates_stable_and_experimental(thermal_dataset)
         xml = archive.read("word/document.xml").decode("utf-8")
 
     assert "Acme Customer Report" in xml
+    assert "Executive Summary" in xml
     assert "Stable Analyses" in xml
     assert "Experimental Analyses" in xml
     assert "Skipped Records" in xml
     assert "Analyst Notes" in xml
-    assert "Compare Workspace" in xml
+    assert "Comparison Overview" in xml
+    assert "Comparison Interpretation" in xml
     assert "Kissinger" in xml
     assert "Methodology" in xml
     assert "Equations and Formulation" in xml
-    assert "Numerical Interpretation" in xml
+    assert "Scientific Interpretation" in xml
+    assert "Numerical Interpretation" not in xml
     assert "Fit Quality" in xml
     assert "Warnings and Limitations" in xml
-    assert "Calibration State" in xml
-    assert "missing_calibration" in xml
-    assert "Atmosphere Status" in xml
-    assert "Reference State" in xml
-    assert "reference_checked" in xml
+    assert "Methodological Limitations" in xml
+    assert "Appendix A" in xml
     assert "Single-Step Decomposition" in xml
-    assert "CaC₂O₄·H₂O  Step 1" in xml
+    assert "Major Decomposition Events" in xml
+    assert "Full Raw Data Table" in xml
 
 
 def test_results_to_xlsx_writes_summary_and_detail_sheets(thermal_dataset, temperature_range, tga_signal):

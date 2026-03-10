@@ -15,6 +15,18 @@ SCIENTIFIC_CONTEXT_KEYS = (
     "limitations",
 )
 
+_DATA_COMPLETENESS_HINTS = (
+    "missing",
+    "not recorded",
+    "not available",
+    "unavailable",
+    "unknown",
+    "incomplete",
+    "not provided",
+    "not supplied",
+    "import",
+)
+
 
 def _copy_mapping(value: Any) -> dict[str, Any]:
     return copy.deepcopy(value) if isinstance(value, dict) else {}
@@ -33,6 +45,59 @@ def _to_str_list(values: Any) -> list[str]:
             output.append(str(item))
         return output
     return [str(values)]
+
+
+def _clean_text(value: Any) -> str:
+    text = str(value).strip()
+    if not text:
+        return ""
+    return " ".join(text.split())
+
+
+def _dedupe_preserve_order(values: Iterable[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        normalized = _clean_text(item)
+        if not normalized:
+            continue
+        key = normalized.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(normalized)
+    return deduped
+
+
+def _humanize_metric(metric: str | None) -> str:
+    if not metric:
+        return ""
+    words = str(metric).replace("_", " ").split()
+    return " ".join(word.capitalize() for word in words)
+
+
+def _value_with_unit(value: Any, unit: str | None) -> str:
+    if value in (None, "", [], {}):
+        return ""
+    if isinstance(value, dict):
+        parts = []
+        for key, raw in value.items():
+            parts.append(f"{_humanize_metric(str(key))} {raw}")
+        payload = ", ".join(parts)
+    else:
+        payload = str(value)
+    if unit:
+        payload = f"{payload} {unit}"
+    return payload
+
+
+def _sentence(text: str) -> str:
+    cleaned = _clean_text(text)
+    if not cleaned:
+        return ""
+    if cleaned[-1] in ".!?":
+        return cleaned
+    return f"{cleaned}."
 
 
 def build_equation(
@@ -152,6 +217,66 @@ def build_scientific_context(
     )
 
 
+def build_scientific_interpretation_lines(
+    scientific_context: dict[str, Any] | None,
+    *,
+    max_items: int = 6,
+) -> list[str]:
+    """Return reader-facing interpretation sentences from normalized context."""
+    context = normalize_scientific_context(scientific_context)
+    output: list[str] = []
+    for item in context["numerical_interpretation"]:
+        statement = _sentence(item.get("statement") or "Observation recorded")
+        metric = _humanize_metric(item.get("metric"))
+        value = _value_with_unit(item.get("value"), item.get("unit"))
+        implication = _sentence(item.get("implication") or "")
+
+        if metric and value:
+            sentence = f"{statement} {metric}: {value}."
+        elif value:
+            sentence = f"{statement} Observed value: {value}."
+        else:
+            sentence = statement
+
+        if implication:
+            sentence = f"{sentence} {implication}"
+
+        output.append(" ".join(sentence.split()))
+        if len(output) >= max_items:
+            break
+    return output
+
+
+def condense_warning_limitations(
+    scientific_context: dict[str, Any] | None,
+    *,
+    validation: dict[str, Any] | None = None,
+    max_data_warnings: int = 4,
+    max_method_limits: int = 4,
+) -> dict[str, list[str]]:
+    """Group warnings into concise, deduplicated reader-facing categories."""
+    context = normalize_scientific_context(scientific_context)
+    validation_warnings = _to_str_list((validation or {}).get("warnings"))
+    raw_warnings = _dedupe_preserve_order(context["warnings"] + validation_warnings)
+    raw_limits = _dedupe_preserve_order(context["limitations"])
+
+    data_warnings: list[str] = []
+    method_limits: list[str] = []
+    for item in raw_warnings:
+        lower = item.casefold()
+        if any(token in lower for token in _DATA_COMPLETENESS_HINTS):
+            data_warnings.append(_sentence(item))
+        else:
+            method_limits.append(_sentence(item))
+    for item in raw_limits:
+        method_limits.append(_sentence(item))
+
+    return {
+        "data_completeness_warnings": _dedupe_preserve_order(data_warnings)[:max_data_warnings],
+        "methodological_limitations": _dedupe_preserve_order(method_limits)[:max_method_limits],
+    }
+
+
 def scientific_context_to_report_sections(scientific_context: dict[str, Any] | None) -> list[tuple[str, dict[str, Any]]]:
     """Convert scientific context into DOCX table sections."""
     context = normalize_scientific_context(scientific_context)
@@ -176,32 +301,21 @@ def scientific_context_to_report_sections(scientific_context: dict[str, Any] | N
         sections.append(("Equations and Formulation", equations_payload))
 
     interpretation_payload: dict[str, Any] = {}
-    for index, item in enumerate(context["numerical_interpretation"], start=1):
-        label = item.get("metric") or f"Observation {index}"
-        statement = item.get("statement") or "Not recorded"
-        value = item.get("value")
-        unit = item.get("unit")
-        implication = item.get("implication")
-        parts = [str(statement)]
-        if value is not None:
-            parts.append(f"value={value}")
-        if unit:
-            parts.append(f"unit={unit}")
-        if implication:
-            parts.append(f"implication={implication}")
-        interpretation_payload[str(label)] = " | ".join(parts)
+    for index, line in enumerate(build_scientific_interpretation_lines(context), start=1):
+        interpretation_payload[f"Observation {index}"] = line
     if interpretation_payload:
-        sections.append(("Numerical Interpretation", interpretation_payload))
+        sections.append(("Scientific Interpretation", interpretation_payload))
 
     if context["fit_quality"]:
         sections.append(("Fit Quality", context["fit_quality"]))
 
-    warning_limit_payload: dict[str, Any] = {}
-    if context["warnings"]:
-        warning_limit_payload["warnings"] = context["warnings"]
-    if context["limitations"]:
-        warning_limit_payload["limitations"] = context["limitations"]
-    if warning_limit_payload:
-        sections.append(("Warnings and Limitations", warning_limit_payload))
+    warning_limit_payload = condense_warning_limitations(context)
+    grouped_payload: dict[str, Any] = {}
+    if warning_limit_payload["data_completeness_warnings"]:
+        grouped_payload["Data Completeness Warnings"] = warning_limit_payload["data_completeness_warnings"]
+    if warning_limit_payload["methodological_limitations"]:
+        grouped_payload["Methodological Limitations"] = warning_limit_payload["methodological_limitations"]
+    if grouped_payload:
+        sections.append(("Warnings and Limitations", grouped_payload))
 
     return sections

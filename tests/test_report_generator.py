@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import copy
 import csv
 import io
 import os
+from pathlib import Path
 import zipfile
 from types import SimpleNamespace
 
@@ -297,51 +299,102 @@ def test_generate_docx_report_renders_method_validation_and_provenance_sections(
     with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
         xml = archive.read("word/document.xml").decode("utf-8")
 
-    assert "Method Summary" in xml
+    assert "Executive Summary" in xml
+    assert xml.index("Executive Summary") < xml.index("Experimental Conditions")
+    assert "Comparison Overview" in xml
+    assert "Comparison Interpretation" in xml
     assert "Methodology" in xml
     assert "Equations and Formulation" in xml
-    assert "Numerical Interpretation" in xml
+    assert "Scientific Interpretation" in xml
+    assert "Numerical Interpretation" not in xml
     assert "Fit Quality" in xml
     assert "Warnings and Limitations" in xml
-    assert "Signal Pipeline" in xml
-    assert "Analysis Steps" in xml
-    assert "Template ID" in xml
-    assert "dsc.polymer_tg" in xml
-    assert "Calibration ID" in xml
-    assert "DSC-CAL-01" in xml
-    assert "Calibration State" in xml
-    assert "calibrated" in xml
-    assert "Calibration Status" in xml
-    assert "verified" in xml
+    assert "Data Completeness Warnings" in xml
+    assert "Methodological Limitations" in xml
     assert "Sign Convention" in xml
-    assert "Reference State" in xml
-    assert "reference_checked" in xml
-    assert "Reference Material" in xml
     assert "Reference Check" in xml
     assert "Tin (Sn)" in xml
-    assert "Declared Unit Mode" in xml
-    assert "Resolved Unit Mode" in xml
-    assert "Auto Inference Used" in xml
-    assert "Unit Interpretation" in xml
-    assert "Unit Inference Basis" in xml
-    assert "Unit Review Note" in xml
-    assert "signal max le 105 default percent" not in xml.lower()
-    assert "defaulted to percent" in xml
-    assert "Data Validation" in xml
-    assert "Validation Checks" in xml
-    assert "Provenance" in xml
-    assert "Workflow Template" in xml
-    assert "Polymer Tg" in xml
-    assert "Compare Workspace" in xml
-    assert "Batch Template Runner" in xml
-    assert "batch_dsc_20260307_demo" in xml
-    assert "Batch Total" in xml
-    assert "Blocked" in xml
-    assert "Failed" in xml
-    assert "Dataset blocked by validation." in xml
-    assert "Processor exploded." in xml
-    assert "TA-DSC-20260307123400-BBBBBB" in xml
+    assert "Major Decomposition Events" in xml
+    assert "Full Raw Data Table" in xml
+    assert "Appendix A" in xml
     assert "Batch remains within envelope." in xml
+
+    appendix_index = xml.index("Appendix A")
+    assert xml.index("Source Data Hash") > appendix_index
+    assert xml.index("Batch Run ID") > appendix_index
+    assert xml.index("Full Raw Data Table") > appendix_index
+
+
+def test_generate_docx_report_renders_tga_comparison_interpretation(temperature_range, tga_percent_signal):
+    first_record, first_dataset = _make_tga_record(temperature_range, tga_percent_signal)
+    second_record = copy.deepcopy(first_record)
+    second_record["id"] = "tga_synthetic_tga_b"
+    second_record["dataset_key"] = "synthetic_tga_b"
+    second_record["summary"]["total_mass_loss_percent"] = float(first_record["summary"]["total_mass_loss_percent"]) + 4.0
+    second_record["summary"]["residue_percent"] = float(first_record["summary"]["residue_percent"]) - 4.0
+    second_record["summary"]["step_count"] = max(1, int(first_record["summary"]["step_count"]) - 1)
+    second_dataset = copy.deepcopy(first_dataset)
+    second_dataset.metadata["display_name"] = "Synthetic TGA B"
+    second_dataset.metadata["atmosphere"] = ""
+
+    docx_bytes = generate_docx_report(
+        results={first_record["id"]: first_record, second_record["id"]: second_record},
+        datasets={"synthetic_tga": first_dataset, "synthetic_tga_b": second_dataset},
+        comparison_workspace={
+            "analysis_type": "TGA",
+            "selected_datasets": ["synthetic_tga", "synthetic_tga_b"],
+            "figure_key": "Comparison Workspace - TGA",
+        },
+    )
+
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "Comparison Overview" in xml
+    assert "Comparison Interpretation" in xml
+    assert "Compared with" in xml
+    assert "total mass loss" in xml
+    assert "comparative rather than definitive" in xml
+
+
+def test_generate_docx_report_suppresses_empty_experimental_section(thermal_dataset):
+    dsc_record = _make_dsc_record(thermal_dataset)
+    docx_bytes = generate_docx_report(
+        results={dsc_record["id"]: dsc_record},
+        datasets={"synthetic_dsc": thermal_dataset},
+    )
+
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "Experimental Analyses" not in xml
+    assert "No experimental analysis results available." not in xml
+
+
+def test_generate_docx_report_condenses_and_deduplicates_warnings(thermal_dataset):
+    record = _make_dsc_record(thermal_dataset)
+    record["scientific_context"]["warnings"] = [
+        "Atmosphere is not recorded for this dataset.",
+        "Atmosphere is not recorded for this dataset.",
+    ]
+    record["scientific_context"]["limitations"] = [
+        "Interpretation requires independent method validation.",
+        "Interpretation requires independent method validation.",
+    ]
+    record["validation"]["warnings"] = []
+
+    docx_bytes = generate_docx_report(
+        results={record["id"]: record},
+        datasets={"synthetic_dsc": thermal_dataset},
+    )
+
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "Data Completeness Warnings" in xml
+    assert "Methodological Limitations" in xml
+    assert xml.count("Atmosphere is not recorded for this dataset.") == 2
+    assert xml.count("Interpretation requires independent method validation.") == 1
 
 
 def test_generate_csv_summary_uses_normalized_flat_contract(thermal_dataset):
@@ -399,7 +452,7 @@ def test_generate_csv_summary_handles_multiple_normalized_record_types(thermal_d
     assert {"DSC", "Kissinger", "Ozawa-Flynn-Wall", "Friedman"} <= analysis_types
 
 
-def test_generate_csv_summary_writes_to_targets(thermal_dataset, tmp_path):
+def test_generate_csv_summary_writes_to_targets(thermal_dataset):
     dsc_record = _make_dsc_record(thermal_dataset)
 
     buf = io.StringIO()
@@ -407,14 +460,17 @@ def test_generate_csv_summary_writes_to_targets(thermal_dataset, tmp_path):
     assert buf.tell() == 0
     assert csv_str == buf.read()
 
-    out_path = str(tmp_path / "normalized_results.csv")
-    csv_str = generate_csv_summary({dsc_record["id"]: dsc_record}, out_path)
+    out_dir = Path(".test-output")
+    out_dir.mkdir(exist_ok=True)
+    out_path = out_dir / "normalized_results.csv"
+    csv_str = generate_csv_summary({dsc_record["id"]: dsc_record}, str(out_path))
     assert os.path.exists(out_path)
     with open(out_path, newline="", encoding="utf-8") as fh:
         assert fh.read() == csv_str
+    out_path.unlink(missing_ok=True)
 
 
-def test_generate_docx_report_writes_to_buffer_and_path(thermal_dataset, tmp_path):
+def test_generate_docx_report_writes_to_buffer_and_path(thermal_dataset):
     dsc_record = _make_dsc_record(thermal_dataset)
 
     buf = io.BytesIO()
@@ -426,15 +482,18 @@ def test_generate_docx_report_writes_to_buffer_and_path(thermal_dataset, tmp_pat
     assert buf.tell() == 0
     assert buf.getvalue() == docx_bytes
 
-    out_path = str(tmp_path / "normalized_report.docx")
+    out_dir = Path(".test-output")
+    out_dir.mkdir(exist_ok=True)
+    out_path = out_dir / "normalized_report.docx"
     docx_bytes = generate_docx_report(
         results={dsc_record["id"]: dsc_record},
         datasets={"synthetic_dsc": thermal_dataset},
-        file_path_or_buffer=out_path,
+        file_path_or_buffer=str(out_path),
     )
     assert os.path.exists(out_path)
     with open(out_path, "rb") as fh:
         assert fh.read() == docx_bytes
+    out_path.unlink(missing_ok=True)
 
 
 def test_generate_docx_report_skips_invalid_records_but_keeps_valid_ones(thermal_dataset):
