@@ -298,6 +298,16 @@
       font-size: 0.95rem;
       font-weight: 700;
     }
+    .analysis-step {
+      border-left: 4px solid #0e7490;
+      padding-left: 10px;
+      margin-bottom: 8px;
+    }
+    .analysis-step-title {
+      margin: 0;
+      font-size: 0.96rem;
+      font-weight: 700;
+    }
     .row {
       display: flex;
       gap: 10px;
@@ -662,27 +672,77 @@
 
         <section class="view" id="view-dsc">
           <h2 class="view-title">DSC Analysis</h2>
-          <p class="view-copy">Run stable DSC analysis for the selected dataset from the Home page.</p>
+          <p class="view-copy">Run a guided DSC workflow with dataset context, validation visibility, processing template awareness, and saved-result continuity.</p>
           <div class="card">
-            <p class="small">Active dataset drives this run.</p>
-            <div class="row">
+            <div class="analysis-step">
+              <p class="analysis-step-title">Step 1 - Active dataset and method context</p>
+            </div>
+            <div id="dscActiveDatasetContextPanel" class="panel-soft">Select a dataset from Home / Import to begin DSC context.</div>
+            <div id="dscMethodContextPanel" class="panel-soft" style="margin-top:10px;">DSC processing context will appear here.</div>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title">Step 2 - Validation and readiness checks</p>
+            </div>
+            <div id="dscValidationPanel" class="panel-soft">Validation summary will appear after dataset inspection.</div>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title">Step 3 - Run DSC analysis</p>
+            </div>
+            <div id="dscTemplateContextPanel" class="panel-soft">Workflow template context will appear here.</div>
+            <div class="row" style="margin-top:10px;">
               <button id="runDscAnalysisBtn" disabled>Run DSC Analysis</button>
               <button id="inspectSelectedDatasetBtn">Inspect Selected Dataset</button>
             </div>
             <p id="dscAnalysisInfo" class="small">No DSC analysis executed yet.</p>
           </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title">Step 4 - Saved result context</p>
+            </div>
+            <div id="dscResultSummaryPanel" class="panel-soft">No DSC result context yet.</div>
+          </div>
         </section>
 
         <section class="view" id="view-tga">
           <h2 class="view-title">TGA Analysis</h2>
-          <p class="view-copy">Run stable TGA analysis for the selected dataset from the Home page.</p>
+          <p class="view-copy">Run a guided TGA workflow with unit/review context, validation checks, processing template visibility, and saved-result continuity.</p>
           <div class="card">
-            <p class="small">Active dataset drives this run.</p>
-            <div class="row">
+            <div class="analysis-step">
+              <p class="analysis-step-title">Step 1 - Active dataset and unit context</p>
+            </div>
+            <div id="tgaActiveDatasetContextPanel" class="panel-soft">Select a dataset from Home / Import to begin TGA context.</div>
+            <div id="tgaUnitContextPanel" class="panel-soft" style="margin-top:10px;">TGA unit and import-review context will appear here.</div>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title">Step 2 - Validation and review warnings</p>
+            </div>
+            <div id="tgaValidationPanel" class="panel-soft">Validation summary will appear after dataset inspection.</div>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title">Step 3 - Run TGA analysis</p>
+            </div>
+            <div id="tgaTemplateContextPanel" class="panel-soft">Workflow template context will appear here.</div>
+            <div class="row" style="margin-top:10px;">
               <button id="runTgaAnalysisBtn" disabled>Run TGA Analysis</button>
               <button id="inspectSelectedDatasetBtn2">Inspect Selected Dataset</button>
             </div>
             <p id="tgaAnalysisInfo" class="small">No TGA analysis executed yet.</p>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title">Step 4 - Saved result context</p>
+            </div>
+            <div id="tgaResultSummaryPanel" class="panel-soft">No TGA result context yet.</div>
           </div>
         </section>
 

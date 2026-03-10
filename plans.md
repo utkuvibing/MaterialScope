@@ -1285,3 +1285,60 @@ Improve first-impression desktop UX for tomorrow's professor demo by making Home
 
 ### Notes
 - This tranche intentionally stops at Home/Import + Compare parity improvements for demo impression; DSC/TGA deep page parity is deferred.
+
+---
+
+## Title
+Electron UI Parity Tranche 3 - DSC/TGA Guided Analysis Pages
+
+### Objective
+Upgrade Electron DSC/TGA pages from shallow run panels to guided product-like analysis workflows for professor demo readiness, while preserving all existing backend/API behavior.
+
+### Definition Of Done
+- DSC page includes clear guided sections for:
+  - active dataset/method context
+  - validation context
+  - processing/template context
+  - saved-result context
+- TGA page includes clear guided sections for:
+  - active dataset/unit context
+  - validation/import-review context
+  - processing/template context
+  - saved-result context
+- Existing run actions remain intact and use unchanged endpoints.
+- Analysis pages show before/after context with badges and summary panels (not raw debug payloads).
+
+### Constraints
+- Do not edit `app.py` or `ui/*`.
+- No core numerical or backend contract changes.
+- No normalized result/export contract changes.
+- No `.thermozip` compatibility changes.
+- No packaging work.
+
+### Impact Analysis
+- `desktop/electron/index.html`
+- `desktop/electron/renderer.js`
+- `plans.md`
+
+### Risks
+- New section IDs can break renderer bindings if mismatched.
+- Analysis context rendering must tolerate partial state (no dataset detail or no saved results yet).
+
+### Migration / Rollout Strategy
+- Keep existing button actions and API calls untouched.
+- Add presentation-only analysis context rendering on top of existing data already fetched in renderer.
+- Keep diagnostics payloads isolated in Diagnostics page.
+
+### Test Strategy
+- `node --check desktop/electron/renderer.js`
+- `npm run test:desktop-smoke` (from `desktop/electron`)
+- `pytest -q`
+
+### Progress Log
+- [x] Refactor DSC/TGA markup into guided workflow sections
+- [x] Add renderer-driven analysis context panels and saved-result summaries
+- [x] Preserve existing run/inspect actions with unchanged backend usage
+- [x] Run syntax, desktop smoke, and full regression tests
+
+### Notes
+- This tranche focuses strictly on DSC/TGA product impression for demo readiness; export/project deep parity and final visual polish remain for later.

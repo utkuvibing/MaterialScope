@@ -7,6 +7,12 @@ let currentResults = [];
 let exportableResults = [];
 let currentActiveDatasetKey = null;
 let compareSelectedDatasetKeys = new Set();
+let currentDatasetDetail = null;
+let currentResultDetail = null;
+const lastAnalysisRuns = {
+  DSC: null,
+  TGA: null,
+};
 
 const viewTitles = {
   home: "Home / Import",
@@ -222,6 +228,178 @@ function renderCompareWorkspaceSummary(compareWorkspace) {
   renderCompareSelectionChips(payload.selected_datasets || []);
 }
 
+function isDatasetEligibleForAnalysis(analysisType, datasetType) {
+  const token = String(analysisType || "").toUpperCase();
+  const dtype = String(datasetType || "UNKNOWN").toUpperCase();
+  if (token === "DSC") return dtype === "DSC" || dtype === "DTA" || dtype === "UNKNOWN";
+  if (token === "TGA") return dtype === "TGA" || dtype === "UNKNOWN";
+  return false;
+}
+
+function findLatestResultByType(analysisType) {
+  const token = String(analysisType || "").toUpperCase();
+  const filtered = (currentResults || []).filter((item) => String(item.analysis_type || "").toUpperCase() === token);
+  if (!filtered.length) return null;
+  const sorted = [...filtered].sort((a, b) => {
+    const aTime = Date.parse(a.saved_at_utc || "") || 0;
+    const bTime = Date.parse(b.saved_at_utc || "") || 0;
+    return bTime - aTime;
+  });
+  return sorted[0];
+}
+
+function renderAnalysisPage(analysisType) {
+  const token = String(analysisType || "").toUpperCase();
+  const isDsc = token === "DSC";
+  const prefix = isDsc ? "dsc" : "tga";
+  const defaultTemplate = isDsc ? "dsc.general" : "tga.general";
+  const dataset = (currentDatasets || []).find((item) => item.key === selectedDatasetKey) || null;
+  const detail = currentDatasetDetail && currentDatasetDetail.dataset && currentDatasetDetail.dataset.key === selectedDatasetKey
+    ? currentDatasetDetail
+    : null;
+  const validation = (detail && detail.validation) || {};
+  const metadata = (detail && detail.metadata) || {};
+  const units = (detail && detail.units) || {};
+  const importWarnings = asArray(metadata.import_warnings);
+  const issues = validation.issues || [];
+  const warnings = validation.warnings || [];
+  const reviewRequired = Boolean(metadata.import_review_required);
+  const confidence = valueOr(metadata.import_confidence || metadata.import_confidence_level, "not_recorded");
+  const eligible = dataset ? isDatasetEligibleForAnalysis(token, dataset.data_type) : false;
+
+  const latestResult = findLatestResultByType(token);
+  const focusedResult = currentResultDetail && currentResultDetail.result && String(currentResultDetail.result.analysis_type || "").toUpperCase() === token
+    ? currentResultDetail
+    : null;
+  const runInfo = lastAnalysisRuns[token];
+
+  setHtml(
+    `${prefix}ActiveDatasetContextPanel`,
+    dataset
+      ? `
+      ${keyGrid([
+        { label: "Dataset Key", value: valueOr(dataset.key) },
+        { label: "Dataset Type", value: valueOr(dataset.data_type, "unknown") },
+        { label: "Sample", value: valueOr(dataset.sample_name, "not named") },
+        { label: "Active In Workspace", value: dataset.key === currentActiveDatasetKey ? "yes" : "no" },
+      ])}
+      <div style="margin-top:8px;">
+        <span class="${toneBadgeClass(eligible ? "ok" : "warning")}">${token} eligibility: ${eligible ? "compatible" : "review dataset type"}</span>
+      </div>
+      `
+      : "Select a dataset from Home / Import to begin analysis context."
+  );
+
+  setHtml(
+    `${prefix}MethodContextPanel`,
+    isDsc
+      ? `
+      ${keyGrid([
+        { label: "Suggested Workflow Template", value: defaultTemplate },
+        { label: "Selected Dataset Type", value: valueOr(dataset && dataset.data_type, "none") },
+        { label: "Validation Status", value: valueOr(validation.status, dataset ? dataset.validation_status : "unknown") },
+      ])}
+      `
+      : `
+      ${keyGrid([
+        { label: "Suggested Workflow Template", value: defaultTemplate },
+        { label: "Selected Dataset Type", value: valueOr(dataset && dataset.data_type, "none") },
+        { label: "Signal Unit", value: valueOr(units.signal, "n/a") },
+      ])}
+      `
+  );
+
+  const validationContextHtml = `
+    <div>
+      <span class="${toneBadgeClass(validation.status || (dataset && dataset.validation_status))}">Validation: ${escapeHtml(valueOr(validation.status || (dataset && dataset.validation_status), "unknown"))}</span>
+      <span class="${toneBadgeClass(reviewRequired ? "warning" : "ok")}">Import Review Required: ${reviewRequired ? "yes" : "no"}</span>
+      <span class="badge badge-neutral">Import Confidence: ${escapeHtml(confidence)}</span>
+    </div>
+    ${renderIssueList("Validation warnings", warnings)}
+    ${renderIssueList("Validation issues", issues)}
+    ${renderIssueList("Import warnings", importWarnings)}
+  `;
+  setHtml(`${prefix}ValidationPanel`, validationContextHtml);
+
+  if (!isDsc) {
+    setHtml(
+      "tgaUnitContextPanel",
+      `
+      ${keyGrid([
+        { label: "Temperature Unit", value: valueOr(units.temperature, "n/a") },
+        { label: "Signal Unit", value: valueOr(units.signal, "n/a") },
+        { label: "Inferred Signal Unit", value: valueOr(metadata.inferred_signal_unit, "n/a") },
+        { label: "Import Review Required", value: reviewRequired ? "yes" : "no" },
+      ])}
+      `
+    );
+  }
+
+  const templateFromResult = focusedResult && focusedResult.processing
+    ? valueOr(focusedResult.processing.workflow_template_id, defaultTemplate)
+    : defaultTemplate;
+  setHtml(
+    `${prefix}TemplateContextPanel`,
+    `
+    ${keyGrid([
+      { label: "Template ID", value: templateFromResult },
+      { label: "Page Analysis Type", value: token },
+      { label: "Ready To Run", value: dataset && eligible ? "yes" : "select compatible dataset" },
+    ])}
+    <p class="small">Run will save into the same project result store and preserve validation/provenance context.</p>
+    `
+  );
+
+  const resultPanelId = `${prefix}ResultSummaryPanel`;
+  if (focusedResult) {
+    setHtml(
+      resultPanelId,
+      `
+      ${keyGrid([
+        { label: "Focused Result ID", value: valueOr(focusedResult.result.id) },
+        { label: "Status", value: valueOr(focusedResult.result.status) },
+        { label: "Dataset", value: valueOr(focusedResult.result.dataset_key) },
+        { label: "Template", value: valueOr(focusedResult.processing && focusedResult.processing.workflow_template_id, "n/a") },
+        { label: "Saved At (UTC)", value: valueOr(focusedResult.provenance && focusedResult.provenance.saved_at_utc, "n/a") },
+      ])}
+      <div style="margin-top:8px;">
+        <span class="${toneBadgeClass(focusedResult.validation && focusedResult.validation.status)}">Validation: ${escapeHtml(valueOr(focusedResult.validation && focusedResult.validation.status, "unknown"))}</span>
+        <span class="badge badge-neutral">Calibration: ${escapeHtml(valueOr(focusedResult.provenance && focusedResult.provenance.calibration_state, "unknown"))}</span>
+        <span class="badge badge-neutral">Reference: ${escapeHtml(valueOr(focusedResult.provenance && focusedResult.provenance.reference_state, "unknown"))}</span>
+      </div>
+      `
+    );
+  } else if (latestResult) {
+    setHtml(
+      resultPanelId,
+      `
+      ${keyGrid([
+        { label: "Latest Saved Result", value: valueOr(latestResult.id) },
+        { label: "Status", value: valueOr(latestResult.status) },
+        { label: "Dataset", value: valueOr(latestResult.dataset_key) },
+        { label: "Validation", value: valueOr(latestResult.validation_status, "unknown") },
+        { label: "Saved At (UTC)", value: valueOr(latestResult.saved_at_utc, "n/a") },
+      ])}
+      <p class="small">Open this result from Project page to inspect full processing/provenance details.</p>
+      `
+    );
+  } else {
+    setHtml(resultPanelId, `No ${token} result context yet.`);
+  }
+
+  if (runInfo) {
+    const infoText = `${token} on ${runInfo.dataset_key}: ${runInfo.execution_status}${runInfo.result_id ? ` (${runInfo.result_id})` : ""}${runInfo.failure_reason ? ` - ${runInfo.failure_reason}` : ""}`;
+    setText(`${prefix}AnalysisInfo`, infoText);
+  } else if (!dataset) {
+    setText(`${prefix}AnalysisInfo`, `No ${token} analysis executed yet.`);
+  }
+}
+
+function renderAnalysisPages() {
+  renderAnalysisPage("DSC");
+  renderAnalysisPage("TGA");
+}
+
 function applyWorkspaceContext(context) {
   currentActiveDatasetKey = context.active_dataset_key || null;
   compareSelectedDatasetKeys = new Set((context.compare_workspace && context.compare_workspace.selected_datasets) || []);
@@ -309,6 +487,7 @@ async function loadDatasetDetail(datasetKey) {
   if (!activeProjectId || !datasetKey) return;
   try {
     const detail = await window.taDesktop.getDatasetDetail(activeProjectId, datasetKey);
+    currentDatasetDetail = detail;
     const validation = detail.validation || {};
     const metadata = detail.metadata || {};
     const importWarnings = asArray(metadata.import_warnings);
@@ -381,11 +560,14 @@ async function loadDatasetDetail(datasetKey) {
       `
     );
     setDiagnostic("dataset", detail);
+    renderAnalysisPages();
   } catch (error) {
+    currentDatasetDetail = null;
     setText("datasetDetailInfo", `Dataset detail failed: ${error}`);
     setHtml("datasetDetailPanel", "<p class='fail'>Dataset detail unavailable.</p>");
     setHtml("homeImportQualityPanel", "<p class='fail'>Import confidence details unavailable.</p>");
     setDiagnostic("dataset", { error: String(error) });
+    renderAnalysisPages();
   }
 }
 
@@ -393,6 +575,7 @@ async function loadResultDetail(resultId) {
   if (!activeProjectId || !resultId) return;
   try {
     const detail = await window.taDesktop.getResultDetail(activeProjectId, resultId);
+    currentResultDetail = detail;
     const validation = detail.validation || {};
     const processing = detail.processing || {};
     const provenance = detail.provenance || {};
@@ -427,10 +610,13 @@ async function loadResultDetail(resultId) {
       `
     );
     setDiagnostic("result", detail);
+    renderAnalysisPages();
   } catch (error) {
+    currentResultDetail = null;
     setText("resultDetailInfo", `Result detail failed: ${error}`);
     setHtml("resultDetailPanel", "<p class='fail'>Result detail unavailable.</p>");
     setDiagnostic("result", { error: String(error) });
+    renderAnalysisPages();
   }
 }
 
@@ -440,6 +626,7 @@ function renderDatasets(datasets) {
   if (!datasets.length) {
     body.innerHTML = "<tr><td colspan='10'>No datasets loaded.</td></tr>";
     selectedDatasetKey = null;
+    currentDatasetDetail = null;
     updateAnalysisActionState();
     setText("datasetDetailInfo", "No dataset detail selected.");
     setHtml("datasetDetailPanel", "Select a dataset to inspect metadata, validation, and preview rows.");
@@ -447,6 +634,7 @@ function renderDatasets(datasets) {
     setHtml("homeImportQualityPanel", "Import confidence and review guidance will appear here after dataset inspection.");
     setDiagnostic("dataset", {});
     renderCompareDatasetChecks([]);
+    renderAnalysisPages();
     return;
   }
 
@@ -516,6 +704,8 @@ function renderDatasets(datasets) {
       await loadDatasetDetail(key);
     });
   });
+
+  renderAnalysisPages();
 }
 
 function renderResults(results) {
@@ -524,14 +714,19 @@ function renderResults(results) {
   if (!results.length) {
     body.innerHTML = "<tr><td colspan='10'>No results saved.</td></tr>";
     selectedResultId = null;
+    currentResultDetail = null;
     setText("resultDetailInfo", "No result detail selected.");
     setHtml("resultDetailPanel", "Select a saved result to inspect processing, provenance, and validation.");
     setDiagnostic("result", {});
+    renderAnalysisPages();
     return;
   }
 
   if (!selectedResultId || !results.some((item) => item.id === selectedResultId)) {
     selectedResultId = results[0].id;
+  }
+  if (currentResultDetail && currentResultDetail.result && !results.some((item) => item.id === currentResultDetail.result.id)) {
+    currentResultDetail = null;
   }
 
   body.innerHTML = results
@@ -566,8 +761,10 @@ function renderResults(results) {
           `Active dataset: ${currentActiveDatasetKey || "none"} | Selected result: ${selectedResultId || "none"}`
         );
       }
+      renderAnalysisPages();
     });
   });
+  renderAnalysisPages();
 }
 
 function renderExportableResults(results) {
@@ -840,6 +1037,10 @@ async function refreshWorkspaceViews() {
   if (!activeProjectId) {
     currentActiveDatasetKey = null;
     compareSelectedDatasetKeys = new Set();
+    currentDatasetDetail = null;
+    currentResultDetail = null;
+    lastAnalysisRuns.DSC = null;
+    lastAnalysisRuns.TGA = null;
     currentResults = [];
     selectedDatasetKey = null;
     selectedResultId = null;
@@ -870,6 +1071,18 @@ async function refreshWorkspaceViews() {
     setHtml("homeImportFeedbackPanel", "No import action yet.");
     setHtml("homeImportQualityPanel", "Import confidence and review guidance will appear here after dataset inspection.");
     setHtml("homeSelectedDatasetPanel", "No active dataset selected.");
+    setHtml("dscActiveDatasetContextPanel", "Select a dataset from Home / Import to begin DSC context.");
+    setHtml("dscMethodContextPanel", "DSC processing context will appear here.");
+    setHtml("dscValidationPanel", "Validation summary will appear after dataset inspection.");
+    setHtml("dscTemplateContextPanel", "Workflow template context will appear here.");
+    setHtml("dscResultSummaryPanel", "No DSC result context yet.");
+    setText("dscAnalysisInfo", "No DSC analysis executed yet.");
+    setHtml("tgaActiveDatasetContextPanel", "Select a dataset from Home / Import to begin TGA context.");
+    setHtml("tgaUnitContextPanel", "TGA unit and import-review context will appear here.");
+    setHtml("tgaValidationPanel", "Validation summary will appear after dataset inspection.");
+    setHtml("tgaTemplateContextPanel", "Workflow template context will appear here.");
+    setHtml("tgaResultSummaryPanel", "No TGA result context yet.");
+    setText("tgaAnalysisInfo", "No TGA analysis executed yet.");
     setHtml("datasetDetailPanel", "Select a dataset to inspect metadata, validation, and preview rows.");
     setHtml("resultDetailPanel", "Select a saved result to inspect processing, provenance, and validation.");
     renderExportableResults([]);
@@ -911,6 +1124,7 @@ async function refreshWorkspaceViews() {
   setDiagnostic("compare", context.compare_workspace);
   renderBatchWorkspaceState(context.compare_workspace);
   updateAnalysisActionState();
+  renderAnalysisPages();
   await refreshExportPreparation();
 }
 
@@ -1019,6 +1233,10 @@ async function onRunAnalysis(analysisType) {
   const infoId = analysisType === "DSC" ? "dscAnalysisInfo" : "tgaAnalysisInfo";
   try {
     const run = await window.taDesktop.runAnalysis(activeProjectId, selectedDatasetKey, analysisType);
+    lastAnalysisRuns[analysisType] = {
+      ...run,
+      dataset_key: selectedDatasetKey,
+    };
     setText(
       infoId,
       `${analysisType} on ${selectedDatasetKey}: ${run.execution_status}${run.result_id ? ` (${run.result_id})` : ""}`
@@ -1029,7 +1247,14 @@ async function onRunAnalysis(analysisType) {
       `${analysisType} on ${selectedDatasetKey}: ${run.execution_status}${run.failure_reason ? ` - ${run.failure_reason}` : ""}`
     );
   } catch (error) {
+    lastAnalysisRuns[analysisType] = {
+      execution_status: "failed",
+      failure_reason: String(error),
+      result_id: null,
+      dataset_key: selectedDatasetKey,
+    };
     setText(infoId, `${analysisType} failed: ${error}`);
+    renderAnalysisPages();
     appendLog(`Run ${analysisType} failed: ${error}`);
   }
 }
