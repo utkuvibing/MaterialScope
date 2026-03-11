@@ -553,8 +553,11 @@ def scientific_context_to_report_sections(scientific_context: dict[str, Any] | N
     uncertainty = context.get("uncertainty_assessment") or {}
     if isinstance(uncertainty, dict):
         overall = uncertainty.get("overall_confidence")
+        overall_label = uncertainty.get("overall_confidence_label")
         fit_assessment = uncertainty.get("fit_assessment")
-        if overall:
+        if overall_label:
+            uncertainty_payload["Overall Confidence"] = normalize_report_text(overall_label)
+        elif overall:
             uncertainty_payload["Overall Confidence"] = normalize_report_text(overall)
         if fit_assessment:
             uncertainty_payload["Fit Assessment"] = normalize_report_text(fit_assessment)

@@ -45,6 +45,41 @@ def test_build_scientific_reasoning_tga_avoids_mechanistic_overclaim_when_metada
     assert payload["uncertainty_assessment"]["overall_confidence"] in {"low", "moderate"}
 
 
+def test_build_scientific_reasoning_tga_strong_chemistry_not_forced_low_by_metadata_gaps():
+    payload = build_scientific_reasoning(
+        analysis_type="TGA",
+        summary={
+            "sample_name": "CuSO4·5H2O",
+            "step_count": 4,
+            "total_mass_loss_percent": 36.06,
+            "residue_percent": 63.99,
+        },
+        rows=[
+            {"midpoint_temperature": 118.0, "mass_loss_percent": 14.5},
+            {"midpoint_temperature": 172.0, "mass_loss_percent": 11.2},
+            {"midpoint_temperature": 223.0, "mass_loss_percent": 8.1},
+            {"midpoint_temperature": 318.0, "mass_loss_percent": 2.3},
+        ],
+        metadata={
+            "sample_name": "CuSO4·5H2O",
+            "file_name": "tga_CuSO4_5H2O_dehydration.csv",
+            "sample_mass": None,
+            "heating_rate": None,
+            "instrument": None,
+            "atmosphere": None,
+        },
+        fit_quality={"r_squared": 0.95},
+        validation={"status": "pass", "warnings": []},
+    )
+
+    uncertainty = payload["uncertainty_assessment"]
+    assert uncertainty["overall_confidence"] == "moderate"
+    assert uncertainty.get("overall_confidence_label") == "medium, metadata-limited"
+    notes = " ".join(uncertainty.get("items") or []).lower()
+    assert "medium, metadata-limited" in notes
+    assert "incomplete experimental metadata" in notes
+
+
 def test_build_scientific_reasoning_tga_hydrate_mass_balance_avoids_incomplete_decomposition_wording():
     payload = build_scientific_reasoning(
         analysis_type="TGA",

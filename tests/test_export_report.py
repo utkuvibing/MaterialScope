@@ -11,6 +11,7 @@ from core.peak_analysis import ThermalPeak
 from core.processing_schema import ensure_processing_payload, update_method_context, update_processing_step
 from core.provenance import build_calibration_reference_context
 from core.report_generator import (
+    _build_comparison_payload,
     _build_final_conclusion_paragraph,
     _build_pdf_abstract_layout,
     _build_experimental_prose_block,
@@ -20,6 +21,7 @@ from core.report_generator import (
     _insert_soft_breaks,
     _paper_display_label,
     _figures_for_record,
+    select_comparison_figures,
     _pdf_render_sections,
     generate_csv_summary,
     generate_docx_report,
@@ -505,6 +507,119 @@ def test_figures_for_record_excludes_comparison_workspace_figures_from_dataset_s
     assert matched
     assert all("comparison workspace" not in caption.lower() for caption, _ in matched)
     assert any("run_a" in caption.lower() for caption, _ in matched)
+
+
+def test_figures_for_record_excludes_other_sample_figure_from_dataset_section():
+    record = {
+        "analysis_type": "TGA",
+        "dataset_key": "run_a",
+        "metadata": {"sample_name": "Run A"},
+        "artifacts": {"figure_keys": ["TGA Analysis - run_b"]},
+    }
+    figures = {
+        "TGA Analysis - run_b": b"other",
+        "TGA Analysis - run_a": b"correct",
+    }
+    matched = _figures_for_record(record, figures, used=set())
+
+    captions = [caption for caption, _ in matched]
+    assert "TGA Analysis - run_a" in captions
+    assert "TGA Analysis - run_b" not in captions
+
+
+def test_select_comparison_figures_returns_only_comparison_captions():
+    figures = {
+        "Comparison Workspace - TGA": b"cmp",
+        "TGA Analysis - run_a": b"a",
+        "TGA Analysis - run_b": b"b",
+    }
+    selected = select_comparison_figures(
+        figures,
+        used=set(),
+        comparison_workspace={"figure_key": "Comparison Workspace - TGA"},
+    )
+
+    assert selected == [("Comparison Workspace - TGA", b"cmp")]
+
+
+def test_tga_comparison_payload_uses_display_labels_and_chemistry_aware_wording():
+    datasets = {
+        "hydrate": SimpleNamespace(
+            metadata={
+                "file_name": "tga_CuSO4_5H2O_dehydration.csv",
+                "sample_name": "CuSO4·5H2O",
+                "heating_rate": 10.0,
+                "atmosphere": "N2",
+            }
+        ),
+        "carbonate": SimpleNamespace(
+            metadata={
+                "file_name": "tga_CaCO3_decomposition.csv",
+                "sample_name": "CaCO3",
+                "heating_rate": 10.0,
+                "atmosphere": "N2",
+            }
+        ),
+    }
+    records = [
+        {
+            "analysis_type": "TGA",
+            "status": "stable",
+            "dataset_key": "hydrate",
+            "summary": {
+                "sample_name": "CuSO4·5H2O",
+                "step_count": 4,
+                "total_mass_loss_percent": 36.1,
+                "residue_percent": 63.9,
+            },
+            "rows": [
+                {"midpoint_temperature": 118.0, "mass_loss_percent": 14.5},
+                {"midpoint_temperature": 172.0, "mass_loss_percent": 11.2},
+                {"midpoint_temperature": 223.0, "mass_loss_percent": 8.1},
+                {"midpoint_temperature": 318.0, "mass_loss_percent": 2.3},
+            ],
+            "metadata": datasets["hydrate"].metadata,
+        },
+        {
+            "analysis_type": "TGA",
+            "status": "stable",
+            "dataset_key": "carbonate",
+            "summary": {
+                "sample_name": "CaCO3",
+                "step_count": 2,
+                "total_mass_loss_percent": 44.0,
+                "residue_percent": 56.1,
+            },
+            "rows": [
+                {"midpoint_temperature": 312.0, "mass_loss_percent": 2.4},
+                {"midpoint_temperature": 720.0, "mass_loss_percent": 41.5},
+            ],
+            "metadata": datasets["carbonate"].metadata,
+        },
+    ]
+
+    payload = _build_comparison_payload(
+        {
+            "analysis_type": "TGA",
+            "selected_datasets": ["hydrate", "carbonate"],
+            "figure_key": "Comparison Workspace - TGA",
+        },
+        datasets,
+        records,
+    )
+
+    assert payload is not None
+    assert payload["metric_rows"]
+    labels = [row[0] for row in payload["metric_rows"]]
+    assert "CuSO4·5H2O sample" in labels
+    assert "CaCO3 sample" in labels
+    assert all(".csv" not in label for label in labels)
+    interpretation = payload["interpretation"].lower()
+    assert "expected final solid products" in interpretation
+    assert "higher residue may reflect retention of a stable inorganic end-product" in interpretation
+    assert "different transformation pathways" in interpretation
+    assert "dehydration" in interpretation
+    assert "decarbonation" in interpretation
 
 
 def test_generate_pdf_report_uses_paper_structure_and_hides_executive_summary(thermal_dataset):

@@ -236,9 +236,9 @@ def _paper_display_label(dataset_key: str | None, datasets: dict, *, record: dic
         metadata = getattr(datasets[dataset_key], "metadata", {}) or {}
         summary = (record or {}).get("summary") or {}
         candidates = [
-            summary.get("sample_name"),
             metadata.get("display_name"),
             metadata.get("sample_name"),
+            summary.get("sample_name"),
             metadata.get("file_name"),
             dataset_key,
         ]
@@ -246,9 +246,9 @@ def _paper_display_label(dataset_key: str | None, datasets: dict, *, record: dic
         metadata = (record or {}).get("metadata") or {}
         summary = (record or {}).get("summary") or {}
         candidates = [
-            summary.get("sample_name"),
             metadata.get("display_name"),
             metadata.get("sample_name"),
+            summary.get("sample_name"),
             metadata.get("file_name"),
             dataset_key,
             (record or {}).get("dataset_key"),
@@ -445,6 +445,11 @@ def _select_record_for_dataset(records: list[dict], dataset_key: str, analysis_t
     return stable[0] if stable else candidates[0]
 
 
+def _comparison_dataset_label(dataset_key: str, datasets: dict, records: list[dict], analysis_type: str | None) -> str:
+    record = _select_record_for_dataset(records, dataset_key, analysis_type)
+    return _paper_display_label(dataset_key, datasets, record=record)
+
+
 def _comparison_missing_metadata(selected: list[str], datasets: dict) -> list[str]:
     missing: list[str] = []
     for key, label in (("heating_rate", "heating rate"), ("atmosphere", "atmosphere")):
@@ -497,6 +502,25 @@ def _build_tga_comparison_interpretation(
             return "metrics indicate extensive decomposition over the recorded range"
         return "metrics indicate partial conversion with retained residue, requiring class-specific context for mechanistic assignment"
 
+    def pathway_from_metric(metric: dict[str, Any]) -> str | None:
+        signals = metric.get("signals") or {}
+        class_inference = signals.get("material_class_inference") or {}
+        class_type = str(class_inference.get("material_class") or "")
+        mass_balance = signals.get("mass_balance_assessment") or {}
+        if str(mass_balance.get("status") or "") not in {"strong_match", "plausible_match"}:
+            return None
+        if class_type == "hydrate_salt":
+            return "dehydration toward an anhydrous inorganic end-product"
+        if class_type == "carbonate_inorganic":
+            return "decarbonation toward an oxide-rich inorganic end-product"
+        if class_type == "hydroxide_to_oxide":
+            return "dehydroxylation toward an oxide end-product"
+        if class_type == "oxalate_multistage_inorganic":
+            return "multistage oxalate gas-loss conversion toward a stable inorganic end-product"
+        if class_type == "generic_inorganic_salt_or_mineral":
+            return "class-consistent conversion toward a stable inorganic end-product"
+        return "class-consistent conversion toward a stable end-product"
+
     if len(metrics) >= 2:
         mass_losses = [float(item["mass_loss"]) for item in metrics]
         residues = [float(item["residue"]) for item in metrics]
@@ -509,13 +533,48 @@ def _build_tga_comparison_interpretation(
             f"final residue spans {min(residues):.2f}% to {max(residues):.2f}%, and resolved step counts range from {min(step_counts)} to {max(step_counts)}. "
             f"{highest_loss['dataset']} shows the highest overall mass-loss extent, whereas {lowest_loss['dataset']} retains comparatively higher residue."
         )
+        chemistry_entries = []
+        for metric in metrics:
+            pathway = pathway_from_metric(metric)
+            if pathway:
+                chemistry_entries.append((metric["dataset"], pathway))
+        if len(chemistry_entries) >= 2:
+            first_name, first_pathway = chemistry_entries[0]
+            second_name, second_pathway = chemistry_entries[1]
+            text = (
+                f"{text} Chemistry-aware interpretation indicates {first_name} is consistent with {first_pathway}, "
+                f"while {second_name} is consistent with {second_pathway}. "
+                "The compared TGA datasets differ not only in total mass loss and final residue, but also in the chemistry "
+                "of the expected final solid products. A higher residue may reflect retention of a stable inorganic end-product "
+                "rather than incomplete conversion. Accordingly, these runs should be interpreted as different transformation "
+                "pathways, not simply as different degrees of decomposition."
+            )
+        elif len(chemistry_entries) == 1:
+            only_name, only_pathway = chemistry_entries[0]
+            text = (
+                f"{text} For {only_name}, class-aware mass-balance evidence is consistent with {only_pathway}. "
+                "Even when residue differs across runs, higher residue does not automatically indicate less complete conversion; "
+                "it can reflect retention of a different stable solid end-product."
+            )
+        else:
+            text = (
+                f"{text} Residue differences should be interpreted with pathway context: higher residue does not automatically "
+                "mean less complete conversion and may reflect different stable end-products."
+            )
     elif len(metrics) == 1:
         only = metrics[0]
         behavior = behavior_from_metric(only)
+        pathway = pathway_from_metric(only)
+        chemistry_tail = ""
+        if pathway:
+            chemistry_tail = (
+                f" The inferred pathway is {pathway}; retained residue should therefore be interpreted with end-product chemistry "
+                "rather than as a simple proxy for decomposition completeness."
+            )
         text = (
             f"Within the current comparison workspace, only {only['dataset']} produced reportable TGA summary metrics. "
             f"That dataset shows total mass loss of {float(only['mass_loss']):.2f}%, final residue of {float(only['residue']):.2f}%, "
-            f"and {int(only['step_count'])} resolved decomposition steps; {behavior}."
+            f"and {int(only['step_count'])} resolved decomposition steps; {behavior}.{chemistry_tail}"
         )
     else:
         text = "None of the selected datasets currently provide reportable TGA comparison metrics."
@@ -564,7 +623,10 @@ def _build_comparison_payload(comparison_workspace: dict | None, datasets: dict,
 
     overview = {
         "Analysis Type": analysis_type,
-        "Compared Datasets": ", ".join(_dataset_label(dataset_key, datasets) for dataset_key in selected),
+        "Compared Datasets": ", ".join(
+            _comparison_dataset_label(dataset_key, datasets, records, normalized_analysis)
+            for dataset_key in selected
+        ),
         "Saved Figure": comparison_workspace.get("figure_key") or "Not recorded",
     }
 
@@ -577,7 +639,7 @@ def _build_comparison_payload(comparison_workspace: dict | None, datasets: dict,
     if normalized_analysis == "TGA":
         metric_headers = ["Dataset", "Total Mass Loss (%)", "Final Residue (%)", "Step Count"]
         for dataset_key in selected:
-            dataset_name = _dataset_label(dataset_key, datasets)
+            dataset_name = _comparison_dataset_label(dataset_key, datasets, records, normalized_analysis)
             record = _select_record_for_dataset(records, dataset_key, normalized_analysis)
             summary = (record or {}).get("summary") or {}
             mass_loss = _safe_float(summary.get("total_mass_loss_percent"))
@@ -616,7 +678,7 @@ def _build_comparison_payload(comparison_workspace: dict | None, datasets: dict,
     else:
         metric_headers = ["Dataset", "Primary Metrics"]
         for dataset_key in selected:
-            dataset_name = _dataset_label(dataset_key, datasets)
+            dataset_name = _comparison_dataset_label(dataset_key, datasets, records, normalized_analysis)
             record = _select_record_for_dataset(records, dataset_key, normalized_analysis)
             if record is None:
                 excluded_dataset_labels.append(dataset_name)
@@ -926,6 +988,57 @@ def _paper_record_heading(record: dict, datasets: dict) -> str:
     return normalize_report_text(f"{analysis}: {label}")
 
 
+def _is_comparison_figure_caption(value: str) -> bool:
+    lowered = str(value or "").lower()
+    return "comparison workspace" in lowered or lowered.startswith("comparison ")
+
+
+def _normalized_caption(value: Any) -> str:
+    lowered = str(value or "").lower()
+    chars = [char if char.isalnum() else " " for char in lowered]
+    return " ".join("".join(chars).split())
+
+
+def _record_identity_markers(record: dict) -> list[str]:
+    metadata = record.get("metadata") or {}
+    summary = record.get("summary") or {}
+    dataset_key = record.get("dataset_key")
+    raw_candidates = [
+        dataset_key,
+        os.path.basename(str(dataset_key or "")),
+        metadata.get("file_name"),
+        os.path.basename(str(metadata.get("file_name") or "")),
+        metadata.get("display_name"),
+        metadata.get("sample_name"),
+        summary.get("sample_name"),
+    ]
+    markers: list[str] = []
+    for candidate in raw_candidates:
+        normalized = _normalized_caption(candidate)
+        if not normalized:
+            continue
+        if normalized not in markers:
+            markers.append(normalized)
+        parts = [part for part in normalized.split() if len(part) >= 4]
+        if len(parts) >= 2:
+            phrase = " ".join(parts)
+            if phrase not in markers:
+                markers.append(phrase)
+    return markers
+
+
+def _caption_matches_record(caption: str, record: dict) -> bool:
+    normalized_caption = _normalized_caption(caption)
+    if not normalized_caption:
+        return False
+    for marker in _record_identity_markers(record):
+        if len(marker) < 4:
+            continue
+        if marker in normalized_caption:
+            return True
+    return False
+
+
 def _record_figure_keys(record: dict) -> list[str]:
     keys = (record.get("artifacts") or {}).get("figure_keys")
     if isinstance(keys, list):
@@ -933,21 +1046,17 @@ def _record_figure_keys(record: dict) -> list[str]:
     return []
 
 
-def _figures_for_record(record: dict, figures: dict | None, used: set[str]) -> list[tuple[str, bytes]]:
+def select_record_figures(record: dict, figures: dict | None, used: set[str]) -> list[tuple[str, bytes]]:
     figures = figures or {}
     matched: list[tuple[str, bytes]] = []
-    dataset_key = str(record.get("dataset_key") or "").lower()
-    analysis = str(record.get("analysis_type") or "").lower()
-
-    def is_comparison_caption(value: str) -> bool:
-        lowered = str(value or "").lower()
-        return "comparison workspace" in lowered or lowered.startswith("comparison ")
 
     preferred_keys = _record_figure_keys(record)
     for key in preferred_keys:
-        if is_comparison_caption(key):
+        if _is_comparison_figure_caption(key):
             continue
         if key in figures and key not in used:
+            if not _caption_matches_record(key, record):
+                continue
             matched.append((key, figures[key]))
             used.add(key)
 
@@ -955,18 +1064,43 @@ def _figures_for_record(record: dict, figures: dict | None, used: set[str]) -> l
         return matched
 
     for caption, png_bytes in figures.items():
-        caption_l = str(caption).lower()
         if caption in used:
             continue
-        if is_comparison_caption(caption):
+        if _is_comparison_figure_caption(caption):
             continue
-        if dataset_key and dataset_key in caption_l:
+        if _caption_matches_record(caption, record):
             matched.append((caption, png_bytes))
             used.add(caption)
+    return matched
+
+
+def _figures_for_record(record: dict, figures: dict | None, used: set[str]) -> list[tuple[str, bytes]]:
+    """Backward-compatible alias for record-scoped figure routing."""
+    return select_record_figures(record, figures, used)
+
+
+def select_comparison_figures(
+    figures: dict | None,
+    used: set[str],
+    *,
+    comparison_workspace: dict | None = None,
+) -> list[tuple[str, bytes]]:
+    figures = figures or {}
+    comparison_workspace = comparison_workspace or {}
+    matched: list[tuple[str, bytes]] = []
+
+    preferred_key = comparison_workspace.get("figure_key")
+    if preferred_key and preferred_key in figures and preferred_key not in used and _is_comparison_figure_caption(str(preferred_key)):
+        matched.append((str(preferred_key), figures[preferred_key]))
+        used.add(str(preferred_key))
+
+    for caption, png_bytes in figures.items():
+        if caption in used:
             continue
-        if analysis and analysis in caption_l:
-            matched.append((caption, png_bytes))
-            used.add(caption)
+        if not _is_comparison_figure_caption(caption):
+            continue
+        matched.append((caption, png_bytes))
+        used.add(caption)
     return matched
 
 
@@ -1335,8 +1469,28 @@ def _render_record_mapping(doc: Document, title: str, payload: dict | None) -> N
     doc.add_paragraph()
 
 
-def _render_main_record_docx(doc: Document, record: dict) -> None:
+def _render_main_record_docx(
+    doc: Document,
+    record: dict,
+    *,
+    figures: dict | None = None,
+    used_figures: set[str] | None = None,
+) -> None:
+    if used_figures is None:
+        used_figures = set()
     doc.add_paragraph(_record_title(record), style="Heading 2")
+
+    matched_figures = select_record_figures(record, figures, used_figures)
+    for index, (caption, png_bytes) in enumerate(matched_figures, start=1):
+        doc.add_paragraph(normalize_report_text(f"Figure {index}: {caption}"), style="Heading 3")
+        try:
+            img_stream = io.BytesIO(png_bytes)
+            doc.add_picture(img_stream, width=Inches(5.5))
+            doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        except Exception:
+            doc.add_paragraph("Figure could not be embedded and was skipped.")
+        doc.add_paragraph()
+
     key_results = _record_key_results(record)
     if key_results:
         _render_record_mapping(doc, "Key Results", key_results)
@@ -1498,6 +1652,7 @@ def generate_docx_report(
     executive_rows = _build_executive_summary_rows(all_records, datasets, comparison_payload)
     executive_intro = _build_executive_summary_intro(all_records, datasets, comparison_payload)
     final_conclusion = _build_final_conclusion_paragraph(all_records, comparison_payload)
+    used_figures: set[str] = set()
 
     doc = Document()
     _add_cover_page(doc, branding, license_state)
@@ -1545,19 +1700,35 @@ def generate_docx_report(
             doc.add_paragraph("Comparison Interpretation", style="Heading 2")
             doc.add_paragraph(normalize_report_text(comparison_payload["interpretation"]))
             doc.add_paragraph()
+        comparison_figures = select_comparison_figures(
+            figures,
+            used_figures,
+            comparison_workspace=comparison_workspace,
+        )
+        if comparison_figures:
+            doc.add_paragraph("Comparison Figures", style="Heading 2")
+            for caption, png_bytes in comparison_figures:
+                doc.add_paragraph(normalize_report_text(caption), style="Heading 3")
+                try:
+                    img_stream = io.BytesIO(png_bytes)
+                    doc.add_picture(img_stream, width=Inches(5.5))
+                    doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                except Exception:
+                    doc.add_paragraph("Figure could not be embedded and was skipped.")
+                doc.add_paragraph()
 
     _add_heading(doc, "Stable Analyses", level=1)
     if not stable_results:
         doc.add_paragraph("No stable analysis results available.")
     else:
         for record in stable_results:
-            _render_main_record_docx(doc, record)
+            _render_main_record_docx(doc, record, figures=figures, used_figures=used_figures)
 
     if experimental_results:
         _add_heading(doc, "Experimental Analyses", level=1)
         doc.add_paragraph("These results are included for reference but remain outside the stable workflow guarantee.")
         for record in experimental_results:
-            _render_main_record_docx(doc, record)
+            _render_main_record_docx(doc, record, figures=figures, used_figures=used_figures)
 
     report_notes = (branding or {}).get("report_notes")
     if report_notes:
@@ -1570,16 +1741,22 @@ def generate_docx_report(
             doc.add_paragraph(issue, style="List Bullet")
 
     if figures:
-        _add_heading(doc, "Figures", level=1)
-        for caption, png_bytes in figures.items():
-            doc.add_paragraph(caption, style="Heading 2")
-            try:
-                img_stream = io.BytesIO(png_bytes)
-                doc.add_picture(img_stream, width=Inches(5.5))
-                doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
-            except Exception:
-                doc.add_paragraph("Figure could not be embedded and was skipped.")
-            doc.add_paragraph()
+        remaining = [
+            (caption, png_bytes)
+            for caption, png_bytes in figures.items()
+            if caption not in used_figures and not _is_comparison_figure_caption(str(caption))
+        ]
+        if remaining:
+            _add_heading(doc, "Additional Figures", level=1)
+            for caption, png_bytes in remaining:
+                doc.add_paragraph(normalize_report_text(caption), style="Heading 2")
+                try:
+                    img_stream = io.BytesIO(png_bytes)
+                    doc.add_picture(img_stream, width=Inches(5.5))
+                    doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                except Exception:
+                    doc.add_paragraph("Figure could not be embedded and was skipped.")
+                doc.add_paragraph()
 
     if final_conclusion:
         _add_heading(doc, "Final Conclusion", level=1)
@@ -1979,7 +2156,7 @@ def generate_pdf_report(
     def append_record_discussion(record: dict) -> None:
         add_heading(_paper_record_heading(record, datasets), level=2)
 
-        matched_figures = _figures_for_record(record, figures, used_figures)
+        matched_figures = select_record_figures(record, figures, used_figures)
         for index, (caption, png_bytes) in enumerate(matched_figures, start=1):
             try:
                 img_reader = ImageReader(io.BytesIO(png_bytes))
@@ -2064,6 +2241,26 @@ def generate_pdf_report(
                 )
             )
             story.append(Spacer(1, 3))
+        comparison_figures = select_comparison_figures(
+            figures,
+            used_figures,
+            comparison_workspace=comparison_workspace,
+        )
+        for index, (caption, png_bytes) in enumerate(comparison_figures, start=1):
+            try:
+                img_reader = ImageReader(io.BytesIO(png_bytes))
+                width_px, height_px = img_reader.getSize()
+                if not width_px or not height_px:
+                    continue
+                max_width = portrait_width
+                max_height = portrait_height * 0.35
+                scale = min(max_width / float(width_px), max_height / float(height_px))
+                image = Image(io.BytesIO(png_bytes), width=float(width_px) * scale, height=float(height_px) * scale)
+                story.append(image)
+                story.append(Paragraph(normalize_report_text(f"Comparison Figure {index}. {caption}"), caption_style))
+                story.append(Spacer(1, 4))
+            except Exception:
+                continue
         if comparison_payload.get('metric_rows'):
             add_matrix_table(comparison_payload['metric_headers'], comparison_payload['metric_rows'], width=portrait_width * 0.85, compact=True)
             story.append(Spacer(1, 4))
@@ -2086,7 +2283,11 @@ def generate_pdf_report(
             append_record_discussion(record)
 
     if figures:
-        remaining = [(caption, png_bytes) for caption, png_bytes in figures.items() if caption not in used_figures]
+        remaining = [
+            (caption, png_bytes)
+            for caption, png_bytes in figures.items()
+            if caption not in used_figures and not _is_comparison_figure_caption(str(caption))
+        ]
         if remaining:
             add_heading('Additional Figures', level=2)
         for index, (caption, png_bytes) in enumerate(remaining, start=1):

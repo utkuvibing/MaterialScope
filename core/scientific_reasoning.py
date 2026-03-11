@@ -56,6 +56,10 @@ def _build_tga_reasoning(
     signals = tga_mechanism_signals(summary, rows, metadata=metadata, dataset_key=dataset_hint)
     class_inference = signals.get("material_class_inference") or {}
     mass_balance = signals.get("mass_balance_assessment") or {}
+    step_count = signals.get("step_count")
+    if step_count is None:
+        step_count = summary.get("step_count")
+    event_structure_plausible = bool(step_count not in (None, "", 0))
     gaps = metadata_gaps(metadata, ["sample_mass", "heating_rate", "instrument", "atmosphere"])
     gates = claim_gate(
         len(gaps),
@@ -64,6 +68,7 @@ def _build_tga_reasoning(
         class_confidence=str(class_inference.get("confidence") or ""),
         mass_balance_status=str(mass_balance.get("status") or ""),
         segmentation_uncertain=bool(signals.get("possible_subdivision")),
+        event_structure_plausible=event_structure_plausible,
     )
 
     claims: list[dict[str, Any]] = []
@@ -72,7 +77,6 @@ def _build_tga_reasoning(
 
     total_loss = _safe_float(summary.get("total_mass_loss_percent"))
     residue = _safe_float(summary.get("residue_percent"))
-    step_count = signals.get("step_count")
     step_count_text = str(step_count) if step_count is not None else "not recorded"
     class_label = str(class_inference.get("material_class_label") or "unknown / unconstrained")
     class_confidence = str(class_inference.get("confidence") or "low")
@@ -233,12 +237,27 @@ def _build_tga_reasoning(
     if (validation or {}).get("warnings"):
         uncertainty_items.append("Validation warnings were reported and should temper interpretation confidence.")
 
+    chemistry_supported = (
+        class_confidence.lower() in {"high", "moderate"}
+        and balance_status in {"strong_match", "plausible_match"}
+    )
     overall = "high" if gates["allow_mechanistic"] else ("moderate" if gates["allow_comparative"] else "low")
+    overall_label = ""
+    if overall == "moderate" and chemistry_supported and gaps:
+        overall_label = "medium, metadata-limited"
+        uncertainty_items.append(
+            "Overall confidence is medium, metadata-limited: strong class inference and mass-balance agreement are present, "
+            "but interpretation is constrained by incomplete experimental metadata."
+        )
+    elif overall == "moderate" and gaps:
+        overall_label = "medium, interpretation constrained by incomplete experimental metadata"
+
     return {
         "scientific_claims": claims,
         "evidence_map": evidence_map,
         "uncertainty_assessment": {
             "overall_confidence": overall,
+            "overall_confidence_label": overall_label,
             "fit_assessment": fit_band,
             "metadata_gaps": gaps,
             "items": uncertainty_items,
