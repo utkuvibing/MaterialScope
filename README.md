@@ -1,171 +1,157 @@
 # ThermoAnalyzer
 
-**Vendor-independent thermal analysis workbench with a stable DSC/TGA beta workflow and preview-only exploratory modules.**
+ThermoAnalyzer is a vendor-independent thermal analysis workbench focused on reproducible DSC/TGA workflows, scientific reporting, and project-level traceability.
 
-ThermoAnalyzer is an open-source, browser-based application built with Streamlit that imports, processes, and reports thermal analysis data from exported lab files. The current stable beta scope is DSC, TGA, Compare Workspace, Batch Template Runner, report/export, and project archive workflows. DTA, kinetics, and deconvolution remain preview modules for exploratory evaluation only.
-
-Release and packaging docs:
-- [Windows Beta Packaging](packaging/windows/README.md)
-- [Local Windows Release Prep](packaging/windows/RELEASE_PREP_LOCAL.md)
+The application is built with Streamlit and a Python analysis core. It supports import from common lab export formats, structured processing pipelines, comparison workspaces, and publication-style reporting outputs.
 
 ---
 
-## Features
+## Current Scope
 
-### Data Import & Processing
-- **Universal file support** -- CSV, TXT, TSV, and Excel files with automatic delimiter, encoding, and column detection
-- **Vendor-independent** -- best current support is for generic delimited exports plus common TA / NETZSCH-style text exports
-- **Review-aware import** -- ambiguous type, column, unit, and vendor guesses are flagged for review instead of being presented as fully trusted
-- **Intelligent column mapping** -- regex- and score-based auto-detection with manual override for temperature, signal, and time columns
+### Stable beta workflow
+- DSC analysis (baseline, peaks, Tg, enthalpy)
+- TGA analysis (DTG, step detection, mass-loss/residue, unit interpretation)
+- Compare Workspace + Batch Template Runner for DSC/TGA
+- Export and reporting (DOCX, PDF, XLSX, CSV summary)
+- Project save/load (`.thermozip`)
 
-### Analysis Modules
+### Preview workflow (exploratory)
+- DTA
+- Kinetics (Kissinger / OFW / Friedman)
+- Peak deconvolution
 
-| Module | Description |
-|---|---|
-| **DSC Analysis (Stable Beta)** | Smoothing, mass normalization, baseline correction, peak detection, enthalpy integration, and glass-transition detection inside the current reproducible export/project workflow |
-| **TGA Analysis (Stable Beta)** | DTG curve computation, step detection, mass-loss quantification, residue calculation, and explicit unit-mode review context |
-| **Compare Workspace + Batch Template Runner (Stable Beta)** | Multi-run overlays and repeatable DSC/TGA template application across compatible datasets |
-| **DTA Analysis (Preview)** | Exploratory baseline correction and qualitative thermal-event characterization outside the stable beta promise |
-| **Kinetic Analysis (Preview)** | Exploratory Kissinger / OFW / Friedman workflows, not part of the stable commercial beta surface |
-| **Peak Deconvolution (Preview)** | Exploratory multi-peak fitting workflow, not part of the stable commercial beta surface |
-
-### Export & Reporting
-- **Excel export** -- multi-sheet XLSX workbooks with raw and processed data
-- **Word reports** -- styled DOCX documents with formatted tables, embedded figures, and fit reports
-- **CSV summaries** -- flat-file export of all numeric results for downstream analysis
-
-### User Interface
-- Multi-page navigation with a stable primary workflow and preview modules behind an explicit toggle
-- Interactive Plotly charts with scientific axis labeling
-- Analysis pipeline history tracker
-- Professional dark sidebar theme with corporate styling
+Preview modules are available for exploration but are outside the stable beta promise.
 
 ---
 
-## Tech Stack
+## Key Features
 
-| Category | Technologies |
-|---|---|
-| **Framework** | Python 3.8+, Streamlit >= 1.39 |
-| **Numerical** | NumPy >= 1.24, SciPy >= 1.11, pandas >= 2.0 |
-| **Baseline Correction** | pybaselines >= 1.1 |
-| **Peak Fitting** | lmfit >= 1.3 |
-| **Visualization** | Plotly >= 5.18, Kaleido >= 0.2.1 |
-| **Report Generation** | openpyxl >= 3.1, python-docx >= 1.0 |
-| **Testing** | pytest >= 7.0 |
+### Data import and preprocessing
+- CSV, TXT, TSV, XLSX/XLS import
+- Automatic delimiter, decimal, header-row, and column role inference
+- Ambiguity-aware import confidence and review prompts
+- Manual column/metadata correction when needed
+
+### Scientific analysis engine
+- DSC: event extraction, Tg detection, sign-aware interpretation
+- TGA: DTG-resolved event structure, dominant/minor event logic, residue-aware interpretation
+- Class-aware TGA reasoning with stoichiometric mass-balance checks when formula clues are available
+- Chemistry-specific interpretation paths when evidence is strong (for example hydrate dehydration or carbonate decarbonation product interpretation)
+- Confidence gating with metadata/fit/validation constraints to avoid overclaiming
+
+### Comparison and reporting
+- Cross-run comparison tables and narrative synthesis
+- Chemistry-aware comparison wording (residue is not treated as a naive "less decomposition" proxy)
+- Record-level figure routing:
+  - sample sections prefer sample-linked figures
+  - comparison figures are isolated to comparison sections
+- Scientific report sections:
+  - methodology and equations
+  - primary interpretation and evidence map
+  - uncertainty and methodological limits
+  - class-aware recommended follow-up experiments
+
+### Traceability and reproducibility
+- Processing payloads and method context persisted with results
+- Validation status/issues/warnings included in outputs
+- Provenance fields (timestamps, hashes, app/process context) included in technical appendix
 
 ---
 
-## Getting Started
+## Installation
 
 ### Prerequisites
+- Python 3.8+
+- `pip`
 
-- Python 3.8 or higher
-- pip package manager
-
-### Installation
+### Setup
 
 ```bash
-# Clone the repository
 git clone https://github.com/utkuvibing/thermoanalyzer.git
 cd thermoanalyzer
 
-# Create a virtual environment (recommended)
 python -m venv venv
 source venv/bin/activate    # Linux/macOS
 venv\Scripts\activate       # Windows
 
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-### Running the Application
+---
+
+## Running
+
+### Streamlit UI
 
 ```bash
 streamlit run app.py
 ```
 
-The application will open in your default browser at `http://localhost:8501`.
+Default URL: `http://localhost:8501`
 
-### Quick Start
+### Optional backend API (if needed in your workflow)
 
-1. Navigate to **Import Data** and upload a CSV/Excel file from your thermal analyzer
-2. Verify the auto-detected column mapping (temperature, signal, time)
-3. Review the import confidence, inferred data type, and signal unit before accepting the run
-4. Use **Compare Workspace** and then **DSC** or **TGA** for the stable beta workflow
-5. Export results as Excel, Word, or CSV from the **Export & Report** page, or save a `.thermozip` project archive
+```bash
+uvicorn backend.main:app --reload
+```
 
-Sample datasets are included in the `sample_data/` directory for testing:
-- `dsc_polymer_melting.csv` -- DSC polymer melting curve
-- `dsc_multirate_kissinger.csv` -- Multi-rate DSC data for Kissinger kinetic analysis
-- `tga_calcium_oxalate.csv` -- TGA decomposition of calcium oxalate monohydrate
+Default URL: `http://localhost:8000`
 
 ---
 
-## Standards Compliance
+## Recommended Usage Flow (Stable Path)
 
-ThermoAnalyzer follows established thermal analysis standards and committee recommendations:
+1. Import dataset(s) from **Home / Import**.
+2. Review auto-detected columns, inferred analysis type, and metadata.
+3. Run **DSC** or **TGA** (stable modules).
+4. Use **Compare Workspace** for cross-run evaluation.
+5. (Optional) apply batch templates for repeatable multi-run processing.
+6. Export results and generate reports from **Export & Report**.
+7. Save the session as a project archive (`.thermozip`) for reproducibility.
 
-| Standard | Scope |
-|---|---|
-| **ASTM E967** | DSC temperature and enthalpy calibration using reference materials (In, Sn, Zn) |
-| **ASTM E1131** | Compositional analysis by thermogravimetry (CaC2O4-H2O reference) |
-| **ASTM E1356** | Assignment of glass transition temperatures by DSC |
-| **ICTAC Kinetics Committee** | Recommendations for performing kinetic computations on thermal analysis data |
+---
 
-Built-in reference data includes DSC melting-point calibration standards and TGA decomposition standards for instrument validation.
+## Reporting Outputs
+
+- **DOCX**: full scientific narrative with figures and appendix
+- **PDF**: publication-style narrative/table export (requires ReportLab)
+- **XLSX**: results summary + detailed sheets
+- **CSV summary**: normalized flat contract for downstream processing
+
+Report narrative includes class-aware TGA claims, evidence-linked confidence context, and follow-up experiment recommendations tailored to inferred behavior.
+
+---
+
+## Standards and References
+
+ThermoAnalyzer aligns with common thermal analysis conventions and reference workflows, including:
+- ASTM E967 (DSC calibration context)
+- ASTM E1131 (TGA compositional decomposition context)
+- ASTM E1356 (DSC Tg assignment context)
+- ICTAC kinetics guidance (preview kinetics workflows)
 
 ---
 
 ## Project Structure
 
-```
+```text
 thermoanalyzer/
-├── app.py                  # Streamlit entry point and navigation
-├── core/                   # Analysis engine (no UI dependencies)
-│   ├── baseline.py         # Baseline correction algorithms
-│   ├── data_io.py          # File parsing and export
-│   ├── dsc_processor.py    # DSC analysis pipeline
-│   ├── tga_processor.py    # TGA analysis pipeline
-│   ├── dta_processor.py    # DTA analysis pipeline
-│   ├── kinetics.py         # Kissinger, OFW, Friedman methods
-│   ├── peak_analysis.py    # Peak detection and characterization
-│   ├── peak_deconvolution.py # Multi-peak fitting with lmfit
-│   ├── preprocessing.py    # Smoothing, differentiation, normalization
-│   └── report_generator.py # DOCX and CSV report generation
-├── ui/                     # Streamlit UI pages and components
-│   ├── home.py             # Data upload and column mapping
-│   ├── dsc_page.py         # DSC analysis interface
-│   ├── tga_page.py         # TGA analysis interface
-│   ├── dta_page.py         # DTA analysis interface
-│   ├── kinetics_page.py    # Kinetic analysis interface
-│   ├── deconvolution_page.py # Peak deconvolution interface
-│   ├── export_page.py      # Export and report generation
-│   └── components/         # Reusable UI components
-├── utils/                  # Constants, reference data, validators
-├── tests/                  # pytest test suite
-├── sample_data/            # Example thermal analysis datasets
-└── requirements.txt        # Python dependencies
+├── app.py
+├── core/                    # analysis and scientific reasoning engine
+├── ui/                      # Streamlit pages/components
+├── backend/                 # optional FastAPI backend surface
+├── desktop/                 # Electron wrapper and backend bundling assets
+├── tests/                   # pytest suite
+├── sample_data/             # sample datasets
+├── packaging/windows/       # local release prep scripts/docs
+└── requirements.txt
 ```
 
----
-
-## Citation
-
-If you use ThermoAnalyzer in your research, please cite:
-
-```bibtex
-@software{thermoanalyzer,
-  title   = {ThermoAnalyzer},
-  version = {1.0},
-  year    = {2025},
-  url     = {https://github.com/utkuvibing/thermoanalyzer},
-  note    = {Open-source thermal analysis suite}
-}
-```
+Local Windows release notes:
+- [Local Windows Release Prep](packaging/windows/RELEASE_PREP_LOCAL.md)
 
 ---
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
