@@ -54,7 +54,7 @@ def _plot_with_status(fig, status_text, *, chart_key):
 def _get_dta_datasets():
     """Return datasets suitable for DTA analysis (DTA type or unknown)."""
     datasets = st.session_state.get("datasets", {})
-    return {k: v for k, v in datasets.items() if v.data_type in ("DTA", "unknown")}
+    return {k: v for k, v in datasets.items() if v.data_type in ("DTA", "UNKNOWN", "unknown")}
 
 
 def _format_opt(value, fmt=".2f", suffix=""):
@@ -65,7 +65,7 @@ def _format_opt(value, fmt=".2f", suffix=""):
 
 
 def _store_dta_result(selected_key, dataset, temperature, signal, state):
-    """Persist an experimental DTA result record."""
+    """Persist a stable DTA result record."""
     figures = st.session_state.setdefault("figures", {})
     figure_key = f"DTA Analysis - {selected_key}"
     figure_keys = []
@@ -118,7 +118,7 @@ def _store_dta_result(selected_key, dataset, temperature, signal, state):
         artifacts={"figure_keys": figure_keys},
         processing=processing_payload,
         validation=validate_thermal_dataset(dataset, analysis_type="DTA", processing=processing_payload),
-        review={"commercial_scope": "preview_dta"},
+        review={"commercial_scope": "stable_dta"},
     )
     st.session_state.setdefault("results", {})[record["id"]] = record
 
@@ -129,10 +129,10 @@ def _store_dta_result(selected_key, dataset, temperature, signal, state):
 
 def render():
     st.title(tx("DTA Analizi", "DTA Analysis"))
-    st.warning(
+    st.info(
         tx(
-            "Deneysel modül: DTA sonuçları kullanılabilir, ancak bu iş akışı proje kalıcılığı ve raporlama için Faz 1 kararlılık garantisinin dışındadır.",
-            "Experimental module: DTA results remain available, but this workflow is outside the Phase 1 stability guarantee for project persistence and reporting.",
+            "Kararlı DTA iş akışı: DTA sonuçları proje kalıcılığı, raporlama ve export akışıyla aynı kararlı kapsamda yönetilir.",
+            "Stable DTA workflow: DTA results are handled in the same stable scope for project persistence, reporting, and export flows.",
         )
     )
 
@@ -760,4 +760,4 @@ def render():
 
         if st.button(tx("Sonuçları Oturuma Kaydet", "Save Results to Session"), key="dta_save_results"):
             _store_dta_result(selected_key, dataset, temperature, signal, state)
-            st.success(tx("Deneysel DTA sonuçları kaydedildi. İndirmek için Rapor Merkezi'ne gidin.", "Experimental DTA results saved. Go to Report Center to download."))
+            st.success(tx("DTA sonuçları kararlı kayıt olarak kaydedildi. İndirmek için Rapor Merkezi'ne gidin.", "DTA results were saved as stable records. Go to Report Center to download."))

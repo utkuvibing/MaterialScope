@@ -393,6 +393,7 @@ pages = {
         st.Page(compare_render, title=t("nav.compare"), icon="🧪", url_path="compare"),
         st.Page(dsc_render, title=t("nav.dsc"), icon="📈", url_path="dsc"),
         st.Page(tga_render, title=t("nav.tga"), icon="📉", url_path="tga"),
+        st.Page(dta_render, title=tx("DTA Analizi", "DTA Analysis"), icon="📊", url_path="dta"),
         st.Page(export_render, title=t("nav.report"), icon="📝", url_path="report"),
         st.Page(project_render, title=t("nav.project"), icon="🗂️", url_path="project"),
         st.Page(license_render, title=t("nav.license"), icon="🔐", url_path="license"),
@@ -400,7 +401,6 @@ pages = {
 }
 if show_preview_tools:
     pages[t("nav.preview")] = [
-        st.Page(dta_render, title=tx("DTA Analizi (Deneysel)", "DTA Analysis (Experimental)"), icon="📊", url_path="dta"),
         st.Page(kinetics_render, title=tx("Kinetik Analiz (Deneysel)", "Kinetic Analysis (Experimental)"), icon="⚡", url_path="kinetics"),
         st.Page(deconv_render, title=tx("Pik Dekonvolüsyonu (Deneysel)", "Peak Deconvolution (Experimental)"), icon="🔍", url_path="deconvolution"),
     ]
@@ -421,13 +421,14 @@ with st.sidebar:
         if st.session_state.get("ui_language", "tr") == "tr":
             st.markdown(
                 f"**ThermoAnalyzer Professional v{APP_VERSION}**\n\n"
-                "QC ve Ar-Ge laboratuvarları için cihazdan bağımsız DSC/TGA çalışma alanı.\n\n"
+                "QC ve Ar-Ge laboratuvarları için cihazdan bağımsız DSC/TGA/DTA çalışma alanı.\n\n"
                 "**Kararlı beta kapsamı**\n"
                 "- CSV/TXT/XLSX DSC ve TGA koşularını içe aktar\n"
+                "- DTA koşularını içe aktar ve DTA analiz akışını çalıştır\n"
                 "- Çoklu koşuları Karşılaştırma Alanı ve Toplu Şablon Uygulayıcı ile yönet\n"
-                "- DSC/TGA sonuçlarını proje durumu, rapor ve export akışıyla sakla\n\n"
+                "- DSC/TGA/DTA sonuçlarını proje durumu, rapor ve export akışıyla sakla\n\n"
                 "**Laboratuvar önizleme modülleri**\n"
-                "- DTA, kinetik ve dekonvolüsyon modülleri önizleme anahtarı arkasında kalır ve ticari stabilite sözüne dahil değildir.\n\n"
+                "- Kinetik ve dekonvolüsyon modülleri önizleme anahtarı arkasında kalır ve ticari stabilite sözüne dahil değildir.\n\n"
                 "**Referans standartlar**\n"
                 "- ASTM E967 — DSC sıcaklık ve entalpi kalibrasyonu\n"
                 "- ASTM E1131 — TGA ile kompozisyon analizi\n"
@@ -441,13 +442,14 @@ with st.sidebar:
         else:
             st.markdown(
                 f"**ThermoAnalyzer Professional v{APP_VERSION}**\n\n"
-                "Vendor-independent DSC/TGA workbench for QC and R&D labs.\n\n"
+                "Vendor-independent DSC/TGA/DTA workbench for QC and R&D labs.\n\n"
                 "**Stable beta scope**\n"
                 "- Import DSC and TGA runs from CSV/TXT/XLSX exports\n"
+                "- Import DTA runs and execute the DTA analysis workflow\n"
                 "- Manage multiple runs through Compare Workspace and the Batch Template Runner\n"
-                "- Save DSC/TGA results through the current project, report, and export flows\n\n"
+                "- Save DSC/TGA/DTA results through the current project, report, and export flows\n\n"
                 "**Lab Preview modules**\n"
-                "- DTA, kinetics, and deconvolution stay available behind the preview toggle and are excluded from the commercial stability promise.\n\n"
+                "- Kinetics and deconvolution stay available behind the preview toggle and are excluded from the commercial stability promise.\n\n"
                 "**Reference standards**\n"
                 "- ASTM E967 — DSC Temperature & Enthalpy Calibration\n"
                 "- ASTM E1131 — Compositional Analysis by TGA\n"
