@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import pandas as pd
+
+from core.data_io import ThermalDataset
+from core.peak_analysis import ThermalPeak
+from core.processing_schema import ensure_processing_payload, update_processing_step
 from core.result_serialization import (
     flatten_result_records,
     make_result_record,
+    serialize_dta_result,
     split_valid_results,
     validate_result_record,
 )
@@ -18,6 +24,77 @@ def _base_record():
         summary={"peak_count": 1},
         rows=[{"peak_temperature": 123.4}],
     )
+
+
+def _dta_dataset() -> ThermalDataset:
+    return ThermalDataset(
+        data=pd.DataFrame({"temperature": [30.0, 50.0, 70.0], "signal": [0.2, 0.5, 0.1]}),
+        metadata={
+            "sample_name": "SyntheticDTA",
+            "sample_mass": 5.0,
+            "heating_rate": 10.0,
+            "instrument": "TestInstrument",
+            "vendor": "TestVendor",
+            "display_name": "Synthetic DTA Run",
+        },
+        data_type="DTA",
+        units={"temperature": "degC", "signal": "uV"},
+        original_columns={"temperature": "temperature", "signal": "signal"},
+        file_path="",
+    )
+
+
+def _dta_peak() -> ThermalPeak:
+    return ThermalPeak(
+        peak_index=1,
+        peak_temperature=50.0,
+        peak_signal=0.5,
+        onset_temperature=45.0,
+        endset_temperature=55.0,
+        area=1.2,
+        fwhm=3.0,
+        peak_type="exo",
+        height=0.4,
+    )
+
+
+def test_serialize_dta_result_stable_status_and_context_wording():
+    dataset = _dta_dataset()
+    processing = ensure_processing_payload(analysis_type="DTA", workflow_template="dta.general")
+    processing = update_processing_step(processing, "peak_detection", {"method": "thermal_peaks", "prominence": 0.1})
+
+    record = serialize_dta_result(
+        "synthetic_dta",
+        dataset,
+        [_dta_peak()],
+        processing=processing,
+        validation={"status": "pass", "issues": [], "warnings": []},
+    )
+
+    assert record["status"] == "stable"
+    assert record["summary"]["sample_name"] == "SyntheticDTA"
+    assert record["summary"]["sample_mass"] == 5.0
+    assert record["summary"]["heating_rate"] == 10.0
+    assert record["scientific_context"]["methodology"]["workflow_template"] == "General DTA"
+    limitations = " ".join(record["scientific_context"]["limitations"]).lower()
+    assert "outside stable reporting guarantees" not in limitations
+    assert "dta module is experimental" not in limitations
+
+
+def test_serialize_dta_result_status_override_keeps_non_stable_path():
+    dataset = _dta_dataset()
+
+    record = serialize_dta_result(
+        "synthetic_dta",
+        dataset,
+        [_dta_peak()],
+        status="experimental",
+        validation={"status": "warn", "issues": [], "warnings": ["review sign convention"]},
+    )
+
+    assert record["status"] == "experimental"
+    assert record["analysis_type"] == "DTA"
+    assert record["scientific_context"]["warnings"]
 
 
 def test_validate_result_record_accepts_scientific_context_dict():

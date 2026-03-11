@@ -264,8 +264,20 @@ def _build_dta_scientific_context(
     *,
     rows: list[dict[str, Any]] | None = None,
     metadata: dict[str, Any] | None = None,
+    processing: dict[str, Any] | None = None,
     validation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    methodology = {
+        "analysis_family": "Differential Thermal Analysis",
+        "workflow_template": (processing or {}).get("workflow_template_label")
+        or (processing or {}).get("workflow_template")
+        or "General DTA",
+        "signal_pipeline": (processing or {}).get("signal_pipeline") or {},
+        "analysis_steps": (processing or {}).get("analysis_steps") or {},
+        "sign_convention": ((processing or {}).get("method_context") or {}).get("sign_convention_label")
+        or (processing or {}).get("sign_convention")
+        or "not recorded",
+    }
     equations = [
         build_equation(
             "Event Area",
@@ -279,18 +291,18 @@ def _build_dta_scientific_context(
             metric="peak_count",
             value=summary.get("peak_count"),
             unit="events",
-            implication="Experimental workflow; interpretation is exploratory.",
+            implication="Stable DTA workflow supports qualitative event screening.",
         )
     ]
     limitation_payload = build_limitations(
         limitations=[
-            "DTA module is experimental and outside stable reporting guarantees.",
-            "Area-to-enthalpy mapping is instrument-dependent unless calibrated.",
+            "Event-area values remain qualitative unless calibration and reference context are verified.",
+            "Area-to-enthalpy mapping is instrument-dependent unless method-specific calibration is available.",
         ],
         warnings=_validation_warnings(validation),
     )
     base_context = build_scientific_context(
-        methodology={"analysis_family": "Differential Thermal Analysis"},
+        methodology=methodology,
         equations=equations,
         numerical_interpretation=interpretation,
         fit_quality=build_fit_quality({}),
@@ -750,6 +762,7 @@ def serialize_dta_result(
     dataset_key: str,
     dataset,
     peaks: Iterable[ThermalPeak],
+    status: str = "stable",
     artifacts: dict[str, Any] | None = None,
     processing: dict[str, Any] | None = None,
     provenance: dict[str, Any] | None = None,
@@ -757,7 +770,7 @@ def serialize_dta_result(
     review: dict[str, Any] | None = None,
     scientific_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Serialize an experimental DTA analysis record."""
+    """Serialize a DTA analysis record."""
     peaks = list(peaks)
     rows = [
         {
@@ -771,11 +784,16 @@ def serialize_dta_result(
         }
         for peak in peaks
     ]
-    summary = {"peak_count": len(peaks)}
+    summary = {
+        "peak_count": len(peaks),
+        "sample_name": dataset.metadata.get("sample_name"),
+        "sample_mass": dataset.metadata.get("sample_mass"),
+        "heating_rate": dataset.metadata.get("heating_rate"),
+    }
     return make_result_record(
         result_id=f"dta_{dataset_key}",
         analysis_type="DTA",
-        status="experimental",
+        status=status,
         dataset_key=dataset_key,
         metadata=dataset.metadata,
         summary=summary,
@@ -790,6 +808,7 @@ def serialize_dta_result(
             summary,
             rows=rows,
             metadata=dataset.metadata,
+            processing=processing,
             validation=validation,
         ),
     )
