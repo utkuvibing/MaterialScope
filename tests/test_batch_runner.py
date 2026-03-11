@@ -31,6 +31,21 @@ def _make_tga_dataset(temperature_range, tga_signal, *, signal_unit="%"):
     )
 
 
+def _make_dta_dataset(thermal_dataset):
+    dataset = thermal_dataset.copy()
+    dataset.data_type = "DTA"
+    dataset.units["signal"] = "uV"
+    dataset.metadata.update(
+        {
+            "sample_name": "SyntheticDTA",
+            "display_name": "Synthetic DTA Run",
+            "vendor": "TestVendor",
+            "instrument": "TestInstrument",
+        }
+    )
+    return dataset
+
+
 def test_execute_dsc_batch_template_saves_normalized_record(thermal_dataset):
     dataset = thermal_dataset.copy()
     dataset.metadata.update(
@@ -92,6 +107,49 @@ def test_execute_tga_batch_template_saves_normalized_record(temperature_range, t
     assert outcome["state"]["tga_result"] is not None
     assert outcome["summary_row"]["step_count"] >= 1
     assert outcome["summary_row"]["execution_status"] == "saved"
+
+
+def test_execute_dta_batch_template_saves_normalized_record_with_general_default(thermal_dataset):
+    dataset = _make_dta_dataset(thermal_dataset)
+
+    outcome = execute_batch_template(
+        dataset_key="synthetic_dta",
+        dataset=dataset,
+        analysis_type="DTA",
+        workflow_template_id="dta.general",
+        analysis_history=[{"event_id": "evt-batch-start"}],
+        analyst_name="Ada",
+        app_version="2.0",
+        batch_run_id="batch_dta_demo",
+    )
+
+    assert outcome["status"] == "saved"
+    assert outcome["record"]["id"] == "dta_synthetic_dta"
+    assert outcome["record"]["processing"]["workflow_template_id"] == "dta.general"
+    assert outcome["record"]["processing"]["method_context"]["batch_run_id"] == "batch_dta_demo"
+    assert outcome["record"]["provenance"]["batch_run_id"] == "batch_dta_demo"
+    assert outcome["record"]["review"]["batch_runner"] == "compare_workspace"
+    assert outcome["validation"]["status"] in {"pass", "warn"}
+    assert outcome["state"]["processing"]["workflow_template"] == "General DTA"
+    assert outcome["summary_row"]["execution_status"] == "saved"
+
+
+def test_execute_dta_batch_template_honors_thermal_events_override(thermal_dataset):
+    dataset = _make_dta_dataset(thermal_dataset)
+
+    outcome = execute_batch_template(
+        dataset_key="synthetic_dta",
+        dataset=dataset,
+        analysis_type="DTA",
+        workflow_template_id="dta.thermal_events",
+        batch_run_id="batch_dta_events",
+    )
+
+    assert outcome["status"] == "saved"
+    assert outcome["analysis_type"] == "DTA"
+    assert outcome["record"]["processing"]["workflow_template_id"] == "dta.thermal_events"
+    assert outcome["record"]["processing"]["workflow_template"] == "Thermal Event Screening"
+    assert outcome["summary_row"]["workflow_template_id"] == "dta.thermal_events"
 
 
 def test_execute_batch_template_blocks_failed_validation(thermal_dataset):

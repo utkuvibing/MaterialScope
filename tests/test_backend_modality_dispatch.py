@@ -136,6 +136,61 @@ def test_batch_run_dispatches_tga_through_registry_path(thermal_dataset):
     assert payload["outcomes"]["failed"] == 0
 
 
+def test_analysis_run_dispatches_dta_with_registry_default_template(thermal_dataset):
+    app = create_app(api_token="dispatch-token")
+    client = TestClient(app)
+    project_id = _new_project(client)
+    dataset_key = _import_dataset(client, project_id, thermal_dataset, "dispatch_dta.csv", "DTA")
+
+    response = client.post(
+        "/analysis/run",
+        headers=_headers(),
+        json={
+            "project_id": project_id,
+            "dataset_key": dataset_key,
+            "analysis_type": "DTA",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["analysis_type"] == "DTA"
+    assert payload["execution_status"] == "saved"
+    assert payload["result_id"]
+
+    result_detail = client.get(
+        f"/workspace/{project_id}/results/{payload['result_id']}",
+        headers=_headers(),
+    )
+    assert result_detail.status_code == 200
+    assert result_detail.json()["processing"]["workflow_template_id"] == "dta.general"
+
+
+def test_batch_run_dispatches_dta_with_template_override(thermal_dataset):
+    app = create_app(api_token="dispatch-token")
+    client = TestClient(app)
+    project_id = _new_project(client)
+    dataset_key = _import_dataset(client, project_id, thermal_dataset, "dispatch_dta.csv", "DTA")
+
+    set_selection = client.post(
+        f"/workspace/{project_id}/compare/selection",
+        headers=_headers(),
+        json={"operation": "replace", "dataset_keys": [dataset_key]},
+    )
+    assert set_selection.status_code == 200
+
+    response = client.post(
+        f"/workspace/{project_id}/batch/run",
+        headers=_headers(),
+        json={"analysis_type": "DTA", "workflow_template_id": "dta.thermal_events"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["analysis_type"] == "DTA"
+    assert payload["workflow_template_id"] == "dta.thermal_events"
+    assert payload["outcomes"]["saved"] == 1
+    assert payload["batch_summary"][0]["workflow_template_id"] == "dta.thermal_events"
+
+
 def test_compare_workspace_validation_uses_registry_set(monkeypatch):
     app = create_app(api_token="dispatch-token")
     client = TestClient(app)

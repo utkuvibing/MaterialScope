@@ -1,11 +1,13 @@
-"""Brownfield batch template execution for compare-workspace DSC/TGA runs."""
+"""Brownfield batch template execution for compare-workspace stable modalities."""
 
 from __future__ import annotations
 
 import copy
 from typing import Any, Mapping
 
+from core.dta_processor import DTAProcessor
 from core.dsc_processor import DSCProcessor
+from core.peak_analysis import characterize_peaks
 from core.processing_schema import (
     ensure_processing_payload,
     get_workflow_templates,
@@ -14,7 +16,7 @@ from core.processing_schema import (
     update_tga_unit_context,
 )
 from core.provenance import build_calibration_reference_context, build_result_provenance
-from core.result_serialization import serialize_dsc_result, serialize_tga_result
+from core.result_serialization import serialize_dsc_result, serialize_dta_result, serialize_tga_result
 from core.tga_processor import TGAProcessor, resolve_tga_unit_interpretation
 from core.validation import validate_thermal_dataset
 
@@ -52,6 +54,26 @@ _TGA_TEMPLATE_DEFAULTS = {
     "tga.multi_step_decomposition": {
         "smoothing": {"method": "savgol", "window_length": 15, "polyorder": 3},
         "step_detection": {"method": "dtg_peaks", "prominence": None, "min_mass_loss": 0.3, "search_half_width": 100},
+    },
+}
+_DTA_TEMPLATE_DEFAULTS = {
+    "dta.general": {
+        "smoothing": {"method": "savgol", "window_length": 11, "polyorder": 3},
+        "baseline": {"method": "asls"},
+        "peak_detection": {
+            "detect_endothermic": True,
+            "detect_exothermic": True,
+        },
+    },
+    "dta.thermal_events": {
+        "smoothing": {"method": "savgol", "window_length": 15, "polyorder": 3},
+        "baseline": {"method": "asls"},
+        "peak_detection": {
+            "detect_endothermic": True,
+            "detect_exothermic": True,
+            "prominence": 0.0,
+            "distance": 8,
+        },
     },
 }
 _VALID_EXECUTION_STATUSES = {"saved", "blocked", "failed"}
@@ -122,6 +144,16 @@ def execute_batch_template(
         )
     if normalized_type == "TGA":
         return _execute_tga_batch(
+            dataset_key=dataset_key,
+            dataset=dataset,
+            processing=processing,
+            analysis_history=analysis_history,
+            analyst_name=analyst_name,
+            app_version=app_version,
+            batch_run_id=batch_run_id,
+        )
+    if normalized_type == "DTA":
+        return _execute_dta_batch(
             dataset_key=dataset_key,
             dataset=dataset,
             processing=processing,
@@ -368,10 +400,20 @@ def _execute_tga_batch(
 
 
 def _template_defaults(analysis_type: str, workflow_template_id: str) -> dict[str, Any]:
-    catalog = _DSC_TEMPLATE_DEFAULTS if analysis_type == "DSC" else _TGA_TEMPLATE_DEFAULTS
+    if analysis_type == "DSC":
+        catalog = _DSC_TEMPLATE_DEFAULTS
+        fallback = "dsc.general"
+    elif analysis_type == "TGA":
+        catalog = _TGA_TEMPLATE_DEFAULTS
+        fallback = "tga.general"
+    elif analysis_type == "DTA":
+        catalog = _DTA_TEMPLATE_DEFAULTS
+        fallback = "dta.general"
+    else:
+        raise ValueError(f"Unsupported batch analysis type '{analysis_type}'")
+
     if workflow_template_id in catalog:
         return copy.deepcopy(catalog[workflow_template_id])
-    fallback = "dsc.general" if analysis_type == "DSC" else "tga.general"
     return copy.deepcopy(catalog[fallback])
 
 
@@ -396,6 +438,133 @@ def _select_tga_reference_temperature(result) -> float | None:
     steps = getattr(result, "steps", []) or []
     if steps:
         return getattr(steps[0], "midpoint_temperature", None) or getattr(steps[0], "onset_temperature", None)
+    return None
+
+
+def _execute_dta_batch(
+    *,
+    dataset_key: str,
+    dataset,
+    processing: dict[str, Any],
+    analysis_history: list[dict[str, Any]] | None,
+    analyst_name: str | None,
+    app_version: str | None,
+    batch_run_id: str | None,
+) -> dict[str, Any]:
+    temperature = dataset.data["temperature"].values
+    signal = dataset.data["signal"].values
+
+    smoothing = copy.deepcopy((processing.get("signal_pipeline") or {}).get("smoothing") or {})
+    baseline = copy.deepcopy((processing.get("signal_pipeline") or {}).get("baseline") or {})
+    peak_detection = copy.deepcopy((processing.get("analysis_steps") or {}).get("peak_detection") or {})
+
+    processor = DTAProcessor(
+        temperature,
+        signal,
+        metadata=dataset.metadata,
+    )
+
+    smooth_method = smoothing.pop("method", "savgol")
+    processor.smooth(method=smooth_method, **smoothing)
+
+    baseline_method = baseline.pop("method", "asls")
+    processor.correct_baseline(method=baseline_method, **baseline)
+
+    direction = str(peak_detection.pop("direction", "both") or "both").lower()
+    detect_endothermic = peak_detection.pop("detect_endothermic", None)
+    detect_exothermic = peak_detection.pop("detect_exothermic", None)
+    if detect_endothermic is None:
+        detect_endothermic = direction in {"both", "down", "endo", "endothermic"}
+    if detect_exothermic is None:
+        detect_exothermic = direction in {"both", "up", "exo", "exothermic"}
+    if not detect_endothermic and not detect_exothermic:
+        detect_endothermic = True
+        detect_exothermic = True
+    if peak_detection.get("prominence") in ("", 0, 0.0):
+        peak_detection["prominence"] = None
+    if peak_detection.get("distance") in ("", 0, 0.0):
+        peak_detection["distance"] = None
+    if peak_detection.get("min_peak_height") in ("", 0, 0.0):
+        peak_detection["min_peak_height"] = None
+
+    processor.find_peaks(
+        detect_endothermic=bool(detect_endothermic),
+        detect_exothermic=bool(detect_exothermic),
+        **peak_detection,
+    )
+    result = processor.get_result()
+    if result.peaks:
+        result.peaks = characterize_peaks(
+            temperature,
+            result.smoothed_signal,
+            list(result.peaks),
+            baseline=result.baseline,
+        )
+
+    calibration_context = build_calibration_reference_context(
+        dataset=dataset,
+        analysis_type="DTA",
+        reference_temperature_c=_select_dta_reference_temperature(result),
+    )
+    processing = update_method_context(processing, calibration_context, analysis_type="DTA")
+    validation = validate_thermal_dataset(dataset, analysis_type="DTA", processing=processing)
+    provenance = build_result_provenance(
+        dataset=dataset,
+        dataset_key=dataset_key,
+        analysis_history=analysis_history,
+        app_version=app_version,
+        analyst_name=analyst_name,
+        extra={
+            "batch_run_id": batch_run_id,
+            "batch_runner": "compare_workspace",
+            "calibration_state": calibration_context.get("calibration_state"),
+            "reference_state": calibration_context.get("reference_state"),
+            "reference_name": calibration_context.get("reference_name"),
+            "reference_delta_c": calibration_context.get("reference_delta_c"),
+        },
+    )
+    record = serialize_dta_result(
+        dataset_key,
+        dataset,
+        result.peaks,
+        artifacts={},
+        processing=processing,
+        provenance=provenance,
+        validation=validation,
+        review={"commercial_scope": "stable_dta", "batch_runner": "compare_workspace"},
+    )
+    state = {
+        "smoothed": result.smoothed_signal,
+        "baseline": result.baseline,
+        "corrected": result.smoothed_signal,
+        "peaks": result.peaks,
+        "processing": processing,
+    }
+    return {
+        "status": "saved",
+        "analysis_type": "DTA",
+        "dataset_key": dataset_key,
+        "processing": processing,
+        "validation": validation,
+        "record": record,
+        "state": state,
+        "summary_row": _make_summary_row(
+            dataset_key=dataset_key,
+            dataset=dataset,
+            analysis_type="DTA",
+            processing=processing,
+            validation=validation,
+            execution_status="saved",
+            record=record,
+            failure_reason="",
+        ),
+    }
+
+
+def _select_dta_reference_temperature(result) -> float | None:
+    peaks = getattr(result, "peaks", []) or []
+    if peaks:
+        return getattr(peaks[0], "peak_temperature", None) or getattr(peaks[0], "temperature", None)
     return None
 
 

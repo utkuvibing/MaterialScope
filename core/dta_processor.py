@@ -320,7 +320,7 @@ class DTAProcessor:
                 all_peaks.append(peak)
 
         # Sort by temperature (ascending)
-        all_peaks.sort(key=lambda p: p.temperature)
+        all_peaks.sort(key=lambda p: p.peak_temperature)
         self._peaks = all_peaks
         return self
 
