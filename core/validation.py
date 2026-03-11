@@ -44,6 +44,12 @@ TGA_PERCENT_MIN = -5.0
 TGA_PERCENT_MAX = 120.0
 _TGA_PERCENT_SIGNAL_UNITS = {"%"}
 _TGA_ABSOLUTE_SIGNAL_UNITS = {"mg", "g"}
+DTA_STABLE_TEMPLATE_IDS = {"dta.general", "dta.thermal_events"}
+_DTA_EXPECTED_SIGN_CONVENTIONS = {
+    "exotherm up / endotherm down",
+    "exo_up_endo_down",
+    "dta.exotherm_up",
+}
 
 
 def _coerce_float(value: Any) -> float | None:
@@ -280,6 +286,84 @@ def _check_tga_workflow(
         warnings.append("TGA method context does not record step-analysis settings.")
 
 
+def _check_dta_workflow(
+    *,
+    metadata: dict[str, Any],
+    processing: dict[str, Any] | None,
+    checks: dict[str, Any],
+    issues: list[str],
+    warnings: list[str],
+) -> None:
+    if not processing:
+        checks["processing_analysis_type"] = "not recorded"
+        checks["workflow_template_id"] = "not recorded"
+        checks["workflow_template_label"] = "not recorded"
+        checks["workflow_template_version"] = "not recorded"
+        checks["sign_convention"] = "not recorded"
+        checks["peak_detection_context"] = "not recorded"
+        checks["reference_state"] = "not recorded"
+        checks["reference_acceptance"] = "review"
+        checks["reference_required"] = False
+        checks["calibration_state"] = "not recorded"
+        checks["calibration_acceptance"] = "review"
+        checks["calibration_required"] = False
+        issues.append("DTA stable workflow requires saved processing context.")
+        return
+
+    template_id = str(processing.get("workflow_template_id") or "").strip()
+    template_label = processing.get("workflow_template_label") or processing.get("workflow_template")
+    template_version = processing.get("workflow_template_version") or "not recorded"
+    checks["workflow_template_id"] = template_id or "not recorded"
+    checks["workflow_template_label"] = template_label or "not recorded"
+    checks["workflow_template_version"] = template_version
+
+    source_processing_type = (processing.get("source_analysis_type") or "").upper()
+    processing_type = (processing.get("analysis_type") or "").upper()
+    checks["processing_analysis_type"] = source_processing_type or processing_type or "not recorded"
+    if source_processing_type and source_processing_type != "DTA":
+        issues.append("Processing context analysis_type does not match DTA workflow.")
+    elif processing_type and processing_type != "DTA":
+        issues.append("Processing context analysis_type does not match DTA workflow.")
+
+    if not template_id:
+        issues.append("DTA workflow template id is required for stable validation.")
+    elif template_id.lower() not in DTA_STABLE_TEMPLATE_IDS:
+        issues.append(f"DTA workflow template '{template_id}' is not supported for stable reporting.")
+
+    method_context = processing.get("method_context") or {}
+    sign_convention = method_context.get("sign_convention_label") or processing.get("sign_convention")
+    checks["sign_convention"] = sign_convention or "not recorded"
+    sign_token = _normalize_status_token(sign_convention)
+    if sign_token is None:
+        warnings.append("DTA sign convention is not recorded in the saved method context.")
+    elif sign_token not in _DTA_EXPECTED_SIGN_CONVENTIONS:
+        issues.append("DTA sign convention does not match the expected stable method context.")
+
+    peak_detection = _processing_section(processing, "peak_detection")
+    checks["peak_detection_context"] = "recorded" if peak_detection else "not recorded"
+    if not peak_detection:
+        warnings.append("DTA method context does not record peak-detection settings.")
+
+    reference_state = method_context.get("reference_state") or "not recorded"
+    reference_acceptance = classify_reference_acceptance(reference_state)
+    checks["reference_state"] = reference_state
+    checks["reference_acceptance"] = reference_acceptance
+    reference_required = bool(method_context.get("reference_required"))
+    checks["reference_required"] = reference_required
+    if reference_state == "not recorded":
+        warnings.append("Reference-state context is not recorded for this DTA result.")
+    if reference_required and reference_acceptance != "accepted":
+        issues.append("DTA method context requires a verified reference state before stable reporting.")
+
+    calibration_context = classify_calibration_state(metadata=metadata)
+    checks["calibration_state"] = calibration_context["calibration_state"]
+    checks["calibration_acceptance"] = calibration_context["calibration_acceptance"]
+    calibration_required = bool(method_context.get("calibration_required"))
+    checks["calibration_required"] = calibration_required
+    if calibration_required and calibration_context["calibration_acceptance"] != "accepted":
+        issues.append("DTA method context requires verified calibration before stable reporting.")
+
+
 def validate_thermal_dataset(
     dataset,
     *,
@@ -362,7 +446,10 @@ def validate_thermal_dataset(
         warnings.append(f"Dataset type '{normalized_analysis_type}' is not part of the stable workflow.")
     normalized_processing = None
     if processing:
+        source_processing_type = (processing.get("analysis_type") or "").upper()
         normalized_processing = ensure_processing_payload(processing, analysis_type=normalized_analysis_type)
+        if source_processing_type:
+            normalized_processing["source_analysis_type"] = source_processing_type
 
     temperature_unit = units.get("temperature")
     if temperature_unit and temperature_unit not in TEMPERATURE_UNITS:
@@ -419,6 +506,14 @@ def validate_thermal_dataset(
             signal=signal,
             signal_unit=signal_unit,
             sample_mass=sample_mass,
+            checks=checks,
+            issues=issues,
+            warnings=warnings,
+        )
+    elif normalized_analysis_type == "DTA":
+        _check_dta_workflow(
+            metadata=metadata,
+            processing=normalized_processing,
             checks=checks,
             issues=issues,
             warnings=warnings,

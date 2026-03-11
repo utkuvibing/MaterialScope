@@ -3,10 +3,27 @@ from __future__ import annotations
 import io
 
 from core.data_io import read_thermal_data
-from core.processing_schema import ensure_processing_payload, set_tga_unit_mode, update_processing_step
+from core.processing_schema import ensure_processing_payload, set_tga_unit_mode, update_method_context, update_processing_step
 from core.provenance import build_calibration_reference_context, classify_calibration_state
 from core.validation import validate_thermal_dataset
 from utils.validators import validate_thermal_dataset as legacy_validate_thermal_dataset
+
+
+def _make_dta_dataset(thermal_dataset):
+    dataset = thermal_dataset.copy()
+    dataset.data_type = "DTA"
+    dataset.units["signal"] = "uV"
+    dataset.metadata.update(
+        {
+            "sample_name": "SyntheticDTA",
+            "sample_mass": 5.0,
+            "heating_rate": 10.0,
+            "instrument": "TestInstrument",
+            "vendor": "TestVendor",
+            "display_name": "Synthetic DTA Run",
+        }
+    )
+    return dataset
 
 
 def test_validate_thermal_dataset_passes_for_synthetic_fixture(thermal_dataset):
@@ -116,6 +133,81 @@ def test_validate_dsc_processing_blocks_failed_calibration(thermal_dataset):
     assert summary["status"] == "fail"
     assert summary["checks"]["calibration_state"] == "calibration_not_current"
     assert any("not currently verified" in issue for issue in summary["issues"])
+
+
+def test_validate_dta_processing_passes_with_stable_method_context(thermal_dataset):
+    dataset = _make_dta_dataset(thermal_dataset)
+    processing = ensure_processing_payload(
+        analysis_type="DTA",
+        workflow_template="dta.general",
+        workflow_template_label="General DTA",
+    )
+    processing = update_processing_step(
+        processing,
+        "peak_detection",
+        {"method": "thermal_peaks", "prominence": 0.1},
+    )
+    processing = update_method_context(
+        processing,
+        {"reference_state": "reference_checked"},
+        analysis_type="DTA",
+    )
+
+    summary = validate_thermal_dataset(dataset, analysis_type="DTA", processing=processing)
+
+    assert summary["status"] == "pass"
+    assert not summary["issues"]
+    assert not summary["warnings"]
+    assert summary["checks"]["workflow_template_id"] == "dta.general"
+    assert summary["checks"]["sign_convention"] == "Exotherm up / Endotherm down"
+    assert summary["checks"]["peak_detection_context"] == "recorded"
+    assert summary["checks"]["reference_acceptance"] == "accepted"
+
+
+def test_validate_dta_processing_warns_when_sign_convention_and_peak_context_missing(thermal_dataset):
+    dataset = _make_dta_dataset(thermal_dataset)
+    processing = ensure_processing_payload(analysis_type="DTA", workflow_template="dta.general")
+    processing = update_method_context(
+        processing,
+        {"sign_convention_label": "", "sign_convention_id": ""},
+        analysis_type="DTA",
+    )
+
+    summary = validate_thermal_dataset(dataset, analysis_type="DTA", processing=processing)
+
+    assert summary["status"] == "warn"
+    assert summary["issues"] == []
+    assert any("sign convention is not recorded" in warning.lower() for warning in summary["warnings"])
+    assert any("peak-detection settings" in warning.lower() for warning in summary["warnings"])
+    assert summary["checks"]["peak_detection_context"] == "not recorded"
+
+
+def test_validate_dta_processing_fails_when_method_context_is_not_dta(thermal_dataset):
+    dataset = _make_dta_dataset(thermal_dataset)
+    processing = ensure_processing_payload(analysis_type="DSC", workflow_template="dsc.general")
+
+    summary = validate_thermal_dataset(dataset, analysis_type="DTA", processing=processing)
+
+    assert summary["status"] == "fail"
+    assert any("analysis_type does not match dta" in issue.lower() for issue in summary["issues"])
+    assert any("not supported for stable reporting" in issue.lower() for issue in summary["issues"])
+
+
+def test_validate_dta_processing_fails_when_template_requires_reference_without_acceptance(thermal_dataset):
+    dataset = _make_dta_dataset(thermal_dataset)
+    processing = ensure_processing_payload(analysis_type="DTA", workflow_template="dta.thermal_events")
+    processing = update_method_context(
+        processing,
+        {"reference_required": True, "reference_state": "not_recorded"},
+        analysis_type="DTA",
+    )
+
+    summary = validate_thermal_dataset(dataset, analysis_type="DTA", processing=processing)
+
+    assert summary["status"] == "fail"
+    assert any("requires a verified reference state" in issue.lower() for issue in summary["issues"])
+    assert summary["checks"]["reference_required"] is True
+    assert summary["checks"]["reference_acceptance"] == "review"
 
 
 def test_validate_tga_processing_checks_unit_plausibility_and_step_context():
