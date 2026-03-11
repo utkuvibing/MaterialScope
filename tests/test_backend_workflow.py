@@ -106,3 +106,48 @@ def test_workspace_import_run_analysis_and_save_roundtrip(thermal_dataset):
     restored = load_project_archive(io.BytesIO(base64.b64decode(archive_base64.encode("ascii"))))
     assert dataset_key in restored["datasets"]
     assert run_payload["result_id"] in restored["results"]
+
+
+def test_workspace_import_run_dta_analysis_roundtrip(thermal_dataset):
+    app = create_app(api_token="workflow-token")
+    client = TestClient(app)
+
+    create_response = client.post("/workspace/new", headers=_headers())
+    assert create_response.status_code == 200
+    project_id = create_response.json()["project_id"]
+
+    csv_bytes = thermal_dataset.data.to_csv(index=False).encode("utf-8")
+    import_response = client.post(
+        "/dataset/import",
+        headers=_headers(),
+        json={
+            "project_id": project_id,
+            "file_name": "synthetic_dta.csv",
+            "file_base64": _to_base64(csv_bytes),
+            "data_type": "DTA",
+        },
+    )
+    assert import_response.status_code == 200
+    dataset_key = import_response.json()["dataset"]["key"]
+
+    run_response = client.post(
+        "/analysis/run",
+        headers=_headers(),
+        json={
+            "project_id": project_id,
+            "dataset_key": dataset_key,
+            "analysis_type": "DTA",
+            "workflow_template_id": "dta.general",
+        },
+    )
+    assert run_response.status_code == 200
+    run_payload = run_response.json()
+    assert run_payload["analysis_type"] == "DTA"
+    assert run_payload["execution_status"] == "saved"
+    assert run_payload["result_id"].startswith("dta_")
+
+    results_response = client.get(f"/workspace/{project_id}/results", headers=_headers())
+    assert results_response.status_code == 200
+    results = results_response.json()["results"]
+    assert len(results) == 1
+    assert results[0]["analysis_type"] == "DTA"

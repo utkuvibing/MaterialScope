@@ -471,7 +471,7 @@
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">THERMOANALYZER</div>
-      <div class="brand-sub" id="brandSubtitle">Cihazdan bağımsız DSC/TGA çalışma alanı</div>
+      <div class="brand-sub" id="brandSubtitle">Cihazdan bağımsız DSC/TGA/DTA çalışma alanı</div>
       <div class="lang-switch">
         <button class="lang-btn active" id="langTrBtn" type="button">TR</button>
         <button class="lang-btn" id="langEnBtn" type="button">EN</button>
@@ -486,6 +486,7 @@
         <button class="nav-item active" data-view="home" id="navHomeBtn">Veri Al</button>
         <button class="nav-item" data-view="compare" id="navCompareBtn">Karşılaştırma</button>
         <button class="nav-item" data-view="dsc" id="navDscBtn">DSC Analizi</button>
+        <button class="nav-item" data-view="dta" id="navDtaBtn">DTA Analizi</button>
         <button class="nav-item" data-view="tga" id="navTgaBtn">TGA Analizi</button>
         <button class="nav-item" data-view="export" id="navExportBtn">Rapor Merkezi</button>
         <button class="nav-item" data-view="project" id="navProjectBtn">Proje Alanı</button>
@@ -493,7 +494,6 @@
 
       <div class="nav-group" id="previewNavGroup" style="display:none;">
         <div class="group-label" id="previewGroupLabel">Laboratuvar Önizlemesi</div>
-        <button class="nav-item preview-locked" disabled id="navPreviewDtaBtn">DTA Analizi (Deneysel)</button>
         <button class="nav-item preview-locked" disabled id="navPreviewKineticsBtn">Kinetik Analiz (Deneysel)</button>
         <button class="nav-item preview-locked" disabled id="navPreviewDeconvBtn">Pik Dekonvolüsyonu (Deneysel)</button>
       </div>
@@ -507,7 +507,7 @@
       <div class="nav-group">
         <div class="group-label" id="sidebarAboutTitle">ThermoAnalyzer Hakkında</div>
         <p class="small" id="sidebarAboutCopy">
-          Kararlı kapsam: DSC/TGA, Karşılaştırma Alanı, Toplu Şablon Uygulayıcı, proje arşivi ve CSV/DOCX çıktıları.
+          Kararlı kapsam: DSC/TGA/DTA, Karşılaştırma Alanı, Toplu Şablon Uygulayıcı, proje arşivi ve CSV/DOCX çıktıları.
         </p>
       </div>
     </aside>
@@ -664,6 +664,7 @@
               <label for="compareTypeSelect" id="compareAnalysisTypeLabel">Analiz Tipi</label>
               <select id="compareTypeSelect">
                 <option value="DSC">DSC</option>
+                <option value="DTA">DTA</option>
                 <option value="TGA">TGA</option>
               </select>
               <button id="addSelectedToCompareBtn" disabled>Seçili Veri Setini Ekle</button>
@@ -687,6 +688,7 @@
               <label for="batchAnalysisTypeSelect" id="batchAnalysisLabel">Analiz</label>
               <select id="batchAnalysisTypeSelect">
                 <option value="DSC">DSC</option>
+                <option value="DTA">DTA</option>
                 <option value="TGA">TGA</option>
               </select>
               <label for="batchTemplateIdInput" id="batchTemplateLabel">Şablon ID</label>
@@ -749,6 +751,44 @@
               <p class="analysis-step-title" id="dscStep4Title">Adım 4 - Kayıtlı sonuç bağlamı</p>
             </div>
             <div id="dscResultSummaryPanel" class="panel-soft">Henüz DSC sonuç bağlamı yok.</div>
+          </div>
+        </section>
+
+        <section class="view" id="view-dta">
+          <h2 class="view-title" id="dtaViewTitle">DTA Analizi</h2>
+          <p class="view-copy" id="dtaViewCopy">Kararlı DTA akışını veri seti bağlamı, doğrulama görünürlüğü ve şablon sürekliliği ile adım adım yürüt.</p>
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="dtaStep1Title">Adım 1 - Aktif veri seti ve yöntem bağlamı</p>
+            </div>
+            <div id="dtaActiveDatasetContextPanel" class="panel-soft">DTA bağlamını başlatmak için Veri Al sayfasından bir veri seti seç.</div>
+            <div id="dtaMethodContextPanel" class="panel-soft" style="margin-top:10px;">DTA işlem bağlamı burada görünecek.</div>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="dtaStep2Title">Adım 2 - Doğrulama ve hazır olma kontrolleri</p>
+            </div>
+            <div id="dtaValidationPanel" class="panel-soft">Doğrulama özeti, veri seti incelendikten sonra görünür.</div>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="dtaStep3Title">Adım 3 - DTA analizini çalıştır</p>
+            </div>
+            <div id="dtaTemplateContextPanel" class="panel-soft">İş akışı şablon bağlamı burada görünecek.</div>
+            <div class="row" style="margin-top:10px;">
+              <button id="runDtaAnalysisBtn" disabled>DTA Analizini Çalıştır</button>
+              <button id="inspectSelectedDatasetBtn3">Seçili Veri Setini İncele</button>
+            </div>
+            <p id="dtaAnalysisInfo" class="small">Henüz DTA analizi çalıştırılmadı.</p>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="dtaStep4Title">Adım 4 - Kayıtlı sonuç bağlamı</p>
+            </div>
+            <div id="dtaResultSummaryPanel" class="panel-soft">Henüz DTA sonuç bağlamı yok.</div>
           </div>
         </section>
 
@@ -924,7 +964,7 @@
               </div>
               <div class="kv-item">
                 <div class="kv-label" id="licenseFocusLabel">Desktop Build Odağı</div>
-                <div class="kv-value" id="licenseFocusValue">Kararlı DSC/TGA akışları, karşılaştırma alanı, proje arşivi ve CSV/DOCX çıktıları</div>
+                <div class="kv-value" id="licenseFocusValue">Kararlı DSC/TGA/DTA akışları, karşılaştırma alanı, proje arşivi ve CSV/DOCX çıktıları</div>
               </div>
             </div>
           </div>
@@ -932,8 +972,8 @@
             <p class="section-title" id="licenseNotesTitle">Profesör Demo Notları</p>
             <p class="section-subtitle" id="licenseNotesSubtitle">Bu masaüstü build kararlı öğretim/demo akışları için optimize edildi.</p>
             <ul class="list-box" id="licenseNotesList">
-              <li>Kararlı odak: DSC/TGA analizi, karşılaştırma alanı, proje arşivi kaydet/yükle, CSV/DOCX çıktıları.</li>
-              <li>Önizleme modülleri (DTA, kinetik, dekonvolüsyon) demo sözü kapsamı dışındadır.</li>
+              <li>Kararlı odak: DSC/TGA/DTA analizi, karşılaştırma alanı, proje arşivi kaydet/yükle, CSV/DOCX çıktıları.</li>
+              <li>Önizleme modülleri (kinetik, dekonvolüsyon) demo sözü kapsamı dışındadır.</li>
               <li>Streamlit fallback/reference implementation olarak dokunulmadan korunur.</li>
             </ul>
           </div>

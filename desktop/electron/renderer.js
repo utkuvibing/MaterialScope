@@ -13,6 +13,7 @@ let currentLanguage = "tr";
 let activeView = "home";
 const lastAnalysisRuns = {
   DSC: null,
+  DTA: null,
   TGA: null,
 };
 
@@ -22,6 +23,7 @@ const I18N = {
       home: "Veri Al",
       compare: "Karşılaştırma",
       dsc: "DSC Analizi",
+      dta: "DTA Analizi",
       tga: "TGA Analizi",
       export: "Rapor Merkezi",
       project: "Proje Alanı",
@@ -58,11 +60,11 @@ const I18N = {
       stepCompareDone: "{count} karşılaştırma seçimi",
       stepComparePending: "Karşılaştırma seçimlerini belirle",
       stepRunDone: "{count} sonuç kaydedildi",
-      stepRunPending: "DSC/TGA analizi çalıştır",
+      stepRunPending: "DSC/DTA/TGA analizi çalıştır",
       nextCreate: "Yeni proje oluştur veya mevcut projeyi aç.",
       nextImport: "İlk veri setini içe aktar.",
       nextInspect: "Doğrulama ve karşılaştırma seçimlerini incele.",
-      nextRun: "DSC/TGA veya Compare batch adımına geç.",
+      nextRun: "DSC/DTA/TGA veya Compare batch adımına geç.",
       nextSave: "Projeyi kaydet veya dışa aktarıma geç.",
     },
     compare: {
@@ -81,6 +83,7 @@ const I18N = {
       home: "Import Runs",
       compare: "Compare Workspace",
       dsc: "DSC Analysis",
+      dta: "DTA Analysis",
       tga: "TGA Analysis",
       export: "Report Center",
       project: "Project Workspace",
@@ -117,11 +120,11 @@ const I18N = {
       stepCompareDone: "{count} selected for compare",
       stepComparePending: "Select compare datasets",
       stepRunDone: "{count} result(s) saved",
-      stepRunPending: "Run DSC/TGA analysis",
+      stepRunPending: "Run DSC/DTA/TGA analysis",
       nextCreate: "Create or open a workspace.",
       nextImport: "Import your first dataset.",
       nextInspect: "Inspect validation and compare selection.",
-      nextRun: "Run DSC/TGA analysis or batch from Compare.",
+      nextRun: "Run DSC/DTA/TGA analysis or batch from Compare.",
       nextSave: "Save project or continue with export.",
     },
     compare: {
@@ -140,6 +143,7 @@ const viewTitleKeys = {
   home: "nav.home",
   compare: "nav.compare",
   dsc: "nav.dsc",
+  dta: "nav.dta",
   tga: "nav.tga",
   export: "nav.export",
   project: "nav.project",
@@ -223,7 +227,7 @@ function applyStaticLanguage() {
   setText("primaryGroupLabel", currentLanguage === "tr" ? "Ana Akış" : "Primary");
   setText("previewGroupLabel", currentLanguage === "tr" ? "Laboratuvar Önizlemesi" : "Lab Preview");
   setText("systemGroupLabel", currentLanguage === "tr" ? "Sistem" : "System");
-  setText("brandSubtitle", currentLanguage === "tr" ? "Cihazdan bağımsız DSC/TGA çalışma alanı" : "Vendor-independent DSC/TGA workbench");
+  setText("brandSubtitle", currentLanguage === "tr" ? "Cihazdan bağımsız DSC/TGA/DTA çalışma alanı" : "Vendor-independent DSC/TGA/DTA workbench");
   setText(
     "previewToggleLabel",
     currentLanguage === "tr"
@@ -237,21 +241,18 @@ function applyStaticLanguage() {
   setText(
     "sidebarAboutCopy",
     currentLanguage === "tr"
-      ? "Kararlı kapsam: DSC/TGA, Karşılaştırma Alanı, Toplu Şablon Uygulayıcı, proje arşivi ve CSV/DOCX çıktıları."
-      : "Stable scope: DSC/TGA, Compare Workspace, Batch Template Runner, project archive, and CSV/DOCX outputs."
+      ? "Kararlı kapsam: DSC/TGA/DTA, Karşılaştırma Alanı, Toplu Şablon Uygulayıcı, proje arşivi ve CSV/DOCX çıktıları."
+      : "Stable scope: DSC/TGA/DTA, Compare Workspace, Batch Template Runner, project archive, and CSV/DOCX outputs."
   );
   setText("navHomeBtn", t("nav.home"));
   setText("navCompareBtn", t("nav.compare"));
   setText("navDscBtn", t("nav.dsc"));
+  setText("navDtaBtn", t("nav.dta"));
   setText("navTgaBtn", t("nav.tga"));
   setText("navExportBtn", t("nav.export"));
   setText("navProjectBtn", t("nav.project"));
   setText("navLicenseBtn", t("nav.license"));
   setText("navDiagnosticsBtn", t("nav.diagnostics"));
-  setText(
-    "navPreviewDtaBtn",
-    currentLanguage === "tr" ? "DTA Analizi (Deneysel)" : "DTA Analysis (Experimental)"
-  );
   setText(
     "navPreviewKineticsBtn",
     currentLanguage === "tr" ? "Kinetik Analiz (Deneysel)" : "Kinetic Analysis (Experimental)"
@@ -265,8 +266,8 @@ function applyStaticLanguage() {
   setText(
     "homeViewCopy",
     currentLanguage === "tr"
-      ? "Termal analiz koşularını içe aktar, metadata’yı gözden geçir ve kararlı DSC/TGA akışına hazırla."
-      : "Import thermal runs, review metadata, and prepare stable DSC/TGA workflow execution."
+      ? "Termal analiz koşularını içe aktar, metadata’yı gözden geçir ve kararlı DSC/TGA/DTA akışına hazırla."
+      : "Import thermal runs, review metadata, and prepare stable DSC/TGA/DTA workflow execution."
   );
   setText("homeHeroTitle", currentLanguage === "tr" ? "Çalışma Başlangıcı" : "Workspace Entry");
   setText(
@@ -283,8 +284,8 @@ function applyStaticLanguage() {
   setText(
     "homeWorkflowSubtitle",
     currentLanguage === "tr"
-      ? "Kararlı zincir: Veri Al → Karşılaştırma → DSC/TGA → Toplu Şablon → Rapor/Proje"
-      : "Stable chain: Import → Compare → DSC/TGA → Batch Template → Report/Project"
+      ? "Kararlı zincir: Veri Al → Karşılaştırma → DSC/DTA/TGA → Toplu Şablon → Rapor/Proje"
+      : "Stable chain: Import → Compare → DSC/DTA/TGA → Batch Template → Report/Project"
   );
   setText("homeImportTitle", currentLanguage === "tr" ? "Veri İçe Aktar" : "Import Runs");
   setText(
@@ -355,6 +356,20 @@ function applyStaticLanguage() {
   setText("runDscAnalysisBtn", currentLanguage === "tr" ? "DSC Analizini Çalıştır" : "Run DSC Analysis");
   setText("inspectSelectedDatasetBtn", currentLanguage === "tr" ? "Seçili Veri Setini İncele" : "Inspect Selected Dataset");
 
+  setText("dtaViewTitle", currentLanguage === "tr" ? "DTA Analizi" : "DTA Analysis");
+  setText(
+    "dtaViewCopy",
+    currentLanguage === "tr"
+      ? "Kararlı DTA akışını veri seti bağlamı, doğrulama görünürlüğü ve şablon sürekliliği ile adım adım yürüt."
+      : "Run guided stable DTA workflow with dataset context, validation visibility, and template continuity."
+  );
+  setText("dtaStep1Title", currentLanguage === "tr" ? "Adım 1 - Aktif veri seti ve yöntem bağlamı" : "Step 1 - Active dataset and method context");
+  setText("dtaStep2Title", currentLanguage === "tr" ? "Adım 2 - Doğrulama ve hazır olma kontrolleri" : "Step 2 - Validation and readiness checks");
+  setText("dtaStep3Title", currentLanguage === "tr" ? "Adım 3 - DTA analizini çalıştır" : "Step 3 - Run DTA analysis");
+  setText("dtaStep4Title", currentLanguage === "tr" ? "Adım 4 - Kayıtlı sonuç bağlamı" : "Step 4 - Saved result context");
+  setText("runDtaAnalysisBtn", currentLanguage === "tr" ? "DTA Analizini Çalıştır" : "Run DTA Analysis");
+  setText("inspectSelectedDatasetBtn3", currentLanguage === "tr" ? "Seçili Veri Setini İncele" : "Inspect Selected Dataset");
+
   setText("tgaViewTitle", currentLanguage === "tr" ? "TGA Analizi" : "TGA Analysis");
   setText(
     "tgaViewCopy",
@@ -421,8 +436,8 @@ function applyStaticLanguage() {
   setText(
     "licenseFocusValue",
     currentLanguage === "tr"
-      ? "Kararlı DSC/TGA akışları, karşılaştırma alanı, proje arşivi ve CSV/DOCX çıktıları"
-      : "Stable DSC/TGA workflows, compare workspace, project archive, and CSV/DOCX outputs"
+      ? "Kararlı DSC/TGA/DTA akışları, karşılaştırma alanı, proje arşivi ve CSV/DOCX çıktıları"
+      : "Stable DSC/TGA/DTA workflows, compare workspace, project archive, and CSV/DOCX outputs"
   );
   setText("licenseNotesTitle", currentLanguage === "tr" ? "Profesör Demo Notları" : "Professor Demo Notes");
   setText(
@@ -435,13 +450,13 @@ function applyStaticLanguage() {
   if (notesList) {
     notesList.innerHTML = currentLanguage === "tr"
       ? [
-          "<li>Kararlı odak: DSC/TGA analizi, karşılaştırma alanı, proje arşivi kaydet/yükle, CSV/DOCX çıktıları.</li>",
-          "<li>Önizleme modülleri (DTA, kinetik, dekonvolüsyon) demo sözü kapsamı dışındadır.</li>",
+          "<li>Kararlı odak: DSC/TGA/DTA analizi, karşılaştırma alanı, proje arşivi kaydet/yükle, CSV/DOCX çıktıları.</li>",
+          "<li>Önizleme modülleri (kinetik, dekonvolüsyon) demo sözü kapsamı dışındadır.</li>",
           "<li>Streamlit fallback/reference implementation olarak dokunulmadan korunur.</li>",
         ].join("")
       : [
-          "<li>Stable focus: DSC/TGA analysis, compare workspace, save/load project archives, CSV/DOCX artifacts.</li>",
-          "<li>Preview modules (DTA, kinetics, deconvolution) remain outside the demo promise.</li>",
+          "<li>Stable focus: DSC/TGA/DTA analysis, compare workspace, save/load project archives, CSV/DOCX artifacts.</li>",
+          "<li>Preview modules (kinetics, deconvolution) remain outside the demo promise.</li>",
           "<li>Streamlit remains available as untouched fallback/reference implementation.</li>",
         ].join("");
   }
@@ -488,8 +503,10 @@ function updateStatusWorkspace() {
 function updateAnalysisActionState() {
   const enabled = Boolean(activeProjectId && selectedDatasetKey);
   setDisabled("runDscAnalysisBtn", !enabled);
+  setDisabled("runDtaAnalysisBtn", !enabled);
   setDisabled("runTgaAnalysisBtn", !enabled);
   setDisabled("inspectSelectedDatasetBtn", !enabled);
+  setDisabled("inspectSelectedDatasetBtn3", !enabled);
   setDisabled("inspectSelectedDatasetBtn2", !enabled);
   setDisabled("addSelectedToCompareBtn", !enabled);
   setDisabled("removeSelectedFromCompareBtn", !enabled);
@@ -652,6 +669,7 @@ function isDatasetEligibleForAnalysis(analysisType, datasetType) {
   const token = String(analysisType || "").toUpperCase();
   const dtype = String(datasetType || "UNKNOWN").toUpperCase();
   if (token === "DSC") return dtype === "DSC" || dtype === "DTA" || dtype === "UNKNOWN";
+  if (token === "DTA") return dtype === "DTA" || dtype === "UNKNOWN";
   if (token === "TGA") return dtype === "TGA" || dtype === "UNKNOWN";
   return false;
 }
@@ -670,10 +688,14 @@ function findLatestResultByType(analysisType) {
 
 function renderAnalysisPage(analysisType) {
   const token = String(analysisType || "").toUpperCase();
-  const isDsc = token === "DSC";
+  const profile = {
+    DSC: { prefix: "dsc", defaultTemplate: "dsc.general" },
+    DTA: { prefix: "dta", defaultTemplate: "dta.general" },
+    TGA: { prefix: "tga", defaultTemplate: "tga.general" },
+  }[token] || { prefix: "dsc", defaultTemplate: "dsc.general" };
   const isTr = currentLanguage === "tr";
-  const prefix = isDsc ? "dsc" : "tga";
-  const defaultTemplate = isDsc ? "dsc.general" : "tga.general";
+  const prefix = profile.prefix;
+  const defaultTemplate = profile.defaultTemplate;
   const dataset = (currentDatasets || []).find((item) => item.key === selectedDatasetKey) || null;
   const detail = currentDatasetDetail && currentDatasetDetail.dataset && currentDatasetDetail.dataset.key === selectedDatasetKey
     ? currentDatasetDetail
@@ -713,12 +735,20 @@ function renderAnalysisPage(analysisType) {
 
   setHtml(
     `${prefix}MethodContextPanel`,
-    isDsc
+    token === "DSC"
       ? `
       ${keyGrid([
         { label: isTr ? "Önerilen İş Akışı Şablonu" : "Suggested Workflow Template", value: defaultTemplate },
         { label: isTr ? "Seçili Veri Tipi" : "Selected Dataset Type", value: valueOr(dataset && dataset.data_type, t("common.none")) },
         { label: isTr ? "Doğrulama Durumu" : "Validation Status", value: valueOr(validation.status, dataset ? dataset.validation_status : t("common.unknown")) },
+      ])}
+      `
+      : token === "DTA"
+      ? `
+      ${keyGrid([
+        { label: isTr ? "Önerilen İş Akışı Şablonu" : "Suggested Workflow Template", value: defaultTemplate },
+        { label: isTr ? "Seçili Veri Tipi" : "Selected Dataset Type", value: valueOr(dataset && dataset.data_type, t("common.none")) },
+        { label: isTr ? "Sinyal Birimi" : "Signal Unit", value: valueOr(units.signal, "n/a") },
       ])}
       `
       : `
@@ -742,7 +772,7 @@ function renderAnalysisPage(analysisType) {
   `;
   setHtml(`${prefix}ValidationPanel`, validationContextHtml);
 
-  if (!isDsc) {
+  if (token === "TGA") {
     setHtml(
       "tgaUnitContextPanel",
       `
@@ -820,6 +850,7 @@ function renderAnalysisPage(analysisType) {
 
 function renderAnalysisPages() {
   renderAnalysisPage("DSC");
+  renderAnalysisPage("DTA");
   renderAnalysisPage("TGA");
 }
 
@@ -1534,6 +1565,7 @@ async function refreshWorkspaceViews() {
     currentDatasetDetail = null;
     currentResultDetail = null;
     lastAnalysisRuns.DSC = null;
+    lastAnalysisRuns.DTA = null;
     lastAnalysisRuns.TGA = null;
     currentResults = [];
     selectedDatasetKey = null;
@@ -1582,6 +1614,12 @@ async function refreshWorkspaceViews() {
     setHtml("dscTemplateContextPanel", currentLanguage === "tr" ? "İş akışı şablon bağlamı burada görünecek." : "Workflow template context will appear here.");
     setHtml("dscResultSummaryPanel", currentLanguage === "tr" ? "Henüz DSC sonuç bağlamı yok." : "No DSC result context yet.");
     setText("dscAnalysisInfo", currentLanguage === "tr" ? "Henüz DSC analizi çalıştırılmadı." : "No DSC analysis executed yet.");
+    setHtml("dtaActiveDatasetContextPanel", currentLanguage === "tr" ? "DTA bağlamını başlatmak için Veri Al sayfasından bir veri seti seç." : "Select a dataset from Home / Import to begin DTA context.");
+    setHtml("dtaMethodContextPanel", currentLanguage === "tr" ? "DTA işlem bağlamı burada görünecek." : "DTA processing context will appear here.");
+    setHtml("dtaValidationPanel", currentLanguage === "tr" ? "Doğrulama özeti, veri seti incelendikten sonra görünür." : "Validation summary will appear after dataset inspection.");
+    setHtml("dtaTemplateContextPanel", currentLanguage === "tr" ? "İş akışı şablon bağlamı burada görünecek." : "Workflow template context will appear here.");
+    setHtml("dtaResultSummaryPanel", currentLanguage === "tr" ? "Henüz DTA sonuç bağlamı yok." : "No DTA result context yet.");
+    setText("dtaAnalysisInfo", currentLanguage === "tr" ? "Henüz DTA analizi çalıştırılmadı." : "No DTA analysis executed yet.");
     setHtml("tgaActiveDatasetContextPanel", currentLanguage === "tr" ? "TGA bağlamını başlatmak için Veri Al sayfasından bir veri seti seç." : "Select a dataset from Home / Import to begin TGA context.");
     setHtml("tgaUnitContextPanel", currentLanguage === "tr" ? "TGA birim ve import-review bağlamı burada görünecek." : "TGA unit and import-review context will appear here.");
     setHtml("tgaValidationPanel", currentLanguage === "tr" ? "Doğrulama özeti, veri seti incelendikten sonra görünür." : "Validation summary will appear after dataset inspection.");
@@ -1743,7 +1781,11 @@ async function onRunAnalysis(analysisType) {
     appendLog(currentLanguage === "tr" ? `${analysisType} çalıştırma atlandı: önce bir veri seti seçin.` : `Run ${analysisType} skipped: select a dataset first.`);
     return;
   }
-  const infoId = analysisType === "DSC" ? "dscAnalysisInfo" : "tgaAnalysisInfo";
+  const infoId = {
+    DSC: "dscAnalysisInfo",
+    DTA: "dtaAnalysisInfo",
+    TGA: "tgaAnalysisInfo",
+  }[analysisType] || "dscAnalysisInfo";
   try {
     const run = await window.taDesktop.runAnalysis(activeProjectId, selectedDatasetKey, analysisType);
     lastAnalysisRuns[analysisType] = {
@@ -1846,8 +1888,13 @@ async function onClearCompareSelection() {
 function onBatchAnalysisTypeChanged() {
   const analysisType = el("batchAnalysisTypeSelect").value;
   const templateInput = el("batchTemplateIdInput");
-  if (!templateInput.value || templateInput.value === "dsc.general" || templateInput.value === "tga.general") {
-    templateInput.value = analysisType === "TGA" ? "tga.general" : "dsc.general";
+  if (
+    !templateInput.value
+    || templateInput.value === "dsc.general"
+    || templateInput.value === "dta.general"
+    || templateInput.value === "tga.general"
+  ) {
+    templateInput.value = analysisType === "TGA" ? "tga.general" : analysisType === "DTA" ? "dta.general" : "dsc.general";
   }
 }
 
@@ -1973,8 +2020,14 @@ el("refreshWorkspaceContextBtn").addEventListener("click", refreshWorkspaceConte
 el("refreshWorkspaceContextBtnProjectView").addEventListener("click", refreshWorkspaceContext);
 el("importDatasetBtn").addEventListener("click", onImportDataset);
 el("runDscAnalysisBtn").addEventListener("click", () => onRunAnalysis("DSC"));
+el("runDtaAnalysisBtn").addEventListener("click", () => onRunAnalysis("DTA"));
 el("runTgaAnalysisBtn").addEventListener("click", () => onRunAnalysis("TGA"));
 el("inspectSelectedDatasetBtn").addEventListener("click", async () => {
+  if (!selectedDatasetKey) return;
+  switchView("home");
+  await loadDatasetDetail(selectedDatasetKey);
+});
+el("inspectSelectedDatasetBtn3").addEventListener("click", async () => {
   if (!selectedDatasetKey) return;
   switchView("home");
   await loadDatasetDetail(selectedDatasetKey);
