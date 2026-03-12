@@ -331,6 +331,22 @@ def _record_key_results(record: dict) -> dict[str, str]:
             "sample_mass",
             "heating_rate",
         )
+    elif analysis_type == "XRD":
+        keep = (
+            "match_status",
+            "top_phase_id",
+            "top_phase",
+            "top_phase_score",
+            "confidence_band",
+            "candidate_count",
+            "reference_candidate_count",
+            "match_tolerance_deg",
+            "caution_code",
+            "caution_message",
+            "sample_name",
+            "sample_mass",
+            "heating_rate",
+        )
     else:
         keep = tuple(summary.keys())
     return _table_payload({key: summary.get(key) for key in keep})
@@ -370,6 +386,27 @@ def _record_metric_snapshot(record: dict) -> str:
             [
                 f"match status {match_status}",
                 f"top score {top_score}",
+                f"caution {caution}",
+            ]
+        )
+    if analysis_type == "XRD":
+        match_status = str(summary.get("match_status") or "not_recorded")
+        confidence_band = str(summary.get("confidence_band") or "not_recorded")
+        top_score = _format_number(summary.get("top_phase_score"), digits=3)
+        top_phase = summary.get("top_phase") or summary.get("top_phase_id") or "N/A"
+        if match_status.lower() == "matched":
+            return ", ".join(
+                [
+                    f"top phase {top_phase}",
+                    f"score {top_score}",
+                    f"confidence {confidence_band}",
+                ]
+            )
+        caution = summary.get("caution_code") or "xrd_no_match"
+        return ", ".join(
+            [
+                f"match status {match_status}",
+                f"top phase score {top_score}",
                 f"caution {caution}",
             ]
         )
@@ -486,9 +523,16 @@ def _comparison_dataset_label(dataset_key: str, datasets: dict, records: list[di
     return _paper_display_label(dataset_key, datasets, record=record)
 
 
-def _comparison_missing_metadata(selected: list[str], datasets: dict) -> list[str]:
+def _comparison_missing_metadata(selected: list[str], datasets: dict, *, analysis_type: str | None = None) -> list[str]:
+    normalized = str(analysis_type or "").upper()
+    if normalized == "TGA":
+        required = (("heating_rate", "heating rate"), ("atmosphere", "atmosphere"))
+    elif normalized == "XRD":
+        required = (("xrd_wavelength_angstrom", "wavelength"), ("xrd_axis_unit", "xrd axis unit"))
+    else:
+        required = (("heating_rate", "heating rate"),)
     missing: list[str] = []
-    for key, label in (("heating_rate", "heating rate"), ("atmosphere", "atmosphere")):
+    for key, label in required:
         if any(not ((getattr(datasets.get(dataset_key), "metadata", {}) or {}).get(key)) for dataset_key in selected):
             missing.append(label)
     return missing
@@ -676,7 +720,7 @@ def _build_comparison_payload(comparison_workspace: dict | None, datasets: dict,
     metric_rows: list[list[str]] = []
     reportable_metric_records: list[dict[str, Any]] = []
     excluded_dataset_labels: list[str] = []
-    missing_metadata = _comparison_missing_metadata(selected, datasets)
+    missing_metadata = _comparison_missing_metadata(selected, datasets, analysis_type=normalized_analysis)
 
     if normalized_analysis == "TGA":
         metric_headers = ["Dataset", "Total Mass Loss (%)", "Final Residue (%)", "Step Count"]
@@ -1206,6 +1250,13 @@ def _record_main_mini_table(record: dict) -> tuple[list[str], list[list[str]]] |
             ["Tg Midpoint (°C)", _format_number(summary.get("tg_midpoint"))],
             ["Delta Cp", _format_number(summary.get("delta_cp"))],
         ]
+    elif analysis == "XRD":
+        payload = [
+            ["Peak Count", _format_value(summary.get("peak_count"))],
+            ["Top Phase Score", _format_number(summary.get("top_phase_score"), digits=3)],
+            ["Confidence Band", _format_value(summary.get("confidence_band"))],
+            ["Match Status", _format_value(summary.get("match_status"))],
+        ]
     else:
         payload = []
         for key, value in summary.items():
@@ -1289,9 +1340,20 @@ def _reference_visibility(record: dict) -> str:
     return f"{reference.name} ({reference.temperature_c:.1f} °C, ΔT {delta:+.1f} °C{standard})"
 
 
+def _xrd_caution_note(summary_payload: dict[str, Any]) -> str:
+    match_status = str(summary_payload.get("match_status") or "").strip().lower()
+    confidence_band = str(summary_payload.get("confidence_band") or "").strip().lower()
+    caution_message = str(summary_payload.get("caution_message") or "").strip()
+    if match_status == "no_match":
+        return caution_message or "No candidate exceeded the minimum match threshold; treat as qualitative caution outcome."
+    if match_status == "matched" and confidence_band == "low":
+        return caution_message or "Top candidate is low confidence; review peak-evidence table before interpretation."
+    return "None"
+
+
 def _domain_method_summary(record: dict) -> dict[str, str] | None:
-    analysis_type = record.get("analysis_type")
-    if analysis_type not in {"DSC", "TGA", "FTIR", "RAMAN"}:
+    analysis_type = str(record.get("analysis_type") or "").upper()
+    if analysis_type not in {"DSC", "TGA", "FTIR", "RAMAN", "XRD"}:
         return None
 
     processing = ensure_processing_payload(record.get("processing"), analysis_type=analysis_type) if record.get("processing") else {}
@@ -1321,6 +1383,23 @@ def _domain_method_summary(record: dict) -> dict[str, str] | None:
         return _table_payload(summary)
 
     summary_payload = record.get("summary") or {}
+    if analysis_type == "XRD":
+        summary = {
+            "Template": processing.get("workflow_template_label") or processing.get("workflow_template") or "Not recorded",
+            "Axis Normalization": _format_processing_step(_processing_step(processing, "axis_normalization")),
+            "Smoothing": _format_processing_step(_processing_step(processing, "smoothing")),
+            "Baseline": _format_processing_step(_processing_step(processing, "baseline")),
+            "Peak Detection": _format_processing_step(_processing_step(processing, "peak_detection")),
+            "Phase Matching Metric": method_context.get("xrd_match_metric") or "Not recorded",
+            "Phase Matching Tolerance (deg)": _format_value(method_context.get("xrd_match_tolerance_deg")),
+            "Phase Matching Minimum Score": _format_value(method_context.get("xrd_match_minimum_score")),
+            "Match Status": summary_payload.get("match_status") or "Not recorded",
+            "Confidence Band": summary_payload.get("confidence_band") or "Not recorded",
+            "Caution Code": summary_payload.get("caution_code") or "None",
+            "Caution Note": _xrd_caution_note(summary_payload),
+        }
+        return _table_payload(summary)
+
     summary = {
         "Template": processing.get("workflow_template_label") or processing.get("workflow_template") or "Not recorded",
         "Smoothing": _format_processing_step(_processing_step(processing, "smoothing")),

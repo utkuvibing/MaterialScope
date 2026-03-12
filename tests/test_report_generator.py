@@ -30,6 +30,7 @@ from core.result_serialization import (
     serialize_ofw_results,
     serialize_spectral_result,
     serialize_tga_result,
+    serialize_xrd_result,
 )
 from core.tga_processor import TGAProcessor, resolve_tga_unit_interpretation
 from core.validation import validate_thermal_dataset
@@ -332,6 +333,86 @@ def _make_ftir_no_match_record():
     return record, dataset
 
 
+def _make_xrd_no_match_record():
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": [18.2, 27.5, 36.1, 44.8], "signal": [130.0, 290.0, 175.0, 120.0]}),
+        metadata={
+            "sample_name": "SyntheticXRD",
+            "sample_mass": 1.0,
+            "instrument": "XRDBench",
+            "vendor": "TestVendor",
+            "display_name": "Synthetic XRD Pattern",
+            "xrd_axis_role": "two_theta",
+            "xrd_axis_unit": "degree_2theta",
+            "xrd_wavelength_angstrom": 1.5406,
+        },
+        data_type="XRD",
+        units={"temperature": "degree_2theta", "signal": "counts"},
+        original_columns={"temperature": "two_theta", "signal": "intensity"},
+        file_path="",
+    )
+    processing = ensure_processing_payload(
+        analysis_type="XRD",
+        workflow_template="xrd.general",
+        workflow_template_label="General XRD",
+    )
+    processing = update_processing_step(processing, "axis_normalization", {"axis_min": 10.0, "axis_max": 80.0})
+    processing = update_processing_step(processing, "peak_detection", {"method": "scipy_find_peaks", "prominence": 0.08, "distance": 6})
+    processing = update_method_context(
+        processing,
+        {
+            "xrd_match_metric": "peak_overlap_weighted",
+            "xrd_match_tolerance_deg": 0.28,
+            "xrd_match_minimum_score": 0.42,
+            "xrd_match_top_n": 5,
+        },
+        analysis_type="XRD",
+    )
+
+    record = serialize_xrd_result(
+        "synthetic_xrd",
+        dataset,
+        summary={
+            "peak_count": 4,
+            "match_status": "no_match",
+            "candidate_count": 1,
+            "top_phase_id": None,
+            "top_phase": None,
+            "top_phase_score": 0.33,
+            "confidence_band": "no_match",
+            "caution_code": "xrd_no_match",
+            "caution_message": "No candidate exceeded threshold; qualitative caution required.",
+        },
+        rows=[
+            {
+                "rank": 1,
+                "candidate_id": "xrd_phase_alpha",
+                "candidate_name": "Phase Alpha",
+                "normalized_score": 0.33,
+                "confidence_band": "no_match",
+                "evidence": {
+                    "shared_peak_count": 0,
+                    "weighted_overlap_score": 0.11,
+                    "mean_delta_position": None,
+                    "unmatched_major_peak_count": 3,
+                    "tolerance_deg": 0.28,
+                },
+            }
+        ],
+        artifacts={"figure_keys": ["XRD Analysis - synthetic_xrd"]},
+        processing=processing,
+        provenance={"saved_at_utc": "2026-03-12T02:00:00+00:00", "app_version": "2.0"},
+        validation={
+            "status": "warn",
+            "issues": [],
+            "warnings": ["XRD no-match output is cautionary."],
+            "checks": {"caution_state_output": "no_match"},
+        },
+        review={"commercial_scope": "stable_xrd", "batch_runner": "compare_workspace"},
+    )
+    return record, dataset
+
+
 def test_generate_docx_report_returns_docx_bytes(thermal_dataset):
     docx_bytes = generate_docx_report(results={}, datasets={"synthetic_dsc": thermal_dataset})
     assert isinstance(docx_bytes, bytes)
@@ -509,6 +590,25 @@ def test_generate_docx_report_renders_ftir_no_match_caution_fields():
     assert "Caution Code" in xml
     assert "spectral_no_match" in xml
     assert "Confidence Band" in xml
+
+
+def test_generate_docx_report_renders_xrd_no_match_caution_fields():
+    xrd_record, xrd_dataset = _make_xrd_no_match_record()
+    docx_bytes = generate_docx_report(
+        results={xrd_record["id"]: xrd_record},
+        datasets={"synthetic_xrd": xrd_dataset},
+    )
+
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "XRD - synthetic_xrd" in xml
+    assert "Match Status" in xml
+    assert "no_match" in xml
+    assert "Caution Code" in xml
+    assert "xrd_no_match" in xml
+    assert "Phase Matching Metric" in xml
+    assert "qualitative caution" in xml
 
 
 def test_generate_docx_report_hides_operational_fields_from_experimental_conditions(thermal_dataset):

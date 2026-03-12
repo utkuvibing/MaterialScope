@@ -75,12 +75,17 @@ def generate_results_csv_artifact(state: dict[str, Any], *, selected_result_ids:
 def generate_report_docx_artifact(state: dict[str, Any], *, selected_result_ids: list[str] | None) -> dict[str, Any]:
     valid_results, issues = split_valid_results((state.get("results") or {}))
     selected = _selected_records(valid_results, selected_result_ids)
+    normalized_workspace = normalize_compare_workspace(state)
+    if hasattr(normalized_workspace, "model_dump"):
+        comparison_workspace = normalized_workspace.model_dump()
+    else:  # pragma: no cover - pydantic v1 compatibility
+        comparison_workspace = normalized_workspace.dict()
     docx_bytes = generate_docx_report(
         results=selected,
         datasets=state.get("datasets") or {},
         figures=state.get("figures") or {},
         branding=state.get("branding") or {},
-        comparison_workspace=state.get("comparison_workspace") or {},
+        comparison_workspace=comparison_workspace,
         license_state=state.get("license_state") or {},
     )
     docx_base64 = base64.b64encode(docx_bytes).decode("ascii")

@@ -10,8 +10,8 @@ from fastapi.testclient import TestClient
 from backend.app import create_app
 from backend.exports import build_export_preparation, generate_report_docx_artifact, generate_results_csv_artifact
 from core.data_io import ThermalDataset
-from core.processing_schema import ensure_processing_payload, update_processing_step
-from core.result_serialization import serialize_spectral_result
+from core.processing_schema import ensure_processing_payload, update_method_context, update_processing_step
+from core.result_serialization import serialize_spectral_result, serialize_xrd_result
 
 
 def _headers() -> dict[str, str]:
@@ -215,6 +215,85 @@ def _build_spectral_export_state() -> tuple[dict, str]:
     return state, spectral_record["id"]
 
 
+def _build_xrd_export_state() -> tuple[dict, str]:
+    dataset_key = "xrd_export_seed"
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": [18.2, 27.5, 36.1, 44.8], "signal": [130.0, 290.0, 175.0, 120.0]}),
+        metadata={
+            "sample_name": "SyntheticXRD",
+            "sample_mass": 1.0,
+            "instrument": "XRDBench",
+            "vendor": "TestVendor",
+            "display_name": "Synthetic XRD Pattern",
+            "xrd_axis_role": "two_theta",
+            "xrd_axis_unit": "degree_2theta",
+            "xrd_wavelength_angstrom": 1.5406,
+        },
+        data_type="XRD",
+        units={"temperature": "degree_2theta", "signal": "counts"},
+        original_columns={"temperature": "two_theta", "signal": "intensity"},
+        file_path="",
+    )
+    processing = ensure_processing_payload(analysis_type="XRD", workflow_template="xrd.general")
+    processing = update_method_context(
+        processing,
+        {
+            "xrd_match_metric": "peak_overlap_weighted",
+            "xrd_match_tolerance_deg": 0.28,
+            "xrd_match_minimum_score": 0.42,
+            "xrd_match_top_n": 5,
+        },
+        analysis_type="XRD",
+    )
+    xrd_record = serialize_xrd_result(
+        dataset_key,
+        dataset,
+        summary={
+            "peak_count": 4,
+            "match_status": "no_match",
+            "candidate_count": 1,
+            "top_phase_id": None,
+            "top_phase": None,
+            "top_phase_score": 0.33,
+            "confidence_band": "no_match",
+            "caution_code": "xrd_no_match",
+            "caution_message": "No candidate exceeded threshold; qualitative caution required.",
+            "reference_candidate_count": 2,
+            "match_tolerance_deg": 0.28,
+        },
+        rows=[
+            {
+                "rank": 1,
+                "candidate_id": "xrd_phase_alpha",
+                "candidate_name": "Phase Alpha",
+                "normalized_score": 0.33,
+                "confidence_band": "no_match",
+                "evidence": {
+                    "shared_peak_count": 0,
+                    "weighted_overlap_score": 0.11,
+                    "mean_delta_position": None,
+                    "unmatched_major_peak_count": 3,
+                    "tolerance_deg": 0.28,
+                },
+            }
+        ],
+        artifacts={"figure_keys": []},
+        processing=processing,
+        validation={"status": "warn", "issues": [], "warnings": ["XRD no-match should be interpreted cautiously."]},
+    )
+    state = {
+        "datasets": {dataset_key: dataset},
+        "results": {xrd_record["id"]: xrd_record},
+        "figures": {},
+        "comparison_workspace": {
+            "analysis_type": "XRD",
+            "selected_datasets": [dataset_key],
+            "notes": "XRD qualitative caution lane",
+        },
+    }
+    return state, xrd_record["id"]
+
+
 def test_export_preparation_includes_spectral_workspace_and_results():
     state, result_id = _build_spectral_export_state()
     prep = build_export_preparation(state)
@@ -243,3 +322,36 @@ def test_export_artifacts_preserve_spectral_caution_fields():
     assert "Match Status" in xml
     assert "Caution Code" in xml
     assert "spectral_no_match" in xml
+
+
+def test_export_preparation_includes_xrd_workspace_and_results():
+    state, result_id = _build_xrd_export_state()
+    prep = build_export_preparation(state)
+    compare_workspace = prep["compare_workspace"]
+
+    assert compare_workspace.analysis_type == "XRD"
+    assert compare_workspace.selected_datasets == ["xrd_export_seed"]
+    assert len(prep["exportable_results"]) == 1
+    assert prep["exportable_results"][0].id == result_id
+    assert prep["exportable_results"][0].analysis_type == "XRD"
+
+
+def test_export_artifacts_preserve_xrd_caution_fields_and_method_context():
+    state, result_id = _build_xrd_export_state()
+
+    csv_artifact = generate_results_csv_artifact(state, selected_result_ids=[result_id])
+    csv_text = base64.b64decode(csv_artifact["artifact_base64"].encode("ascii")).decode("utf-8")
+    assert "xrd_no_match" in csv_text
+    assert "top_phase_score" in csv_text
+    assert "xrd_match_metric" in csv_text
+
+    docx_artifact = generate_report_docx_artifact(state, selected_result_ids=[result_id])
+    docx_bytes = base64.b64decode(docx_artifact["artifact_base64"].encode("ascii"))
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "XRD - xrd_export_seed" in xml
+    assert "Top Phase Score" in xml
+    assert "Caution Code" in xml
+    assert "xrd_no_match" in xml
+    assert "Phase Matching Metric" in xml
