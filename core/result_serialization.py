@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import json
 import math
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from core.dsc_processor import GlassTransition
 from core.peak_analysis import ThermalPeak
@@ -312,6 +312,77 @@ def _build_dta_scientific_context(
     return _attach_reasoning(
         base_context=base_context,
         analysis_type="DTA",
+        summary=summary,
+        rows=rows or [],
+        metadata=metadata or {},
+        fit_quality=(base_context or {}).get("fit_quality"),
+        validation=validation,
+    )
+
+
+def _build_spectral_scientific_context(
+    summary: dict[str, Any],
+    *,
+    analysis_type: str,
+    rows: list[dict[str, Any]] | None = None,
+    metadata: dict[str, Any] | None = None,
+    processing: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    normalized_type = str(analysis_type or "").upper() or "SPECTRAL"
+    methodology = {
+        "analysis_family": f"{normalized_type} Spectral Similarity",
+        "workflow_template": (processing or {}).get("workflow_template_label")
+        or (processing or {}).get("workflow_template")
+        or f"General {normalized_type}",
+        "signal_pipeline": (processing or {}).get("signal_pipeline") or {},
+        "analysis_steps": (processing or {}).get("analysis_steps") or {},
+    }
+    equations = [
+        build_equation(
+            "Similarity Normalization",
+            "normalized_score = clip((similarity + 1) / 2, 0, 1)",
+            notes="Applies to cosine/pearson similarities before confidence-band assignment.",
+        )
+    ]
+    interpretation = [
+        build_interpretation(
+            "Ranked reference candidates were generated for this spectrum.",
+            metric="candidate_count",
+            value=summary.get("candidate_count"),
+            unit="candidates",
+        ),
+        build_interpretation(
+            "Top candidate confidence was normalized and banded.",
+            metric="top_match_score",
+            value=summary.get("top_match_score"),
+            implication=f"match_status={summary.get('match_status')}",
+        ),
+    ]
+    limitations = [
+        "Similarity confidence depends on reference-library coverage and preprocessing assumptions.",
+        "No-match outcomes are valid cautionary results and should not be interpreted as forced identification.",
+    ]
+    warnings = _validation_warnings(validation)
+    caution_code = summary.get("caution_code")
+    if caution_code:
+        warnings.append(f"Caution: {caution_code}")
+    base_context = build_scientific_context(
+        methodology=methodology,
+        equations=equations,
+        numerical_interpretation=interpretation,
+        fit_quality=build_fit_quality(
+            {
+                "confidence_band": summary.get("confidence_band"),
+                "top_match_score": summary.get("top_match_score"),
+            }
+        ),
+        warnings=warnings,
+        limitations=limitations,
+    )
+    return _attach_reasoning(
+        base_context=base_context,
+        analysis_type=normalized_type,
         summary=summary,
         rows=rows or [],
         metadata=metadata or {},
@@ -807,6 +878,113 @@ def serialize_dta_result(
         or _build_dta_scientific_context(
             summary,
             rows=rows,
+            metadata=dataset.metadata,
+            processing=processing,
+            validation=validation,
+        ),
+    )
+
+
+def serialize_spectral_result(
+    dataset_key: str,
+    dataset,
+    *,
+    analysis_type: str,
+    summary: Mapping[str, Any] | None = None,
+    rows: Iterable[Mapping[str, Any]] | None = None,
+    status: str = "stable",
+    artifacts: dict[str, Any] | None = None,
+    processing: dict[str, Any] | None = None,
+    provenance: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
+    review: dict[str, Any] | None = None,
+    scientific_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Serialize a stable FTIR/RAMAN spectral-similarity record."""
+    normalized_type = str(analysis_type or "").upper()
+    if normalized_type not in {"FTIR", "RAMAN"}:
+        raise ValueError(f"Unsupported spectral analysis_type: {analysis_type}")
+
+    normalized_rows: list[dict[str, Any]] = []
+    for index, item in enumerate(rows or [], start=1):
+        payload = dict(item or {})
+        normalized_rows.append(
+            {
+                "rank": int(payload.get("rank") or index),
+                "candidate_id": payload.get("candidate_id"),
+                "candidate_name": payload.get("candidate_name"),
+                "normalized_score": _clean_scalar(payload.get("normalized_score")),
+                "confidence_band": payload.get("confidence_band"),
+                "evidence": copy.deepcopy(payload.get("evidence") or {}),
+            }
+        )
+
+    normalized_summary = dict(summary or {})
+    normalized_summary.setdefault("peak_count", 0)
+    normalized_summary.setdefault("candidate_count", len(normalized_rows))
+    normalized_summary.setdefault("match_status", "no_match")
+    normalized_summary.setdefault("confidence_band", "no_match")
+    normalized_summary.setdefault("top_match_score", 0.0)
+    normalized_summary.setdefault("top_match_id", None)
+    normalized_summary.setdefault("top_match_name", None)
+    normalized_summary.setdefault("sample_name", dataset.metadata.get("sample_name"))
+    normalized_summary.setdefault("sample_mass", dataset.metadata.get("sample_mass"))
+    normalized_summary.setdefault("heating_rate", dataset.metadata.get("heating_rate"))
+    normalized_summary["top_match_score"] = _clean_scalar(normalized_summary.get("top_match_score"))
+
+    match_status = str(normalized_summary.get("match_status") or "").lower()
+    confidence_band = str(normalized_summary.get("confidence_band") or "").lower()
+    caution_payload = {}
+    if match_status == "no_match":
+        caution_payload = {
+            "code": str(normalized_summary.get("caution_code") or "spectral_no_match"),
+            "message": str(
+                normalized_summary.get("caution_message")
+                or "No reference candidate met the minimum similarity threshold."
+            ),
+            "top_match_score": _clean_scalar(normalized_summary.get("top_match_score")),
+        }
+    elif match_status == "matched" and confidence_band == "low":
+        caution_payload = {
+            "code": str(normalized_summary.get("caution_code") or "spectral_low_confidence"),
+            "message": str(
+                normalized_summary.get("caution_message")
+                or "Top candidate confidence is low; review spectral evidence before definitive interpretation."
+            ),
+            "top_match_score": _clean_scalar(normalized_summary.get("top_match_score")),
+        }
+
+    if caution_payload:
+        normalized_summary["caution_code"] = caution_payload["code"]
+        normalized_summary["caution_message"] = caution_payload["message"]
+    else:
+        normalized_summary.setdefault("caution_code", "")
+        normalized_summary.setdefault("caution_message", "")
+
+    review_payload = copy.deepcopy(review or {})
+    if caution_payload:
+        review_payload["caution"] = caution_payload
+    elif "caution" not in review_payload:
+        review_payload["caution"] = {}
+
+    return make_result_record(
+        result_id=f"{normalized_type.lower()}_{dataset_key}",
+        analysis_type=normalized_type,
+        status=status,
+        dataset_key=dataset_key,
+        metadata=dataset.metadata,
+        summary=normalized_summary,
+        rows=normalized_rows,
+        artifacts=artifacts,
+        processing=processing,
+        provenance=provenance,
+        validation=validation,
+        review=review_payload,
+        scientific_context=scientific_context
+        or _build_spectral_scientific_context(
+            normalized_summary,
+            analysis_type=normalized_type,
+            rows=normalized_rows,
             metadata=dataset.metadata,
             processing=processing,
             validation=validation,

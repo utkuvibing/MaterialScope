@@ -28,6 +28,7 @@ from core.result_serialization import (
     serialize_friedman_results,
     serialize_kissinger_result,
     serialize_ofw_results,
+    serialize_spectral_result,
     serialize_tga_result,
 )
 from core.tga_processor import TGAProcessor, resolve_tga_unit_interpretation
@@ -268,6 +269,69 @@ def _make_dta_record(thermal_dataset):
     ), dataset
 
 
+def _make_ftir_no_match_record():
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": [650.0, 980.0, 1450.0], "signal": [0.08, 0.52, 0.18]}),
+        metadata={
+            "sample_name": "SyntheticFTIR",
+            "sample_mass": 1.0,
+            "heating_rate": 1.0,
+            "instrument": "SpecBench",
+            "vendor": "TestVendor",
+            "display_name": "Synthetic FTIR Spectrum",
+        },
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "a.u."},
+        original_columns={"temperature": "wavenumber", "signal": "intensity"},
+        file_path="",
+    )
+    processing = ensure_processing_payload(
+        analysis_type="FTIR",
+        workflow_template="ftir.general",
+        workflow_template_label="General FTIR",
+    )
+    processing = update_processing_step(processing, "normalization", {"method": "vector"})
+    processing = update_processing_step(processing, "peak_detection", {"prominence": 0.05, "min_distance": 6})
+    processing = update_processing_step(processing, "similarity_matching", {"metric": "cosine", "top_n": 3, "minimum_score": 0.45})
+
+    record = serialize_spectral_result(
+        "synthetic_ftir",
+        dataset,
+        analysis_type="FTIR",
+        summary={
+            "peak_count": 3,
+            "match_status": "no_match",
+            "candidate_count": 1,
+            "top_match_id": None,
+            "top_match_name": None,
+            "top_match_score": 0.33,
+            "confidence_band": "no_match",
+            "caution_code": "spectral_no_match",
+        },
+        rows=[
+            {
+                "rank": 1,
+                "candidate_id": "ftir_ref_unknown",
+                "candidate_name": "Unknown",
+                "normalized_score": 0.33,
+                "confidence_band": "no_match",
+                "evidence": {"shared_peak_count": 0, "peak_overlap_ratio": 0.0},
+            }
+        ],
+        artifacts={"figure_keys": ["FTIR Analysis - synthetic_ftir"]},
+        processing=processing,
+        provenance={"saved_at_utc": "2026-03-12T02:00:00+00:00", "app_version": "2.0"},
+        validation={
+            "status": "warn",
+            "issues": [],
+            "warnings": ["FTIR produced no confident library match; treat this as cautionary."],
+            "checks": {"caution_state_output": "no_match"},
+        },
+        review={"commercial_scope": "stable_ftir", "batch_runner": "compare_workspace"},
+    )
+    return record, dataset
+
+
 def test_generate_docx_report_returns_docx_bytes(thermal_dataset):
     docx_bytes = generate_docx_report(results={}, datasets={"synthetic_dsc": thermal_dataset})
     assert isinstance(docx_bytes, bytes)
@@ -427,6 +491,24 @@ def test_generate_docx_report_places_stable_dta_in_stable_section(thermal_datase
     assert "DTA - synthetic_dta" in xml
     assert "outside the stable workflow guarantee" not in xml
     assert "DTA module is experimental and outside stable reporting guarantees." not in xml
+
+
+def test_generate_docx_report_renders_ftir_no_match_caution_fields():
+    ftir_record, ftir_dataset = _make_ftir_no_match_record()
+    docx_bytes = generate_docx_report(
+        results={ftir_record["id"]: ftir_record},
+        datasets={"synthetic_ftir": ftir_dataset},
+    )
+
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "FTIR - synthetic_ftir" in xml
+    assert "Match Status" in xml
+    assert "no_match" in xml
+    assert "Caution Code" in xml
+    assert "spectral_no_match" in xml
+    assert "Confidence Band" in xml
 
 
 def test_generate_docx_report_hides_operational_fields_from_experimental_conditions(thermal_dataset):

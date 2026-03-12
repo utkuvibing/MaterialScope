@@ -9,6 +9,7 @@ from core.result_serialization import (
     flatten_result_records,
     make_result_record,
     serialize_dta_result,
+    serialize_spectral_result,
     split_valid_results,
     validate_result_record,
 )
@@ -55,6 +56,24 @@ def _dta_peak() -> ThermalPeak:
         fwhm=3.0,
         peak_type="exo",
         height=0.4,
+    )
+
+
+def _spectral_dataset(analysis_type: str) -> ThermalDataset:
+    return ThermalDataset(
+        data=pd.DataFrame({"temperature": [600.0, 900.0, 1200.0], "signal": [0.1, 0.7, 0.25]}),
+        metadata={
+            "sample_name": f"Synthetic{analysis_type.upper()}",
+            "sample_mass": 1.0,
+            "heating_rate": 1.0,
+            "instrument": "SpecBench",
+            "vendor": "TestVendor",
+            "display_name": f"Synthetic {analysis_type.upper()} Spectrum",
+        },
+        data_type=analysis_type.upper(),
+        units={"temperature": "cm^-1", "signal": "a.u." if analysis_type.upper() == "FTIR" else "counts"},
+        original_columns={"temperature": "wavenumber", "signal": "intensity"},
+        file_path="",
     )
 
 
@@ -152,3 +171,86 @@ def test_flatten_result_records_emits_scientific_context_section():
 
     assert any(row["section"] == "scientific_context" and row["field"] == "methodology" for row in flat_rows)
     assert any(row["section"] == "scientific_context" and row["field"] == "equations" for row in flat_rows)
+
+
+def test_serialize_ftir_result_persists_no_match_caution_and_evidence():
+    dataset = _spectral_dataset("FTIR")
+    processing = ensure_processing_payload(analysis_type="FTIR", workflow_template="ftir.general")
+    processing = update_processing_step(processing, "similarity_matching", {"metric": "cosine", "top_n": 3, "minimum_score": 0.45})
+
+    record = serialize_spectral_result(
+        "synthetic_ftir",
+        dataset,
+        analysis_type="FTIR",
+        summary={
+            "peak_count": 3,
+            "match_status": "no_match",
+            "candidate_count": 1,
+            "top_match_id": None,
+            "top_match_name": None,
+            "top_match_score": 0.31,
+            "confidence_band": "no_match",
+            "caution_code": "spectral_no_match",
+        },
+        rows=[
+            {
+                "rank": 1,
+                "candidate_id": "ftir_ref_a",
+                "candidate_name": "FTIR Ref A",
+                "normalized_score": 0.31,
+                "confidence_band": "no_match",
+                "evidence": {"shared_peak_count": 0, "peak_overlap_ratio": 0.0},
+            }
+        ],
+        processing=processing,
+        validation={"status": "warn", "issues": [], "warnings": ["FTIR produced no confident match."]},
+    )
+
+    assert record["id"] == "ftir_synthetic_ftir"
+    assert record["analysis_type"] == "FTIR"
+    assert record["summary"]["match_status"] == "no_match"
+    assert record["summary"]["caution_code"] == "spectral_no_match"
+    assert record["review"]["caution"]["code"] == "spectral_no_match"
+    assert record["rows"][0]["evidence"]["shared_peak_count"] == 0
+    assert record["scientific_context"]["fit_quality"]["confidence_band"] == "no_match"
+    assert any("no-match outcomes are valid cautionary results" in item.lower() for item in record["scientific_context"]["limitations"])
+
+
+def test_serialize_raman_result_adds_low_confidence_caution():
+    dataset = _spectral_dataset("RAMAN")
+    processing = ensure_processing_payload(analysis_type="RAMAN", workflow_template="raman.general")
+    processing = update_processing_step(processing, "similarity_matching", {"metric": "cosine", "top_n": 3, "minimum_score": 0.45})
+
+    record = serialize_spectral_result(
+        "synthetic_raman",
+        dataset,
+        analysis_type="RAMAN",
+        summary={
+            "peak_count": 3,
+            "match_status": "matched",
+            "candidate_count": 1,
+            "top_match_id": "raman_ref_a",
+            "top_match_name": "Raman Ref A",
+            "top_match_score": 0.61,
+            "confidence_band": "low",
+        },
+        rows=[
+            {
+                "rank": 1,
+                "candidate_id": "raman_ref_a",
+                "candidate_name": "Raman Ref A",
+                "normalized_score": 0.61,
+                "confidence_band": "low",
+                "evidence": {"shared_peak_count": 2, "peak_overlap_ratio": 0.4},
+            }
+        ],
+        processing=processing,
+        validation={"status": "warn", "issues": [], "warnings": ["Low-confidence Raman match."]},
+    )
+
+    assert record["id"] == "raman_synthetic_raman"
+    assert record["analysis_type"] == "RAMAN"
+    assert record["summary"]["match_status"] == "matched"
+    assert record["summary"]["caution_code"] == "spectral_low_confidence"
+    assert record["review"]["caution"]["code"] == "spectral_low_confidence"
+    assert record["rows"][0]["evidence"]["shared_peak_count"] == 2

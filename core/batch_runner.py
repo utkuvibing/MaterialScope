@@ -18,9 +18,9 @@ from core.processing_schema import (
     update_tga_unit_context,
 )
 from core.provenance import build_calibration_reference_context, build_result_provenance
-from core.result_serialization import make_result_record, serialize_dsc_result, serialize_dta_result, serialize_tga_result
+from core.result_serialization import serialize_dsc_result, serialize_dta_result, serialize_spectral_result, serialize_tga_result
 from core.tga_processor import TGAProcessor, resolve_tga_unit_interpretation
-from core.validation import validate_thermal_dataset
+from core.validation import enrich_spectral_result_validation, validate_thermal_dataset
 
 
 _DSC_TEMPLATE_DEFAULTS = {
@@ -962,14 +962,19 @@ def _execute_spectral_batch(
         }
         for item in ranked_matches
     ]
-    record = make_result_record(
-        result_id=f"{analysis_type.lower()}_{dataset_key}",
+    validation = enrich_spectral_result_validation(
+        validation,
         analysis_type=analysis_type,
-        status="stable",
-        dataset_key=dataset_key,
-        metadata=dataset.metadata,
         summary=summary,
         rows=rows,
+    )
+    record = serialize_spectral_result(
+        dataset_key,
+        dataset,
+        analysis_type=analysis_type,
+        summary=summary,
+        rows=rows,
+        status="stable",
         artifacts={},
         processing=processing,
         provenance=provenance,
@@ -978,25 +983,6 @@ def _execute_spectral_batch(
             "commercial_scope": f"stable_{analysis_type.lower()}",
             "batch_runner": "compare_workspace",
             "caution": caution_payload,
-        },
-        scientific_context={
-            "methodology": {
-                "analysis_family": analysis_type,
-                "workflow_template": processing.get("workflow_template_label") or processing.get("workflow_template"),
-                "signal_pipeline": processing.get("signal_pipeline") or {},
-                "analysis_steps": processing.get("analysis_steps") or {},
-            },
-            "numerical_interpretation": [
-                {
-                    "statement": "Top-N spectral similarity candidates were ranked against reference inputs.",
-                    "metric": "top_match_score",
-                    "value": round(top_score, 4),
-                }
-            ],
-            "warnings": validation.get("warnings") or ([] if matched else [caution_payload["message"]]),
-            "limitations": [
-                "Similarity ranking quality depends on reference-library coverage and preprocessing assumptions.",
-            ],
         },
     )
     state = {

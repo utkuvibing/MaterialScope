@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
 import pandas as pd
@@ -12,7 +12,7 @@ from core.provenance import classify_calibration_state, classify_reference_accep
 from core.tga_processor import resolve_tga_unit_interpretation
 
 
-SUPPORTED_ANALYSIS_TYPES = {"DSC", "TGA", "DTA", "UNKNOWN", "unknown"}
+SUPPORTED_ANALYSIS_TYPES = {"DSC", "TGA", "DTA", "FTIR", "RAMAN", "UNKNOWN", "unknown"}
 TEMPERATURE_MIN_C = -200.0
 TEMPERATURE_MAX_C = 2000.0
 TEMPERATURE_UNITS = {"°C", "degC", "K"}
@@ -20,6 +20,8 @@ SIGNAL_UNITS_BY_TYPE = {
     "DSC": {"mW", "mW/mg", "W/g"},
     "TGA": {"%", "mg"},
     "DTA": {"uV", "µV", "mV", "a.u."},
+    "FTIR": {"a.u.", "absorbance", "%T", "transmittance"},
+    "RAMAN": {"counts", "cps", "a.u.", "intensity"},
 }
 RECOMMENDED_METADATA_FIELDS = (
     "sample_name",
@@ -50,6 +52,11 @@ _DTA_EXPECTED_SIGN_CONVENTIONS = {
     "exo_up_endo_down",
     "dta.exotherm_up",
 }
+_SPECTRAL_TEMPLATE_IDS = {
+    "FTIR": {"ftir.general", "ftir.functional_groups"},
+    "RAMAN": {"raman.general", "raman.polymorph_screening"},
+}
+_SPECTRAL_METRICS = {"cosine", "pearson"}
 
 
 def _coerce_float(value: Any) -> float | None:
@@ -364,6 +371,190 @@ def _check_dta_workflow(
         issues.append("DTA method context requires verified calibration before stable reporting.")
 
 
+def _check_spectral_workflow(
+    *,
+    analysis_type: str,
+    metadata: dict[str, Any],
+    processing: dict[str, Any] | None,
+    checks: dict[str, Any],
+    issues: list[str],
+    warnings: list[str],
+) -> None:
+    if not processing:
+        checks["workflow_template_id"] = "not recorded"
+        checks["workflow_template_label"] = "not recorded"
+        checks["workflow_template_version"] = "not recorded"
+        checks["normalization_context"] = "not recorded"
+        checks["peak_detection_context"] = "not recorded"
+        checks["similarity_matching_context"] = "not recorded"
+        checks["reference_candidate_count"] = 0
+        checks["caution_state"] = "processing_context_missing"
+        issues.append(f"{analysis_type} processing context is required for stable spectral reporting.")
+        return
+
+    template_id = str(processing.get("workflow_template_id") or "").strip().lower()
+    checks["workflow_template_id"] = template_id or "not recorded"
+    checks["workflow_template_label"] = processing.get("workflow_template_label") or processing.get("workflow_template") or "not recorded"
+    checks["workflow_template_version"] = processing.get("workflow_template_version") or "not recorded"
+    if not template_id:
+        issues.append(f"{analysis_type} workflow template id is required for stable reporting.")
+    elif template_id not in _SPECTRAL_TEMPLATE_IDS.get(analysis_type, set()):
+        issues.append(f"{analysis_type} workflow template '{template_id}' is not supported for stable reporting.")
+
+    normalization = _processing_section(processing, "normalization")
+    peak_detection = _processing_section(processing, "peak_detection")
+    similarity_matching = _processing_section(processing, "similarity_matching")
+    checks["normalization_context"] = "recorded" if normalization else "not recorded"
+    checks["peak_detection_context"] = "recorded" if peak_detection else "not recorded"
+    checks["similarity_matching_context"] = "recorded" if similarity_matching else "not recorded"
+    if not normalization:
+        warnings.append(f"{analysis_type} normalization settings are not recorded; similarity confidence may be unstable.")
+    if not peak_detection:
+        warnings.append(f"{analysis_type} peak-detection settings are not recorded; evidence traceability is reduced.")
+    if not similarity_matching:
+        issues.append(f"{analysis_type} similarity-matching settings are required for stable ranked output.")
+        return
+
+    metric = str(similarity_matching.get("metric") or "").strip().lower()
+    checks["matching_metric"] = metric or "not recorded"
+    if not metric:
+        warnings.append(f"{analysis_type} similarity metric is not recorded.")
+    elif metric not in _SPECTRAL_METRICS:
+        issues.append(f"{analysis_type} similarity metric '{metric}' is not supported.")
+
+    top_n = similarity_matching.get("top_n")
+    checks["matching_top_n"] = top_n if top_n not in (None, "") else "not recorded"
+    if top_n not in (None, ""):
+        try:
+            if int(top_n) < 1:
+                issues.append(f"{analysis_type} similarity top_n must be at least 1.")
+        except (TypeError, ValueError):
+            issues.append(f"{analysis_type} similarity top_n must be numeric.")
+
+    minimum_score = similarity_matching.get("minimum_score")
+    checks["matching_minimum_score"] = minimum_score if minimum_score not in (None, "") else "not recorded"
+    if minimum_score not in (None, ""):
+        try:
+            token = float(minimum_score)
+        except (TypeError, ValueError):
+            issues.append(f"{analysis_type} similarity minimum_score must be numeric.")
+        else:
+            if token < 0.0 or token > 1.0:
+                issues.append(f"{analysis_type} similarity minimum_score must be within [0, 1].")
+
+    method_context = processing.get("method_context") or {}
+    reference_candidate_count = method_context.get("reference_candidate_count")
+    if reference_candidate_count in (None, ""):
+        reference_candidate_count = len(metadata.get("spectral_reference_library") or [])
+    try:
+        reference_candidate_count = int(reference_candidate_count or 0)
+    except (TypeError, ValueError):
+        reference_candidate_count = 0
+    checks["reference_candidate_count"] = reference_candidate_count
+
+    if reference_candidate_count <= 0:
+        checks["caution_state"] = "reference_library_missing"
+        warnings.append(
+            f"{analysis_type} reference library is empty; no-match outcomes should be treated as cautionary rather than conclusive."
+        )
+    else:
+        checks["caution_state"] = "reference_library_available"
+
+
+def enrich_spectral_result_validation(
+    validation: dict[str, Any] | None,
+    *,
+    analysis_type: str,
+    summary: Mapping[str, Any] | None,
+    rows: list[Mapping[str, Any]] | None,
+) -> dict[str, Any]:
+    """Attach FTIR/Raman result-level caution semantics to a validation payload."""
+    normalized_type = str(analysis_type or "").upper()
+    payload = dict(validation or {})
+    issues = [str(item) for item in (payload.get("issues") or []) if item]
+    warnings = [str(item) for item in (payload.get("warnings") or []) if item]
+    checks = dict(payload.get("checks") or {})
+    summary = dict(summary or {})
+    rows = [dict(item) for item in (rows or []) if isinstance(item, Mapping)]
+
+    match_status = str(summary.get("match_status") or "").strip().lower() or "not_recorded"
+    confidence_band = str(summary.get("confidence_band") or "").strip().lower() or "not_recorded"
+    caution_code = str(summary.get("caution_code") or "").strip()
+    top_match_id = summary.get("top_match_id")
+    top_match_score = summary.get("top_match_score")
+
+    checks["match_status"] = match_status
+    checks["confidence_band"] = confidence_band
+    checks["top_match_id"] = top_match_id if top_match_id not in (None, "") else "not_recorded"
+    checks["candidate_count"] = summary.get("candidate_count", len(rows))
+    checks["top_match_score"] = top_match_score if top_match_score not in (None, "") else "not_recorded"
+    checks["caution_code"] = caution_code or "not_recorded"
+
+    if match_status == "matched":
+        checks["caution_state_output"] = "clear"
+        if top_match_id in (None, ""):
+            issues.append(f"{normalized_type} matched outputs must include top_match_id.")
+        if confidence_band in {"no_match", "not_recorded"}:
+            issues.append(f"{normalized_type} matched outputs must include a confidence band.")
+    elif match_status == "no_match":
+        checks["caution_state_output"] = "no_match"
+        message = (
+            f"{normalized_type} produced no confident library match; treat this as a cautionary outcome."
+        )
+        if message not in warnings:
+            warnings.append(message)
+        if not caution_code:
+            warnings.append(f"{normalized_type} no-match output is missing caution_code metadata.")
+    else:
+        checks["caution_state_output"] = "review"
+        warnings.append(f"{normalized_type} match_status is not recorded; report caution semantics may be incomplete.")
+
+    if confidence_band == "low" and match_status == "matched":
+        checks["caution_state_output"] = "low_confidence"
+        message = (
+            f"{normalized_type} top match is low confidence; review evidence before interpretation."
+        )
+        if message not in warnings:
+            warnings.append(message)
+        if not caution_code:
+            warnings.append(f"{normalized_type} low-confidence output is missing caution_code metadata.")
+
+    if top_match_score not in (None, ""):
+        try:
+            score = float(top_match_score)
+        except (TypeError, ValueError):
+            issues.append(f"{normalized_type} top_match_score must be numeric.")
+        else:
+            if score < 0.0 or score > 1.0:
+                issues.append(f"{normalized_type} top_match_score must be within [0, 1].")
+
+    top_row = rows[0] if rows else {}
+    evidence = top_row.get("evidence") if isinstance(top_row, dict) else None
+    if match_status == "matched":
+        if not isinstance(evidence, Mapping) or not evidence:
+            warnings.append(f"{normalized_type} matched output is missing evidence payload for the top candidate.")
+            checks["top_match_evidence"] = "missing"
+        else:
+            checks["top_match_evidence"] = "recorded"
+            shared_peak_count = evidence.get("shared_peak_count")
+            checks["top_match_shared_peak_count"] = (
+                shared_peak_count if shared_peak_count not in (None, "") else "not_recorded"
+            )
+    else:
+        checks["top_match_evidence"] = "not_required"
+
+    dedup_warnings: list[str] = []
+    for item in warnings:
+        if item not in dedup_warnings:
+            dedup_warnings.append(item)
+
+    payload["checks"] = checks
+    payload["issues"] = issues
+    payload["warnings"] = dedup_warnings
+    payload["status"] = _validation_status(issues=issues, warnings=dedup_warnings)
+    return payload
+
+
 def validate_thermal_dataset(
     dataset,
     *,
@@ -512,6 +703,15 @@ def validate_thermal_dataset(
         )
     elif normalized_analysis_type == "DTA":
         _check_dta_workflow(
+            metadata=metadata,
+            processing=normalized_processing,
+            checks=checks,
+            issues=issues,
+            warnings=warnings,
+        )
+    elif normalized_analysis_type in {"FTIR", "RAMAN"}:
+        _check_spectral_workflow(
+            analysis_type=normalized_analysis_type,
             metadata=metadata,
             processing=normalized_processing,
             checks=checks,

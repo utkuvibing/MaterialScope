@@ -5,7 +5,7 @@ import io
 from core.data_io import read_thermal_data
 from core.processing_schema import ensure_processing_payload, set_tga_unit_mode, update_method_context, update_processing_step
 from core.provenance import build_calibration_reference_context, classify_calibration_state
-from core.validation import validate_thermal_dataset
+from core.validation import enrich_spectral_result_validation, validate_thermal_dataset
 from utils.validators import validate_thermal_dataset as legacy_validate_thermal_dataset
 
 
@@ -359,3 +359,71 @@ def test_legacy_validator_surfaces_structured_failures(thermal_dataset):
 
     assert is_valid is False
     assert "strictly increasing" in message
+
+
+def test_enrich_ftir_result_validation_adds_no_match_caution_semantics():
+    validation = {"status": "pass", "issues": [], "warnings": [], "checks": {}}
+    summary = {
+        "match_status": "no_match",
+        "candidate_count": 1,
+        "top_match_score": 0.31,
+        "confidence_band": "no_match",
+        "caution_code": "spectral_no_match",
+    }
+    rows = [
+        {
+            "rank": 1,
+            "candidate_id": "ftir_ref_a",
+            "normalized_score": 0.31,
+            "confidence_band": "no_match",
+            "evidence": {"shared_peak_count": 0},
+        }
+    ]
+
+    enriched = enrich_spectral_result_validation(
+        validation,
+        analysis_type="FTIR",
+        summary=summary,
+        rows=rows,
+    )
+
+    assert enriched["status"] == "warn"
+    assert enriched["issues"] == []
+    assert enriched["checks"]["match_status"] == "no_match"
+    assert enriched["checks"]["confidence_band"] == "no_match"
+    assert enriched["checks"]["caution_code"] == "spectral_no_match"
+    assert enriched["checks"]["caution_state_output"] == "no_match"
+    assert any("cautionary outcome" in item.lower() for item in enriched["warnings"])
+
+
+def test_enrich_raman_result_validation_requires_evidence_for_matched_output():
+    validation = {"status": "pass", "issues": [], "warnings": [], "checks": {}}
+    summary = {
+        "match_status": "matched",
+        "candidate_count": 1,
+        "top_match_id": "raman_ref_a",
+        "top_match_score": 0.73,
+        "confidence_band": "medium",
+    }
+    rows = [
+        {
+            "rank": 1,
+            "candidate_id": "raman_ref_a",
+            "normalized_score": 0.73,
+            "confidence_band": "medium",
+        }
+    ]
+
+    enriched = enrich_spectral_result_validation(
+        validation,
+        analysis_type="RAMAN",
+        summary=summary,
+        rows=rows,
+    )
+
+    assert enriched["status"] == "warn"
+    assert enriched["issues"] == []
+    assert enriched["checks"]["match_status"] == "matched"
+    assert enriched["checks"]["caution_state_output"] == "clear"
+    assert enriched["checks"]["top_match_evidence"] == "missing"
+    assert any("missing evidence payload" in item.lower() for item in enriched["warnings"])

@@ -317,6 +317,20 @@ def _record_key_results(record: dict) -> dict[str, str]:
             "sample_mass",
             "heating_rate",
         )
+    elif analysis_type in {"FTIR", "RAMAN"}:
+        keep = (
+            "match_status",
+            "top_match_id",
+            "top_match_name",
+            "top_match_score",
+            "confidence_band",
+            "candidate_count",
+            "caution_code",
+            "caution_message",
+            "sample_name",
+            "sample_mass",
+            "heating_rate",
+        )
     else:
         keep = tuple(summary.keys())
     return _table_payload({key: summary.get(key) for key in keep})
@@ -338,6 +352,27 @@ def _record_metric_snapshot(record: dict) -> str:
         if summary.get("tg_midpoint") is not None:
             snapshot.append(f"Tg midpoint {_format_number(summary.get('tg_midpoint'))} °C")
         return ", ".join(snapshot)
+    if analysis_type in {"FTIR", "RAMAN"}:
+        match_status = str(summary.get("match_status") or "not_recorded")
+        confidence_band = str(summary.get("confidence_band") or "not_recorded")
+        top_score = _format_number(summary.get("top_match_score"), digits=3)
+        top_match = summary.get("top_match_name") or summary.get("top_match_id") or "N/A"
+        if match_status.lower() == "matched":
+            return ", ".join(
+                [
+                    f"top match {top_match}",
+                    f"score {top_score}",
+                    f"confidence {confidence_band}",
+                ]
+            )
+        caution = summary.get("caution_code") or "spectral_no_match"
+        return ", ".join(
+            [
+                f"match status {match_status}",
+                f"top score {top_score}",
+                f"caution {caution}",
+            ]
+        )
 
     parts = []
     for key, value in summary.items():
@@ -815,7 +850,10 @@ def _build_final_conclusion_paragraph(records: list[dict], comparison_payload: d
         class_inference = signals.get("material_class_inference") or {}
         class_type = str(class_inference.get("material_class") or "")
         mass_balance = signals.get("mass_balance_assessment") or {}
+        pathway = str(mass_balance.get("pathway") or "").strip()
         if str(mass_balance.get("status") or "") in {"strong_match", "plausible_match"}:
+            if pathway:
+                return f"behavior consistent with {pathway}"
             if class_type == "hydrate_salt":
                 return "near-complete dehydration to an expected stable anhydrous residue"
             if class_type == "carbonate_inorganic":
@@ -1082,23 +1120,24 @@ def _record_figure_keys(record: dict) -> list[str]:
 
 def select_record_figures(record: dict, figures: dict | None, used: set[str]) -> list[tuple[str, bytes]]:
     figures = figures or {}
+    explicit: list[tuple[str, bytes]] = []
     matched: list[tuple[str, bytes]] = []
-    preferred_fallback: list[tuple[str, bytes]] = []
+    safe_generic: list[tuple[str, bytes]] = []
 
     preferred_keys = _record_figure_keys(record)
     for key in preferred_keys:
         if _is_comparison_figure_caption(key):
             continue
         if key in figures and key not in used:
-            if _caption_matches_record(key, record):
-                matched.append((key, figures[key]))
-            elif not _caption_explicitly_conflicts_record(key, record):
-                preferred_fallback.append((key, figures[key]))
+            if _caption_explicitly_conflicts_record(key, record):
+                continue
+            # Artifact-linked figures are record-level intent; prioritize them.
+            explicit.append((key, figures[key]))
 
-    if matched:
-        for caption, _ in matched:
+    if explicit:
+        for caption, _ in explicit:
             used.add(caption)
-        return matched
+        return explicit
 
     for caption, png_bytes in figures.items():
         if caption in used:
@@ -1107,15 +1146,18 @@ def select_record_figures(record: dict, figures: dict | None, used: set[str]) ->
             continue
         if _caption_matches_record(caption, record):
             matched.append((caption, png_bytes))
+            continue
+        if not _caption_explicitly_conflicts_record(caption, record):
+            safe_generic.append((caption, png_bytes))
     if matched:
         for caption, _ in matched:
             used.add(caption)
         return matched
 
-    if preferred_fallback:
-        for caption, _ in preferred_fallback:
+    if safe_generic:
+        for caption, _ in safe_generic:
             used.add(caption)
-        return preferred_fallback
+        return safe_generic
     return matched
 
 
@@ -1249,7 +1291,7 @@ def _reference_visibility(record: dict) -> str:
 
 def _domain_method_summary(record: dict) -> dict[str, str] | None:
     analysis_type = record.get("analysis_type")
-    if analysis_type not in {"DSC", "TGA"}:
+    if analysis_type not in {"DSC", "TGA", "FTIR", "RAMAN"}:
         return None
 
     processing = ensure_processing_payload(record.get("processing"), analysis_type=analysis_type) if record.get("processing") else {}
@@ -1267,13 +1309,28 @@ def _domain_method_summary(record: dict) -> dict[str, str] | None:
         }
         return _table_payload(summary)
 
+    if analysis_type == "TGA":
+        summary = {
+            "Template": processing.get("workflow_template_label") or processing.get("workflow_template") or "Not recorded",
+            "Declared Unit Mode": method_context.get("tga_unit_mode_label") or "Not recorded",
+            "Resolved Unit Mode": method_context.get("tga_unit_mode_resolved_label") or "Not recorded",
+            "Smoothing": _format_processing_step(_processing_step(processing, "smoothing")),
+            "Step Analysis Context": _format_processing_step(_processing_step(processing, "step_detection")),
+            "Reference Check": _reference_visibility(record),
+        }
+        return _table_payload(summary)
+
+    summary_payload = record.get("summary") or {}
     summary = {
         "Template": processing.get("workflow_template_label") or processing.get("workflow_template") or "Not recorded",
-        "Declared Unit Mode": method_context.get("tga_unit_mode_label") or "Not recorded",
-        "Resolved Unit Mode": method_context.get("tga_unit_mode_resolved_label") or "Not recorded",
         "Smoothing": _format_processing_step(_processing_step(processing, "smoothing")),
-        "Step Analysis Context": _format_processing_step(_processing_step(processing, "step_detection")),
-        "Reference Check": _reference_visibility(record),
+        "Baseline": _format_processing_step(_processing_step(processing, "baseline")),
+        "Normalization": _format_processing_step(_processing_step(processing, "normalization")),
+        "Peak Detection": _format_processing_step(_processing_step(processing, "peak_detection")),
+        "Similarity Matching": _format_processing_step(_processing_step(processing, "similarity_matching")),
+        "Match Status": summary_payload.get("match_status") or "Not recorded",
+        "Confidence Band": summary_payload.get("confidence_band") or "Not recorded",
+        "Caution Code": summary_payload.get("caution_code") or "None",
     }
     return _table_payload(summary)
 
