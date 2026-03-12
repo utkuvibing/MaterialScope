@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import io
 
-from core.data_io import read_thermal_data
+import numpy as np
+import pandas as pd
+
+from core.data_io import ThermalDataset, read_thermal_data
 from core.processing_schema import ensure_processing_payload, set_tga_unit_mode, update_method_context, update_processing_step
 from core.provenance import build_calibration_reference_context, classify_calibration_state
 from core.validation import enrich_spectral_result_validation, validate_thermal_dataset
@@ -24,6 +27,39 @@ def _make_dta_dataset(thermal_dataset):
         }
     )
     return dataset
+
+
+def _make_xrd_dataset():
+    axis = np.linspace(8.0, 88.0, 600)
+    signal = (
+        16.0
+        + 0.03 * axis
+        + 90.0 * np.exp(-0.5 * ((axis - 18.4) / 0.28) ** 2)
+        + 140.0 * np.exp(-0.5 * ((axis - 35.3) / 0.36) ** 2)
+        + 110.0 * np.exp(-0.5 * ((axis - 49.8) / 0.32) ** 2)
+        + 70.0 * np.exp(-0.5 * ((axis - 64.1) / 0.44) ** 2)
+    )
+    return ThermalDataset(
+        data=pd.DataFrame({"temperature": axis, "signal": signal}),
+        metadata={
+            "sample_name": "SyntheticXRD",
+            "sample_mass": 1.0,
+            "heating_rate": 1.0,
+            "instrument": "XRDBench",
+            "vendor": "TestVendor",
+            "display_name": "Synthetic XRD Pattern",
+            "xrd_axis_role": "two_theta",
+            "xrd_axis_unit": "degree_2theta",
+            "xrd_wavelength_angstrom": 1.5406,
+            "import_confidence": "high",
+            "import_review_required": False,
+            "import_warnings": [],
+        },
+        data_type="XRD",
+        units={"temperature": "degree_2theta", "signal": "counts"},
+        original_columns={"temperature": "two_theta", "signal": "intensity"},
+        file_path="",
+    )
 
 
 def test_validate_thermal_dataset_passes_for_synthetic_fixture(thermal_dataset):
@@ -208,6 +244,104 @@ def test_validate_dta_processing_fails_when_template_requires_reference_without_
     assert any("requires a verified reference state" in issue.lower() for issue in summary["issues"])
     assert summary["checks"]["reference_required"] is True
     assert summary["checks"]["reference_acceptance"] == "review"
+
+
+def test_validate_xrd_processing_passes_with_peak_controls_and_context():
+    dataset = _make_xrd_dataset()
+    processing = ensure_processing_payload(
+        analysis_type="XRD",
+        workflow_template="xrd.general",
+        workflow_template_label="General XRD",
+    )
+    processing = update_processing_step(
+        processing,
+        "axis_normalization",
+        {"sort_axis": True, "deduplicate": "first", "axis_min": 8.0, "axis_max": 88.0},
+        analysis_type="XRD",
+    )
+    processing = update_processing_step(
+        processing,
+        "smoothing",
+        {"method": "savgol", "window_length": 11, "polyorder": 3},
+        analysis_type="XRD",
+    )
+    processing = update_processing_step(
+        processing,
+        "baseline",
+        {"method": "rolling_minimum", "window_length": 31},
+        analysis_type="XRD",
+    )
+    processing = update_processing_step(
+        processing,
+        "peak_detection",
+        {"method": "scipy_find_peaks", "prominence": 0.08, "distance": 6, "width": 2, "max_peaks": 12},
+        analysis_type="XRD",
+    )
+    processing = update_method_context(
+        processing,
+        {"xrd_peak_count": 4},
+        analysis_type="XRD",
+    )
+
+    summary = validate_thermal_dataset(dataset, analysis_type="XRD", processing=processing)
+
+    assert summary["status"] == "pass"
+    assert summary["issues"] == []
+    assert summary["warnings"] == []
+    assert summary["checks"]["workflow_template_id"] == "xrd.general"
+    assert summary["checks"]["peak_detection_context"] == "recorded"
+    assert summary["checks"]["xrd_peak_prominence"] == 0.08
+    assert summary["checks"]["xrd_peak_distance"] == 6
+    assert summary["checks"]["xrd_peak_width"] == 2
+
+
+def test_validate_xrd_processing_fails_when_peak_controls_missing():
+    dataset = _make_xrd_dataset()
+    processing = ensure_processing_payload(
+        analysis_type="XRD",
+        workflow_template="xrd.general",
+        workflow_template_label="General XRD",
+    )
+    processing = update_processing_step(
+        processing,
+        "peak_detection",
+        {"method": "scipy_find_peaks", "prominence": "", "distance": "", "width": ""},
+        analysis_type="XRD",
+    )
+
+    summary = validate_thermal_dataset(dataset, analysis_type="XRD", processing=processing)
+
+    assert summary["status"] == "fail"
+    assert any("peak-detection 'prominence' is required" in issue.lower() for issue in summary["issues"])
+    assert any("peak-detection 'distance' is required" in issue.lower() for issue in summary["issues"])
+    assert any("peak-detection 'width' is required" in issue.lower() for issue in summary["issues"])
+
+
+def test_validate_xrd_processing_warns_when_wavelength_context_is_missing():
+    dataset = _make_xrd_dataset()
+    dataset.metadata["xrd_wavelength_angstrom"] = None
+    processing = ensure_processing_payload(
+        analysis_type="XRD",
+        workflow_template="xrd.general",
+        workflow_template_label="General XRD",
+    )
+    processing = update_processing_step(
+        processing,
+        "peak_detection",
+        {"method": "scipy_find_peaks", "prominence": 0.09, "distance": 7, "width": 3, "max_peaks": 10},
+        analysis_type="XRD",
+    )
+    processing = update_method_context(
+        processing,
+        {"xrd_wavelength_angstrom": None},
+        analysis_type="XRD",
+    )
+
+    summary = validate_thermal_dataset(dataset, analysis_type="XRD", processing=processing)
+
+    assert summary["status"] == "warn"
+    assert summary["issues"] == []
+    assert any("xrd wavelength is not recorded" in warning.lower() for warning in summary["warnings"])
 
 
 def test_validate_tga_processing_checks_unit_plausibility_and_step_context():

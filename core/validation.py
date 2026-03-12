@@ -12,16 +12,18 @@ from core.provenance import classify_calibration_state, classify_reference_accep
 from core.tga_processor import resolve_tga_unit_interpretation
 
 
-SUPPORTED_ANALYSIS_TYPES = {"DSC", "TGA", "DTA", "FTIR", "RAMAN", "UNKNOWN", "unknown"}
+SUPPORTED_ANALYSIS_TYPES = {"DSC", "TGA", "DTA", "FTIR", "RAMAN", "XRD", "UNKNOWN", "unknown"}
 TEMPERATURE_MIN_C = -200.0
 TEMPERATURE_MAX_C = 2000.0
 TEMPERATURE_UNITS = {"°C", "degC", "K"}
+XRD_AXIS_UNITS = {"degree_2theta", "deg", "2theta", "angstrom", "1/angstrom"}
 SIGNAL_UNITS_BY_TYPE = {
     "DSC": {"mW", "mW/mg", "W/g"},
     "TGA": {"%", "mg"},
     "DTA": {"uV", "µV", "mV", "a.u."},
     "FTIR": {"a.u.", "absorbance", "%T", "transmittance"},
     "RAMAN": {"counts", "cps", "a.u.", "intensity"},
+    "XRD": {"counts", "cps", "a.u.", "intensity"},
 }
 RECOMMENDED_METADATA_FIELDS = (
     "sample_name",
@@ -57,6 +59,7 @@ _SPECTRAL_TEMPLATE_IDS = {
     "RAMAN": {"raman.general", "raman.polymorph_screening"},
 }
 _SPECTRAL_METRICS = {"cosine", "pearson"}
+_XRD_TEMPLATE_IDS = {"xrd.general", "xrd.phase_screening"}
 
 
 def _coerce_float(value: Any) -> float | None:
@@ -461,6 +464,113 @@ def _check_spectral_workflow(
         checks["caution_state"] = "reference_library_available"
 
 
+def _check_xrd_workflow(
+    *,
+    metadata: dict[str, Any],
+    processing: dict[str, Any] | None,
+    checks: dict[str, Any],
+    issues: list[str],
+    warnings: list[str],
+) -> None:
+    if not processing:
+        checks["workflow_template_id"] = "not recorded"
+        checks["workflow_template_label"] = "not recorded"
+        checks["workflow_template_version"] = "not recorded"
+        checks["axis_normalization_context"] = "not recorded"
+        checks["smoothing_context"] = "not recorded"
+        checks["baseline_context"] = "not recorded"
+        checks["peak_detection_context"] = "not recorded"
+        checks["xrd_processing_context_status"] = "missing"
+        issues.append("XRD processing context is required for stable reporting.")
+        return
+
+    template_id = str(processing.get("workflow_template_id") or "").strip().lower()
+    checks["workflow_template_id"] = template_id or "not recorded"
+    checks["workflow_template_label"] = processing.get("workflow_template_label") or processing.get("workflow_template") or "not recorded"
+    checks["workflow_template_version"] = processing.get("workflow_template_version") or "not recorded"
+    if not template_id:
+        issues.append("XRD workflow template id is required for stable reporting.")
+    elif template_id not in _XRD_TEMPLATE_IDS:
+        issues.append(f"XRD workflow template '{template_id}' is not supported for stable reporting.")
+
+    axis_normalization = _processing_section(processing, "axis_normalization")
+    smoothing = _processing_section(processing, "smoothing")
+    baseline = _processing_section(processing, "baseline")
+    peak_detection = _processing_section(processing, "peak_detection")
+    checks["axis_normalization_context"] = "recorded" if axis_normalization else "not recorded"
+    checks["smoothing_context"] = "recorded" if smoothing else "not recorded"
+    checks["baseline_context"] = "recorded" if baseline else "not recorded"
+    checks["peak_detection_context"] = "recorded" if peak_detection else "not recorded"
+    checks["xrd_processing_context_status"] = "recorded" if peak_detection else "peak_detection_missing"
+    if not axis_normalization:
+        warnings.append("XRD axis-normalization settings are not recorded; preprocessing traceability is reduced.")
+    if not smoothing:
+        warnings.append("XRD smoothing settings are not recorded; peak reproducibility may be unstable.")
+    if not baseline:
+        warnings.append("XRD baseline/background settings are not recorded; corrected intensities may not be reproducible.")
+    if not peak_detection:
+        issues.append("XRD peak-detection settings are required for stable reporting.")
+        return
+
+    peak_controls = {
+        "prominence": peak_detection.get("prominence"),
+        "distance": peak_detection.get("distance"),
+        "width": peak_detection.get("width"),
+        "max_peaks": peak_detection.get("max_peaks"),
+    }
+    checks["xrd_peak_prominence"] = peak_controls["prominence"] if peak_controls["prominence"] not in (None, "") else "not recorded"
+    checks["xrd_peak_distance"] = peak_controls["distance"] if peak_controls["distance"] not in (None, "") else "not recorded"
+    checks["xrd_peak_width"] = peak_controls["width"] if peak_controls["width"] not in (None, "") else "not recorded"
+    checks["xrd_peak_max_peaks"] = peak_controls["max_peaks"] if peak_controls["max_peaks"] not in (None, "") else "not recorded"
+
+    for key in ("prominence", "distance", "width"):
+        value = peak_controls[key]
+        if value in (None, ""):
+            issues.append(f"XRD peak-detection '{key}' is required for stable reporting.")
+            continue
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            issues.append(f"XRD peak-detection '{key}' must be numeric.")
+            continue
+        if parsed <= 0.0:
+            issues.append(f"XRD peak-detection '{key}' must be greater than zero.")
+
+    max_peaks = peak_controls["max_peaks"]
+    if max_peaks not in (None, ""):
+        try:
+            if int(max_peaks) < 1:
+                issues.append("XRD peak-detection 'max_peaks' must be at least 1.")
+        except (TypeError, ValueError):
+            issues.append("XRD peak-detection 'max_peaks' must be numeric.")
+
+    method_context = processing.get("method_context") or {}
+    axis_role = method_context.get("xrd_axis_role") or metadata.get("xrd_axis_role")
+    axis_unit = method_context.get("xrd_axis_unit") or metadata.get("xrd_axis_unit")
+    wavelength = method_context.get("xrd_wavelength_angstrom")
+    if wavelength in (None, ""):
+        wavelength = metadata.get("xrd_wavelength_angstrom")
+    peak_count = method_context.get("xrd_peak_count")
+    checks["xrd_axis_role"] = axis_role or "not recorded"
+    checks["xrd_axis_unit"] = axis_unit or "not recorded"
+    checks["xrd_wavelength_angstrom"] = wavelength if wavelength not in (None, "") else "not recorded"
+    checks["xrd_peak_count"] = peak_count if peak_count not in (None, "") else "not recorded"
+    if not axis_role:
+        warnings.append("XRD axis role is not recorded in processing context.")
+    if not axis_unit:
+        warnings.append("XRD axis unit is not recorded in processing context.")
+    if wavelength in (None, ""):
+        warnings.append(
+            "XRD wavelength is not recorded; set xrd_wavelength_angstrom for deterministic qualitative matching provenance."
+        )
+    if peak_count not in (None, ""):
+        try:
+            if int(peak_count) <= 0:
+                warnings.append("XRD peak extraction detected no peaks; review preprocessing controls before interpretation.")
+        except (TypeError, ValueError):
+            warnings.append("XRD peak-count context is not numeric; review processing metadata.")
+
+
 def enrich_spectral_result_validation(
     validation: dict[str, Any] | None,
     *,
@@ -643,7 +753,10 @@ def validate_thermal_dataset(
             normalized_processing["source_analysis_type"] = source_processing_type
 
     temperature_unit = units.get("temperature")
-    if temperature_unit and temperature_unit not in TEMPERATURE_UNITS:
+    if normalized_analysis_type == "XRD":
+        if temperature_unit and str(temperature_unit) not in XRD_AXIS_UNITS:
+            warnings.append(f"XRD axis unit '{temperature_unit}' is unusual; verify axis normalization before analysis.")
+    elif temperature_unit and temperature_unit not in TEMPERATURE_UNITS:
         warnings.append(f"Temperature unit '{temperature_unit}' is unusual; verify unit conversion before analysis.")
     checks["temperature_unit"] = temperature_unit or "unspecified"
 
@@ -712,6 +825,14 @@ def validate_thermal_dataset(
     elif normalized_analysis_type in {"FTIR", "RAMAN"}:
         _check_spectral_workflow(
             analysis_type=normalized_analysis_type,
+            metadata=metadata,
+            processing=normalized_processing,
+            checks=checks,
+            issues=issues,
+            warnings=warnings,
+        )
+    elif normalized_analysis_type == "XRD":
+        _check_xrd_workflow(
             metadata=metadata,
             processing=normalized_processing,
             checks=checks,
