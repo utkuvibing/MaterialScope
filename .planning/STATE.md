@@ -1,3 +1,21 @@
+---
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: milestone
+current_phase: 04
+current_phase_name: xrd mvp
+current_plan: 4
+status: verifying
+stopped_at: Completed 04-04-PLAN.md
+last_updated: "2026-03-12T11:53:25.500Z"
+last_activity: 2026-03-12
+progress:
+  total_phases: 6
+  completed_phases: 4
+  total_plans: 13
+  completed_plans: 13
+---
+
 ﻿---
 gsd_state_version: 1.0
 milestone: v1.0
@@ -31,7 +49,7 @@ See: .planning/PROJECT.md (updated 2026-03-11)
 **Current Phase Name:** xrd mvp
 **Current Plan:** 4
 **Total Plans in Phase:** 4
-**Status:** Ready to execute
+**Status:** Phase complete — ready for verification
 **Last Activity:** 2026-03-12
 **Last Activity Description:** Completed 04-03-PLAN.md
 
@@ -64,6 +82,7 @@ Progress: [█████████░] 92%
 | Phase 04 P01 | 13 | 3 tasks | 10 files |
 | Phase 04 P02 | 11 min | 3 tasks | 8 files |
 | Phase 04 P03 | 12 min | 3 tasks | 6 files |
+| Phase 04 P04 | 38 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -97,6 +116,9 @@ Recent decisions affecting current work:
 - [Phase 04]: XRD matching controls remain in method_context (xrd_match_*) for MVP so validation can enforce matching provenance without processing-schema section expansion.
 - [Phase 04]: XRD ranking uses deterministic weighted peak-overlap scoring with unmatched-major-peak penalties to keep qualitative outputs reproducible and caution-safe.
 - [Phase 04]: XRD no-match and low-confidence outcomes are saved as valid stable records with explicit caution metadata instead of forced identification.
+- [Phase 04]: Normalized compare workspace is now used in DOCX export to enforce modality-safe compare context.
+- [Phase 04]: XRD reporting now renders explicit method-context and caution notes so no-match and low-confidence outcomes remain qualitative.
+- [Phase 04]: Full-suite blockers outside 04-04 scope are deferred in phase-local deferred-items while scoped XRD gates remain enforced.
 
 ### Pending Todos
 
@@ -104,12 +126,13 @@ None yet.
 
 ### Blockers/Concerns
 
-None yet.
+yet.
+- Full pytest -q gate is blocked by environment temp-directory permission errors and one unrelated backend_batch assertion mismatch; see phase deferred-items.md.
 
 ## Session Continuity
 
-Last session: 2026-03-12T11:00:53.735Z
-Stopped at: Completed 04-03-PLAN.md
+Last session: 2026-03-12T11:53:25.497Z
+Stopped at: Completed 04-04-PLAN.md
 Resume file: None
 
 

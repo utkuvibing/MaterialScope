@@ -31,7 +31,7 @@
 - [x] **XRD-01**: XRD import supports MVP formats (`.xy`, `.dat`, `.cif`) with normalized internal representation.
 - [x] **XRD-02**: XRD pipeline supports baseline/preprocess and robust peak detection.
 - [x] **XRD-03**: XRD analysis provides qualitative phase candidate matching with traceable confidence outputs.
-- [ ] **XRD-04**: XRD results can be saved and included in report/export flows with method context.
+- [x] **XRD-04**: XRD results can be saved and included in report/export flows with method context.
 
 ### XRF MVP
 
@@ -90,7 +90,7 @@
 | XRD-01 | Phase 4 | Complete |
 | XRD-02 | Phase 4 | Complete |
 | XRD-03 | Phase 4 | Complete |
-| XRD-04 | Phase 4 | Pending |
+| XRD-04 | Phase 4 | Complete |
 | XRF-01 | Phase 5 | Pending |
 | XRF-02 | Phase 5 | Pending |
 | XRF-03 | Phase 5 | Pending |
