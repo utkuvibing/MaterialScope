@@ -1,22 +1,21 @@
----
+﻿---
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 04
 current_phase_name: xrd mvp
-current_plan: Not started
-status: planning
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-03-12T01:47:08.998Z"
+current_plan: 2
+status: executing
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-03-12T10:25:12.380Z"
 last_activity: 2026-03-12
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 9
-  completed_plans: 9
-  percent: 100
+  total_plans: 13
+  completed_plans: 10
+  percent: 77
 ---
-
 # Project State
 
 ## Project Reference
@@ -24,24 +23,24 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-11)
 
 **Core value:** A scientist can load heterogeneous instrument data and get reproducible, traceable, scientifically defensible results from one unified workflow.
-**Current focus:** Phase 2 - DTA Stabilization
+**Current focus:** Phase 4 - XRD MVP
 
 ## Current Position
 
 **Current Phase:** 04
 **Current Phase Name:** xrd mvp
-**Current Plan:** Not started
-**Total Plans in Phase:** 3
-**Status:** Ready to plan
+**Current Plan:** 2
+**Total Plans in Phase:** 4
+**Status:** Executing
 **Last Activity:** 2026-03-12
-**Last Activity Description:** Phase 03 complete, transitioned to Phase 04
+**Last Activity Description:** Completed 04-01-PLAN.md
 
-Progress: [██████████] 100%
+Progress: [████████░░] 77%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
+- Total plans completed: 10
 - Average duration: 7 min
 - Total execution time: 0.4 hours
 
@@ -62,6 +61,7 @@ Progress: [██████████] 100%
 | Phase 03 P01 | 8 min | 3 tasks | 10 files |
 | Phase 03 P02 | 18 min | 3 tasks | 12 files |
 | Phase 03 P03 | 5 min | 3 tasks | 9 files |
+| Phase 04 P01 | 13 | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -86,6 +86,9 @@ Recent decisions affecting current work:
 - [Phase 03]: No-match and low-confidence outcomes are represented as warning-safe valid outputs instead of forced failures. — Preserves scientific caution semantics while keeping stable execution deterministic.
 - [Phase 03]: Compare workspace selection is now constrained by modality eligibility so FTIR and RAMAN lanes do not silently mix. — Prevents cross-modality compare contamination while preserving stable workflow defaults.
 - [Phase 03]: SPC-04 is guarded with explicit FTIR/RAMAN caution-field assertions in export/report regression tests. — Keeps no-match and low-confidence semantics visible in downstream artifacts.
+- [Phase 04]: XRD import normalizes to two-theta axis plus intensity with explicit xrd provenance fields.
+- [Phase 04]: CIF MVP support is limited to single-block powder-pattern loops; structural-only and d-spacing-only variants fail explicitly.
+- [Phase 04]: Backend import now treats XRD as warning-summary onboarding flow while preserving stable dispatch contracts.
 
 ### Pending Todos
 
@@ -97,6 +100,8 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-12T01:45:31.011Z
-Stopped at: Completed 03-03-PLAN.md
+Last session: 2026-03-12T10:25:12.377Z
+Stopped at: Completed 04-01-PLAN.md
 Resume file: None
+
+
