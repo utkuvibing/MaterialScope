@@ -227,7 +227,7 @@ function applyStaticLanguage() {
   setText("primaryGroupLabel", currentLanguage === "tr" ? "Ana Akış" : "Primary");
   setText("previewGroupLabel", currentLanguage === "tr" ? "Laboratuvar Önizlemesi" : "Lab Preview");
   setText("systemGroupLabel", currentLanguage === "tr" ? "Sistem" : "System");
-  setText("brandSubtitle", currentLanguage === "tr" ? "Cihazdan bağımsız DSC/TGA/DTA çalışma alanı" : "Vendor-independent DSC/TGA/DTA workbench");
+  setText("brandSubtitle", currentLanguage === "tr" ? "Cihazdan bağımsız DSC/DTA/TGA/FTIR/RAMAN çalışma alanı" : "Vendor-independent DSC/DTA/TGA/FTIR/RAMAN workbench");
   setText(
     "previewToggleLabel",
     currentLanguage === "tr"
@@ -241,8 +241,8 @@ function applyStaticLanguage() {
   setText(
     "sidebarAboutCopy",
     currentLanguage === "tr"
-      ? "Kararlı kapsam: DSC/TGA/DTA, Karşılaştırma Alanı, Toplu Şablon Uygulayıcı, proje arşivi ve CSV/DOCX çıktıları."
-      : "Stable scope: DSC/TGA/DTA, Compare Workspace, Batch Template Runner, project archive, and CSV/DOCX outputs."
+      ? "Kararlı kapsam: DSC/DTA/TGA/FTIR/RAMAN, Karşılaştırma Alanı, Toplu Şablon Uygulayıcı, proje arşivi ve CSV/DOCX çıktıları."
+      : "Stable scope: DSC/DTA/TGA/FTIR/RAMAN, Compare Workspace, Batch Template Runner, project archive, and CSV/DOCX outputs."
   );
   setText("navHomeBtn", t("nav.home"));
   setText("navCompareBtn", t("nav.compare"));
@@ -266,8 +266,8 @@ function applyStaticLanguage() {
   setText(
     "homeViewCopy",
     currentLanguage === "tr"
-      ? "Termal analiz koşularını içe aktar, metadata’yı gözden geçir ve kararlı DSC/TGA/DTA akışına hazırla."
-      : "Import thermal runs, review metadata, and prepare stable DSC/TGA/DTA workflow execution."
+      ? "Termal ve spektral koşuları içe aktar, metadata’yı gözden geçir ve kararlı analiz akışına hazırla."
+      : "Import thermal and spectral runs, review metadata, and prepare stable analysis workflow execution."
   );
   setText("homeHeroTitle", currentLanguage === "tr" ? "Çalışma Başlangıcı" : "Workspace Entry");
   setText(
@@ -284,8 +284,8 @@ function applyStaticLanguage() {
   setText(
     "homeWorkflowSubtitle",
     currentLanguage === "tr"
-      ? "Kararlı zincir: Veri Al → Karşılaştırma → DSC/DTA/TGA → Toplu Şablon → Rapor/Proje"
-      : "Stable chain: Import → Compare → DSC/DTA/TGA → Batch Template → Report/Project"
+      ? "Kararlı zincir: Veri Al → Karşılaştırma → DSC/DTA/TGA/FTIR/RAMAN → Toplu Şablon → Rapor/Proje"
+      : "Stable chain: Import → Compare → DSC/DTA/TGA/FTIR/RAMAN → Batch Template → Report/Project"
   );
   setText("homeImportTitle", currentLanguage === "tr" ? "Veri İçe Aktar" : "Import Runs");
   setText(
@@ -436,8 +436,8 @@ function applyStaticLanguage() {
   setText(
     "licenseFocusValue",
     currentLanguage === "tr"
-      ? "Kararlı DSC/TGA/DTA akışları, karşılaştırma alanı, proje arşivi ve CSV/DOCX çıktıları"
-      : "Stable DSC/TGA/DTA workflows, compare workspace, project archive, and CSV/DOCX outputs"
+      ? "Kararlı DSC/DTA/TGA/FTIR/RAMAN akışları, karşılaştırma alanı, proje arşivi ve CSV/DOCX çıktıları"
+      : "Stable DSC/DTA/TGA/FTIR/RAMAN workflows, compare workspace, project archive, and CSV/DOCX outputs"
   );
   setText("licenseNotesTitle", currentLanguage === "tr" ? "Profesör Demo Notları" : "Professor Demo Notes");
   setText(
@@ -450,12 +450,12 @@ function applyStaticLanguage() {
   if (notesList) {
     notesList.innerHTML = currentLanguage === "tr"
       ? [
-          "<li>Kararlı odak: DSC/TGA/DTA analizi, karşılaştırma alanı, proje arşivi kaydet/yükle, CSV/DOCX çıktıları.</li>",
+          "<li>Kararlı odak: DSC/DTA/TGA/FTIR/RAMAN analizi, karşılaştırma alanı, proje arşivi kaydet/yükle, CSV/DOCX çıktıları.</li>",
           "<li>Önizleme modülleri (kinetik, dekonvolüsyon) demo sözü kapsamı dışındadır.</li>",
           "<li>Streamlit fallback/reference implementation olarak dokunulmadan korunur.</li>",
         ].join("")
       : [
-          "<li>Stable focus: DSC/TGA/DTA analysis, compare workspace, save/load project archives, CSV/DOCX artifacts.</li>",
+          "<li>Stable focus: DSC/DTA/TGA/FTIR/RAMAN analysis, compare workspace, save/load project archives, CSV/DOCX artifacts.</li>",
           "<li>Preview modules (kinetics, deconvolution) remain outside the demo promise.</li>",
           "<li>Streamlit remains available as untouched fallback/reference implementation.</li>",
         ].join("");
@@ -671,6 +671,8 @@ function isDatasetEligibleForAnalysis(analysisType, datasetType) {
   if (token === "DSC") return dtype === "DSC" || dtype === "DTA" || dtype === "UNKNOWN";
   if (token === "DTA") return dtype === "DTA" || dtype === "UNKNOWN";
   if (token === "TGA") return dtype === "TGA" || dtype === "UNKNOWN";
+  if (token === "FTIR") return dtype === "FTIR" || dtype === "UNKNOWN";
+  if (token === "RAMAN") return dtype === "RAMAN" || dtype === "UNKNOWN";
   return false;
 }
 
@@ -692,6 +694,8 @@ function renderAnalysisPage(analysisType) {
     DSC: { prefix: "dsc", defaultTemplate: "dsc.general" },
     DTA: { prefix: "dta", defaultTemplate: "dta.general" },
     TGA: { prefix: "tga", defaultTemplate: "tga.general" },
+    FTIR: { prefix: "dsc", defaultTemplate: "ftir.general" },
+    RAMAN: { prefix: "dsc", defaultTemplate: "raman.general" },
   }[token] || { prefix: "dsc", defaultTemplate: "dsc.general" };
   const isTr = currentLanguage === "tr";
   const prefix = profile.prefix;
@@ -1893,8 +1897,18 @@ function onBatchAnalysisTypeChanged() {
     || templateInput.value === "dsc.general"
     || templateInput.value === "dta.general"
     || templateInput.value === "tga.general"
+    || templateInput.value === "ftir.general"
+    || templateInput.value === "raman.general"
   ) {
-    templateInput.value = analysisType === "TGA" ? "tga.general" : analysisType === "DTA" ? "dta.general" : "dsc.general";
+    templateInput.value = analysisType === "TGA"
+      ? "tga.general"
+      : analysisType === "DTA"
+      ? "dta.general"
+      : analysisType === "FTIR"
+      ? "ftir.general"
+      : analysisType === "RAMAN"
+      ? "raman.general"
+      : "dsc.general";
   }
 }
 

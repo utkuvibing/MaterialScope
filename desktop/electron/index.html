@@ -471,7 +471,7 @@
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">THERMOANALYZER</div>
-      <div class="brand-sub" id="brandSubtitle">Cihazdan bağımsız DSC/TGA/DTA çalışma alanı</div>
+      <div class="brand-sub" id="brandSubtitle">Cihazdan bağımsız DSC/DTA/TGA/FTIR/RAMAN çalışma alanı</div>
       <div class="lang-switch">
         <button class="lang-btn active" id="langTrBtn" type="button">TR</button>
         <button class="lang-btn" id="langEnBtn" type="button">EN</button>
@@ -507,7 +507,7 @@
       <div class="nav-group">
         <div class="group-label" id="sidebarAboutTitle">ThermoAnalyzer Hakkında</div>
         <p class="small" id="sidebarAboutCopy">
-          Kararlı kapsam: DSC/TGA/DTA, Karşılaştırma Alanı, Toplu Şablon Uygulayıcı, proje arşivi ve CSV/DOCX çıktıları.
+          Kararlı kapsam: DSC/DTA/TGA/FTIR/RAMAN, Karşılaştırma Alanı, Toplu Şablon Uygulayıcı, proje arşivi ve CSV/DOCX çıktıları.
         </p>
       </div>
     </aside>
@@ -525,7 +525,7 @@
       <main class="content">
         <section class="view active" id="view-home">
           <h2 class="view-title" id="homeViewTitle">Veri Al</h2>
-          <p class="view-copy" id="homeViewCopy">Termal analiz koşularını içe aktar, metadata’yı gözden geçir ve kararlı DSC/TGA akışına hazırla.</p>
+          <p class="view-copy" id="homeViewCopy">Termal ve spektral koşuları içe aktar, metadata’yı gözden geçir ve kararlı analiz akışına hazırla.</p>
 
           <div class="card hero-card">
             <h3 class="hero-title" id="homeHeroTitle">Çalışma Başlangıcı</h3>
@@ -571,7 +571,7 @@
 
           <div class="card">
             <h3 class="section-title" id="homeWorkflowTitle">Program Rehberi ve İş Akışı</h3>
-            <p class="section-subtitle" id="homeWorkflowSubtitle">Kararlı zincir: Veri Al → Karşılaştırma → DSC/TGA → Toplu Şablon → Rapor/Proje</p>
+            <p class="section-subtitle" id="homeWorkflowSubtitle">Kararlı zincir: Veri Al → Karşılaştırma → DSC/DTA/TGA/FTIR/RAMAN → Toplu Şablon → Rapor/Proje</p>
             <div class="step-list">
               <div class="step-item">
                 <div class="step-label">Adım 1</div>
@@ -603,6 +603,8 @@
                 <option value="DSC">DSC</option>
                 <option value="TGA">TGA</option>
                 <option value="DTA">DTA</option>
+                <option value="FTIR">FTIR</option>
+                <option value="RAMAN">RAMAN</option>
               </select>
             </div>
             <div class="split-2" style="margin-top:10px;">
@@ -666,6 +668,8 @@
                 <option value="DSC">DSC</option>
                 <option value="DTA">DTA</option>
                 <option value="TGA">TGA</option>
+                <option value="FTIR">FTIR</option>
+                <option value="RAMAN">RAMAN</option>
               </select>
               <button id="addSelectedToCompareBtn" disabled>Seçili Veri Setini Ekle</button>
               <button id="removeSelectedFromCompareBtn" disabled>Seçili Veri Setini Çıkar</button>
@@ -690,6 +694,8 @@
                 <option value="DSC">DSC</option>
                 <option value="DTA">DTA</option>
                 <option value="TGA">TGA</option>
+                <option value="FTIR">FTIR</option>
+                <option value="RAMAN">RAMAN</option>
               </select>
               <label for="batchTemplateIdInput" id="batchTemplateLabel">Şablon ID</label>
               <input id="batchTemplateIdInput" value="dsc.general" style="min-width:220px;" />
@@ -964,7 +970,7 @@
               </div>
               <div class="kv-item">
                 <div class="kv-label" id="licenseFocusLabel">Desktop Build Odağı</div>
-                <div class="kv-value" id="licenseFocusValue">Kararlı DSC/TGA/DTA akışları, karşılaştırma alanı, proje arşivi ve CSV/DOCX çıktıları</div>
+                <div class="kv-value" id="licenseFocusValue">Kararlı DSC/DTA/TGA/FTIR/RAMAN akışları, karşılaştırma alanı, proje arşivi ve CSV/DOCX çıktıları</div>
               </div>
             </div>
           </div>
@@ -972,7 +978,7 @@
             <p class="section-title" id="licenseNotesTitle">Profesör Demo Notları</p>
             <p class="section-subtitle" id="licenseNotesSubtitle">Bu masaüstü build kararlı öğretim/demo akışları için optimize edildi.</p>
             <ul class="list-box" id="licenseNotesList">
-              <li>Kararlı odak: DSC/TGA/DTA analizi, karşılaştırma alanı, proje arşivi kaydet/yükle, CSV/DOCX çıktıları.</li>
+              <li>Kararlı odak: DSC/DTA/TGA/FTIR/RAMAN analizi, karşılaştırma alanı, proje arşivi kaydet/yükle, CSV/DOCX çıktıları.</li>
               <li>Önizleme modülleri (kinetik, dekonvolüsyon) demo sözü kapsamı dışındadır.</li>
               <li>Streamlit fallback/reference implementation olarak dokunulmadan korunur.</li>
             </ul>
