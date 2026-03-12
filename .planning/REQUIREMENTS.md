@@ -21,9 +21,9 @@
 
 ### FTIR and Raman MVP
 
-- [ ] **SPC-01**: FTIR/Raman import supports open text/CSV plus JCAMP-DX baseline formats for MVP.
-- [ ] **SPC-02**: FTIR/Raman preprocessing supports smoothing, baseline correction, normalization, and configurable pipelines.
-- [ ] **SPC-03**: FTIR/Raman analysis supports peak detection and similarity matching against reference libraries.
+- [x] **SPC-01**: FTIR/Raman import supports open text/CSV plus JCAMP-DX baseline formats for MVP.
+- [x] **SPC-02**: FTIR/Raman preprocessing supports smoothing, baseline correction, normalization, and configurable pipelines.
+- [x] **SPC-03**: FTIR/Raman analysis supports peak detection and similarity matching against reference libraries.
 - [ ] **SPC-04**: FTIR/Raman results can be saved, compared at modality level, and exported/reported.
 
 ### XRD MVP
@@ -83,9 +83,9 @@
 | DTA-02 | Phase 2 | Complete |
 | DTA-03 | Phase 2 | Complete |
 | DTA-04 | Phase 2 | Complete |
-| SPC-01 | Phase 3 | Pending |
-| SPC-02 | Phase 3 | Pending |
-| SPC-03 | Phase 3 | Pending |
+| SPC-01 | Phase 3 | Complete |
+| SPC-02 | Phase 3 | Complete |
+| SPC-03 | Phase 3 | Complete |
 | SPC-04 | Phase 3 | Pending |
 | XRD-01 | Phase 4 | Pending |
 | XRD-02 | Phase 4 | Pending |

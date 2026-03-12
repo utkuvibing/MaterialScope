@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 02
-current_phase_name: dta-stabilization
+current_phase: 03
+current_phase_name: ftir and raman mvp
 current_plan: 3
-status: verifying
-stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-03-11T23:42:15.284Z"
+status: executing
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-03-12T01:29:52.138Z"
 last_activity: 2026-03-11
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 9
+  completed_plans: 8
   percent: 100
 ---
 
@@ -28,13 +28,13 @@ See: .planning/PROJECT.md (updated 2026-03-11)
 
 ## Current Position
 
-**Current Phase:** 02
-**Current Phase Name:** dta-stabilization
+**Current Phase:** 03
+**Current Phase Name:** ftir and raman mvp
 **Current Plan:** 3
 **Total Plans in Phase:** 3
-**Status:** Phase complete — ready for verification
+**Status:** Ready to execute
 **Last Activity:** 2026-03-11
-**Last Activity Description:** Completed 02-03-PLAN.md
+**Last Activity Description:** Phase 02 complete, transitioned to Phase 03
 
 Progress: [██████████] 100%
 
@@ -59,6 +59,8 @@ Progress: [██████████] 100%
 | Phase 02 P01 | 6 min | 3 tasks | 9 files |
 | Phase 02 P02 | 6 min | 3 tasks | 6 files |
 | Phase 02 P03 | 9 min | 3 tasks | 8 files |
+| Phase 03 P01 | 8 min | 3 tasks | 10 files |
+| Phase 03 P02 | 18 min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -76,6 +78,11 @@ Recent decisions affecting current work:
 - [Phase 02]: Missing DTA processing context is warning-only at import while run-level context checks remain blockers.
 - [Phase 02]: Desktop DTA now uses the same guided analysis-page contract as DSC/TGA with primary navigation and run controls.
 - [Phase 02]: Stable-vs-preview UX boundaries are enforced via artifact-level tests to prevent DTA from regressing behind preview locks.
+- [Phase 03]: FTIR and RAMAN are now stable registry modalities with deterministic state keys and adapter contracts.
+- [Phase 03]: Spectral import persists modality confirmation metadata for low-confidence FTIR/RAMAN inference paths.
+- [Phase 03]: JCAMP-DX support is bounded to single-spectrum XYDATA while advanced variants return explicit unsupported messages.
+- [Phase 03]: FTIR/RAMAN stable execution now serializes through a dedicated spectral serializer with explicit caution metadata. — Ensures report/export/compare flows get consistent caution-safe stable fields.
+- [Phase 03]: No-match and low-confidence outcomes are represented as warning-safe valid outputs instead of forced failures. — Preserves scientific caution semantics while keeping stable execution deterministic.
 
 ### Pending Todos
 
@@ -87,6 +94,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-11T23:42:15.270Z
-Stopped at: Completed 02-03-PLAN.md
+Last session: 2026-03-12T01:29:23.126Z
+Stopped at: Completed 03-02-PLAN.md
 Resume file: None
