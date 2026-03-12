@@ -5,6 +5,7 @@ import base64
 from fastapi.testclient import TestClient
 
 from backend.app import create_app
+from core.modalities import stable_analysis_types
 
 
 def _headers() -> dict[str, str]:
@@ -80,7 +81,7 @@ def test_compare_workspace_read_write(thermal_dataset):
 
     compare_get = client.get(f"/workspace/{project_id}/compare", headers=_headers())
     assert compare_get.status_code == 200
-    assert compare_get.json()["compare_workspace"]["analysis_type"] in {"DSC", "TGA"}
+    assert compare_get.json()["compare_workspace"]["analysis_type"] in set(stable_analysis_types())
 
     compare_put = client.put(
         f"/workspace/{project_id}/compare",
@@ -98,6 +99,23 @@ def test_compare_workspace_read_write(thermal_dataset):
     assert payload["notes"] == "Desktop compare smoke"
 
 
+def test_compare_workspace_accepts_spectral_analysis_types():
+    app = create_app(api_token="details-token")
+    client = TestClient(app)
+    project_id = client.post("/workspace/new", headers=_headers()).json()["project_id"]
+
+    for analysis_type in ("FTIR", "RAMAN"):
+        compare_put = client.put(
+            f"/workspace/{project_id}/compare",
+            headers=_headers(),
+            json={"analysis_type": analysis_type, "selected_datasets": [], "notes": f"{analysis_type} lane"},
+        )
+        assert compare_put.status_code == 200
+        payload = compare_put.json()["compare_workspace"]
+        assert payload["analysis_type"] == analysis_type
+        assert payload["selected_datasets"] == []
+
+
 def test_compare_workspace_rejects_invalid_analysis_type():
     app = create_app(api_token="details-token")
     client = TestClient(app)
@@ -109,5 +127,7 @@ def test_compare_workspace_rejects_invalid_analysis_type():
         json={"analysis_type": "INVALID"},
     )
     assert response.status_code == 400
-    assert "analysis_type must be DSC or TGA" in response.json()["detail"]
-
+    detail = response.json()["detail"]
+    assert "analysis_type must be one of:" in detail
+    for token in stable_analysis_types():
+        assert token in detail

@@ -10,6 +10,7 @@ import pandas as pd
 
 from backend.models import CompareWorkspacePayload
 from backend.workspace import summarize_dataset, summarize_result
+from core.modalities import get_modality, stable_analysis_types
 from core.result_serialization import split_valid_results
 from core.validation import validate_thermal_dataset
 
@@ -18,6 +19,29 @@ def _records_preview(frame: pd.DataFrame, *, limit: int = 20) -> list[dict[str, 
     preview = frame.head(limit).copy()
     preview = preview.where(pd.notna(preview), None)
     return preview.to_dict(orient="records")
+
+
+def _dataset_matches_analysis(dataset: Any, analysis_type: str) -> bool:
+    modality = get_modality(analysis_type)
+    if modality is None:
+        return False
+    dataset_type = str(getattr(dataset, "data_type", "UNKNOWN") or "UNKNOWN")
+    return modality.adapter.is_dataset_eligible(dataset_type)
+
+
+def _filter_selected_datasets(state: dict[str, Any], *, analysis_type: str, selected_datasets: list[str]) -> list[str]:
+    datasets = state.get("datasets", {}) or {}
+    filtered: list[str] = []
+    for item in selected_datasets:
+        key = str(item)
+        dataset = datasets.get(key)
+        if dataset is None:
+            continue
+        if not _dataset_matches_analysis(dataset, analysis_type):
+            continue
+        if key not in filtered:
+            filtered.append(key)
+    return filtered
 
 
 def build_dataset_detail(state: dict[str, Any], dataset_key: str) -> dict[str, Any]:
@@ -67,9 +91,19 @@ def build_result_detail(state: dict[str, Any], result_id: str) -> dict[str, Any]
 
 def normalize_compare_workspace(state: dict[str, Any]) -> CompareWorkspacePayload:
     raw = state.get("comparison_workspace", {}) or {}
-    return CompareWorkspacePayload(
-        analysis_type=str(raw.get("analysis_type") or "DSC"),
+    stable_types = stable_analysis_types()
+    default_type = stable_types[0] if stable_types else "DSC"
+    analysis_type = str(raw.get("analysis_type") or default_type).upper()
+    if analysis_type not in stable_types:
+        analysis_type = default_type
+    selected_datasets = _filter_selected_datasets(
+        state,
+        analysis_type=analysis_type,
         selected_datasets=list(raw.get("selected_datasets") or []),
+    )
+    return CompareWorkspacePayload(
+        analysis_type=analysis_type,
+        selected_datasets=selected_datasets,
         notes=str(raw.get("notes") or ""),
         figure_key=raw.get("figure_key"),
         saved_at=raw.get("saved_at"),
@@ -91,20 +125,32 @@ def update_compare_workspace(
     notes: str | None,
 ) -> CompareWorkspacePayload:
     workspace = state.setdefault("comparison_workspace", {})
+    stable_types = stable_analysis_types()
+    default_type = stable_types[0] if stable_types else "DSC"
+    existing_analysis = str(workspace.get("analysis_type") or default_type).upper()
+    if existing_analysis not in stable_types:
+        existing_analysis = default_type
+    normalized_analysis = existing_analysis
+
     if analysis_type is not None:
         token = str(analysis_type or "").upper()
-        if token not in {"DSC", "TGA"}:
-            raise ValueError("analysis_type must be DSC or TGA.")
-        workspace["analysis_type"] = token
+        if token not in stable_types:
+            raise ValueError(f"analysis_type must be one of: {', '.join(stable_types)}.")
+        normalized_analysis = token
+    workspace["analysis_type"] = normalized_analysis
 
     if selected_datasets is not None:
-        existing = set((state.get("datasets") or {}).keys())
-        deduped = []
-        for item in selected_datasets:
-            key = str(item)
-            if key in existing and key not in deduped:
-                deduped.append(key)
-        workspace["selected_datasets"] = deduped
+        workspace["selected_datasets"] = _filter_selected_datasets(
+            state,
+            analysis_type=normalized_analysis,
+            selected_datasets=selected_datasets,
+        )
+    elif analysis_type is not None:
+        workspace["selected_datasets"] = _filter_selected_datasets(
+            state,
+            analysis_type=normalized_analysis,
+            selected_datasets=list(workspace.get("selected_datasets") or []),
+        )
 
     if notes is not None:
         workspace["notes"] = str(notes)

@@ -1,4 +1,4 @@
-"""Commercial comparison workspace for DSC/TGA runs."""
+"""Commercial comparison workspace for stable modality runs."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from core.batch_runner import execute_batch_template, filter_batch_summary_rows, normalize_batch_summary_rows, summarize_batch_outcomes
+from core.modalities import analysis_state_key, stable_analysis_types
 from core.processing_schema import get_workflow_templates
 from core.result_serialization import split_valid_results
 from ui.components.chrome import render_page_header
@@ -24,19 +25,37 @@ def render():
     lang = st.session_state.get("ui_language", "tr")
 
     datasets = st.session_state.get("datasets", {})
-    compareable = {key: ds for key, ds in datasets.items() if ds.data_type in {"DSC", "TGA", "UNKNOWN", "unknown"}}
+    stable_types = list(stable_analysis_types())
+    if not stable_types:
+        st.warning("Kararlı analiz tipi bulunamadı." if lang == "tr" else "No stable analysis types are currently available.")
+        return
+
+    normalized_types = {token.upper() for token in stable_types}
+    compareable = {
+        key: ds
+        for key, ds in datasets.items()
+        if str(getattr(ds, "data_type", "UNKNOWN") or "UNKNOWN").upper() in normalized_types | {"UNKNOWN"}
+    }
     if not compareable:
-        st.warning("Henüz DSC/TGA verisi yok. Önce veri yükle." if lang == "tr" else "No DSC/TGA datasets are available yet. Import runs first.")
+        st.warning(
+            "Henüz kararlı karşılaştırmaya uygun veri yok. Önce veri yükle." if lang == "tr"
+            else "No stable compare-ready datasets are available yet. Import runs first."
+        )
         return
 
     valid_results, _ = split_valid_results(st.session_state.get("results", {}))
     workspace = st.session_state.setdefault("comparison_workspace", {})
-
     available_types = []
-    if any(ds.data_type in {"DSC", "UNKNOWN", "unknown"} for ds in compareable.values()):
-        available_types.append("DSC")
-    if any(ds.data_type in {"TGA", "UNKNOWN", "unknown"} for ds in compareable.values()):
-        available_types.append("TGA")
+    for token in stable_types:
+        if any(_dataset_type_matches_analysis_type(ds, token) for ds in compareable.values()):
+            available_types.append(token)
+
+    if not available_types:
+        st.warning(
+            "Karşılaştırma için uygun kararlı analiz tipi bulunamadı." if lang == "tr"
+            else "No stable analysis type is currently eligible for compare."
+        )
+        return
 
     default_type = workspace.get("analysis_type") if workspace.get("analysis_type") in available_types else available_types[0]
     analysis_type = st.segmented_control(
@@ -51,9 +70,19 @@ def render():
     eligible = {
         key: ds
         for key, ds in compareable.items()
-        if ds.data_type == analysis_type or ds.data_type in {"UNKNOWN", "unknown"}
+        if _dataset_type_matches_analysis_type(ds, analysis_type)
     }
     options = list(eligible.keys())
+    if not options:
+        st.info(
+            tx(
+                "{analysis_type} için karşılaştırılabilir veri bulunamadı.",
+                "No compareable datasets were found for {analysis_type}.",
+                analysis_type=analysis_type,
+            )
+        )
+        return
+
     previous_selection = [key for key in workspace.get("selected_datasets", []) if key in options]
     if len(previous_selection) < 2:
         previous_selection = options[: min(3, len(options))]
@@ -106,11 +135,13 @@ def render():
         )
 
     y_unit = eligible[selected[0]].units.get("signal", "a.u.")
-    y_quantity = tx("Isı Akışı", "Heat Flow") if analysis_type == "DSC" else tx("Kütle", "Mass")
+    x_label = _x_axis_label(analysis_type, lang)
+    y_quantity = _y_quantity_label(analysis_type, lang)
     y_label = f"{y_quantity} ({y_unit})"
     fig = create_overlay_plot(
         series,
         title=tx("{analysis_type} Karşılaştırma Alanı", "{analysis_type} Compare Workspace", analysis_type=analysis_type),
+        x_label=x_label,
         y_label=y_label,
     )
     st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
@@ -165,25 +196,71 @@ def render():
     _render_saved_result_preview(refreshed_results, analysis_type, selected, lang)
 
 
+def _dataset_type_matches_analysis_type(dataset, analysis_type):
+    token = str(analysis_type or "").upper()
+    dtype = str(getattr(dataset, "data_type", "UNKNOWN") or "UNKNOWN").upper()
+    if dtype == "UNKNOWN":
+        return True
+    return dtype == token
+
+
+def _x_axis_label(analysis_type, lang):
+    if analysis_type == "FTIR":
+        return "Dalgasayisi (cm^-1)" if lang == "tr" else "Wavenumber (cm^-1)"
+    if analysis_type == "RAMAN":
+        return "Raman Kaymasi (cm^-1)" if lang == "tr" else "Raman Shift (cm^-1)"
+    return "Sicaklik (°C)" if lang == "tr" else "Temperature (°C)"
+
+
+def _y_quantity_label(analysis_type, lang):
+    if analysis_type == "DSC":
+        return "Isi Akisi" if lang == "tr" else "Heat Flow"
+    if analysis_type == "TGA":
+        return "Kutle" if lang == "tr" else "Mass"
+    if analysis_type == "DTA":
+        return "Delta-T" if lang == "tr" else "Delta-T"
+    if analysis_type == "FTIR":
+        return "Absorbans" if lang == "tr" else "Absorbance"
+    if analysis_type == "RAMAN":
+        return "Yogunluk" if lang == "tr" else "Intensity"
+    return "Sinyal" if lang == "tr" else "Signal"
+
+
 def _resolve_signal(dataset_key, dataset, analysis_type, signal_mode):
     raw_signal = dataset.data["signal"].values
     if signal_mode == "raw":
         return raw_signal, "Ham" if st.session_state.get("ui_language", "tr") == "tr" else "Raw"
 
+    state = st.session_state.get(_state_key(analysis_type, dataset_key), {})
     if analysis_type == "DSC":
-        state = st.session_state.get(f"dsc_state_{dataset_key}", {})
         if state.get("corrected") is not None:
             return state["corrected"], "Baseline düzeltilmiş" if st.session_state.get("ui_language", "tr") == "tr" else "Baseline corrected"
         if state.get("smoothed") is not None:
             return state["smoothed"], "Yumuşatılmış" if st.session_state.get("ui_language", "tr") == "tr" else "Smoothed"
         return raw_signal, "Ham" if st.session_state.get("ui_language", "tr") == "tr" else "Raw"
 
-    state = st.session_state.get(f"tga_state_{dataset_key}", {})
-    result = state.get("tga_result")
-    if result is not None and getattr(result, "smoothed_signal", None) is not None:
-        return result.smoothed_signal, "İşlemci yumuşatılmış" if st.session_state.get("ui_language", "tr") == "tr" else "Processor smoothed"
-    if state.get("smoothed") is not None:
-        return state["smoothed"], "Yumuşatılmış" if st.session_state.get("ui_language", "tr") == "tr" else "Smoothed"
+    if analysis_type == "TGA":
+        result = state.get("tga_result")
+        if result is not None and getattr(result, "smoothed_signal", None) is not None:
+            return result.smoothed_signal, "İşlemci yumuşatılmış" if st.session_state.get("ui_language", "tr") == "tr" else "Processor smoothed"
+        if state.get("smoothed") is not None:
+            return state["smoothed"], "Yumuşatılmış" if st.session_state.get("ui_language", "tr") == "tr" else "Smoothed"
+        return raw_signal, "Ham" if st.session_state.get("ui_language", "tr") == "tr" else "Raw"
+
+    if analysis_type == "DTA":
+        if state.get("corrected") is not None:
+            return state["corrected"], "Baseline düzeltilmiş" if st.session_state.get("ui_language", "tr") == "tr" else "Baseline corrected"
+        if state.get("smoothed") is not None:
+            return state["smoothed"], "Yumuşatılmış" if st.session_state.get("ui_language", "tr") == "tr" else "Smoothed"
+        return raw_signal, "Ham" if st.session_state.get("ui_language", "tr") == "tr" else "Raw"
+
+    if analysis_type in {"FTIR", "RAMAN"}:
+        if state.get("normalized") is not None:
+            return state["normalized"], "Normalize edilmiş" if st.session_state.get("ui_language", "tr") == "tr" else "Normalized"
+        if state.get("corrected") is not None:
+            return state["corrected"], "Baseline düzeltilmiş" if st.session_state.get("ui_language", "tr") == "tr" else "Baseline corrected"
+        if state.get("smoothed") is not None:
+            return state["smoothed"], "Yumuşatılmış" if st.session_state.get("ui_language", "tr") == "tr" else "Smoothed"
     return raw_signal, "Ham" if st.session_state.get("ui_language", "tr") == "tr" else "Raw"
 
 
@@ -238,9 +315,9 @@ def _render_batch_runner(workspace, eligible, selected, analysis_type, lang):
         format_func=lambda template_id: workflow_labels.get(template_id, template_id),
         key=f"compare_batch_template_{analysis_type}",
         help=(
-            "Seçili tüm koşulara aynı kararlı DSC/TGA şablonunu uygular ve sonuçları mevcut export/report akışına yazar."
+            "Seçili tüm koşulara aynı kararlı analiz şablonunu uygular ve sonuçları mevcut export/report akışına yazar."
             if lang == "tr"
-            else "Applies the same stable DSC/TGA template to every selected run and saves the outputs into the existing export/report flow."
+            else "Applies the same stable modality template to every selected run and saves outputs into the existing export/report flow."
         ),
     )
 
@@ -316,7 +393,13 @@ def _apply_batch_template(workspace, eligible, selected, analysis_type, workflow
     batch_run_id = f"batch_{analysis_type.lower()}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:6]}"
     analysis_history = st.session_state.get("analysis_history", [])
     analyst_name = (st.session_state.get("branding", {}) or {}).get("analyst_name")
-    area = "dsc_analysis" if analysis_type == "DSC" else "tga_analysis"
+    area = {
+        "DSC": "dsc_analysis",
+        "DTA": "dta_analysis",
+        "TGA": "tga_analysis",
+        "FTIR": "ftir_analysis",
+        "RAMAN": "raman_analysis",
+    }.get(analysis_type, "compare_analysis")
     page_label = t("compare.title")
 
     _log_event(
@@ -440,8 +523,7 @@ def _apply_batch_template(workspace, eligible, selected, analysis_type, workflow
 
 
 def _state_key(analysis_type, dataset_key):
-    prefix = "dsc_state" if analysis_type == "DSC" else "tga_state"
-    return f"{prefix}_{dataset_key}"
+    return analysis_state_key(analysis_type, dataset_key)
 
 
 def _batch_summary_dataframe(summary_rows, lang):

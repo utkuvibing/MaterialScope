@@ -206,3 +206,59 @@ def test_workspace_compare_batch_run_with_dta_stable_template(thermal_dataset):
     assert batch_payload["outcomes"] == {"total": 2, "saved": 2, "blocked": 0, "failed": 0}
     assert len(batch_payload["batch_summary"]) == 2
     assert {row["analysis_type"] for row in batch_payload["batch_summary"]} == {"DTA"}
+
+
+def test_workspace_compare_spectral_lane_filters_incompatible_dataset_selection(thermal_dataset):
+    app = create_app(api_token="workflow-token")
+    client = TestClient(app)
+
+    create_response = client.post("/workspace/new", headers=_headers())
+    assert create_response.status_code == 200
+    project_id = create_response.json()["project_id"]
+
+    csv_bytes = thermal_dataset.data.to_csv(index=False).encode("utf-8")
+    imported_ftir = client.post(
+        "/dataset/import",
+        headers=_headers(),
+        json={
+            "project_id": project_id,
+            "file_name": "spectral_ftir.csv",
+            "file_base64": _to_base64(csv_bytes),
+            "data_type": "FTIR",
+        },
+    )
+    imported_raman = client.post(
+        "/dataset/import",
+        headers=_headers(),
+        json={
+            "project_id": project_id,
+            "file_name": "spectral_raman.csv",
+            "file_base64": _to_base64(csv_bytes),
+            "data_type": "RAMAN",
+        },
+    )
+    assert imported_ftir.status_code == 200
+    assert imported_raman.status_code == 200
+    ftir_key = imported_ftir.json()["dataset"]["key"]
+    raman_key = imported_raman.json()["dataset"]["key"]
+
+    ftir_workspace = client.put(
+        f"/workspace/{project_id}/compare",
+        headers=_headers(),
+        json={
+            "analysis_type": "FTIR",
+            "selected_datasets": [ftir_key, raman_key],
+        },
+    )
+    assert ftir_workspace.status_code == 200
+    payload = ftir_workspace.json()["compare_workspace"]
+    assert payload["analysis_type"] == "FTIR"
+    assert payload["selected_datasets"] == [ftir_key]
+
+    raman_workspace = client.put(
+        f"/workspace/{project_id}/compare",
+        headers=_headers(),
+        json={"analysis_type": "RAMAN"},
+    )
+    assert raman_workspace.status_code == 200
+    assert raman_workspace.json()["compare_workspace"]["selected_datasets"] == []
