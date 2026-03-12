@@ -1,4 +1,4 @@
-"""
+﻿"""
 data_io.py
 ==========
 Data import/export engine for thermal and spectral analysis datasets.
@@ -24,6 +24,7 @@ import io
 import logging
 import os
 import re
+import shlex
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -161,6 +162,16 @@ _JCAMP_XUNIT_MAP = {
     "CM**-1": "cm^-1",
     "1/CM ": "cm^-1",
 }
+_XRD_MEASURED_EXTENSIONS = (".xy", ".dat")
+_XRD_CIF_EXTENSIONS = (".cif",)
+_XRD_SUPPORTED_AXIS_TAGS = ("_pd_meas_2theta_scan", "_pd_proc_2theta_corrected")
+_XRD_SUPPORTED_INTENSITY_TAGS = (
+    "_pd_meas_intensity_total",
+    "_pd_proc_intensity_total",
+    "_pd_meas_counts_total",
+)
+_XRD_WAVELENGTH_TAGS = ("_diffrn_radiation_wavelength", "_pd_meas_wavelength")
+_XRD_UNSUPPORTED_CIF_HINTS = ("_atom_site_", "_symmetry_space_group", "_cell_length_")
 
 # ---------------------------------------------------------------------------
 # ThermalDataset
@@ -253,6 +264,7 @@ def _to_readable_buffer(
 
     # --- already a StringIO ---
     if isinstance(source, io.StringIO):
+        source_name = getattr(source, "name", "")
         source.seek(0)
         return source, source_name
 
@@ -874,8 +886,7 @@ def guess_columns(df: pd.DataFrame) -> dict:
     if type_scores and type_scores[0][1] > 0:
         best_type, best_score, best_col, best_unit = type_scores[0]
         ambiguous_type = False
-        same_column_conflict = len(type_scores) > 1 and type_scores[1][2] == best_col and type_scores[1][1] > 0
-        if len(type_scores) > 1 and ((type_scores[1][1] >= best_score - 2 and type_scores[1][1] > 0) or same_column_conflict):
+        if len(type_scores) > 1 and (type_scores[1][1] >= best_score - 4 and type_scores[1][1] > 0):
             ambiguous_type = True
             warnings_list.append(
                 f"Analysis-type inference is ambiguous between {best_type} and {type_scores[1][0]}; review the selected signal column."
@@ -1115,6 +1126,22 @@ def read_thermal_data(
             metadata=metadata,
         )
 
+    if _looks_like_xrd_cif(source_name, source_text, data_type=data_type):
+        return _parse_xrd_cif_dataset(
+            source_text,
+            source_name=source_name,
+            data_type=data_type,
+            metadata=metadata,
+        )
+
+    if _looks_like_xrd_measured_pattern(source_name, source_text, data_type=data_type):
+        return _parse_xrd_measured_dataset(
+            source_text,
+            source_name=source_name,
+            data_type=data_type,
+            metadata=metadata,
+        )
+
     if hasattr(source, "seek"):
         source.seek(0)
 
@@ -1229,7 +1256,7 @@ def read_thermal_data(
     # Data type
     # ------------------------------------------------------------------
     resolved_type = (data_type or detected_type or "unknown").upper()
-    if resolved_type not in ("DSC", "TGA", "DTA", "FTIR", "RAMAN", "UNKNOWN"):
+    if resolved_type not in ("DSC", "TGA", "DTA", "FTIR", "RAMAN", "XRD", "UNKNOWN"):
         logger.warning("Unrecognised data_type %r; falling back to 'unknown'.", resolved_type)
         resolved_type = "unknown"
     if data_type and inferred_analysis_type not in ("unknown", resolved_type):
@@ -1291,6 +1318,18 @@ def read_thermal_data(
         )
         import_confidence = _classify_import_confidence(import_confidence, "medium")
 
+    if resolved_type == "XRD":
+        axis_column = str(col_map.get("temperature") or "")
+        if units.get("temperature") in {"°C", "K", "°F"}:
+            units["temperature"] = "degree_2theta"
+        if units.get("signal") in {"", "a.u."}:
+            units["signal"] = "counts"
+        if metadata.get("xrd_wavelength_angstrom") in (None, ""):
+            import_warnings.append(
+                "XRD wavelength was not provided; set xrd_wavelength_angstrom for deterministic phase-matching provenance."
+            )
+            import_confidence = _classify_import_confidence(import_confidence, "medium")
+
     import_warnings = list(dict.fromkeys(warning for warning in import_warnings if warning))
 
     base_meta: dict = {
@@ -1320,6 +1359,11 @@ def read_thermal_data(
     if resolved_type in _SPECTRAL_ANALYSIS_TYPES:
         base_meta["spectral_axis_role"] = "wavenumber"
         base_meta["spectral_axis_column"] = col_map.get("temperature", "")
+    if resolved_type == "XRD":
+        base_meta["xrd_axis_role"] = "two_theta"
+        base_meta["xrd_axis_column"] = col_map.get("temperature", "")
+        base_meta["xrd_axis_unit"] = units.get("temperature", "degree_2theta")
+        base_meta["xrd_wavelength_angstrom"] = metadata.get("xrd_wavelength_angstrom")
     for optional_key in ("atmosphere", "operator", "calibration_id", "method_template_id"):
         if metadata.get(optional_key) not in (None, ""):
             base_meta[optional_key] = metadata[optional_key]
@@ -1580,3 +1624,288 @@ def _make_sheet_name(ds: ThermalDataset, index: int) -> str:
     full = f"{prefix}{name}"
     # Truncate to 31 characters
     return full[:31]
+
+def _extract_first_float(text: str | None) -> float | None:
+    if text in (None, ""):
+        return None
+    match = re.search(r"[-+]?\d*\.?\d+(?:[Ee][-+]?\d+)?", str(text))
+    if not match:
+        return None
+    try:
+        return float(match.group(0))
+    except ValueError:
+        return None
+
+
+def _parse_xrd_numeric_pairs(lines: list[str]) -> tuple[list[float], list[float]]:
+    axis_values: list[float] = []
+    signal_values: list[float] = []
+    for raw_line in lines:
+        line = str(raw_line or "").strip()
+        if not line or line.startswith(("#", ";", "!", "//")):
+            continue
+        numbers = _parse_jcamp_numeric_tokens(line)
+        if len(numbers) < 2:
+            continue
+        axis_values.append(float(numbers[0]))
+        signal_values.append(float(numbers[1]))
+    return axis_values, signal_values
+
+
+def _normalize_xrd_dataset(
+    *,
+    axis_values: list[float],
+    signal_values: list[float],
+    source_name: str,
+    metadata: dict | None,
+    import_format: str,
+    import_confidence: str,
+    import_warnings: list[str] | None = None,
+    wavelength_angstrom: float | None = None,
+    data_type: str | None = None,
+) -> ThermalDataset:
+    if len(axis_values) < 2 or len(signal_values) < 2:
+        raise ValueError("XRD import requires at least two numeric (axis, intensity) rows.")
+
+    out_df = pd.DataFrame({"temperature": axis_values, "signal": signal_values})
+    out_df.dropna(subset=["temperature", "signal"], inplace=True)
+    out_df.sort_values("temperature", inplace=True)
+    out_df.reset_index(drop=True, inplace=True)
+    if out_df.empty:
+        raise ValueError("XRD import could not extract usable numeric points.")
+
+    metadata = metadata or {}
+    warnings_list = list(import_warnings or [])
+    resolved_type = str(data_type or "XRD").upper().strip()
+    if resolved_type != "XRD":
+        warnings_list.append(f"XRD parser normalized requested data type '{resolved_type or 'UNKNOWN'}' to 'XRD'.")
+        resolved_type = "XRD"
+
+    signal_unit = "counts"
+    display_name = metadata.get("display_name") or os.path.basename(source_name) or metadata.get("sample_name", "")
+    payload_meta = {
+        "sample_name": metadata.get("sample_name", ""),
+        "sample_mass": metadata.get("sample_mass", None),
+        "heating_rate": metadata.get("heating_rate", None),
+        "instrument": metadata.get("instrument", ""),
+        "vendor": metadata.get("vendor", "Generic"),
+        "display_name": display_name,
+        "source_data_hash": _hash_dataframe(out_df),
+        "import_method": "auto",
+        "import_confidence": import_confidence,
+        "import_review_required": bool(warnings_list),
+        "import_warnings": warnings_list,
+        "inferred_analysis_type": "XRD",
+        "inferred_signal_unit": signal_unit,
+        "inferred_vendor": "Generic",
+        "vendor_detection_confidence": "review",
+        "modality_confirmation_required": False,
+        "modality_confirmation_applied": False,
+        "import_format": import_format,
+        "import_delimiter": "whitespace" if import_format == "xrd_xy_dat" else "cif",
+        "import_decimal_sep": ".",
+        "import_header_row": 0,
+        "import_data_start_row": 1,
+        "xrd_axis_role": "two_theta",
+        "xrd_axis_column": "XRD_AXIS",
+        "xrd_axis_unit": "degree_2theta",
+        "xrd_wavelength_angstrom": wavelength_angstrom,
+    }
+    payload_meta.update(metadata)
+
+    return ThermalDataset(
+        data=out_df,
+        metadata=payload_meta,
+        data_type=resolved_type,
+        units={"temperature": "degree_2theta", "signal": signal_unit},
+        original_columns={"temperature": "XRD_AXIS", "signal": "XRD_INTENSITY"},
+        file_path=source_name,
+    )
+
+
+def _looks_like_xrd_cif(source_name: str, text: str, *, data_type: str | None = None) -> bool:
+    if str(data_type or "").upper().strip() == "XRD" and str(source_name or "").lower().endswith(_XRD_CIF_EXTENSIONS):
+        return True
+    if str(source_name or "").lower().endswith(_XRD_CIF_EXTENSIONS):
+        return True
+    sample = str(text or "")[:5000].lower()
+    return "data_" in sample and ("_pd_meas_2theta" in sample or "_pd_proc_2theta" in sample)
+
+
+def _looks_like_xrd_measured_pattern(source_name: str, text: str, *, data_type: str | None = None) -> bool:
+    if str(data_type or "").upper().strip() == "XRD":
+        return True
+
+    suffix = str(Path(str(source_name or "")).suffix).lower()
+    sample = str(text or "")[:5000].lower()
+    has_hint = any(token in sample for token in ("2theta", "two theta", "xrd", "diffract", "intensity", "counts"))
+
+    if suffix == ".xy":
+        return True
+    if suffix == ".dat":
+        return has_hint
+    return has_hint and ("2theta" in sample or "two theta" in sample)
+
+
+def _parse_xrd_measured_dataset(
+    text: str,
+    *,
+    source_name: str,
+    data_type: str | None = None,
+    metadata: dict | None = None,
+) -> ThermalDataset:
+    lines = str(text or "").splitlines()
+    axis_values, signal_values = _parse_xrd_numeric_pairs(lines)
+
+    wavelength = None
+    for line in lines[:40]:
+        lower = str(line).lower()
+        if "wave" in lower or "lambda" in lower:
+            wavelength = _extract_first_float(line)
+            if wavelength is not None:
+                break
+
+    warnings_list: list[str] = []
+    if wavelength is None:
+        warnings_list.append("XRD wavelength metadata was not found in the source; set xrd_wavelength_angstrom before phase matching.")
+
+    suffix = str(Path(str(source_name or "")).suffix).lower()
+    confidence = "high" if suffix in _XRD_MEASURED_EXTENSIONS else "medium"
+    if warnings_list:
+        confidence = _classify_import_confidence(confidence, "medium")
+
+    return _normalize_xrd_dataset(
+        axis_values=axis_values,
+        signal_values=signal_values,
+        source_name=source_name,
+        metadata=metadata,
+        import_format="xrd_xy_dat",
+        import_confidence=confidence,
+        import_warnings=warnings_list,
+        wavelength_angstrom=wavelength,
+        data_type=data_type,
+    )
+
+
+def _parse_xrd_cif_dataset(
+    text: str,
+    *,
+    source_name: str,
+    data_type: str | None = None,
+    metadata: dict | None = None,
+) -> ThermalDataset:
+    lines = [line.rstrip() for line in str(text or "").splitlines() if line.strip()]
+    if not lines:
+        raise ValueError("CIF source is empty.")
+
+    block_count = sum(1 for line in lines if line.strip().lower().startswith("data_"))
+    if block_count > 1:
+        raise ValueError("CIF MVP supports exactly one data_ block; multi-block CIF files are unsupported.")
+
+    lowered = "\n".join(line.lower() for line in lines)
+    if "_pd_meas_d_spacing" in lowered or "_pd_proc_d_spacing" in lowered:
+        raise ValueError("CIF MVP supports two-theta powder patterns only; d-spacing-only CIF variants are unsupported.")
+
+    wavelength = None
+    for line in lines:
+        token = line.strip()
+        lower = token.lower()
+        for tag in _XRD_WAVELENGTH_TAGS:
+            if lower.startswith(tag):
+                value = token[len(tag):].strip()
+                wavelength = _extract_first_float(value)
+                break
+        if wavelength is not None:
+            break
+
+    axis_values: list[float] = []
+    signal_values: list[float] = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i].strip()
+        lower = line.lower()
+        if lower != "loop_":
+            i += 1
+            continue
+
+        i += 1
+        tags: list[str] = []
+        while i < n and lines[i].strip().startswith("_"):
+            tags.append(lines[i].strip().lower())
+            i += 1
+
+        if not tags:
+            continue
+
+        axis_idx = next((idx for idx, tag in enumerate(tags) if tag in _XRD_SUPPORTED_AXIS_TAGS), None)
+        intensity_idx = next((idx for idx, tag in enumerate(tags) if tag in _XRD_SUPPORTED_INTENSITY_TAGS), None)
+
+        rows: list[str] = []
+        while i < n:
+            row_line = lines[i].strip()
+            row_lower = row_line.lower()
+            if not row_line:
+                i += 1
+                continue
+            if row_lower == "loop_" or row_line.startswith("_") or row_lower.startswith("data_"):
+                break
+            rows.append(row_line)
+            i += 1
+
+        if axis_idx is None or intensity_idx is None:
+            continue
+
+        for row in rows:
+            try:
+                parts = shlex.split(row)
+            except ValueError:
+                parts = row.split()
+            if len(parts) < len(tags):
+                continue
+            axis_raw = parts[axis_idx]
+            intensity_raw = parts[intensity_idx]
+            if axis_raw in {"?", "."} or intensity_raw in {"?", "."}:
+                continue
+            axis = _extract_first_float(axis_raw)
+            intensity = _extract_first_float(intensity_raw)
+            if axis is None or intensity is None:
+                continue
+            axis_values.append(axis)
+            signal_values.append(intensity)
+
+        if len(axis_values) >= 2:
+            break
+
+    if len(axis_values) < 2:
+        if any(hint in lowered for hint in _XRD_UNSUPPORTED_CIF_HINTS):
+            raise ValueError(
+                "CIF MVP supports measured powder-pattern loops with _pd_meas_2theta_scan and intensity fields; structural-only CIF files are outside MVP scope."
+            )
+        raise ValueError(
+            "CIF MVP supports measured powder-pattern loops containing _pd_meas_2theta_scan and intensity columns; provided CIF is unsupported."
+        )
+
+    warnings_list: list[str] = []
+    if wavelength is None:
+        warnings_list.append("CIF did not declare radiation wavelength; set xrd_wavelength_angstrom before qualitative matching.")
+
+    confidence = "medium"
+    if warnings_list:
+        confidence = _classify_import_confidence(confidence, "medium")
+
+    return _normalize_xrd_dataset(
+        axis_values=axis_values,
+        signal_values=signal_values,
+        source_name=source_name,
+        metadata=metadata,
+        import_format="xrd_cif",
+        import_confidence=confidence,
+        import_warnings=warnings_list,
+        wavelength_angstrom=wavelength,
+        data_type=data_type,
+    )
+
+
+
+

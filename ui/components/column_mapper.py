@@ -1,4 +1,4 @@
-"""Column mapping widget for mapping file columns to standard thermal data columns."""
+﻿"""Column mapping widget for mapping file columns to standard thermal data columns."""
 
 import streamlit as st
 import pandas as pd
@@ -36,7 +36,7 @@ def render_column_mapper(df, guessed_mapping=None, data_type=None, key_prefix="c
     st.subheader(tx("Kolon Eşleme", "Column Mapping"))
 
     detected_type = guessed_mapping.get("data_type", "unknown")
-    type_options = ["DSC", "TGA", "DTA", "FTIR", "RAMAN"]
+    type_options = ["DSC", "TGA", "DTA", "FTIR", "RAMAN", "XRD"]
     default_idx = 0
     if data_type and data_type in type_options:
         default_idx = type_options.index(data_type)
@@ -57,11 +57,13 @@ def render_column_mapper(df, guessed_mapping=None, data_type=None, key_prefix="c
         "DTA": tx("ΔT / Sinyal Kolonu", "ΔT / Signal Column"),
         "FTIR": tx("Absorbans / Geçirgenlik Kolonu", "Absorbance / Transmittance Column"),
         "RAMAN": tx("Raman Yoğunluk Kolonu", "Raman Intensity Column"),
+        "XRD": tx("XRD Yoğunluk Kolonu", "XRD Intensity Column"),
     }
     signal_label = signal_labels.get(selected_type, tx("Sinyal Kolonu", "Signal Column"))
     axis_labels = {
         "FTIR": tx("Dalga Sayısı Kolonu", "Wavenumber Column"),
         "RAMAN": tx("Raman Shift Kolonu", "Raman Shift Column"),
+        "XRD": tx("2θ Kolonu", "2theta Column"),
     }
     axis_label = axis_labels.get(selected_type, tx("Sıcaklık Kolonu", "Temperature Column"))
 

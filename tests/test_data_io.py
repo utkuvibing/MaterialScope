@@ -1,4 +1,4 @@
-"""
+﻿"""
 test_data_io.py
 ---------------
 Tests for core.data_io
@@ -465,6 +465,93 @@ class TestReadCSV:
         with pytest.raises(ValueError, match="single-spectrum files only"):
             read_thermal_data(buf)
 
+    def test_read_xrd_xy_infers_normalized_contract_metadata(self):
+        buf = io.StringIO(
+            "# wavelength 1.5406\n"
+            "2theta intensity\n"
+            "10.0 100\n"
+            "10.5 140\n"
+            "11.0 120\n"
+        )
+        buf.name = "pattern.xy"
+
+        ds = read_thermal_data(buf)
+
+        assert ds.data_type == "XRD"
+        assert len(ds.data) == 3
+        assert ds.metadata["import_format"] == "xrd_xy_dat"
+        assert ds.metadata["xrd_axis_role"] == "two_theta"
+        assert ds.metadata["xrd_axis_unit"] == "degree_2theta"
+        assert ds.metadata["xrd_wavelength_angstrom"] == pytest.approx(1.5406)
+        assert ds.units["temperature"] == "degree_2theta"
+
+    def test_read_xrd_dat_respects_explicit_xrd_type_even_without_headers(self):
+        buf = io.StringIO(
+            "5.0 20\n"
+            "6.0 25\n"
+            "7.0 30\n"
+        )
+        buf.name = "unknown_pattern.dat"
+
+        ds = read_thermal_data(buf, data_type="XRD")
+
+        assert ds.data_type == "XRD"
+        assert len(ds.data) == 3
+        assert ds.metadata["import_format"] == "xrd_xy_dat"
+        assert ds.metadata["xrd_axis_role"] == "two_theta"
+
+    def test_read_xrd_cif_supports_bounded_powder_pattern_loop(self):
+        buf = io.StringIO(
+            "data_demo\n"
+            "_diffrn_radiation_wavelength 1.5406\n"
+            "loop_\n"
+            "_pd_meas_2theta_scan\n"
+            "_pd_meas_intensity_total\n"
+            "10.0 100\n"
+            "10.2 125\n"
+            "10.4 110\n"
+        )
+        buf.name = "pattern.cif"
+
+        ds = read_thermal_data(buf)
+
+        assert ds.data_type == "XRD"
+        assert len(ds.data) == 3
+        assert ds.metadata["import_format"] == "xrd_cif"
+        assert ds.metadata["xrd_axis_role"] == "two_theta"
+        assert ds.metadata["xrd_wavelength_angstrom"] == pytest.approx(1.5406)
+
+    def test_read_xrd_cif_rejects_structural_only_scope_with_explicit_message(self):
+        buf = io.StringIO(
+            "data_struct\n"
+            "_cell_length_a 5.43\n"
+            "loop_\n"
+            "_atom_site_label\n"
+            "_atom_site_fract_x\n"
+            "Si1 0.0\n"
+        )
+        buf.name = "structure_only.cif"
+
+        with pytest.raises(ValueError, match="outside MVP scope"):
+            read_thermal_data(buf)
+
+    def test_read_xrd_cif_rejects_multiblock_variants(self):
+        buf = io.StringIO(
+            "data_one\n"
+            "loop_\n"
+            "_pd_meas_2theta_scan\n"
+            "_pd_meas_intensity_total\n"
+            "10.0 100\n"
+            "data_two\n"
+            "loop_\n"
+            "_pd_meas_2theta_scan\n"
+            "_pd_meas_intensity_total\n"
+            "10.5 110\n"
+        )
+        buf.name = "multiblock.cif"
+
+        with pytest.raises(ValueError, match="exactly one data_ block"):
+            read_thermal_data(buf)
     def test_read_csv_raises_on_missing_temperature(self):
         """read_thermal_data should raise ValueError when temperature cannot be identified."""
         csv_content = "Signal\n1.0\n2.0\n3.0\n"
@@ -530,3 +617,4 @@ class TestExportResultsCSV:
         buf = io.StringIO()
         with pytest.raises(TypeError):
             export_results_csv([1, 2, 3], buf)
+
