@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 from typing import Any, Mapping
 
+import numpy as np
+
 from core.dta_processor import DTAProcessor
 from core.dsc_processor import DSCProcessor
 from core.peak_analysis import characterize_peaks
@@ -16,7 +18,7 @@ from core.processing_schema import (
     update_tga_unit_context,
 )
 from core.provenance import build_calibration_reference_context, build_result_provenance
-from core.result_serialization import serialize_dsc_result, serialize_dta_result, serialize_tga_result
+from core.result_serialization import make_result_record, serialize_dsc_result, serialize_dta_result, serialize_tga_result
 from core.tga_processor import TGAProcessor, resolve_tga_unit_interpretation
 from core.validation import validate_thermal_dataset
 
@@ -74,6 +76,38 @@ _DTA_TEMPLATE_DEFAULTS = {
             "prominence": 0.0,
             "distance": 8,
         },
+    },
+}
+_FTIR_TEMPLATE_DEFAULTS = {
+    "ftir.general": {
+        "smoothing": {"method": "moving_average", "window_length": 11},
+        "baseline": {"method": "linear"},
+        "normalization": {"method": "vector"},
+        "peak_detection": {"prominence": 0.05, "min_distance": 6, "max_peaks": 12},
+        "similarity_matching": {"metric": "cosine", "top_n": 3, "minimum_score": 0.45},
+    },
+    "ftir.functional_groups": {
+        "smoothing": {"method": "moving_average", "window_length": 9},
+        "baseline": {"method": "linear"},
+        "normalization": {"method": "vector"},
+        "peak_detection": {"prominence": 0.04, "min_distance": 5, "max_peaks": 16},
+        "similarity_matching": {"metric": "cosine", "top_n": 5, "minimum_score": 0.42},
+    },
+}
+_RAMAN_TEMPLATE_DEFAULTS = {
+    "raman.general": {
+        "smoothing": {"method": "moving_average", "window_length": 9},
+        "baseline": {"method": "linear"},
+        "normalization": {"method": "snv"},
+        "peak_detection": {"prominence": 0.04, "min_distance": 5, "max_peaks": 14},
+        "similarity_matching": {"metric": "cosine", "top_n": 3, "minimum_score": 0.45},
+    },
+    "raman.polymorph_screening": {
+        "smoothing": {"method": "moving_average", "window_length": 7},
+        "baseline": {"method": "linear"},
+        "normalization": {"method": "snv"},
+        "peak_detection": {"prominence": 0.03, "min_distance": 4, "max_peaks": 18},
+        "similarity_matching": {"metric": "pearson", "top_n": 5, "minimum_score": 0.4},
     },
 }
 _VALID_EXECUTION_STATUSES = {"saved", "blocked", "failed"}
@@ -156,6 +190,17 @@ def execute_batch_template(
         return _execute_dta_batch(
             dataset_key=dataset_key,
             dataset=dataset,
+            processing=processing,
+            analysis_history=analysis_history,
+            analyst_name=analyst_name,
+            app_version=app_version,
+            batch_run_id=batch_run_id,
+        )
+    if normalized_type in {"FTIR", "RAMAN"}:
+        return _execute_spectral_batch(
+            dataset_key=dataset_key,
+            dataset=dataset,
+            analysis_type=normalized_type,
             processing=processing,
             analysis_history=analysis_history,
             analyst_name=analyst_name,
@@ -409,6 +454,12 @@ def _template_defaults(analysis_type: str, workflow_template_id: str) -> dict[st
     elif analysis_type == "DTA":
         catalog = _DTA_TEMPLATE_DEFAULTS
         fallback = "dta.general"
+    elif analysis_type == "FTIR":
+        catalog = _FTIR_TEMPLATE_DEFAULTS
+        fallback = "ftir.general"
+    elif analysis_type == "RAMAN":
+        catalog = _RAMAN_TEMPLATE_DEFAULTS
+        fallback = "raman.general"
     else:
         raise ValueError(f"Unsupported batch analysis type '{analysis_type}'")
 
@@ -566,6 +617,418 @@ def _select_dta_reference_temperature(result) -> float | None:
     if peaks:
         return getattr(peaks[0], "peak_temperature", None) or getattr(peaks[0], "temperature", None)
     return None
+
+
+def _slug_token(value: Any) -> str:
+    text = "".join(char.lower() if char.isalnum() else "_" for char in str(value or "").strip())
+    token = "_".join(part for part in text.split("_") if part)
+    return token or "reference"
+
+
+def _to_float_array(values: Any) -> np.ndarray | None:
+    if values is None:
+        return None
+    try:
+        array = np.asarray(values, dtype=float)
+    except Exception:
+        return None
+    if array.ndim != 1 or array.size < 3:
+        return None
+    if not np.isfinite(array).all():
+        return None
+    return array
+
+
+def _sorted_axis_signal(axis: np.ndarray, signal: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    order = np.argsort(axis)
+    sorted_axis = axis[order]
+    sorted_signal = signal[order]
+    unique_axis, unique_idx = np.unique(sorted_axis, return_index=True)
+    return unique_axis, sorted_signal[unique_idx]
+
+
+def _apply_spectral_smoothing(signal: np.ndarray, config: Mapping[str, Any]) -> np.ndarray:
+    method = str(config.get("method") or "moving_average").strip().lower()
+    if method in {"none", "off"}:
+        return signal.copy()
+    window = int(config.get("window_length") or 9)
+    if window < 3:
+        window = 3
+    if window % 2 == 0:
+        window += 1
+    kernel = np.ones(window, dtype=float) / float(window)
+    pad = window // 2
+    padded = np.pad(signal, (pad, pad), mode="edge")
+    return np.convolve(padded, kernel, mode="valid")
+
+
+def _estimate_spectral_baseline(axis: np.ndarray, signal: np.ndarray, config: Mapping[str, Any]) -> np.ndarray:
+    method = str(config.get("method") or "linear").strip().lower()
+    if method in {"none", "off"}:
+        return np.zeros_like(signal)
+    if method in {"linear", "asls", "rubberband"}:
+        start = float(signal[0])
+        end = float(signal[-1])
+        if float(axis[-1]) == float(axis[0]):
+            return np.full_like(signal, start)
+        slope = (end - start) / (float(axis[-1]) - float(axis[0]))
+        return start + slope * (axis - float(axis[0]))
+    offset = float(np.min(signal))
+    return np.full_like(signal, offset)
+
+
+def _normalize_spectral_signal(signal: np.ndarray, config: Mapping[str, Any]) -> np.ndarray:
+    method = str(config.get("method") or "vector").strip().lower()
+    centered = signal - float(np.mean(signal))
+    if method == "snv":
+        std = float(np.std(centered))
+        return centered / std if std > 0 else centered
+    if method == "max":
+        scale = float(np.max(np.abs(signal)))
+        return signal / scale if scale > 0 else signal.copy()
+    norm = float(np.linalg.norm(signal))
+    return signal / norm if norm > 0 else signal.copy()
+
+
+def _detect_spectral_peaks(axis: np.ndarray, signal: np.ndarray, config: Mapping[str, Any]) -> list[dict[str, float]]:
+    prominence = float(config.get("prominence") or 0.05)
+    min_distance = int(config.get("min_distance") or 5)
+    max_peaks = int(config.get("max_peaks") or 10)
+
+    candidate_indices: list[int] = []
+    for idx in range(1, signal.size - 1):
+        if signal[idx] < prominence:
+            continue
+        if signal[idx] >= signal[idx - 1] and signal[idx] >= signal[idx + 1]:
+            candidate_indices.append(idx)
+
+    selected: list[int] = []
+    for idx in sorted(candidate_indices, key=lambda item: float(signal[item]), reverse=True):
+        if any(abs(idx - prev) < min_distance for prev in selected):
+            continue
+        selected.append(idx)
+        if len(selected) >= max_peaks:
+            break
+
+    return [
+        {"position": float(axis[idx]), "intensity": float(signal[idx])}
+        for idx in sorted(selected)
+    ]
+
+
+def _extract_reference_signal(entry: Mapping[str, Any]) -> tuple[np.ndarray | None, np.ndarray | None]:
+    axis = _to_float_array(entry.get("axis") or entry.get("temperature") or entry.get("x"))
+    signal = _to_float_array(entry.get("signal") or entry.get("intensity") or entry.get("y"))
+    if axis is None or signal is None or axis.size != signal.size:
+        return None, None
+    return _sorted_axis_signal(axis, signal)
+
+
+def _resolve_spectral_references(
+    *,
+    dataset,
+    processing: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    metadata = getattr(dataset, "metadata", {}) or {}
+    method_context = (processing.get("method_context") or {}) if isinstance(processing, Mapping) else {}
+    raw_references = (
+        metadata.get("spectral_reference_library")
+        or metadata.get("reference_library")
+        or method_context.get("spectral_reference_library")
+        or []
+    )
+    if not isinstance(raw_references, list):
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for index, item in enumerate(raw_references, start=1):
+        if not isinstance(item, Mapping):
+            continue
+        candidate_id = str(item.get("id") or item.get("candidate_id") or f"reference_{index}")
+        candidate_name = str(item.get("name") or item.get("candidate_name") or candidate_id)
+        axis, signal = _extract_reference_signal(item)
+        if axis is None or signal is None:
+            continue
+        normalized.append(
+            {
+                "candidate_id": _slug_token(candidate_id),
+                "candidate_name": candidate_name,
+                "axis": axis,
+                "signal": signal,
+            }
+        )
+    return normalized
+
+
+def _spectral_similarity(observed: np.ndarray, reference: np.ndarray, metric: str) -> float:
+    token = metric.strip().lower()
+    if token == "pearson":
+        obs = observed - float(np.mean(observed))
+        ref = reference - float(np.mean(reference))
+        obs_norm = float(np.linalg.norm(obs))
+        ref_norm = float(np.linalg.norm(ref))
+        if obs_norm == 0.0 or ref_norm == 0.0:
+            return 0.0
+        correlation = float(np.dot(obs, ref) / (obs_norm * ref_norm))
+        return max(0.0, min(1.0, (correlation + 1.0) / 2.0))
+    obs_norm = float(np.linalg.norm(observed))
+    ref_norm = float(np.linalg.norm(reference))
+    if obs_norm == 0.0 or ref_norm == 0.0:
+        return 0.0
+    similarity = float(np.dot(observed, reference) / (obs_norm * ref_norm))
+    return max(0.0, min(1.0, (similarity + 1.0) / 2.0))
+
+
+def _confidence_band(score: float, minimum_score: float) -> str:
+    if score >= max(minimum_score + 0.35, 0.85):
+        return "high"
+    if score >= max(minimum_score + 0.15, 0.65):
+        return "medium"
+    if score >= minimum_score:
+        return "low"
+    return "no_match"
+
+
+def _shared_peak_count(observed_peaks: list[dict[str, float]], reference_peaks: list[dict[str, float]], tolerance: float = 12.0) -> int:
+    if not observed_peaks or not reference_peaks:
+        return 0
+    remaining = [float(item["position"]) for item in reference_peaks]
+    shared = 0
+    for observed in observed_peaks:
+        position = float(observed["position"])
+        closest_index = None
+        closest_delta = None
+        for idx, candidate in enumerate(remaining):
+            delta = abs(position - candidate)
+            if closest_delta is None or delta < closest_delta:
+                closest_delta = delta
+                closest_index = idx
+        if closest_delta is not None and closest_delta <= tolerance and closest_index is not None:
+            shared += 1
+            remaining.pop(closest_index)
+    return shared
+
+
+def _rank_spectral_matches(
+    *,
+    axis: np.ndarray,
+    normalized_signal: np.ndarray,
+    observed_peaks: list[dict[str, float]],
+    references: list[dict[str, Any]],
+    matching_config: Mapping[str, Any],
+    peak_config: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    metric = str(matching_config.get("metric") or "cosine")
+    top_n = int(matching_config.get("top_n") or 3)
+    minimum_score = float(matching_config.get("minimum_score") or 0.45)
+    if top_n < 1:
+        top_n = 1
+
+    ranked: list[dict[str, Any]] = []
+    for reference in references:
+        reference_axis = reference["axis"]
+        reference_signal = reference["signal"]
+        interpolated = np.interp(axis, reference_axis, reference_signal)
+        reference_smoothed = _apply_spectral_smoothing(interpolated, {"method": "none"})
+        reference_normalized = _normalize_spectral_signal(reference_smoothed, {"method": "vector"})
+        score = _spectral_similarity(normalized_signal, reference_normalized, metric)
+        confidence_band = _confidence_band(score, minimum_score)
+        reference_peaks = _detect_spectral_peaks(axis, reference_normalized, peak_config)
+        shared = _shared_peak_count(observed_peaks, reference_peaks)
+        overlap_ratio = float(shared / max(len(observed_peaks), len(reference_peaks), 1))
+        ranked.append(
+            {
+                "candidate_id": reference["candidate_id"],
+                "candidate_name": reference["candidate_name"],
+                "normalized_score": round(score, 4),
+                "confidence_band": confidence_band,
+                "evidence": {
+                    "metric": metric.lower(),
+                    "observed_peak_count": len(observed_peaks),
+                    "reference_peak_count": len(reference_peaks),
+                    "shared_peak_count": shared,
+                    "peak_overlap_ratio": round(overlap_ratio, 4),
+                },
+            }
+        )
+
+    ranked.sort(key=lambda item: (-float(item["normalized_score"]), str(item["candidate_id"])))
+    trimmed = ranked[:top_n]
+    for rank, item in enumerate(trimmed, start=1):
+        item["rank"] = rank
+    return trimmed
+
+
+def _execute_spectral_batch(
+    *,
+    dataset_key: str,
+    dataset,
+    analysis_type: str,
+    processing: dict[str, Any],
+    analysis_history: list[dict[str, Any]] | None,
+    analyst_name: str | None,
+    app_version: str | None,
+    batch_run_id: str | None,
+) -> dict[str, Any]:
+    axis = np.asarray(dataset.data["temperature"], dtype=float)
+    signal = np.asarray(dataset.data["signal"], dtype=float)
+    axis, signal = _sorted_axis_signal(axis, signal)
+
+    smoothing = copy.deepcopy((processing.get("signal_pipeline") or {}).get("smoothing") or {})
+    baseline = copy.deepcopy((processing.get("signal_pipeline") or {}).get("baseline") or {})
+    normalization = copy.deepcopy((processing.get("signal_pipeline") or {}).get("normalization") or {})
+    peak_detection = copy.deepcopy((processing.get("analysis_steps") or {}).get("peak_detection") or {})
+    similarity_matching = copy.deepcopy((processing.get("analysis_steps") or {}).get("similarity_matching") or {})
+
+    smoothed = _apply_spectral_smoothing(signal, smoothing)
+    baseline_curve = _estimate_spectral_baseline(axis, smoothed, baseline)
+    corrected = smoothed - baseline_curve
+    normalized_signal = _normalize_spectral_signal(corrected, normalization)
+    observed_peaks = _detect_spectral_peaks(axis, normalized_signal, peak_detection)
+
+    references = _resolve_spectral_references(dataset=dataset, processing=processing)
+    ranked_matches = _rank_spectral_matches(
+        axis=axis,
+        normalized_signal=normalized_signal,
+        observed_peaks=observed_peaks,
+        references=references,
+        matching_config=similarity_matching,
+        peak_config=peak_detection,
+    )
+
+    minimum_score = float(similarity_matching.get("minimum_score") or 0.45)
+    top_match = ranked_matches[0] if ranked_matches else None
+    matched = bool(top_match) and float(top_match["normalized_score"]) >= minimum_score
+    match_status = "matched" if matched else "no_match"
+    top_score = float(top_match["normalized_score"]) if top_match else 0.0
+    confidence_band = top_match["confidence_band"] if matched and top_match else "no_match"
+    caution_payload = (
+        {}
+        if matched
+        else {
+            "code": "spectral_no_match",
+            "message": "No reference candidate met the minimum similarity threshold.",
+            "minimum_score": minimum_score,
+            "top_candidate_score": round(top_score, 4),
+        }
+    )
+
+    processing = update_method_context(
+        processing,
+        {
+            "batch_run_id": batch_run_id or "",
+            "batch_template_runner": "compare_workspace",
+            "reference_candidate_count": len(references),
+            "matching_metric": str(similarity_matching.get("metric") or "cosine").lower(),
+            "matching_top_n": int(similarity_matching.get("top_n") or 3),
+            "matching_minimum_score": minimum_score,
+        },
+        analysis_type=analysis_type,
+    )
+    validation = validate_thermal_dataset(dataset, analysis_type=analysis_type, processing=processing)
+    provenance = build_result_provenance(
+        dataset=dataset,
+        dataset_key=dataset_key,
+        analysis_history=analysis_history,
+        app_version=app_version,
+        analyst_name=analyst_name,
+        extra={
+            "batch_run_id": batch_run_id,
+            "batch_runner": "compare_workspace",
+            "analysis_type": analysis_type,
+            "match_status": match_status,
+            "reference_candidate_count": len(references),
+        },
+    )
+
+    summary = {
+        "peak_count": len(observed_peaks),
+        "match_status": match_status,
+        "candidate_count": len(ranked_matches),
+        "top_match_id": top_match["candidate_id"] if matched and top_match else None,
+        "top_match_name": top_match["candidate_name"] if matched and top_match else None,
+        "top_match_score": round(top_score, 4),
+        "confidence_band": confidence_band,
+        "caution_code": caution_payload.get("code", ""),
+    }
+    rows = [
+        {
+            "rank": item["rank"],
+            "candidate_id": item["candidate_id"],
+            "candidate_name": item["candidate_name"],
+            "normalized_score": item["normalized_score"],
+            "confidence_band": item["confidence_band"],
+            "evidence": item["evidence"],
+        }
+        for item in ranked_matches
+    ]
+    record = make_result_record(
+        result_id=f"{analysis_type.lower()}_{dataset_key}",
+        analysis_type=analysis_type,
+        status="stable",
+        dataset_key=dataset_key,
+        metadata=dataset.metadata,
+        summary=summary,
+        rows=rows,
+        artifacts={},
+        processing=processing,
+        provenance=provenance,
+        validation=validation,
+        review={
+            "commercial_scope": f"stable_{analysis_type.lower()}",
+            "batch_runner": "compare_workspace",
+            "caution": caution_payload,
+        },
+        scientific_context={
+            "methodology": {
+                "analysis_family": analysis_type,
+                "workflow_template": processing.get("workflow_template_label") or processing.get("workflow_template"),
+                "signal_pipeline": processing.get("signal_pipeline") or {},
+                "analysis_steps": processing.get("analysis_steps") or {},
+            },
+            "numerical_interpretation": [
+                {
+                    "statement": "Top-N spectral similarity candidates were ranked against reference inputs.",
+                    "metric": "top_match_score",
+                    "value": round(top_score, 4),
+                }
+            ],
+            "warnings": validation.get("warnings") or ([] if matched else [caution_payload["message"]]),
+            "limitations": [
+                "Similarity ranking quality depends on reference-library coverage and preprocessing assumptions.",
+            ],
+        },
+    )
+    state = {
+        "axis": axis.tolist(),
+        "smoothed": smoothed.tolist(),
+        "baseline": baseline_curve.tolist(),
+        "corrected": corrected.tolist(),
+        "normalized": normalized_signal.tolist(),
+        "peaks": observed_peaks,
+        "matches": ranked_matches,
+        "processing": processing,
+    }
+
+    return {
+        "status": "saved",
+        "analysis_type": analysis_type,
+        "dataset_key": dataset_key,
+        "processing": processing,
+        "validation": validation,
+        "record": record,
+        "state": state,
+        "summary_row": _make_summary_row(
+            dataset_key=dataset_key,
+            dataset=dataset,
+            analysis_type=analysis_type,
+            processing=processing,
+            validation=validation,
+            execution_status="saved",
+            record=record,
+            failure_reason="",
+        ),
+    }
 
 
 def _make_summary_row(

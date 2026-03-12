@@ -46,6 +46,74 @@ def _make_dta_dataset(thermal_dataset):
     return dataset
 
 
+def _gaussian(axis, center, width, amplitude):
+    return amplitude * np.exp(-0.5 * ((axis - center) / width) ** 2)
+
+
+def _make_spectral_dataset(*, analysis_type: str, include_reference_library: bool = True, no_match: bool = False):
+    axis = np.linspace(450.0, 1800.0, 420)
+    if analysis_type.upper() == "FTIR":
+        base = (
+            _gaussian(axis, 720.0, 22.0, 0.9)
+            + _gaussian(axis, 1115.0, 28.0, 1.3)
+            + _gaussian(axis, 1510.0, 24.0, 0.8)
+        )
+        signal_unit = "a.u."
+    else:
+        base = (
+            _gaussian(axis, 620.0, 18.0, 1.1)
+            + _gaussian(axis, 1003.0, 15.0, 1.4)
+            + _gaussian(axis, 1585.0, 20.0, 0.95)
+        )
+        signal_unit = "counts"
+
+    signal = base + 0.02 * np.sin(axis / 45.0)
+    metadata = {
+        "sample_name": f"Synthetic{analysis_type.upper()}",
+        "sample_mass": 1.0,
+        "heating_rate": 1.0,
+        "instrument": "SpecBench",
+        "vendor": "TestVendor",
+        "display_name": f"Synthetic {analysis_type.upper()} Spectrum",
+        "source_data_hash": f"synthetic-{analysis_type.lower()}-hash",
+    }
+    if include_reference_library:
+        if no_match:
+            ref_signal = np.zeros_like(signal)
+            metadata["spectral_reference_library"] = [
+                {
+                    "id": f"{analysis_type.lower()}_mismatch",
+                    "name": "Intentional Mismatch",
+                    "axis": axis.tolist(),
+                    "signal": ref_signal.tolist(),
+                }
+            ]
+        else:
+            metadata["spectral_reference_library"] = [
+                {
+                    "id": f"{analysis_type.lower()}_polymer_a",
+                    "name": "Polymer A",
+                    "axis": axis.tolist(),
+                    "signal": (signal * 0.98 + 0.01).tolist(),
+                },
+                {
+                    "id": f"{analysis_type.lower()}_polymer_b",
+                    "name": "Polymer B",
+                    "axis": axis.tolist(),
+                    "signal": np.roll(signal, 14).tolist(),
+                },
+            ]
+
+    return ThermalDataset(
+        data=pd.DataFrame({"temperature": axis, "signal": signal}),
+        metadata=metadata,
+        data_type=analysis_type.upper(),
+        units={"temperature": "cm^-1", "signal": signal_unit},
+        original_columns={"temperature": "wavenumber", "signal": "intensity"},
+        file_path="",
+    )
+
+
 def test_execute_dsc_batch_template_saves_normalized_record(thermal_dataset):
     dataset = thermal_dataset.copy()
     dataset.metadata.update(
@@ -150,6 +218,80 @@ def test_execute_dta_batch_template_honors_thermal_events_override(thermal_datas
     assert outcome["record"]["processing"]["workflow_template_id"] == "dta.thermal_events"
     assert outcome["record"]["processing"]["workflow_template"] == "Thermal Event Screening"
     assert outcome["summary_row"]["workflow_template_id"] == "dta.thermal_events"
+
+
+def test_execute_ftir_batch_template_returns_ranked_similarity_matches():
+    dataset = _make_spectral_dataset(analysis_type="FTIR")
+
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_demo",
+    )
+
+    assert outcome["status"] == "saved"
+    assert outcome["record"]["id"] == "ftir_synthetic_ftir"
+    assert outcome["record"]["summary"]["match_status"] == "matched"
+    assert outcome["record"]["summary"]["top_match_id"] == "ftir_polymer_a"
+    assert outcome["record"]["summary"]["confidence_band"] in {"high", "medium", "low"}
+    assert outcome["record"]["rows"][0]["normalized_score"] >= outcome["record"]["rows"][-1]["normalized_score"]
+    assert outcome["record"]["rows"][0]["evidence"]["shared_peak_count"] >= 1
+    assert outcome["summary_row"]["match_status"] == "matched"
+
+
+def test_execute_raman_batch_template_handles_no_match_without_failing():
+    dataset = _make_spectral_dataset(analysis_type="RAMAN", no_match=True)
+
+    outcome = execute_batch_template(
+        dataset_key="synthetic_raman",
+        dataset=dataset,
+        analysis_type="RAMAN",
+        workflow_template_id="raman.general",
+        batch_run_id="batch_raman_demo",
+    )
+
+    assert outcome["status"] == "saved"
+    assert outcome["record"]["id"] == "raman_synthetic_raman"
+    assert outcome["record"]["summary"]["match_status"] == "no_match"
+    assert outcome["record"]["summary"]["caution_code"] == "spectral_no_match"
+    assert outcome["record"]["review"]["caution"]["code"] == "spectral_no_match"
+    assert outcome["summary_row"]["execution_status"] == "saved"
+    assert outcome["summary_row"]["match_status"] == "no_match"
+
+
+def test_execute_ftir_batch_template_similarity_is_deterministic():
+    dataset = _make_spectral_dataset(analysis_type="FTIR")
+
+    first = execute_batch_template(
+        dataset_key="synthetic_ftir",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_first",
+    )
+    second = execute_batch_template(
+        dataset_key="synthetic_ftir",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_second",
+    )
+
+    first_processing = dict(first["record"]["processing"])
+    second_processing = dict(second["record"]["processing"])
+    first_context = dict(first_processing["method_context"])
+    second_context = dict(second_processing["method_context"])
+    first_context.pop("batch_run_id", None)
+    second_context.pop("batch_run_id", None)
+    first_processing["method_context"] = first_context
+    second_processing["method_context"] = second_context
+
+    assert first["status"] == second["status"] == "saved"
+    assert first_processing == second_processing
+    assert first["record"]["summary"] == second["record"]["summary"]
+    assert first["record"]["rows"] == second["record"]["rows"]
 
 
 def test_execute_batch_template_blocks_failed_validation(thermal_dataset):

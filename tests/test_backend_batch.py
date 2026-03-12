@@ -141,3 +141,39 @@ def test_batch_summary_persists_in_project_roundtrip(thermal_dataset):
     assert compare_payload["batch_run_id"] == run_payload["batch_run_id"]
     assert len(compare_payload["batch_summary"]) == 2
     assert len(compare_payload["batch_result_ids"]) == 2
+
+
+def test_batch_run_ftir_similarity_path_returns_no_match_as_saved(thermal_dataset):
+    app = create_app(api_token="batch-token")
+    client = TestClient(app)
+    project_id = client.post("/workspace/new", headers=_headers()).json()["project_id"]
+
+    spectral_dataset = thermal_dataset.copy()
+    spectral_dataset.data["temperature"] = spectral_dataset.data["temperature"] * 5.0 + 400.0
+    spectral_dataset.data["signal"] = spectral_dataset.data["signal"].abs() + 0.02
+
+    ftir_key = _import_dataset(client, project_id, spectral_dataset, "batch_ftir.csv", "FTIR")
+    compare_set = client.post(
+        f"/workspace/{project_id}/compare/selection",
+        headers=_headers(),
+        json={"operation": "replace", "dataset_keys": [ftir_key]},
+    )
+    assert compare_set.status_code == 200
+
+    batch_run = client.post(
+        f"/workspace/{project_id}/batch/run",
+        headers=_headers(),
+        json={"analysis_type": "FTIR", "workflow_template_id": "ftir.general"},
+    )
+    assert batch_run.status_code == 200
+    payload = batch_run.json()
+
+    assert payload["analysis_type"] == "FTIR"
+    assert payload["outcomes"]["total"] == 1
+    assert payload["outcomes"]["saved"] == 1
+    assert payload["outcomes"]["blocked"] == 0
+    assert payload["outcomes"]["failed"] == 0
+    assert len(payload["saved_result_ids"]) == 1
+    assert len(payload["batch_summary"]) == 1
+    assert payload["batch_summary"][0]["match_status"] == "no_match"
+    assert payload["batch_summary"][0]["caution_code"] == "spectral_no_match"

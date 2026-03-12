@@ -56,6 +56,10 @@ def _failed_batch_row(
         "failure_reason": message,
         "message": message,
         "error_id": "",
+        "match_status": "not_run",
+        "top_match_id": None,
+        "top_match_score": None,
+        "confidence_band": "not_run",
     }
 
 
@@ -85,6 +89,10 @@ def _blocked_batch_row(
         "failure_reason": message,
         "message": message,
         "error_id": "",
+        "match_status": "not_run",
+        "top_match_id": None,
+        "top_match_score": None,
+        "confidence_band": "not_run",
     }
 
 
