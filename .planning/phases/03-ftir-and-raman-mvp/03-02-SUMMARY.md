@@ -66,6 +66,8 @@ Each task was committed atomically:
 2. **Task 2: Implement FTIR/Raman stable execution with ranked similarity output** - `2920062` (feat)
 3. **Task 3: Add spectral validation + serialization/report readiness semantics** - `1f61db2` (feat)
 
+**Plan metadata:** `c46239a` (docs)
+
 ## Files Created/Modified
 - `core/processing_schema.py` - Added FTIR/RAMAN workflow template payloads and spectral step defaults.
 - `core/batch_runner.py` - Routed spectral stable records through caution-aware validation and serializer contracts.
@@ -91,7 +93,9 @@ None - plan executed exactly as written.
 
 ## Issues Encountered
 
-- Executor handoff/runtime interruptions occurred in orchestration, but plan execution artifacts and commits were validated directly and completion was recovered safely.
+- Verification command `pytest -q tests/test_validation.py tests/test_result_serialization.py` reports one pre-existing failure:
+  - `tests/test_validation.py::test_validate_thermal_dataset_surfaces_import_review_context` expected `inferred_analysis_type == "TGA"` but receives `"unknown"`.
+  - Logged as out-of-scope in `.planning/phases/03-ftir-and-raman-mvp/deferred-items.md` and not auto-fixed as part of Task 3.
 
 ## User Setup Required
 

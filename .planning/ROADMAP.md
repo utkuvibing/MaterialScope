@@ -96,7 +96,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 |-------|----------------|--------|-----------|
 | 1. Foundation Contracts and Execution Path | 3/3 | Complete    | 2026-03-11 |
 | 2. DTA Stabilization | 3/3 | Complete | 2026-03-12 |
-| 3. FTIR and Raman MVP | 0/TBD | Not started | - |
+| 3. FTIR and Raman MVP | 2/3 | In Progress|  |
 | 4. XRD MVP | 0/TBD | Not started | - |
 | 5. XRF MVP | 0/TBD | Not started | - |
 | 6. Cross-Modality Quality and Reporting Hardening | 0/TBD | Not started | - |
