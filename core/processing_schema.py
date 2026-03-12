@@ -15,6 +15,7 @@ _SIGNAL_PIPELINE_SECTIONS = {
     "DTA": ("smoothing", "baseline"),
     "FTIR": ("smoothing", "baseline", "normalization"),
     "RAMAN": ("smoothing", "baseline", "normalization"),
+    "XRD": ("axis_normalization", "smoothing", "baseline"),
     "KISSINGER": (),
     "OZAWA-FLYNN-WALL": (),
     "FRIEDMAN": (),
@@ -26,6 +27,7 @@ _ANALYSIS_STEP_SECTIONS = {
     "DTA": ("peak_detection",),
     "FTIR": ("peak_detection", "similarity_matching"),
     "RAMAN": ("peak_detection", "similarity_matching"),
+    "XRD": ("peak_detection",),
     "KISSINGER": ("kinetic_regression",),
     "OZAWA-FLYNN-WALL": ("isoconversional_analysis",),
     "FRIEDMAN": ("isoconversional_analysis",),
@@ -37,6 +39,7 @@ _DEFAULT_WORKFLOW_TEMPLATE = {
     "DTA": "General DTA",
     "FTIR": "General FTIR",
     "RAMAN": "General Raman",
+    "XRD": "General XRD",
     "KISSINGER": "Kissinger Kinetics",
     "OZAWA-FLYNN-WALL": "OFW Isoconversional",
     "FRIEDMAN": "Friedman Isoconversional",
@@ -64,6 +67,10 @@ _WORKFLOW_TEMPLATES = {
     "RAMAN": (
         {"id": "raman.general", "label": "General Raman", "version": 1},
         {"id": "raman.polymorph_screening", "label": "Polymorph Screening", "version": 1},
+    ),
+    "XRD": (
+        {"id": "xrd.general", "label": "General XRD", "version": 1},
+        {"id": "xrd.phase_screening", "label": "Phase Screening", "version": 1},
     ),
     "KISSINGER": (
         {"id": "kinetics.kissinger_general", "label": "Kissinger Kinetics", "version": 1},
@@ -120,6 +127,12 @@ _METHOD_CONTEXT_DEFAULTS = {
         "spectral_domain": "raman_shift",
         "x_unit": "cm^-1",
         "default_pipeline_order": ["smoothing", "baseline", "normalization"],
+    },
+    "XRD": {
+        "xrd_axis_role": "two_theta",
+        "xrd_axis_unit": "degree_2theta",
+        "xrd_peak_ranking": "prominence_desc_then_position_asc",
+        "default_pipeline_order": ["axis_normalization", "smoothing", "baseline", "peak_detection"],
     },
     "KISSINGER": {
         "kinetic_family": "model_fitting",

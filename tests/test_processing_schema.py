@@ -27,6 +27,13 @@ def test_get_workflow_templates_includes_ftir_and_raman_catalogs():
     assert "raman.polymorph_screening" in raman_ids
 
 
+def test_get_workflow_templates_includes_xrd_catalog():
+    xrd_ids = {entry["id"] for entry in get_workflow_templates("XRD")}
+
+    assert "xrd.general" in xrd_ids
+    assert "xrd.phase_screening" in xrd_ids
+
+
 def test_ensure_processing_payload_populates_ftir_template_sections_and_method_defaults():
     payload = ensure_processing_payload(
         {
@@ -71,6 +78,27 @@ def test_ensure_processing_payload_populates_raman_template_sections_and_method_
     assert payload["signal_pipeline"]["normalization"]["method"] == "snv"
     assert payload["analysis_steps"]["similarity_matching"]["top_n"] == 3
     assert payload["method_context"]["spectral_domain"] == "raman_shift"
+
+
+def test_ensure_processing_payload_populates_xrd_template_sections_and_method_defaults():
+    payload = ensure_processing_payload(
+        {
+            "axis_normalization": {"sort_axis": True, "deduplicate": "first"},
+            "smoothing": {"method": "savgol", "window_length": 9, "polyorder": 2},
+            "baseline": {"method": "rolling_minimum", "window_length": 31},
+            "peak_detection": {"prominence": 0.08, "distance": 6, "width": 3, "max_peaks": 8},
+        },
+        analysis_type="XRD",
+        workflow_template="xrd.general",
+    )
+
+    assert payload["analysis_type"] == "XRD"
+    assert payload["workflow_template_id"] == "xrd.general"
+    assert list(payload["signal_pipeline"].keys()) == ["axis_normalization", "smoothing", "baseline"]
+    assert payload["analysis_steps"]["peak_detection"]["prominence"] == 0.08
+    assert payload["analysis_steps"]["peak_detection"]["distance"] == 6
+    assert payload["method_context"]["xrd_axis_role"] == "two_theta"
+    assert payload["method_context"]["xrd_peak_ranking"] == "prominence_desc_then_position_asc"
 
 
 def test_ensure_processing_payload_populates_kissinger_defaults():
