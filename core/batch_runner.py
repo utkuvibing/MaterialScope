@@ -25,9 +25,10 @@ from core.result_serialization import (
     serialize_dta_result,
     serialize_spectral_result,
     serialize_tga_result,
+    serialize_xrd_result,
 )
 from core.tga_processor import TGAProcessor, resolve_tga_unit_interpretation
-from core.validation import enrich_spectral_result_validation, validate_thermal_dataset
+from core.validation import enrich_spectral_result_validation, enrich_xrd_result_validation, validate_thermal_dataset
 
 
 _DSC_TEMPLATE_DEFAULTS = {
@@ -1622,14 +1623,17 @@ def _execute_xrd_batch(
         }
         for item in ranked_matches
     ]
-    record = make_result_record(
-        result_id=f"xrd_{dataset_key}",
-        analysis_type="XRD",
-        status="stable",
-        dataset_key=dataset_key,
-        metadata=dataset.metadata,
+    validation = enrich_xrd_result_validation(
+        validation,
         summary=summary,
         rows=rows,
+    )
+    record = serialize_xrd_result(
+        dataset_key,
+        dataset,
+        summary=summary,
+        rows=rows,
+        status="stable",
         artifacts={},
         processing=processing,
         provenance=provenance,
@@ -1639,7 +1643,6 @@ def _execute_xrd_batch(
             "batch_runner": "compare_workspace",
             "caution": caution_payload,
         },
-        scientific_context={},
     )
     state = {
         "axis": axis.tolist(),

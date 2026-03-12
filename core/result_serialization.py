@@ -391,6 +391,82 @@ def _build_spectral_scientific_context(
     )
 
 
+def _build_xrd_scientific_context(
+    summary: dict[str, Any],
+    *,
+    rows: list[dict[str, Any]] | None = None,
+    metadata: dict[str, Any] | None = None,
+    processing: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    methodology = {
+        "analysis_family": "XRD Qualitative Phase Screening",
+        "workflow_template": (processing or {}).get("workflow_template_label")
+        or (processing or {}).get("workflow_template")
+        or "General XRD",
+        "signal_pipeline": (processing or {}).get("signal_pipeline") or {},
+        "analysis_steps": (processing or {}).get("analysis_steps") or {},
+        "matching_context": {
+            "metric": ((processing or {}).get("method_context") or {}).get("xrd_match_metric"),
+            "tolerance_deg": ((processing or {}).get("method_context") or {}).get("xrd_match_tolerance_deg"),
+            "minimum_score": ((processing or {}).get("method_context") or {}).get("xrd_match_minimum_score"),
+        },
+    }
+    equations = [
+        build_equation(
+            "Weighted Peak Overlap",
+            "score = 0.5*coverage + wI*weighted_overlap + wD*delta_score - 0.15*major_unmatched_penalty",
+            notes="Qualitative ranking only; not quantitative phase fraction.",
+        )
+    ]
+    interpretation = [
+        build_interpretation(
+            "Ranked candidate phases were generated from observed/reference peak overlap.",
+            metric="candidate_count",
+            value=summary.get("candidate_count"),
+            unit="candidates",
+        ),
+        build_interpretation(
+            "Top-phase qualitative confidence was assigned from deterministic evidence metrics.",
+            metric="top_phase_score",
+            value=summary.get("top_phase_score"),
+            implication=f"match_status={summary.get('match_status')}",
+        ),
+    ]
+    limitations = [
+        "Qualitative ranking is not a definitive identification or quantitative phase fraction.",
+        "No-match and low-confidence outcomes remain valid cautionary results.",
+    ]
+    warnings = _validation_warnings(validation)
+    caution_code = summary.get("caution_code")
+    if caution_code:
+        warnings.append(f"Caution: {caution_code}")
+    fit_quality = build_fit_quality(
+        {
+            "confidence_band": summary.get("confidence_band"),
+            "top_phase_score": summary.get("top_phase_score"),
+            "match_status": summary.get("match_status"),
+        }
+    )
+    base_context = build_scientific_context(
+        methodology=methodology,
+        equations=equations,
+        numerical_interpretation=interpretation,
+        fit_quality=fit_quality,
+        warnings=warnings,
+        limitations=limitations,
+    )
+    return _attach_reasoning(
+        base_context=base_context,
+        analysis_type="XRD",
+        summary=summary,
+        rows=rows or [],
+        metadata=metadata or {},
+        fit_quality=fit_quality,
+        validation=validation,
+    )
+
+
 def _build_kissinger_scientific_context(result: Any, *, validation: dict[str, Any] | None = None) -> dict[str, Any]:
     equations = [
         build_equation(
@@ -984,6 +1060,111 @@ def serialize_spectral_result(
         or _build_spectral_scientific_context(
             normalized_summary,
             analysis_type=normalized_type,
+            rows=normalized_rows,
+            metadata=dataset.metadata,
+            processing=processing,
+            validation=validation,
+        ),
+    )
+
+
+def serialize_xrd_result(
+    dataset_key: str,
+    dataset,
+    *,
+    summary: Mapping[str, Any] | None = None,
+    rows: Iterable[Mapping[str, Any]] | None = None,
+    status: str = "stable",
+    artifacts: dict[str, Any] | None = None,
+    processing: dict[str, Any] | None = None,
+    provenance: dict[str, Any] | None = None,
+    validation: dict[str, Any] | None = None,
+    review: dict[str, Any] | None = None,
+    scientific_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Serialize a stable XRD qualitative phase-candidate record."""
+    normalized_rows: list[dict[str, Any]] = []
+    for index, item in enumerate(rows or [], start=1):
+        payload = dict(item or {})
+        normalized_rows.append(
+            {
+                "rank": int(payload.get("rank") or index),
+                "candidate_id": payload.get("candidate_id"),
+                "candidate_name": payload.get("candidate_name"),
+                "normalized_score": _clean_scalar(payload.get("normalized_score")),
+                "confidence_band": payload.get("confidence_band"),
+                "evidence": copy.deepcopy(payload.get("evidence") or {}),
+            }
+        )
+
+    normalized_summary = dict(summary or {})
+    normalized_summary.setdefault("peak_count", 0)
+    normalized_summary.setdefault("candidate_count", len(normalized_rows))
+    normalized_summary.setdefault("match_status", "no_match")
+    normalized_summary.setdefault("confidence_band", "no_match")
+    normalized_summary.setdefault("top_phase_id", None)
+    normalized_summary.setdefault("top_phase", None)
+    normalized_summary.setdefault("top_phase_score", 0.0)
+    normalized_summary.setdefault("top_match_id", normalized_summary.get("top_phase_id"))
+    normalized_summary.setdefault("top_match_name", normalized_summary.get("top_phase"))
+    normalized_summary.setdefault("top_match_score", normalized_summary.get("top_phase_score"))
+    normalized_summary.setdefault("sample_name", dataset.metadata.get("sample_name"))
+    normalized_summary.setdefault("sample_mass", dataset.metadata.get("sample_mass"))
+    normalized_summary.setdefault("heating_rate", dataset.metadata.get("heating_rate"))
+    normalized_summary["top_phase_score"] = _clean_scalar(normalized_summary.get("top_phase_score"))
+    normalized_summary["top_match_score"] = _clean_scalar(normalized_summary.get("top_match_score"))
+
+    match_status = str(normalized_summary.get("match_status") or "").lower()
+    confidence_band = str(normalized_summary.get("confidence_band") or "").lower()
+    caution_payload = {}
+    if match_status == "no_match":
+        caution_payload = {
+            "code": str(normalized_summary.get("caution_code") or "xrd_no_match"),
+            "message": str(
+                normalized_summary.get("caution_message")
+                or "No reference phase candidate met the minimum qualitative matching threshold."
+            ),
+            "top_phase_score": _clean_scalar(normalized_summary.get("top_phase_score")),
+        }
+    elif match_status == "matched" and confidence_band == "low":
+        caution_payload = {
+            "code": str(normalized_summary.get("caution_code") or "xrd_low_confidence"),
+            "message": str(
+                normalized_summary.get("caution_message")
+                or "Top XRD candidate is low confidence; review evidence before interpretation."
+            ),
+            "top_phase_score": _clean_scalar(normalized_summary.get("top_phase_score")),
+        }
+
+    if caution_payload:
+        normalized_summary["caution_code"] = caution_payload["code"]
+        normalized_summary["caution_message"] = caution_payload["message"]
+    else:
+        normalized_summary.setdefault("caution_code", "")
+        normalized_summary.setdefault("caution_message", "")
+
+    review_payload = copy.deepcopy(review or {})
+    if caution_payload:
+        review_payload["caution"] = caution_payload
+    elif "caution" not in review_payload:
+        review_payload["caution"] = {}
+
+    return make_result_record(
+        result_id=f"xrd_{dataset_key}",
+        analysis_type="XRD",
+        status=status,
+        dataset_key=dataset_key,
+        metadata=dataset.metadata,
+        summary=normalized_summary,
+        rows=normalized_rows,
+        artifacts=artifacts,
+        processing=processing,
+        provenance=provenance,
+        validation=validation,
+        review=review_payload,
+        scientific_context=scientific_context
+        or _build_xrd_scientific_context(
+            normalized_summary,
             rows=normalized_rows,
             metadata=dataset.metadata,
             processing=processing,

@@ -4,12 +4,13 @@ import pandas as pd
 
 from core.data_io import ThermalDataset
 from core.peak_analysis import ThermalPeak
-from core.processing_schema import ensure_processing_payload, update_processing_step
+from core.processing_schema import ensure_processing_payload, update_method_context, update_processing_step
 from core.result_serialization import (
     flatten_result_records,
     make_result_record,
     serialize_dta_result,
     serialize_spectral_result,
+    serialize_xrd_result,
     split_valid_results,
     validate_result_record,
 )
@@ -73,6 +74,27 @@ def _spectral_dataset(analysis_type: str) -> ThermalDataset:
         data_type=analysis_type.upper(),
         units={"temperature": "cm^-1", "signal": "a.u." if analysis_type.upper() == "FTIR" else "counts"},
         original_columns={"temperature": "wavenumber", "signal": "intensity"},
+        file_path="",
+    )
+
+
+def _xrd_dataset() -> ThermalDataset:
+    return ThermalDataset(
+        data=pd.DataFrame({"temperature": [18.4, 33.2, 47.8, 63.5], "signal": [120.0, 240.0, 190.0, 130.0]}),
+        metadata={
+            "sample_name": "SyntheticXRD",
+            "sample_mass": 1.0,
+            "heating_rate": 1.0,
+            "instrument": "XRDBench",
+            "vendor": "TestVendor",
+            "display_name": "Synthetic XRD Pattern",
+            "xrd_axis_role": "two_theta",
+            "xrd_axis_unit": "degree_2theta",
+            "xrd_wavelength_angstrom": 1.5406,
+        },
+        data_type="XRD",
+        units={"temperature": "degree_2theta", "signal": "counts"},
+        original_columns={"temperature": "two_theta", "signal": "intensity"},
         file_path="",
     )
 
@@ -254,3 +276,100 @@ def test_serialize_raman_result_adds_low_confidence_caution():
     assert record["summary"]["caution_code"] == "spectral_low_confidence"
     assert record["review"]["caution"]["code"] == "spectral_low_confidence"
     assert record["rows"][0]["evidence"]["shared_peak_count"] == 2
+
+
+def test_serialize_xrd_result_keeps_candidate_evidence_and_confidence_band_fields():
+    dataset = _xrd_dataset()
+    processing = ensure_processing_payload(analysis_type="XRD", workflow_template="xrd.general")
+    processing = update_method_context(
+        processing,
+        {
+            "xrd_match_metric": "peak_overlap_weighted",
+            "xrd_match_tolerance_deg": 0.28,
+            "xrd_match_minimum_score": 0.42,
+        },
+        analysis_type="XRD",
+    )
+
+    record = serialize_xrd_result(
+        "synthetic_xrd",
+        dataset,
+        summary={
+            "peak_count": 4,
+            "match_status": "matched",
+            "candidate_count": 2,
+            "top_phase_id": "xrd_phase_alpha",
+            "top_phase": "Phase Alpha",
+            "top_phase_score": 0.79,
+            "confidence_band": "medium",
+        },
+        rows=[
+            {
+                "rank": 1,
+                "candidate_id": "xrd_phase_alpha",
+                "candidate_name": "Phase Alpha",
+                "normalized_score": 0.79,
+                "confidence_band": "medium",
+                "evidence": {
+                    "shared_peak_count": 4,
+                    "weighted_overlap_score": 0.83,
+                    "mean_delta_position": 0.09,
+                    "unmatched_major_peak_count": 0,
+                    "tolerance_deg": 0.28,
+                },
+            }
+        ],
+        processing=processing,
+        validation={"status": "pass", "issues": [], "warnings": []},
+    )
+
+    assert record["id"] == "xrd_synthetic_xrd"
+    assert record["analysis_type"] == "XRD"
+    assert record["summary"]["top_phase_id"] == "xrd_phase_alpha"
+    assert record["summary"]["top_match_id"] == "xrd_phase_alpha"
+    assert record["summary"]["confidence_band"] == "medium"
+    assert record["rows"][0]["evidence"]["weighted_overlap_score"] == 0.83
+    assert record["review"]["caution"] == {}
+    assert record["scientific_context"]["fit_quality"]["confidence_band"] == "medium"
+
+
+def test_serialize_xrd_result_adds_no_match_caution_semantics():
+    dataset = _xrd_dataset()
+    processing = ensure_processing_payload(analysis_type="XRD", workflow_template="xrd.general")
+
+    record = serialize_xrd_result(
+        "synthetic_xrd",
+        dataset,
+        summary={
+            "peak_count": 4,
+            "match_status": "no_match",
+            "candidate_count": 1,
+            "top_phase_id": None,
+            "top_phase": None,
+            "top_phase_score": 0.33,
+            "confidence_band": "no_match",
+        },
+        rows=[
+            {
+                "rank": 1,
+                "candidate_id": "xrd_phase_alpha",
+                "candidate_name": "Phase Alpha",
+                "normalized_score": 0.33,
+                "confidence_band": "no_match",
+                "evidence": {
+                    "shared_peak_count": 0,
+                    "weighted_overlap_score": 0.12,
+                    "mean_delta_position": None,
+                    "unmatched_major_peak_count": 3,
+                    "tolerance_deg": 0.28,
+                },
+            }
+        ],
+        processing=processing,
+        validation={"status": "warn", "issues": [], "warnings": ["XRD no-match caution."]},
+    )
+
+    assert record["summary"]["match_status"] == "no_match"
+    assert record["summary"]["caution_code"] == "xrd_no_match"
+    assert record["review"]["caution"]["code"] == "xrd_no_match"
+    assert any("no-match" in item.lower() for item in record["scientific_context"]["limitations"])
