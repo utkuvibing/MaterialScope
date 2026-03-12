@@ -194,6 +194,34 @@ class TestGuessColumns:
         assert result["data_type"] == "unknown"
         assert any("ambiguous" in warning.lower() for warning in result["warnings"])
 
+    def test_guess_columns_ftir_wavenumber_and_absorbance(self):
+        df = pd.DataFrame(
+            {
+                "Wavenumber (cm-1)": [4000.0, 3500.0, 3000.0],
+                "Absorbance": [0.02, 0.18, 0.31],
+            }
+        )
+
+        result = guess_columns(df)
+
+        assert result["temperature"] == "Wavenumber (cm-1)"
+        assert result["signal"] == "Absorbance"
+        assert result["data_type"] == "FTIR"
+
+    def test_guess_columns_raman_shift_and_intensity(self):
+        df = pd.DataFrame(
+            {
+                "Raman Shift (cm-1)": [120.0, 350.0, 620.0],
+                "Raman Intensity (counts)": [10.0, 35.0, 18.0],
+            }
+        )
+
+        result = guess_columns(df)
+
+        assert result["temperature"] == "Raman Shift (cm-1)"
+        assert result["signal"] == "Raman Intensity (counts)"
+        assert result["data_type"] == "RAMAN"
+
 
 # ---------------------------------------------------------------------------
 # read_thermal_data with a temporary CSV file
@@ -368,6 +396,37 @@ class TestReadCSV:
         assert "inferred_signal_unit" in ds.metadata
         assert "inferred_vendor" in ds.metadata
         assert isinstance(ds.metadata["import_warnings"], list)
+
+    def test_read_ftir_csv_applies_user_confirmation_for_low_confidence_modality(self):
+        buf = io.StringIO(
+            "X,Intensity\n"
+            "4000,0.12\n"
+            "3500,0.24\n"
+            "3000,0.18\n"
+        )
+
+        ds = read_thermal_data(buf, data_type="FTIR")
+
+        assert ds.data_type == "FTIR"
+        assert ds.units["temperature"] == "cm^-1"
+        assert ds.metadata["modality_confirmation_required"] is True
+        assert ds.metadata["modality_confirmation_applied"] is True
+        assert any("user-confirmed" in warning.lower() for warning in ds.metadata["import_warnings"])
+
+    def test_read_raman_csv_infers_spectral_contract_metadata(self):
+        buf = io.StringIO(
+            "Raman Shift (cm-1),Raman Intensity (counts)\n"
+            "100,11\n"
+            "150,28\n"
+            "220,16\n"
+        )
+
+        ds = read_thermal_data(buf)
+
+        assert ds.data_type == "RAMAN"
+        assert ds.units["temperature"] == "cm^-1"
+        assert ds.metadata["spectral_axis_role"] == "wavenumber"
+        assert ds.metadata["modality_confirmation_required"] is False
 
     def test_read_csv_raises_on_missing_temperature(self):
         """read_thermal_data should raise ValueError when temperature cannot be identified."""

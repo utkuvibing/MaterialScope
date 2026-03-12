@@ -15,6 +15,10 @@ def _auth_headers() -> dict[str, str]:
     return {"X-TA-Token": "test-token"}
 
 
+def _as_b64(raw: bytes) -> str:
+    return base64.b64encode(raw).decode("ascii")
+
+
 def _sample_session_state(thermal_dataset) -> dict:
     dataset = thermal_dataset.copy()
     dataset.metadata.setdefault("file_name", "synthetic_dsc.csv")
@@ -156,3 +160,31 @@ def test_desktop_artifacts_expose_primary_dta_and_remove_preview_locked_dta():
     assert 'setText("navDtaBtn", t("nav.dta"));' in renderer_source
     assert 'el("runDtaAnalysisBtn").addEventListener("click", () => onRunAnalysis("DTA"));' in renderer_source
     assert "DTA Analysis (Experimental)" not in renderer_source
+
+
+def test_dataset_import_accepts_ftir_with_warning_based_validation_summary():
+    app = create_app(api_token="test-token")
+    client = TestClient(app)
+    project_id = client.post("/workspace/new", headers=_auth_headers()).json()["project_id"]
+    csv_bytes = (
+        "Wavenumber (cm-1),Absorbance\n"
+        "4000,0.10\n"
+        "3500,0.22\n"
+        "3000,0.15\n"
+    ).encode("utf-8")
+
+    response = client.post(
+        "/dataset/import",
+        headers=_auth_headers(),
+        json={
+            "project_id": project_id,
+            "file_name": "ftir_sample.csv",
+            "file_base64": _as_b64(csv_bytes),
+            "data_type": "FTIR",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dataset"]["data_type"] == "FTIR"
+    assert payload["validation"]["status"] in {"pass", "warn"}

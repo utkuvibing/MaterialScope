@@ -1,7 +1,7 @@
 """
 data_io.py
 ==========
-Data import/export engine for thermal analysis (DSC / TGA / DTA).
+Data import/export engine for thermal and spectral analysis datasets.
 
 Pure Python + NumPy + pandas -- no Streamlit dependency.
 
@@ -55,6 +55,10 @@ _PATTERNS: Dict[str, List[str]] = {
         r"\u00b0[CcKk]",    # °C / °K
         r"[Cc]elsius",
         r"[Kk]elvin",
+        r"[Ww]avenumber",
+        r"[Rr]aman\s*[Ss]hift",
+        r"\bcm[-\^]?\s*1\b",
+        r"\b1/cm\b",
         r"^T\b",
         r"^T_",
     ],
@@ -91,11 +95,32 @@ _PATTERNS: Dict[str, List[str]] = {
         r"\u00b5[Vv]",      # µV
         r"\u0394T",         # ΔT
     ],
+    "signal_ftir": [
+        r"\bFTIR\b",
+        r"[Aa]bsorb",
+        r"[Tt]ransmitt",
+        r"[Rr]eflect",
+        r"%\s*T\b",
+    ],
+    "signal_raman": [
+        r"\bRAMAN\b",
+        r"[Ii]ntensity",
+        r"\bCPS\b",
+        r"[Cc]ounts?",
+        r"[Rr]aman",
+    ],
 }
 
 _IMPORT_CONFIDENCE_ORDER = {"high": 3, "medium": 2, "review": 1}
-_ANALYSIS_TYPE_KEYS = ("DSC", "TGA", "DTA")
-_TYPE_PATTERN_KEYS = {"DSC": "signal_dsc", "TGA": "signal_tga", "DTA": "signal_dta"}
+_ANALYSIS_TYPE_KEYS = ("DSC", "TGA", "DTA", "FTIR", "RAMAN")
+_TYPE_PATTERN_KEYS = {
+    "DSC": "signal_dsc",
+    "TGA": "signal_tga",
+    "DTA": "signal_dta",
+    "FTIR": "signal_ftir",
+    "RAMAN": "signal_raman",
+}
+_SPECTRAL_ANALYSIS_TYPES = {"FTIR", "RAMAN"}
 _VENDOR_TOKEN_SETS = {
     "NETZSCH": (
         "netzsch",
@@ -314,6 +339,24 @@ def _classify_import_confidence(*levels: str) -> str:
     if any(level == "medium" for level in levels):
         return "medium"
     return "high"
+
+
+def _is_spectral_axis_hint(column_name: str | None) -> bool:
+    token = str(column_name or "").strip().lower()
+    if not token:
+        return False
+    return any(
+        hint in token
+        for hint in (
+            "wavenumber",
+            "wave number",
+            "raman shift",
+            "shift (cm",
+            "cm-1",
+            "cm^-1",
+            "1/cm",
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -560,8 +603,17 @@ def guess_columns(df: pd.DataFrame) -> dict:
             )
     else:
         for col in cols:
-            signal_like = any(_count_pattern_hits(col, _PATTERNS[key]) > 0 for key in ("signal_dsc", "signal_tga", "signal_dta"))
-            signal_like = signal_like or bool(re.search(r"signal|heat|weight|mass|dsc|tga|dta", str(col), flags=re.IGNORECASE))
+            signal_like = any(
+                _count_pattern_hits(col, _PATTERNS[key]) > 0
+                for key in ("signal_dsc", "signal_tga", "signal_dta", "signal_ftir", "signal_raman")
+            )
+            signal_like = signal_like or bool(
+                re.search(
+                    r"signal|heat|weight|mass|dsc|tga|dta|ftir|raman|intensity|absorb|transmitt",
+                    str(col),
+                    flags=re.IGNORECASE,
+                )
+            )
             if col in numeric_cols and not signal_like:
                 result["temperature"] = col
                 confidence["temperature"] = "review"
@@ -598,6 +650,15 @@ def guess_columns(df: pd.DataFrame) -> dict:
                 score += 4
             if analysis_type == "DTA" and signal_unit in {"µV", "mV"}:
                 score += 4
+            if analysis_type == "FTIR" and signal_unit in {"absorbance", "transmittance", "%T", "a.u."}:
+                score += 4
+            if analysis_type == "RAMAN" and signal_unit in {"counts", "cps", "a.u."}:
+                score += 4
+            col_token = str(col).lower()
+            if analysis_type == "FTIR" and any(token in col_token for token in ("ftir", "absorb", "transmitt", "reflect")):
+                score += 3
+            if analysis_type == "RAMAN" and any(token in col_token for token in ("raman", "intensity", "counts", "cps")):
+                score += 3
             if col in numeric_cols and score > 0:
                 score += 2
             signal_candidates[analysis_type].append(
@@ -630,6 +691,10 @@ def guess_columns(df: pd.DataFrame) -> dict:
             warnings_list.append(
                 f"Analysis-type inference is ambiguous between {best_type} and {type_scores[1][0]}; review the selected signal column."
             )
+            if {best_type, type_scores[1][0]} == _SPECTRAL_ANALYSIS_TYPES:
+                warnings_list.append(
+                    "Spectral modality inference is low-confidence between FTIR and RAMAN; confirm modality before stable analysis."
+                )
         result["signal"] = best_col
         result["inferred_signal_unit"] = best_unit or "unknown"
         result["inferred_analysis_type"] = "unknown" if ambiguous_type else best_type
@@ -669,8 +734,25 @@ def guess_columns(df: pd.DataFrame) -> dict:
                 f"DSC signal unit could not be confirmed from column '{result['signal']}'; verify whether the signal is mW, mW/mg, or W/g."
             )
             confidence["signal"] = "medium"
+        elif inferred_type == "FTIR" and signal_unit not in {"absorbance", "transmittance", "%T", "a.u."}:
+            warnings_list.append(
+                f"FTIR signal unit could not be confirmed from column '{result['signal']}'; review whether the signal is absorbance or transmittance."
+            )
+            confidence["signal"] = "review"
+        elif inferred_type == "RAMAN" and signal_unit not in {"counts", "cps", "a.u."}:
+            warnings_list.append(
+                f"Raman signal unit could not be confirmed from column '{result['signal']}'; review whether the signal represents counts/intensity."
+            )
+            confidence["signal"] = "review"
         elif inferred_type == "unknown":
             warnings_list.append("Analysis type remains unresolved after import heuristics; review the file before stable analysis.")
+
+    inferred_type = str(result["data_type"]).upper()
+    if inferred_type in _SPECTRAL_ANALYSIS_TYPES and not _is_spectral_axis_hint(str(result.get("temperature") or "")):
+        warnings_list.append(
+            f"Spectral axis column '{result.get('temperature')}' is not explicitly labeled as wavenumber/shift; default to wavenumber-first and review mapping."
+        )
+        confidence["temperature"] = "review"
 
     result["warnings"] = warnings_list
     result["confidence"] = {
@@ -692,13 +774,14 @@ def guess_columns(df: pd.DataFrame) -> dict:
 # ---------------------------------------------------------------------------
 
 _UNIT_RE = re.compile(
-    r"\(?([°%a-zA-Z\u00b0\u00b5/]+(?:\.[a-zA-Z]+)?)\)?$"
+    r"\(?([°%a-zA-Z0-9\u00b0\u00b5/\^\-]+(?:\.[a-zA-Z]+)?)\)?$"
 )
 
 _TEMP_UNIT_MAP = {
     "c": "°C", "°c": "°C", "celsius": "°C",
     "k": "K",  "°k": "K", "kelvin": "K",
     "f": "°F", "°f": "°F", "fahrenheit": "°F",
+    "cm-1": "cm^-1", "cm^-1": "cm^-1", "1/cm": "cm^-1", "cm−1": "cm^-1",
 }
 
 _SIGNAL_UNIT_KEYWORDS = {
@@ -706,6 +789,12 @@ _SIGNAL_UNIT_KEYWORDS = {
     "µv": "µV", "uv": "µV",
     "%": "%", "mg": "mg",
     "w/g": "W/g",
+    "absorbance": "absorbance",
+    "transmittance": "transmittance",
+    "%t": "%T",
+    "counts": "counts",
+    "cps": "cps",
+    "intensity": "a.u.",
 }
 
 _TIME_UNIT_MAP = {"min": "min", "s": "s", "sec": "s", "h": "h"}
@@ -935,7 +1024,7 @@ def read_thermal_data(
     # Data type
     # ------------------------------------------------------------------
     resolved_type = (data_type or detected_type or "unknown").upper()
-    if resolved_type not in ("DSC", "TGA", "DTA", "UNKNOWN"):
+    if resolved_type not in ("DSC", "TGA", "DTA", "FTIR", "RAMAN", "UNKNOWN"):
         logger.warning("Unrecognised data_type %r; falling back to 'unknown'.", resolved_type)
         resolved_type = "unknown"
     if data_type and inferred_analysis_type not in ("unknown", resolved_type):
@@ -953,6 +1042,39 @@ def read_thermal_data(
     import_confidence = _classify_import_confidence(import_confidence, str(vendor_info.get("confidence", "review")))
     display_name = metadata.get("display_name") or os.path.basename(source_name) or metadata.get("sample_name", "")
     inferred_signal_unit = _extract_unit(col_map["signal"], "signal") if "signal" in col_map else "unknown"
+    spectral_confirmation_required = (
+        resolved_type in _SPECTRAL_ANALYSIS_TYPES
+        and inferred_analysis_type.upper() not in {resolved_type, "UNKNOWN"}
+    ) or (
+        resolved_type in _SPECTRAL_ANALYSIS_TYPES
+        and inferred_analysis_type.upper() == "UNKNOWN"
+    )
+    spectral_confirmation_applied = bool(
+        data_type
+        and resolved_type in _SPECTRAL_ANALYSIS_TYPES
+        and inferred_analysis_type.upper() != resolved_type
+    )
+    if spectral_confirmation_applied:
+        import_warnings.append(
+            f"Spectral modality '{resolved_type}' was user-confirmed after low-confidence inference ({inferred_analysis_type})."
+        )
+        import_confidence = _classify_import_confidence(import_confidence, "medium")
+
+    if resolved_type in _SPECTRAL_ANALYSIS_TYPES:
+        axis_column = str(col_map.get("temperature") or "")
+        if not _is_spectral_axis_hint(axis_column):
+            import_warnings.append(
+                f"Spectral axis column '{axis_column}' was inferred without an explicit wavenumber/shift label; defaulting to wavenumber-first interpretation."
+            )
+            import_confidence = _classify_import_confidence(import_confidence, "review")
+        if units.get("temperature") in {"°C", "K", "°F"}:
+            units["temperature"] = "cm^-1"
+        if inferred_signal_unit in {"a.u.", "unknown"}:
+            import_warnings.append(
+                f"{resolved_type} signal unit could not be confirmed from column '{col_map['signal']}'; review signal scaling before stable interpretation."
+            )
+            import_confidence = _classify_import_confidence(import_confidence, "medium")
+
     if resolved_type == "TGA" and inferred_signal_unit not in {"%", "mg"}:
         import_warnings.append(
             f"TGA signal unit could not be confirmed from column '{col_map['signal']}'; review whether the signal is % or absolute mass."
@@ -982,12 +1104,17 @@ def read_thermal_data(
         "inferred_signal_unit": inferred_signal_unit,
         "inferred_vendor": vendor,
         "vendor_detection_confidence": vendor_info.get("confidence", "review"),
+        "modality_confirmation_required": spectral_confirmation_required,
+        "modality_confirmation_applied": spectral_confirmation_applied,
         "import_format": "xlsx" if fmt["is_xlsx"] else "delimited_text",
         "import_delimiter": fmt.get("delimiter") or ("xlsx" if fmt["is_xlsx"] else ""),
         "import_decimal_sep": fmt.get("decimal_sep", "."),
         "import_header_row": fmt.get("header_row", 0),
         "import_data_start_row": fmt.get("data_start_row", 1),
     }
+    if resolved_type in _SPECTRAL_ANALYSIS_TYPES:
+        base_meta["spectral_axis_role"] = "wavenumber"
+        base_meta["spectral_axis_column"] = col_map.get("temperature", "")
     for optional_key in ("atmosphere", "operator", "calibration_id", "method_template_id"):
         if metadata.get(optional_key) not in (None, ""):
             base_meta[optional_key] = metadata[optional_key]

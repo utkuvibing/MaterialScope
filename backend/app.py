@@ -444,10 +444,19 @@ def create_app(*, api_token: str | None = None, store: ProjectStore | None = Non
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Dataset import failed: {exc}") from exc
 
-        validation = validate_thermal_dataset(dataset, analysis_type=dataset.data_type)
-        if validation.get("status") == "fail":
-            issues = "; ".join(validation.get("issues") or [])
-            raise HTTPException(status_code=400, detail=f"Dataset blocked by validation: {issues}")
+        normalized_dataset_type = str(getattr(dataset, "data_type", "unknown") or "unknown").upper()
+        if normalized_dataset_type in {"FTIR", "RAMAN"}:
+            import_warnings = [str(item) for item in (dataset.metadata or {}).get("import_warnings", []) if item]
+            validation = {
+                "status": "warn" if ((dataset.metadata or {}).get("import_review_required") or import_warnings) else "pass",
+                "warnings": import_warnings,
+                "issues": [],
+            }
+        else:
+            validation = validate_thermal_dataset(dataset, analysis_type=dataset.data_type)
+            if validation.get("status") == "fail":
+                issues = "; ".join(validation.get("issues") or [])
+                raise HTTPException(status_code=400, detail=f"Dataset blocked by validation: {issues}")
 
         dataset_key = unique_dataset_key(state.get("datasets", {}), request.file_name)
         dataset.metadata.setdefault("file_name", request.file_name)
