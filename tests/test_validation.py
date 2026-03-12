@@ -8,7 +8,7 @@ import pandas as pd
 from core.data_io import ThermalDataset, read_thermal_data
 from core.processing_schema import ensure_processing_payload, set_tga_unit_mode, update_method_context, update_processing_step
 from core.provenance import build_calibration_reference_context, classify_calibration_state
-from core.validation import enrich_spectral_result_validation, validate_thermal_dataset
+from core.validation import enrich_spectral_result_validation, enrich_xrd_result_validation, validate_thermal_dataset
 from utils.validators import validate_thermal_dataset as legacy_validate_thermal_dataset
 
 
@@ -279,7 +279,14 @@ def test_validate_xrd_processing_passes_with_peak_controls_and_context():
     )
     processing = update_method_context(
         processing,
-        {"xrd_peak_count": 4},
+        {
+            "xrd_peak_count": 4,
+            "xrd_reference_candidate_count": 3,
+            "xrd_match_metric": "peak_overlap_weighted",
+            "xrd_match_tolerance_deg": 0.28,
+            "xrd_match_top_n": 5,
+            "xrd_match_minimum_score": 0.42,
+        },
         analysis_type="XRD",
     )
 
@@ -333,7 +340,14 @@ def test_validate_xrd_processing_warns_when_wavelength_context_is_missing():
     )
     processing = update_method_context(
         processing,
-        {"xrd_wavelength_angstrom": None},
+        {
+            "xrd_wavelength_angstrom": None,
+            "xrd_reference_candidate_count": 2,
+            "xrd_match_metric": "peak_overlap_weighted",
+            "xrd_match_tolerance_deg": 0.28,
+            "xrd_match_top_n": 5,
+            "xrd_match_minimum_score": 0.42,
+        },
         analysis_type="XRD",
     )
 
@@ -561,3 +575,116 @@ def test_enrich_raman_result_validation_requires_evidence_for_matched_output():
     assert enriched["checks"]["caution_state_output"] == "clear"
     assert enriched["checks"]["top_match_evidence"] == "missing"
     assert any("missing evidence payload" in item.lower() for item in enriched["warnings"])
+
+
+def test_enrich_xrd_match_validation_accepts_no_match_as_cautionary_output():
+    validation = {"status": "pass", "issues": [], "warnings": [], "checks": {}}
+    summary = {
+        "match_status": "no_match",
+        "candidate_count": 1,
+        "top_phase_score": 0.31,
+        "confidence_band": "no_match",
+        "caution_code": "xrd_no_match",
+    }
+    rows = [
+        {
+            "rank": 1,
+            "candidate_id": "xrd_phase_alpha",
+            "normalized_score": 0.31,
+            "confidence_band": "no_match",
+            "evidence": {
+                "shared_peak_count": 0,
+                "weighted_overlap_score": 0.11,
+                "mean_delta_position": None,
+                "unmatched_major_peak_count": 3,
+                "tolerance_deg": 0.28,
+            },
+        }
+    ]
+
+    enriched = enrich_xrd_result_validation(
+        validation,
+        summary=summary,
+        rows=rows,
+    )
+
+    assert enriched["status"] == "warn"
+    assert enriched["issues"] == []
+    assert enriched["checks"]["match_status"] == "no_match"
+    assert enriched["checks"]["confidence_band"] == "no_match"
+    assert enriched["checks"]["caution_state_output"] == "no_match"
+    assert any("cautionary stable outcome" in item.lower() for item in enriched["warnings"])
+
+
+def test_enrich_xrd_match_validation_fails_when_matched_output_is_missing_evidence():
+    validation = {"status": "pass", "issues": [], "warnings": [], "checks": {}}
+    summary = {
+        "match_status": "matched",
+        "candidate_count": 1,
+        "top_phase_id": "xrd_phase_alpha",
+        "top_phase_score": 0.73,
+        "confidence_band": "medium",
+    }
+    rows = [
+        {
+            "rank": 1,
+            "candidate_id": "xrd_phase_alpha",
+            "normalized_score": 0.73,
+            "confidence_band": "medium",
+            "evidence": {
+                "shared_peak_count": 3,
+                "weighted_overlap_score": 0.82,
+                "mean_delta_position": 0.11,
+                "tolerance_deg": 0.28,
+            },
+        }
+    ]
+
+    enriched = enrich_xrd_result_validation(
+        validation,
+        summary=summary,
+        rows=rows,
+    )
+
+    assert enriched["status"] == "fail"
+    assert any("missing 'unmatched_major_peak_count'" in item.lower() for item in enriched["issues"])
+    assert enriched["checks"]["match_status"] == "matched"
+    assert enriched["checks"]["top_phase_id"] == "xrd_phase_alpha"
+
+
+def test_enrich_xrd_confidence_validation_warns_on_low_confidence_matched_output():
+    validation = {"status": "pass", "issues": [], "warnings": [], "checks": {}}
+    summary = {
+        "match_status": "matched",
+        "candidate_count": 1,
+        "top_phase_id": "xrd_phase_alpha",
+        "top_phase_score": 0.57,
+        "confidence_band": "low",
+        "caution_code": "xrd_low_confidence",
+    }
+    rows = [
+        {
+            "rank": 1,
+            "candidate_id": "xrd_phase_alpha",
+            "normalized_score": 0.57,
+            "confidence_band": "low",
+            "evidence": {
+                "shared_peak_count": 2,
+                "weighted_overlap_score": 0.49,
+                "mean_delta_position": 0.19,
+                "unmatched_major_peak_count": 1,
+                "tolerance_deg": 0.28,
+            },
+        }
+    ]
+
+    enriched = enrich_xrd_result_validation(
+        validation,
+        summary=summary,
+        rows=rows,
+    )
+
+    assert enriched["status"] == "warn"
+    assert enriched["issues"] == []
+    assert enriched["checks"]["caution_state_output"] == "low_confidence"
+    assert any("low confidence" in item.lower() for item in enriched["warnings"])

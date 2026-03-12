@@ -60,6 +60,15 @@ _SPECTRAL_TEMPLATE_IDS = {
 }
 _SPECTRAL_METRICS = {"cosine", "pearson"}
 _XRD_TEMPLATE_IDS = {"xrd.general", "xrd.phase_screening"}
+_XRD_MATCH_STATUSES = {"matched", "no_match"}
+_XRD_CONFIDENCE_BANDS = {"high", "medium", "low", "no_match"}
+_XRD_REQUIRED_EVIDENCE_FIELDS = (
+    "shared_peak_count",
+    "weighted_overlap_score",
+    "mean_delta_position",
+    "unmatched_major_peak_count",
+    "tolerance_deg",
+)
 
 
 def _coerce_float(value: Any) -> float | None:
@@ -551,10 +560,24 @@ def _check_xrd_workflow(
     if wavelength in (None, ""):
         wavelength = metadata.get("xrd_wavelength_angstrom")
     peak_count = method_context.get("xrd_peak_count")
+    match_metric = str(method_context.get("xrd_match_metric") or "").strip().lower()
+    match_tolerance = method_context.get("xrd_match_tolerance_deg")
+    match_top_n = method_context.get("xrd_match_top_n")
+    match_minimum_score = method_context.get("xrd_match_minimum_score")
+    reference_candidate_count = method_context.get("xrd_reference_candidate_count")
     checks["xrd_axis_role"] = axis_role or "not recorded"
     checks["xrd_axis_unit"] = axis_unit or "not recorded"
     checks["xrd_wavelength_angstrom"] = wavelength if wavelength not in (None, "") else "not recorded"
     checks["xrd_peak_count"] = peak_count if peak_count not in (None, "") else "not recorded"
+    checks["xrd_match_metric"] = match_metric or "not recorded"
+    checks["xrd_match_tolerance_deg"] = match_tolerance if match_tolerance not in (None, "") else "not recorded"
+    checks["xrd_match_top_n"] = match_top_n if match_top_n not in (None, "") else "not recorded"
+    checks["xrd_match_minimum_score"] = (
+        match_minimum_score if match_minimum_score not in (None, "") else "not recorded"
+    )
+    checks["xrd_reference_candidate_count"] = (
+        reference_candidate_count if reference_candidate_count not in (None, "") else "not recorded"
+    )
     if not axis_role:
         warnings.append("XRD axis role is not recorded in processing context.")
     if not axis_unit:
@@ -569,6 +592,47 @@ def _check_xrd_workflow(
                 warnings.append("XRD peak extraction detected no peaks; review preprocessing controls before interpretation.")
         except (TypeError, ValueError):
             warnings.append("XRD peak-count context is not numeric; review processing metadata.")
+
+    if not match_metric:
+        issues.append("XRD matching metric context is required for stable reporting.")
+    if match_tolerance in (None, ""):
+        issues.append("XRD matching tolerance context is required for stable reporting.")
+    else:
+        parsed_tolerance = _coerce_float(match_tolerance)
+        if parsed_tolerance is None or parsed_tolerance <= 0.0:
+            issues.append("XRD matching tolerance must be numeric and greater than zero.")
+
+    if match_top_n in (None, ""):
+        issues.append("XRD matching top_n context is required for stable reporting.")
+    else:
+        try:
+            if int(match_top_n) < 1:
+                issues.append("XRD matching top_n must be at least 1.")
+        except (TypeError, ValueError):
+            issues.append("XRD matching top_n must be numeric.")
+
+    if match_minimum_score in (None, ""):
+        issues.append("XRD matching minimum_score context is required for stable reporting.")
+    else:
+        parsed_minimum = _coerce_float(match_minimum_score)
+        if parsed_minimum is None:
+            issues.append("XRD matching minimum_score must be numeric.")
+        elif parsed_minimum < 0.0 or parsed_minimum > 1.0:
+            issues.append("XRD matching minimum_score must be within [0, 1].")
+
+    if reference_candidate_count in (None, ""):
+        reference_count = len(metadata.get("xrd_reference_library") or metadata.get("reference_library") or [])
+    else:
+        try:
+            reference_count = int(reference_candidate_count)
+        except (TypeError, ValueError):
+            reference_count = 0
+            warnings.append("XRD reference-candidate count is not numeric; verify matching context.")
+    checks["xrd_reference_candidate_count"] = reference_count
+    if reference_count <= 0:
+        warnings.append(
+            "XRD reference library is empty; no-match outcomes should be treated as cautionary rather than conclusive."
+        )
 
 
 def enrich_spectral_result_validation(
@@ -652,6 +716,140 @@ def enrich_spectral_result_validation(
             )
     else:
         checks["top_match_evidence"] = "not_required"
+
+    dedup_warnings: list[str] = []
+    for item in warnings:
+        if item not in dedup_warnings:
+            dedup_warnings.append(item)
+
+    payload["checks"] = checks
+    payload["issues"] = issues
+    payload["warnings"] = dedup_warnings
+    payload["status"] = _validation_status(issues=issues, warnings=dedup_warnings)
+    return payload
+
+
+def enrich_xrd_result_validation(
+    validation: dict[str, Any] | None,
+    *,
+    summary: Mapping[str, Any] | None,
+    rows: list[Mapping[str, Any]] | None,
+) -> dict[str, Any]:
+    """Attach XRD result-level candidate schema and caution semantics to a validation payload."""
+    payload = dict(validation or {})
+    issues = [str(item) for item in (payload.get("issues") or []) if item]
+    warnings = [str(item) for item in (payload.get("warnings") or []) if item]
+    checks = dict(payload.get("checks") or {})
+    summary = dict(summary or {})
+    rows = [dict(item) for item in (rows or []) if isinstance(item, Mapping)]
+
+    match_status = str(summary.get("match_status") or "").strip().lower() or "not_recorded"
+    confidence_band = str(summary.get("confidence_band") or "").strip().lower() or "not_recorded"
+    top_phase_id = summary.get("top_phase_id")
+    if top_phase_id in (None, ""):
+        top_phase_id = summary.get("top_match_id")
+    top_phase_score = summary.get("top_phase_score")
+    if top_phase_score in (None, ""):
+        top_phase_score = summary.get("top_match_score")
+    caution_code = str(summary.get("caution_code") or "").strip()
+    candidate_count = summary.get("candidate_count", len(rows))
+    try:
+        candidate_count = int(candidate_count)
+    except (TypeError, ValueError):
+        issues.append("XRD candidate_count must be numeric.")
+        candidate_count = len(rows)
+
+    checks["match_status"] = match_status
+    checks["confidence_band"] = confidence_band
+    checks["candidate_count"] = candidate_count
+    checks["top_phase_id"] = top_phase_id if top_phase_id not in (None, "") else "not_recorded"
+    checks["top_phase_score"] = top_phase_score if top_phase_score not in (None, "") else "not_recorded"
+    checks["caution_code"] = caution_code or "not_recorded"
+
+    if match_status not in _XRD_MATCH_STATUSES:
+        issues.append("XRD match_status must be either 'matched' or 'no_match'.")
+        checks["caution_state_output"] = "invalid"
+    elif match_status == "matched":
+        checks["caution_state_output"] = "clear"
+        if top_phase_id in (None, ""):
+            issues.append("XRD matched outputs must include top_phase_id.")
+        if confidence_band not in {"high", "medium", "low"}:
+            issues.append("XRD matched outputs must include confidence_band high/medium/low.")
+    else:
+        checks["caution_state_output"] = "no_match"
+        if confidence_band != "no_match":
+            issues.append("XRD no_match outputs must use confidence_band='no_match'.")
+        message = "XRD produced no confident phase candidate; treat this as a cautionary stable outcome."
+        if message not in warnings:
+            warnings.append(message)
+        if not caution_code:
+            warnings.append("XRD no-match output is missing caution_code metadata.")
+
+    if confidence_band not in _XRD_CONFIDENCE_BANDS:
+        issues.append("XRD confidence_band must be one of high/medium/low/no_match.")
+
+    if confidence_band == "low" and match_status == "matched":
+        checks["caution_state_output"] = "low_confidence"
+        warnings.append("XRD top candidate is low confidence; review evidence before interpretation.")
+        if not caution_code:
+            warnings.append("XRD low-confidence output is missing caution_code metadata.")
+
+    if top_phase_score not in (None, ""):
+        parsed_score = _coerce_float(top_phase_score)
+        if parsed_score is None:
+            issues.append("XRD top_phase_score must be numeric.")
+        elif parsed_score < 0.0 or parsed_score > 1.0:
+            issues.append("XRD top_phase_score must be within [0, 1].")
+
+    if candidate_count != len(rows):
+        warnings.append("XRD candidate_count does not match row count; verify serialization consistency.")
+
+    if match_status == "matched" and not rows:
+        issues.append("XRD matched outputs must include at least one candidate row.")
+
+    for index, row in enumerate(rows, start=1):
+        row_confidence = str(row.get("confidence_band") or "").strip().lower() or "not_recorded"
+        if row_confidence not in _XRD_CONFIDENCE_BANDS:
+            issues.append(f"XRD candidate row {index} has invalid confidence_band.")
+        evidence = row.get("evidence")
+        if not isinstance(evidence, Mapping):
+            issues.append(f"XRD candidate row {index} must include evidence payload.")
+            continue
+        for field in _XRD_REQUIRED_EVIDENCE_FIELDS:
+            if field not in evidence:
+                issues.append(f"XRD candidate row {index} evidence is missing '{field}'.")
+        shared_peak_count = evidence.get("shared_peak_count")
+        if shared_peak_count not in (None, ""):
+            try:
+                if int(shared_peak_count) < 0:
+                    issues.append(f"XRD candidate row {index} shared_peak_count must be >= 0.")
+            except (TypeError, ValueError):
+                issues.append(f"XRD candidate row {index} shared_peak_count must be numeric.")
+
+        overlap_score = evidence.get("weighted_overlap_score")
+        if overlap_score not in (None, ""):
+            parsed_overlap = _coerce_float(overlap_score)
+            if parsed_overlap is None:
+                issues.append(f"XRD candidate row {index} weighted_overlap_score must be numeric.")
+            elif parsed_overlap < 0.0 or parsed_overlap > 1.0:
+                issues.append(f"XRD candidate row {index} weighted_overlap_score must be within [0, 1].")
+
+        mean_delta = evidence.get("mean_delta_position")
+        if mean_delta not in (None, "") and _coerce_float(mean_delta) is None:
+            issues.append(f"XRD candidate row {index} mean_delta_position must be numeric or null.")
+
+        unmatched_major = evidence.get("unmatched_major_peak_count")
+        if unmatched_major not in (None, ""):
+            try:
+                if int(unmatched_major) < 0:
+                    issues.append(f"XRD candidate row {index} unmatched_major_peak_count must be >= 0.")
+            except (TypeError, ValueError):
+                issues.append(f"XRD candidate row {index} unmatched_major_peak_count must be numeric.")
+
+        tolerance = evidence.get("tolerance_deg")
+        parsed_tolerance = _coerce_float(tolerance)
+        if parsed_tolerance is None or parsed_tolerance <= 0.0:
+            issues.append(f"XRD candidate row {index} tolerance_deg must be numeric and > 0.")
 
     dedup_warnings: list[str] = []
     for item in warnings:
