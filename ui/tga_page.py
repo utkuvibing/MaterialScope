@@ -34,7 +34,7 @@ from ui.components.plot_builder import (
     create_tga_plot,
     fig_to_bytes,
 )
-from ui.components.preset_manager import render_processing_preset_panel
+from ui.components.preset_manager import render_processing_preset_panel, seed_pending_workflow_template
 from ui.components.quality_dashboard import render_quality_dashboard
 from ui.components.workflow_guide import render_tga_workflow_guide
 from utils.diagnostics import record_exception
@@ -222,6 +222,7 @@ def render():
         workflow_labels.setdefault(entry["id"], entry["label"])
     workflow_options = list(workflow_labels.keys())
     current_template = state["processing"].get("workflow_template_id")
+    seed_pending_workflow_template(f"tga_template_{selected_key}")
     template_index = workflow_options.index(current_template) if current_template in workflow_options else 0
     workflow_template_id = st.selectbox(
         tx("İş Akışı Şablonu", "Workflow Template"),

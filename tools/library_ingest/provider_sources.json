@@ -1,0 +1,51 @@
+{
+  "cod": {
+    "provider_id": "cod",
+    "provider_name": "COD",
+    "analysis_type": "XRD",
+    "source_url": "https://www.crystallography.net/cod/",
+    "cif_base_url": "https://www.crystallography.net/cod/{source_id}.cif",
+    "license_name": "CC0-1.0",
+    "license_text": "",
+    "attribution": "Powder-pattern references derived from COD crystal structures.",
+    "priority": 100
+  },
+  "materials_project": {
+    "provider_id": "materials_project",
+    "provider_name": "Materials Project",
+    "analysis_type": "XRD",
+    "source_url": "https://materialsproject.org/",
+    "material_base_url": "https://materialsproject.org/materials/{source_id}",
+    "license_name": "Materials Project Terms of Use",
+    "license_text": "",
+    "attribution": "Powder-pattern references derived from Materials Project crystal structures.",
+    "priority": 70
+  },
+  "openspecy": {
+    "provider_id": "openspecy",
+    "provider_name": "OpenSpecy",
+    "analysis_types": [
+      "FTIR",
+      "RAMAN"
+    ],
+    "source_url": "https://github.com/wincowgerDEV/OpenSpecy-package",
+    "raw_rds_url": "https://osf.io/download/kzv3n/",
+    "license_name": "CC-BY-4.0",
+    "license_text": "",
+    "attribution": "Spectral references normalized from OpenSpecy-compatible sources.",
+    "priority": 100
+  },
+  "rod": {
+    "provider_id": "rod",
+    "provider_name": "ROD",
+    "analysis_type": "RAMAN",
+    "source_url": "https://solsa.crystallography.net/rod/new.html",
+    "search_url": "https://solsa.crystallography.net/rod/result.php",
+    "record_base_url": "https://solsa.crystallography.net/rod/{source_id}.rod",
+    "jcamp_base_url": "https://solsa.crystallography.net/rod/{source_id}.jdx",
+    "license_name": "CC0-1.0",
+    "license_text": "",
+    "attribution": "Spectral references normalized from ROD mineral library records.",
+    "priority": 80
+  }
+}

@@ -1,14 +1,28 @@
 from __future__ import annotations
 
 import io
+import hashlib
+import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from core.batch_runner import execute_batch_template, filter_batch_summary_rows, normalize_batch_summary_rows, summarize_batch_outcomes
+from core.batch_runner import (
+    _match_xrd_reference_peaks,
+    execute_batch_template,
+    filter_batch_summary_rows,
+    normalize_batch_summary_rows,
+    summarize_batch_outcomes,
+)
 from core.data_io import ThermalDataset, read_thermal_data
 from core.processing_schema import set_tga_unit_mode
-from core.reference_library import get_reference_library_manager
+from core.reference_library import build_reference_library_package, get_reference_library_manager
+
+
+def _manifest_etag(payload: dict) -> str:
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(body).hexdigest()
 
 
 def _make_tga_dataset(temperature_range, tga_signal, *, signal_unit="%"):
@@ -49,6 +63,10 @@ def _make_dta_dataset(thermal_dataset):
 
 def _gaussian(axis, center, width, amplitude):
     return amplitude * np.exp(-0.5 * ((axis - center) / width) ** 2)
+
+
+def _two_theta_from_d_spacing(d_spacing: float, wavelength_angstrom: float) -> float:
+    return float(np.degrees(2.0 * np.arcsin(wavelength_angstrom / (2.0 * d_spacing))))
 
 
 def _make_spectral_dataset(*, analysis_type: str, include_reference_library: bool = True, no_match: bool = False):
@@ -400,6 +418,72 @@ def test_execute_xrd_batch_template_returns_ranked_candidate_match_with_confiden
     assert "unmatched_major_peak_positions" in rows[0]["evidence"]
 
 
+def test_execute_xrd_batch_template_uses_reference_d_spacing_for_non_cu_wavelength():
+    reference_d_spacings = [4.828, 2.698, 1.902, 1.466]
+    dataset_wavelength = 1.002
+    axis = np.linspace(8.0, 70.0, 700)
+    signal = 18.0 + 0.025 * axis
+    amplitudes = [95.0, 160.0, 130.0, 84.0]
+    for d_spacing, amplitude in zip(reference_d_spacings, amplitudes):
+        signal += _gaussian(axis, _two_theta_from_d_spacing(d_spacing, dataset_wavelength), 0.28, amplitude)
+
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": axis, "signal": signal}),
+        metadata={
+            "sample_name": "ShiftedXRD",
+            "display_name": "Shifted XRD Pattern",
+            "source_data_hash": "shifted-xrd-hash",
+            "xrd_axis_role": "two_theta",
+            "xrd_axis_unit": "degree_2theta",
+            "xrd_wavelength_angstrom": dataset_wavelength,
+            "xrd_reference_library": [
+                {
+                    "id": "xrd_phase_alpha_shifted",
+                    "name": "Phase Alpha Shifted",
+                    "peaks": [
+                        {
+                            "position": _two_theta_from_d_spacing(d_spacing, 1.5406),
+                            "d_spacing": d_spacing,
+                            "intensity": intensity,
+                        }
+                        for d_spacing, intensity in zip(reference_d_spacings, [0.62, 1.0, 0.84, 0.51])
+                    ],
+                },
+                {
+                    "id": "xrd_phase_beta_shifted",
+                    "name": "Phase Beta Shifted",
+                    "peaks": [
+                        {
+                            "position": _two_theta_from_d_spacing(d_spacing, 1.5406),
+                            "d_spacing": d_spacing,
+                            "intensity": intensity,
+                        }
+                        for d_spacing, intensity in zip([3.97, 2.51, 1.74, 1.41], [0.63, 0.95, 0.88, 0.55])
+                    ],
+                },
+            ],
+        },
+        data_type="XRD",
+        units={"temperature": "degree_2theta", "signal": "counts"},
+        original_columns={"temperature": "two_theta", "signal": "intensity"},
+        file_path="",
+    )
+
+    outcome = execute_batch_template(
+        dataset_key="shifted_xrd",
+        dataset=dataset,
+        analysis_type="XRD",
+        workflow_template_id="xrd.general",
+        batch_run_id="batch_xrd_shifted",
+    )
+
+    assert outcome["status"] == "saved"
+    assert outcome["record"]["summary"]["match_status"] == "matched"
+    assert outcome["record"]["summary"]["top_phase_id"] == "xrd_phase_alpha_shifted"
+    assert outcome["record"]["summary"]["match_coordinate_space"] == "two_theta"
+    assert outcome["record"]["rows"][0]["evidence"]["comparison_space"] == "two_theta"
+
+
 def test_execute_xrd_batch_template_is_deterministic_for_candidate_match_and_peak_limit_override():
     dataset = _make_xrd_dataset()
     existing_processing = {
@@ -466,7 +550,9 @@ def test_execute_xrd_batch_template_keeps_no_match_as_cautionary_saved_output():
     assert outcome["summary_row"]["match_status"] == "no_match"
 
 
-def test_execute_batch_template_uses_installed_global_reference_libraries():
+def test_execute_batch_template_uses_installed_global_reference_libraries(monkeypatch):
+    mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
+    monkeypatch.setenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", str(mirror_root))
     manager = get_reference_library_manager()
     manager.sync(force=True, package_ids=["openspecy_ftir_core", "cod_xrd_core"])
 

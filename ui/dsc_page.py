@@ -25,7 +25,7 @@ from ui.components.plot_builder import (
     PLOTLY_CONFIG,
 )
 from ui.components.history_tracker import _log_event
-from ui.components.preset_manager import render_processing_preset_panel
+from ui.components.preset_manager import render_processing_preset_panel, seed_pending_workflow_template
 from ui.components.quality_dashboard import render_quality_dashboard
 from utils.diagnostics import record_exception
 from utils.i18n import t, tx
@@ -177,6 +177,7 @@ def render():
     workflow_labels = {entry["id"]: entry["label"] for entry in workflow_catalog}
     workflow_options = list(workflow_labels.keys())
     current_template = state["processing"].get("workflow_template_id")
+    seed_pending_workflow_template(f"dsc_template_{selected_key}")
     template_index = workflow_options.index(current_template) if current_template in workflow_options else 0
     workflow_template_id = st.selectbox(
         tx("İş Akışı Şablonu", "Workflow Template"),

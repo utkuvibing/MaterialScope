@@ -17,7 +17,7 @@ def render() -> None:
             "Global FTIR, Raman ve XRD referans paketlerini senkronize et, cache durumunu izle ve aktif provider kapsamını denetle.",
             "Sync global FTIR, Raman, and XRD reference packages, monitor cache state, and inspect active provider coverage.",
         ),
-        badge=tx("M002 Library Platform", "M002 Library Platform"),
+        badge=tx("M003 Library Compatibility", "M003 Library Compatibility"),
     )
     lang = st.session_state.get("ui_language", "tr")
     license_state = st.session_state.get("license_state") or {}
@@ -47,8 +47,8 @@ def render() -> None:
 
     info_col.caption(
         tx(
-            "Feed erişimi signed license payload ile korunur. Warm cache varsa ağ kesildiğinde arama cached read-only modda devam eder.",
-            "Feed access is protected by a signed license payload. If the cache is warm, search continues in cached read-only mode when the network is unavailable.",
+            "Feed erişimi imzalı lisans yükü ile korunur. Warm cache varsa ağ kesildiğinde runtime cached read-only modda çalışmaya devam eder.",
+            "Feed access is protected by a signed license payload. When the cache is warm, runtime continues in cached read-only mode during feed outages.",
         )
     )
 
@@ -66,8 +66,8 @@ def render() -> None:
     if not status.get("feed_configured"):
         st.warning(
             tx(
-                "Library feed yapılandırılmamış. `THERMOANALYZER_LIBRARY_FEED_URL` veya repo içi mirror gerekir.",
-                "The library feed is not configured. Set `THERMOANALYZER_LIBRARY_FEED_URL` or provide the bundled mirror.",
+                "Library feed yapılandırılmamış. Senkronizasyon için `THERMOANALYZER_LIBRARY_FEED_URL` veya `THERMOANALYZER_LIBRARY_MIRROR_ROOT` ayarla.",
+                "The library feed is not configured. Set `THERMOANALYZER_LIBRARY_FEED_URL` or `THERMOANALYZER_LIBRARY_MIRROR_ROOT` before syncing.",
             )
         )
     elif status.get("cache_status") == "cold":
@@ -90,6 +90,7 @@ def render() -> None:
 
     st.caption(
         f"{tx('Feed', 'Feed')}: `{status.get('feed_source') or 'N/A'}`  |  "
+        f"{tx('Manifest üretildi', 'Manifest generated')}: `{status.get('manifest_generated_at') or 'N/A'}`  |  "
         f"{tx('Son manifest kontrolü', 'Last manifest check')}: `{status.get('manifest_checked_at') or 'N/A'}`  |  "
         f"{tx('Son sync', 'Last sync')}: `{status.get('last_sync_at') or 'N/A'}`"
     )
@@ -108,6 +109,10 @@ def render() -> None:
                             tx("Provider", "Provider"): item.provider,
                             tx("Paket", "Package"): item.package_id,
                             tx("Versiyon", "Version"): item.version,
+                            tx("Yayınlandı", "Published"): item.published_at or "N/A",
+                            tx("Üretildi", "Generated"): item.generated_at or "N/A",
+                            tx("Veri Seti", "Dataset"): item.provider_dataset_version or "N/A",
+                            tx("Build", "Build"): item.builder_version or "N/A",
                             tx("Referans", "Entries"): item.entry_count,
                             tx("Güncelleme", "Update"): tx("Var", "Yes") if item.update_available else tx("Yok", "No"),
                             tx("Lisans", "License"): item.license_name or "N/A",
@@ -132,6 +137,11 @@ def render() -> None:
                             tx("Provider", "Provider"): item.get("provider"),
                             tx("Paket", "Package"): item.get("package_id"),
                             tx("Versiyon", "Version"): item.get("version"),
+                            tx("Yayınlandı", "Published"): item.get("published_at") or "N/A",
+                            tx("Üretildi", "Generated"): item.get("generated_at") or "N/A",
+                            tx("Veri Seti", "Dataset"): item.get("provider_dataset_version") or "N/A",
+                            tx("Build", "Build"): item.get("builder_version") or "N/A",
+                            tx("Şema", "Schema"): item.get("normalized_schema_version") or "N/A",
                             tx("Referans", "Entries"): item.get("entry_count"),
                             tx("Kurulu", "Installed"): tx("Evet", "Yes") if item.get("installed") else tx("Hayır", "No"),
                             tx("Update", "Update"): tx("Var", "Yes") if item.get("update_available") else tx("Yok", "No"),
@@ -145,7 +155,12 @@ def render() -> None:
                 hide_index=True,
             )
         else:
-            st.info(tx("Manifest henüz yüklenmedi.", "The manifest has not been loaded yet."))
+            st.info(
+                tx(
+                    "Manifest henüz yüklenmedi veya feed yapılandırılmadı.",
+                    "The manifest has not been loaded yet or the feed is not configured.",
+                )
+            )
 
 
 def _label(value: object, lang: str) -> str:

@@ -20,7 +20,7 @@ from core.processing_schema import (
 from core.validation import validate_thermal_dataset
 from ui.components.chrome import render_page_header
 from ui.components.history_tracker import _log_event
-from ui.components.preset_manager import render_processing_preset_panel
+from ui.components.preset_manager import render_processing_preset_panel, seed_pending_workflow_template
 from ui.components.plot_builder import PLOTLY_CONFIG, create_thermal_plot
 from utils.i18n import t, tx
 from utils.license_manager import APP_VERSION
@@ -234,6 +234,7 @@ def render_spectral_page(
         return
 
     current_template = state["processing"].get("workflow_template_id")
+    seed_pending_workflow_template(f"{page_slug}_template_{selected_key}")
     default_index = template_ids.index(current_template) if current_template in template_ids else 0
     workflow_template_id = st.selectbox(
         tx("İş Akışı Şablonu", "Workflow Template"),

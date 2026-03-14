@@ -21,7 +21,7 @@ from core.processing_schema import (
 from core.validation import validate_thermal_dataset
 from ui.components.chrome import render_page_header
 from ui.components.history_tracker import _log_event
-from ui.components.preset_manager import render_processing_preset_panel
+from ui.components.preset_manager import render_processing_preset_panel, seed_pending_workflow_template
 from ui.components.plot_builder import PLOTLY_CONFIG, create_thermal_plot, fig_to_bytes
 from utils.diagnostics import record_exception
 from utils.i18n import t, tx
@@ -230,6 +230,110 @@ def _xrd_figure_key(dataset_key: str) -> str:
     return f"XRD Analysis - {dataset_key}"
 
 
+def _xrd_control_key(dataset_key: str, slot: str, state: dict) -> str:
+    return f"xrd_{slot}_{dataset_key}_{state.get('_render_revision', 0)}"
+
+
+def _xrd_control_value(dataset_key: str, slot: str, state: dict, fallback):
+    return st.session_state.get(_xrd_control_key(dataset_key, slot, state), fallback)
+
+
+def _sync_xrd_processing_from_controls(processing, *, dataset_key: str, dataset, state: dict):
+    payload = ensure_processing_payload(processing, analysis_type="XRD")
+    signal_pipeline = payload.get("signal_pipeline") or {}
+    analysis_steps = payload.get("analysis_steps") or {}
+    method_context = payload.get("method_context") or {}
+
+    axis_defaults = signal_pipeline.get("axis_normalization") or {}
+    smooth_defaults = signal_pipeline.get("smoothing") or {}
+    baseline_defaults = signal_pipeline.get("baseline") or {}
+    peak_defaults = analysis_steps.get("peak_detection") or {}
+
+    default_axis_min = float(dataset.data["temperature"].min())
+    default_axis_max = float(dataset.data["temperature"].max())
+    restrict_range = bool(
+        _xrd_control_value(
+            dataset_key,
+            "restrict",
+            state,
+            axis_defaults.get("axis_min") not in (None, "") or axis_defaults.get("axis_max") not in (None, ""),
+        )
+    )
+    axis_min = float(
+        _xrd_control_value(
+            dataset_key,
+            "axis_min",
+            state,
+            axis_defaults.get("axis_min") if axis_defaults.get("axis_min") is not None else default_axis_min,
+        )
+    )
+    axis_max = float(
+        _xrd_control_value(
+            dataset_key,
+            "axis_max",
+            state,
+            axis_defaults.get("axis_max") if axis_defaults.get("axis_max") is not None else default_axis_max,
+        )
+    )
+
+    payload = update_processing_step(
+        payload,
+        "axis_normalization",
+        {
+            "sort_axis": True,
+            "deduplicate": "first",
+            "axis_min": axis_min if restrict_range else None,
+            "axis_max": axis_max if restrict_range else None,
+        },
+        analysis_type="XRD",
+    )
+    payload = update_processing_step(
+        payload,
+        "smoothing",
+        {
+            "method": str(_xrd_control_value(dataset_key, "smooth_method", state, smooth_defaults.get("method") or "savgol")),
+            "window_length": int(_xrd_control_value(dataset_key, "smooth_window", state, smooth_defaults.get("window_length") or 11)),
+            "polyorder": int(_xrd_control_value(dataset_key, "smooth_poly", state, smooth_defaults.get("polyorder") or 3)),
+        },
+        analysis_type="XRD",
+    )
+    payload = update_processing_step(
+        payload,
+        "baseline",
+        {
+            "method": str(_xrd_control_value(dataset_key, "baseline_method", state, baseline_defaults.get("method") or "rolling_minimum")),
+            "window_length": int(_xrd_control_value(dataset_key, "baseline_window", state, baseline_defaults.get("window_length") or 31)),
+            "smoothing_window": int(_xrd_control_value(dataset_key, "baseline_smooth", state, baseline_defaults.get("smoothing_window") or 9)),
+        },
+        analysis_type="XRD",
+    )
+    payload = update_processing_step(
+        payload,
+        "peak_detection",
+        {
+            "method": "scipy_find_peaks",
+            "prominence": float(_xrd_control_value(dataset_key, "peak_prom", state, peak_defaults.get("prominence") or 0.08)),
+            "distance": int(_xrd_control_value(dataset_key, "peak_dist", state, peak_defaults.get("distance") or 6)),
+            "width": int(_xrd_control_value(dataset_key, "peak_width", state, peak_defaults.get("width") or 2)),
+            "max_peaks": int(_xrd_control_value(dataset_key, "peak_max", state, peak_defaults.get("max_peaks") or 12)),
+        },
+        analysis_type="XRD",
+    )
+    payload = update_method_context(
+        payload,
+        {
+            "xrd_match_metric": "peak_overlap_weighted",
+            "xrd_match_tolerance_deg": float(_xrd_control_value(dataset_key, "match_tol", state, method_context.get("xrd_match_tolerance_deg") or 0.28)),
+            "xrd_match_top_n": int(_xrd_control_value(dataset_key, "match_topn", state, method_context.get("xrd_match_top_n") or 5)),
+            "xrd_match_minimum_score": float(_xrd_control_value(dataset_key, "match_min", state, method_context.get("xrd_match_minimum_score") or 0.42)),
+            "xrd_match_intensity_weight": float(_xrd_control_value(dataset_key, "match_iw", state, method_context.get("xrd_match_intensity_weight") or 0.35)),
+            "xrd_match_major_peak_fraction": float(_xrd_control_value(dataset_key, "match_major", state, method_context.get("xrd_match_major_peak_fraction") or 0.4)),
+        },
+        analysis_type="XRD",
+    )
+    return payload
+
+
 def _attach_xrd_report_figure(record, *, dataset_key: str, dataset, state, lang: str, figures_store):
     figure_key = _xrd_figure_key(dataset_key)
     figures_store[figure_key] = fig_to_bytes(_build_processed_plot(dataset_key, dataset, state, lang))
@@ -299,6 +403,7 @@ def render():
         return
 
     current_template = state["processing"].get("workflow_template_id")
+    seed_pending_workflow_template(f"xrd_template_{selected_key}")
     default_index = template_ids.index(current_template) if current_template in template_ids else 0
     workflow_template_id = st.selectbox(
         tx("İş Akışı Şablonu", "Workflow Template"),
@@ -313,13 +418,19 @@ def render():
         analysis_type="XRD",
         workflow_template_label=template_labels.get(workflow_template_id),
     )
+    state["processing"] = _seed_xrd_processing_defaults(state.get("processing"), workflow_template_id, dataset)
+    state["processing"] = _sync_xrd_processing_from_controls(
+        state.get("processing"),
+        dataset_key=selected_key,
+        dataset=dataset,
+        state=state,
+    )
     render_processing_preset_panel(
         analysis_type="XRD",
         state=state,
         key_prefix=f"xrd_presets_{selected_key}",
         workflow_select_key=f"xrd_template_{selected_key}",
     )
-    state["processing"] = _seed_xrd_processing_defaults(state.get("processing"), workflow_template_id, dataset)
 
     dataset_validation = validate_thermal_dataset(dataset, analysis_type="XRD", processing=state.get("processing"))
     if dataset_validation["status"] == "fail":
@@ -378,19 +489,19 @@ def render():
             restrict_range = st.checkbox(
                 tx("2θ aralığını sınırla", "Restrict 2θ range"),
                 value=axis_defaults.get("axis_min") not in (None, "") or axis_defaults.get("axis_max") not in (None, ""),
-                key=f"xrd_restrict_{selected_key}",
+                key=_xrd_control_key(selected_key, "restrict", state),
             )
             default_axis_min = float(dataset.data["temperature"].min())
             default_axis_max = float(dataset.data["temperature"].max())
             axis_min = st.number_input(
                 tx("2θ minimum", "2θ minimum"),
                 value=float(axis_defaults.get("axis_min") if axis_defaults.get("axis_min") is not None else default_axis_min),
-                key=f"xrd_axis_min_{selected_key}",
+                key=_xrd_control_key(selected_key, "axis_min", state),
             )
             axis_max = st.number_input(
                 tx("2θ maksimum", "2θ maximum"),
                 value=float(axis_defaults.get("axis_max") if axis_defaults.get("axis_max") is not None else default_axis_max),
-                key=f"xrd_axis_max_{selected_key}",
+                key=_xrd_control_key(selected_key, "axis_max", state),
             )
 
             smooth_method = st.selectbox(
@@ -401,7 +512,7 @@ def render():
                 )
                 if str(smooth_defaults.get("method") or "savgol").lower() in {"savgol", "moving_average", "none"}
                 else 0,
-                key=f"xrd_smooth_method_{selected_key}",
+                key=_xrd_control_key(selected_key, "smooth_method", state),
             )
             smooth_window = st.slider(
                 tx("Yumuşatma Penceresi", "Smoothing Window"),
@@ -409,14 +520,14 @@ def render():
                 101,
                 int(smooth_defaults.get("window_length") or 11),
                 step=2,
-                key=f"xrd_smooth_window_{selected_key}",
+                key=_xrd_control_key(selected_key, "smooth_window", state),
             )
             smooth_poly = st.slider(
                 tx("Polinom Derecesi", "Polynomial Order"),
                 1,
                 9,
                 int(smooth_defaults.get("polyorder") or 3),
-                key=f"xrd_smooth_poly_{selected_key}",
+                key=_xrd_control_key(selected_key, "smooth_poly", state),
             )
 
             baseline_method = st.selectbox(
@@ -427,7 +538,7 @@ def render():
                 )
                 if str(baseline_defaults.get("method") or "rolling_minimum").lower() in {"rolling_minimum", "linear", "none"}
                 else 0,
-                key=f"xrd_baseline_method_{selected_key}",
+                key=_xrd_control_key(selected_key, "baseline_method", state),
             )
             baseline_window = st.slider(
                 tx("Arkaplan Penceresi", "Baseline Window"),
@@ -435,7 +546,7 @@ def render():
                 201,
                 int(baseline_defaults.get("window_length") or 31),
                 step=2,
-                key=f"xrd_baseline_window_{selected_key}",
+                key=_xrd_control_key(selected_key, "baseline_window", state),
             )
             baseline_smooth = st.slider(
                 tx("Arkaplan Yumuşatma", "Baseline Smoothing"),
@@ -443,7 +554,7 @@ def render():
                 81,
                 int(baseline_defaults.get("smoothing_window") or 9),
                 step=2,
-                key=f"xrd_baseline_smooth_{selected_key}",
+                key=_xrd_control_key(selected_key, "baseline_smooth", state),
             )
 
             peak_prominence = st.number_input(
@@ -452,28 +563,28 @@ def render():
                 max_value=10.0,
                 value=float(peak_defaults.get("prominence") or 0.08),
                 format="%.3f",
-                key=f"xrd_peak_prom_{selected_key}",
+                key=_xrd_control_key(selected_key, "peak_prom", state),
             )
             peak_distance = st.number_input(
                 tx("Pik Mesafesi", "Peak Distance"),
                 min_value=1,
                 max_value=200,
                 value=int(peak_defaults.get("distance") or 6),
-                key=f"xrd_peak_dist_{selected_key}",
+                key=_xrd_control_key(selected_key, "peak_dist", state),
             )
             peak_width = st.number_input(
                 tx("Pik Genişliği", "Peak Width"),
                 min_value=1,
                 max_value=200,
                 value=int(peak_defaults.get("width") or 2),
-                key=f"xrd_peak_width_{selected_key}",
+                key=_xrd_control_key(selected_key, "peak_width", state),
             )
             peak_max = st.number_input(
                 tx("Maks Pik", "Max Peaks"),
                 min_value=1,
                 max_value=200,
                 value=int(peak_defaults.get("max_peaks") or 12),
-                key=f"xrd_peak_max_{selected_key}",
+                key=_xrd_control_key(selected_key, "peak_max", state),
             )
 
             match_tolerance = st.number_input(
@@ -482,7 +593,7 @@ def render():
                 max_value=2.0,
                 value=float(defaults_context.get("xrd_match_tolerance_deg") or 0.28),
                 format="%.3f",
-                key=f"xrd_match_tol_{selected_key}",
+                key=_xrd_control_key(selected_key, "match_tol", state),
             )
             match_min_score = st.slider(
                 tx("Minimum Eşleşme Skoru", "Minimum Match Score"),
@@ -490,14 +601,14 @@ def render():
                 1.0,
                 float(defaults_context.get("xrd_match_minimum_score") or 0.42),
                 0.01,
-                key=f"xrd_match_min_{selected_key}",
+                key=_xrd_control_key(selected_key, "match_min", state),
             )
             match_top_n = st.number_input(
                 tx("Aday Sayısı", "Top Candidate Count"),
                 min_value=1,
                 max_value=20,
                 value=int(defaults_context.get("xrd_match_top_n") or 5),
-                key=f"xrd_match_topn_{selected_key}",
+                key=_xrd_control_key(selected_key, "match_topn", state),
             )
             match_intensity_weight = st.slider(
                 tx("Yoğunluk Ağırlığı", "Intensity Weight"),
@@ -505,7 +616,7 @@ def render():
                 1.0,
                 float(defaults_context.get("xrd_match_intensity_weight") or 0.35),
                 0.01,
-                key=f"xrd_match_iw_{selected_key}",
+                key=_xrd_control_key(selected_key, "match_iw", state),
             )
             match_major_fraction = st.slider(
                 tx("Majör Pik Eşiği", "Major Peak Fraction"),
@@ -513,10 +624,10 @@ def render():
                 1.0,
                 float(defaults_context.get("xrd_match_major_peak_fraction") or 0.4),
                 0.01,
-                key=f"xrd_match_major_{selected_key}",
+                key=_xrd_control_key(selected_key, "match_major", state),
             )
 
-            if st.button(tx("XRD Analizini Çalıştır", "Run XRD Analysis"), key=f"xrd_run_{selected_key}"):
+            if st.button(tx("XRD Analizini Çalıştır", "Run XRD Analysis"), key=_xrd_control_key(selected_key, "run", state)):
                 processing = ensure_processing_payload(state.get("processing"), analysis_type="XRD")
                 processing = update_processing_step(
                     processing,

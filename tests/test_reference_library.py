@@ -37,6 +37,10 @@ def _write_mirror(root: Path, *, bad_hash: bool = False) -> dict:
             "attribution": "Synthetic OpenSpecy-compatible FTIR seed.",
             "priority": 100,
             "published_at": "2026-03-14T00:00:00Z",
+            "generated_at": "2026-03-14T00:00:00Z",
+            "provider_dataset_version": "2026.03.14",
+            "builder_version": "b1",
+            "normalized_schema_version": 1,
         },
         entries=[
             {
@@ -83,6 +87,88 @@ def _write_mirror(root: Path, *, bad_hash: bool = False) -> dict:
                 "attribution": "Synthetic OpenSpecy-compatible FTIR seed.",
                 "priority": 100,
                 "published_at": "2026-03-14T00:00:00Z",
+                "generated_at": "2026-03-14T00:00:00Z",
+                "provider_dataset_version": "2026.03.14",
+                "builder_version": "b1",
+                "normalized_schema_version": 1,
+            }
+        ],
+    }
+    manifest["etag"] = _manifest_etag(manifest)
+    (root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    return manifest
+
+
+def _write_xrd_mirror(root: Path) -> dict:
+    packages_root = root / "packages"
+    packages_root.mkdir(parents=True, exist_ok=True)
+
+    archive_name = "cod_xrd_core-2026.03-test.zip"
+    archive_path = packages_root / archive_name
+    sha256 = build_reference_library_package(
+        output_path=archive_path,
+        package_metadata={
+            "package_id": "cod_xrd_core",
+            "analysis_type": "XRD",
+            "provider": "COD",
+            "version": "2026.03-test",
+            "source_url": "https://example.invalid/cod",
+            "license_name": "CC0-1.0",
+            "attribution": "Synthetic COD-compatible XRD seed.",
+            "priority": 100,
+            "published_at": "2026-03-14T00:00:00Z",
+            "generated_at": "2026-03-13T21:45:00Z",
+            "provider_dataset_version": "2026.03-curated",
+            "builder_version": "m003-test",
+            "normalized_schema_version": 2,
+            "curation_note": "Preserve additive metadata during package load.",
+        },
+        entries=[
+            {
+                "candidate_id": "xrd_phase_alpha",
+                "candidate_name": "Phase Alpha",
+                "phase_family": "oxide",
+                "aliases": ["alpha-main", "alpha-ref"],
+                "peaks": [
+                    {"position": 18.37, "intensity": 0.62, "d_spacing": 4.828},
+                    {"position": 33.18, "intensity": 1.0, "d_spacing": 2.698},
+                    {"position": 47.76, "intensity": 0.84, "d_spacing": 1.902},
+                ],
+            }
+        ],
+    )
+
+    manifest = {
+        "schema_version": 1,
+        "generated_at": "2026-03-14T00:00:00Z",
+        "providers": [
+            {
+                "provider_id": "cod",
+                "name": "COD",
+                "modalities": ["XRD"],
+                "source_url": "https://example.invalid/cod",
+                "license_name": "CC0-1.0",
+                "attribution": "Synthetic COD-compatible XRD seed.",
+            }
+        ],
+        "packages": [
+            {
+                "package_id": "cod_xrd_core",
+                "analysis_type": "XRD",
+                "provider": "COD",
+                "version": "2026.03-test",
+                "archive_name": archive_name,
+                "sha256": sha256,
+                "entry_count": 1,
+                "source_url": "https://example.invalid/cod",
+                "license_name": "CC0-1.0",
+                "attribution": "Synthetic COD-compatible XRD seed.",
+                "priority": 100,
+                "published_at": "2026-03-14T00:00:00Z",
+                "generated_at": "2026-03-13T21:45:00Z",
+                "provider_dataset_version": "2026.03-curated",
+                "builder_version": "m003-test",
+                "normalized_schema_version": 2,
             }
         ],
     }
@@ -124,6 +210,7 @@ def test_reference_library_manager_syncs_catalog_from_file_mirror(tmp_path, monk
     checked = manager.check_manifest(force=True)
     assert checked["available_package_count"] == 1
     assert checked["available_provider_count"] == 1
+    assert checked["manifest_generated_at"] == "2026-03-14T00:00:00Z"
 
     synced = manager.sync(force=True)
     assert synced["sync_mode"] == "online_sync"
@@ -139,6 +226,55 @@ def test_reference_library_manager_syncs_catalog_from_file_mirror(tmp_path, monk
     entries = manager.load_entries("FTIR")
     assert len(entries) == 2
     assert entries[0]["package_id"] == "openspecy_ftir_core"
+
+
+def test_reference_library_manager_reports_not_configured_without_feed_source(monkeypatch):
+    monkeypatch.delenv("THERMOANALYZER_LIBRARY_FEED_URL", raising=False)
+    monkeypatch.delenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", raising=False)
+
+    manager = ReferenceLibraryManager()
+
+    status = manager.check_manifest(force=True)
+    assert status["feed_configured"] is False
+    assert status["sync_mode"] == "not_synced"
+    assert "not configured" in status["last_error"].lower()
+
+
+def test_reference_library_manager_preserves_additive_xrd_metadata_and_d_spacing(tmp_path, monkeypatch):
+    home_root = tmp_path / "home"
+    mirror_root = tmp_path / "mirror"
+    _write_xrd_mirror(mirror_root)
+    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
+
+    manager = ReferenceLibraryManager(feed_source=mirror_root.as_uri())
+    manager.sync(force=True)
+
+    entries = manager.load_entries("XRD")
+    assert len(entries) == 1
+    assert entries[0]["candidate_id"] == "xrd_phase_alpha"
+    assert entries[0]["phase_family"] == "oxide"
+    assert entries[0]["aliases"] == ["alpha-main", "alpha-ref"]
+    assert entries[0]["package_metadata"]["curation_note"] == "Preserve additive metadata during package load."
+    assert entries[0]["builder_version"] == "m003-test"
+    assert entries[0]["provider_dataset_version"] == "2026.03-curated"
+    assert entries[0]["normalized_schema_version"] == 2
+    assert entries[0]["peaks"][0]["d_spacing"] == 4.828
+    assert entries[0]["d_spacing"] == [4.828, 2.698, 1.902]
+    assert entries[0]["generated_at"] == "2026-03-13T21:45:00Z"
+
+
+def test_reference_library_manager_requires_explicit_feed_configuration(tmp_path, monkeypatch):
+    home_root = tmp_path / "home"
+    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
+    monkeypatch.delenv("THERMOANALYZER_LIBRARY_FEED_URL", raising=False)
+    monkeypatch.delenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", raising=False)
+
+    manager = ReferenceLibraryManager(root=home_root / "libraries")
+    status = manager.status()
+
+    assert status["feed_configured"] is False
+    assert status["sync_mode"] == "not_synced"
+    assert "not configured" in status["last_error"].lower() or status["last_error"] == ""
 
 
 def test_reference_library_manager_falls_back_to_cached_read_only_when_feed_disappears(tmp_path, monkeypatch):
@@ -217,6 +353,7 @@ def test_backend_library_routes_surface_status_catalog_and_sync(tmp_path, monkey
     status_response = client.get("/library/status", headers=_auth_headers())
     assert status_response.status_code == 200
     assert status_response.json()["cache_status"] == "cold"
+    assert status_response.json()["manifest_generated_at"] == "2026-03-14T00:00:00Z"
 
     sync_response = client.post("/library/sync", headers=_auth_headers(), json={"force": True})
     assert sync_response.status_code == 200
@@ -230,6 +367,7 @@ def test_backend_library_routes_surface_status_catalog_and_sync(tmp_path, monkey
     assert catalog_payload["status"]["installed_package_count"] == 1
     assert catalog_payload["libraries"][0]["package_id"] == "openspecy_ftir_core"
     assert catalog_payload["libraries"][0]["installed"] is True
+    assert catalog_payload["libraries"][0]["published_at"] == "2026-03-14T00:00:00Z"
 
 
 def test_backend_library_routes_require_auth_token(tmp_path, monkeypatch):

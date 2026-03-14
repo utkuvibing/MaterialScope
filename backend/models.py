@@ -31,6 +31,7 @@ class LibraryStatusResponse(BaseModel):
     update_available_count: int = 0
     available_package_count: int = 0
     available_provider_count: int = 0
+    manifest_generated_at: str = ""
     manifest_etag: str = ""
     last_error: str = ""
     sync_due: bool = False
@@ -47,6 +48,11 @@ class LibraryCatalogItem(BaseModel):
     license_name: str = ""
     attribution: str = ""
     priority: int = 0
+    published_at: str = ""
+    generated_at: str = ""
+    provider_dataset_version: str = ""
+    builder_version: str = ""
+    normalized_schema_version: int = 1
     installed: bool = False
     installed_version: str | None = None
     update_available: bool = False

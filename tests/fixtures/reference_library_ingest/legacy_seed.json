@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-03-14T00:00:00Z",
+  "packages": [
+    {
+      "package_id": "legacy_ftir_fixture",
+      "analysis_type": "FTIR",
+      "provider": "OpenSpecy",
+      "version": "2026.03.fixture",
+      "source_url": "https://example.invalid/openspecy/legacy",
+      "license_name": "CC-BY-4.0",
+      "license_text": "",
+      "attribution": "Legacy fallback fixture.",
+      "priority": 100,
+      "published_at": "2026-03-14T00:00:00Z",
+      "entries": [
+        {
+          "candidate_id": "legacy_polymer",
+          "candidate_name": "Legacy Polymer",
+          "axis": [500.0, 1000.0, 1500.0],
+          "signal": [0.10, 1.00, 0.40]
+        }
+      ]
+    }
+  ]
+}

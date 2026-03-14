@@ -57,6 +57,10 @@ class LibraryPackage:
     attribution: str = ""
     priority: int = DEFAULT_PRIORITY
     published_at: str = ""
+    generated_at: str = ""
+    provider_dataset_version: str = ""
+    builder_version: str = ""
+    normalized_schema_version: int = 1
 
 
 @dataclass(frozen=True)
@@ -76,6 +80,10 @@ class InstalledLibrary:
     priority: int = DEFAULT_PRIORITY
     update_available: bool = False
     published_at: str = ""
+    generated_at: str = ""
+    provider_dataset_version: str = ""
+    builder_version: str = ""
+    normalized_schema_version: int = 1
 
 
 @dataclass(frozen=True)
@@ -115,10 +123,6 @@ def configured_library_feed_source() -> str | None:
     mirror_root = os.getenv(LIBRARY_ENV_MIRROR_ROOT, "").strip()
     if mirror_root:
         return Path(mirror_root).resolve().as_uri()
-
-    repo_seed = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
-    if repo_seed.exists():
-        return repo_seed.resolve().as_uri()
     return None
 
 
@@ -157,6 +161,51 @@ def _coerce_int(value: Any, default: int = 0) -> int:
         return int(default)
 
 
+def _to_serializable(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _to_serializable(item) for key, item in value.items()}
+    if isinstance(value, np.ndarray):
+        return [_to_serializable(item) for item in value.tolist()]
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, (list, tuple, set)):
+        return [_to_serializable(item) for item in value]
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Path):
+        return str(value)
+    return value
+
+
+def _extract_xrd_d_spacing_array(item: Mapping[str, Any], peaks: list[Mapping[str, Any]]) -> np.ndarray | None:
+    raw_values = (
+        item.get("d_spacing")
+        or item.get("d_spacings")
+        or item.get("peak_d_spacing")
+        or item.get("peak_d_spacings")
+    )
+    if raw_values is not None and not (isinstance(raw_values, str) and raw_values == ""):
+        try:
+            values = np.asarray(raw_values, dtype=float)
+        except (TypeError, ValueError):
+            values = None
+        if values is not None and values.ndim == 1 and values.size == len(peaks):
+            return values.astype(float, copy=False)
+
+    peak_values: list[float] = []
+    for peak in peaks:
+        if not isinstance(peak, Mapping):
+            return None
+        raw_value = peak.get("d_spacing") or peak.get("d")
+        if raw_value in (None, ""):
+            return None
+        try:
+            peak_values.append(float(raw_value))
+        except (TypeError, ValueError):
+            return None
+    return np.asarray(peak_values, dtype=float) if peak_values else None
+
+
 def _package_from_mapping(payload: Mapping[str, Any]) -> LibraryPackage:
     return LibraryPackage(
         package_id=str(payload.get("package_id") or payload.get("id") or "").strip(),
@@ -172,6 +221,10 @@ def _package_from_mapping(payload: Mapping[str, Any]) -> LibraryPackage:
         attribution=str(payload.get("attribution") or "").strip(),
         priority=_coerce_int(payload.get("priority"), DEFAULT_PRIORITY),
         published_at=str(payload.get("published_at") or "").strip(),
+        generated_at=str(payload.get("generated_at") or "").strip(),
+        provider_dataset_version=str(payload.get("provider_dataset_version") or "").strip(),
+        builder_version=str(payload.get("builder_version") or "").strip(),
+        normalized_schema_version=_coerce_int(payload.get("normalized_schema_version"), 1),
     )
 
 
@@ -192,6 +245,10 @@ def _installed_from_mapping(payload: Mapping[str, Any]) -> InstalledLibrary:
         priority=_coerce_int(payload.get("priority"), DEFAULT_PRIORITY),
         update_available=bool(payload.get("update_available")),
         published_at=str(payload.get("published_at") or "").strip(),
+        generated_at=str(payload.get("generated_at") or "").strip(),
+        provider_dataset_version=str(payload.get("provider_dataset_version") or "").strip(),
+        builder_version=str(payload.get("builder_version") or "").strip(),
+        normalized_schema_version=_coerce_int(payload.get("normalized_schema_version"), 1),
     )
 
 
@@ -482,6 +539,10 @@ class ReferenceLibraryManager:
                     "attribution": package.attribution,
                     "priority": package.priority,
                     "published_at": package.published_at,
+                    "generated_at": package.generated_at,
+                    "provider_dataset_version": package.provider_dataset_version,
+                    "builder_version": package.builder_version,
+                    "normalized_schema_version": package.normalized_schema_version,
                     "installed": active is not None,
                     "installed_version": active.version if active else None,
                     "update_available": active.update_available if active else False,
@@ -505,6 +566,7 @@ class ReferenceLibraryManager:
             "update_available_count": sum(1 for item in installed if item.update_available),
             "available_package_count": len(manifest.packages) if manifest else 0,
             "available_provider_count": len(manifest.providers) if manifest else 0,
+            "manifest_generated_at": manifest.generated_at if manifest else "",
             "manifest_etag": state.manifest_etag,
             "last_error": state.last_error,
             "sync_due": self.needs_manifest_refresh() if self.client.configured else False,
@@ -564,6 +626,10 @@ class ReferenceLibraryManager:
                 "priority": package.priority,
                 "update_available": False,
                 "published_at": package.published_at,
+                "generated_at": package.generated_at,
+                "provider_dataset_version": package.provider_dataset_version,
+                "builder_version": package.builder_version,
+                "normalized_schema_version": package.normalized_schema_version,
             }
 
         state.installed_packages = installed
@@ -610,6 +676,69 @@ class ReferenceLibraryManager:
             "library_packages": [item.package_id for item in installed],
         }
 
+    def _entry_base(
+        self,
+        *,
+        entry: Mapping[str, Any],
+        package: InstalledLibrary,
+        token: str,
+        package_payload: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        base = dict(entry)
+        package_additive = {
+            str(key): value
+            for key, value in package_payload.items()
+            if str(key) not in {
+                "package_id",
+                "analysis_type",
+                "provider",
+                "version",
+                "source_url",
+                "license_name",
+                "license_text",
+                "attribution",
+                "priority",
+                "published_at",
+                "generated_at",
+                "provider_dataset_version",
+                "builder_version",
+                "normalized_schema_version",
+                "entry_count",
+                "archive_name",
+                "sha256",
+            }
+        }
+        if package_additive:
+            base.setdefault("package_metadata", dict(package_additive))
+            for key, value in package_additive.items():
+                base.setdefault(key, value)
+        base["candidate_id"] = str(entry.get("candidate_id") or entry.get("id") or "").strip()
+        base["candidate_name"] = str(entry.get("candidate_name") or entry.get("name") or "").strip()
+        base["analysis_type"] = token
+        base["provider"] = package.provider
+        base["package_id"] = package.package_id
+        base["package_version"] = package.version
+        base["license_name"] = package.license_name
+        base["source_url"] = str(entry.get("source_url") or package.source_url).strip()
+        base["attribution"] = str(entry.get("attribution") or package.attribution).strip()
+        base["priority"] = _coerce_int(entry.get("priority"), package.priority)
+        base["published_at"] = str(entry.get("published_at") or package.published_at or package_payload.get("published_at") or "").strip()
+        base["generated_at"] = str(entry.get("generated_at") or package.generated_at or package_payload.get("generated_at") or "").strip()
+        base["provider_dataset_version"] = str(
+            entry.get("provider_dataset_version")
+            or package.provider_dataset_version
+            or package_payload.get("provider_dataset_version")
+            or ""
+        ).strip()
+        base["builder_version"] = str(entry.get("builder_version") or package.builder_version or package_payload.get("builder_version") or "").strip()
+        base["normalized_schema_version"] = _coerce_int(
+            entry.get("normalized_schema_version")
+            or package.normalized_schema_version
+            or package_payload.get("normalized_schema_version"),
+            1,
+        )
+        return base
+
     def load_entries(self, analysis_type: str) -> list[dict[str, Any]]:
         token = _normalize_analysis_type(analysis_type)
         entries: list[dict[str, Any]] = []
@@ -623,6 +752,8 @@ class ReferenceLibraryManager:
                 continue
 
             payload = json.loads(package_meta_path.read_text(encoding="utf-8"))
+            if not isinstance(payload, Mapping):
+                payload = {}
             array_file = extract_path / ("signals.npz" if token in {"FTIR", "RAMAN"} else "peaks.npz")
             if not array_file.exists():
                 continue
@@ -631,18 +762,7 @@ class ReferenceLibraryManager:
                     if not line.strip():
                         continue
                     entry = json.loads(line)
-                    base = {
-                        "candidate_id": str(entry.get("candidate_id") or entry.get("id") or "").strip(),
-                        "candidate_name": str(entry.get("candidate_name") or entry.get("name") or "").strip(),
-                        "analysis_type": token,
-                        "provider": package.provider,
-                        "package_id": package.package_id,
-                        "package_version": package.version,
-                        "license_name": package.license_name,
-                        "source_url": package.source_url,
-                        "attribution": package.attribution,
-                        "priority": package.priority,
-                    }
+                    base = self._entry_base(entry=entry, package=package, token=token, package_payload=payload)
                     if token in {"FTIR", "RAMAN"}:
                         signal_key = str(entry.get("signal_key") or "").strip()
                         if not signal_key:
@@ -656,11 +776,24 @@ class ReferenceLibraryManager:
                             continue
                         positions = arrays[f"positions_{peak_key}"].astype(float)
                         intensities = arrays[f"intensities_{peak_key}"].astype(float)
+                        d_spacing_key = f"d_spacings_{peak_key}"
+                        d_spacings = arrays[d_spacing_key].astype(float) if d_spacing_key in arrays else None
                         peaks = [
-                            {"position": float(position), "intensity": float(intensity)}
-                            for position, intensity in zip(positions.tolist(), intensities.tolist())
+                            {
+                                "position": float(position),
+                                "intensity": float(intensity),
+                                **(
+                                    {"d_spacing": float(d_spacings[index])}
+                                    if d_spacings is not None and index < len(d_spacings)
+                                    else {}
+                                ),
+                            }
+                            for index, (position, intensity) in enumerate(zip(positions.tolist(), intensities.tolist()))
                         ]
-                        entries.append({**base, "peaks": peaks})
+                        resolved_entry = {**base, "peaks": peaks}
+                        if d_spacings is not None:
+                            resolved_entry.setdefault("d_spacing", [float(item) for item in d_spacings.tolist()])
+                        entries.append(resolved_entry)
         entries.sort(
             key=lambda item: (
                 -_coerce_int(item.get("priority"), DEFAULT_PRIORITY),
@@ -704,7 +837,7 @@ def build_reference_library_package(
     try:
         temp_extract = temp_dir / "extract"
         temp_extract.mkdir(parents=True, exist_ok=True)
-        package_json = dict(package_metadata)
+        package_json = _to_serializable(dict(package_metadata))
         package_json["analysis_type"] = token
         (temp_extract / "package.json").write_text(
             json.dumps(package_json, indent=2, ensure_ascii=False),
@@ -721,7 +854,7 @@ def build_reference_library_package(
                 signal = np.asarray(item.get("signal") or [], dtype=float)
                 axis_map[f"axis_{key}"] = axis
                 signal_map[f"signal_{key}"] = signal
-                payload = dict(item)
+                payload = _to_serializable(dict(item))
                 payload["signal_key"] = key
                 payload.pop("axis", None)
                 payload.pop("signal", None)
@@ -730,16 +863,22 @@ def build_reference_library_package(
         else:
             position_map: dict[str, np.ndarray] = {}
             intensity_map: dict[str, np.ndarray] = {}
+            d_spacing_map: dict[str, np.ndarray] = {}
             for index, item in enumerate(entries, start=1):
                 key = f"ref_{index:04d}"
                 peaks = list(item.get("peaks") or [])
                 position_map[f"positions_{key}"] = np.asarray([peak["position"] for peak in peaks], dtype=float)
                 intensity_map[f"intensities_{key}"] = np.asarray([peak["intensity"] for peak in peaks], dtype=float)
-                payload = dict(item)
+                d_spacings = _extract_xrd_d_spacing_array(item, peaks)
+                if d_spacings is not None and d_spacings.size:
+                    d_spacing_map[f"d_spacings_{key}"] = np.asarray(d_spacings, dtype=float)
+                payload = _to_serializable(dict(item))
                 payload["peak_key"] = key
+                if d_spacings is not None and d_spacings.size:
+                    payload["d_spacing"] = [float(value) for value in d_spacings.tolist()]
                 payload.pop("peaks", None)
                 lines.append(json.dumps(payload, ensure_ascii=False))
-            np.savez_compressed(temp_extract / "peaks.npz", **position_map, **intensity_map)
+            np.savez_compressed(temp_extract / "peaks.npz", **position_map, **intensity_map, **d_spacing_map)
 
         (temp_extract / "entries.jsonl").write_text("\n".join(lines), encoding="utf-8")
         output_path.parent.mkdir(parents=True, exist_ok=True)

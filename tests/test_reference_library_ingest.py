@@ -1,0 +1,349 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from tools.build_reference_library_mirror import main as build_mirror_main
+from tools.ingest_cod import main as ingest_cod_main
+from tools.ingest_materials_project import main as ingest_materials_project_main
+from tools.ingest_openspecy import main as ingest_openspecy_main
+from tools.ingest_rod import main as ingest_rod_main
+
+FIXTURE_ROOT = Path(__file__).resolve().parent / "fixtures" / "reference_library_ingest"
+GENERATED_AT = "2026-03-14T00:00:00Z"
+DATASET_VERSION = "2026.03.fixture"
+
+
+def _write_json(path: Path, payload: object) -> Path:
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return path
+
+
+def _read_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+@pytest.mark.usefixtures("tmp_path")
+def test_cod_ingest_normalizes_cif_records(tmp_path):
+    pytest.importorskip("pymatgen")
+    manifest_path = _write_json(
+        tmp_path / "cod_records.json",
+        [
+            {
+                "source_id": "1002",
+                "candidate_name": "Sodium Chloride",
+                "formula": "NaCl",
+                "cif_path": str(FIXTURE_ROOT / "cod" / "cod_nacl.cif"),
+            },
+            {
+                "source_id": "1001",
+                "candidate_name": "Silicon",
+                "formula": "Si",
+                "cif_path": str(FIXTURE_ROOT / "cod" / "cod_si.cif"),
+            },
+        ],
+    )
+    output_root = tmp_path / "reference_library_ingest"
+
+    ingest_cod_main(
+        [
+            "--manifest",
+            str(manifest_path),
+            "--output-root",
+            str(output_root),
+            "--generated-at",
+            GENERATED_AT,
+            "--provider-dataset-version",
+            DATASET_VERSION,
+            "--chunk-size",
+            "1",
+        ]
+    )
+
+    provider_root = output_root / "cod"
+    package_dirs = sorted(path for path in provider_root.iterdir() if path.is_dir())
+    assert [path.name for path in package_dirs] == ["cod_xrd_0001", "cod_xrd_0002"]
+
+    spec = _read_json(package_dirs[0] / "package_spec.json")
+    assert spec["analysis_type"] == "XRD"
+    assert spec["provider"] == "COD"
+    assert spec["version"] == f"{DATASET_VERSION}-b1"
+
+    rows = _read_jsonl(package_dirs[0] / "entries.jsonl")
+    assert len(rows) == 1
+    assert rows[0]["source_id"] == "1001"
+    assert rows[0]["candidate_name"] == "Silicon"
+    assert rows[0]["peaks"]
+    assert all("d_spacing" in peak for peak in rows[0]["peaks"])
+
+
+@pytest.mark.usefixtures("tmp_path")
+def test_materials_project_ingest_normalizes_fixture_records(tmp_path):
+    pytest.importorskip("pymatgen")
+    fixture_path = _write_json(
+        tmp_path / "materials_project_records.json",
+        [
+            {
+                "material_id": "mp-22862",
+                "formula_pretty": "NaCl",
+                "structure_cif_path": str(FIXTURE_ROOT / "materials_project" / "mp_22862_nacl.cif"),
+                "last_updated": "2026-03-10T00:00:00Z",
+            },
+            {
+                "material_id": "mp-149",
+                "formula_pretty": "Si",
+                "structure_cif_path": str(FIXTURE_ROOT / "materials_project" / "mp_149_si.cif"),
+                "last_updated": "2026-03-11T00:00:00Z",
+            },
+        ],
+    )
+    output_root = tmp_path / "reference_library_ingest"
+
+    ingest_materials_project_main(
+        [
+            "--input-json",
+            str(fixture_path),
+            "--output-root",
+            str(output_root),
+            "--generated-at",
+            GENERATED_AT,
+            "--provider-dataset-version",
+            DATASET_VERSION,
+            "--chunk-size",
+            "1",
+        ]
+    )
+
+    provider_root = output_root / "materials_project"
+    package_dirs = sorted(path for path in provider_root.iterdir() if path.is_dir())
+    assert [path.name for path in package_dirs] == ["materials_project_xrd_0001", "materials_project_xrd_0002"]
+
+    rows = _read_jsonl(package_dirs[0] / "entries.jsonl")
+    assert len(rows) == 1
+    assert rows[0]["source_id"] == "mp-149"
+    assert rows[0]["candidate_id"] == "materials_project_mp_149"
+    assert rows[0]["formula"] == "Si"
+    assert rows[0]["source_url"].endswith("/materials/mp-149")
+
+
+def test_openspecy_ingest_splits_modalities_and_normalizes_signals(tmp_path):
+    output_root = tmp_path / "reference_library_ingest"
+
+    ingest_openspecy_main(
+        [
+            "--input-json",
+            str(FIXTURE_ROOT / "openspecy" / "records.json"),
+            "--output-root",
+            str(output_root),
+            "--generated-at",
+            GENERATED_AT,
+            "--provider-dataset-version",
+            DATASET_VERSION,
+            "--chunk-size",
+            "2",
+        ]
+    )
+
+    provider_root = output_root / "openspecy"
+    package_dirs = sorted(path for path in provider_root.iterdir() if path.is_dir())
+    assert [path.name for path in package_dirs] == ["openspecy_ftir_0001", "openspecy_raman_0001"]
+
+    ftir_rows = _read_jsonl(provider_root / "openspecy_ftir_0001" / "entries.jsonl")
+    assert [row["source_id"] for row in ftir_rows] == ["ftir-001", "ftir-002"]
+    assert ftir_rows[0]["axis"] == sorted(ftir_rows[0]["axis"])
+    assert min(ftir_rows[0]["signal"]) == 0.0
+    assert max(ftir_rows[0]["signal"]) == 1.0
+
+    raman_rows = _read_jsonl(provider_root / "openspecy_raman_0001" / "entries.jsonl")
+    assert len(raman_rows) == 1
+    assert raman_rows[0]["candidate_name"] == "Graphite"
+
+
+def test_rod_ingest_normalizes_jcamp_fixture(tmp_path):
+    manifest_path = _write_json(
+        tmp_path / "rod_records.json",
+        [
+            {
+                "source_id": "2001",
+                "candidate_name": "Calcite",
+                "jcamp_path": str(FIXTURE_ROOT / "rod" / "calcite_2001.jdx"),
+            }
+        ],
+    )
+    output_root = tmp_path / "reference_library_ingest"
+
+    ingest_rod_main(
+        [
+            "--manifest",
+            str(manifest_path),
+            "--output-root",
+            str(output_root),
+            "--generated-at",
+            GENERATED_AT,
+            "--provider-dataset-version",
+            DATASET_VERSION,
+        ]
+    )
+
+    package_dir = output_root / "rod" / "rod_raman_0001"
+    spec = _read_json(package_dir / "package_spec.json")
+    rows = _read_jsonl(package_dir / "entries.jsonl")
+
+    assert spec["analysis_type"] == "RAMAN"
+    assert rows[0]["candidate_name"] == "Calcite"
+    assert rows[0]["axis"] == [100.0, 200.0, 300.0, 400.0, 500.0]
+    assert rows[0]["signal"][2] == 1.0
+    assert rows[0]["source_url"].endswith("2001.rod")
+
+
+@pytest.mark.usefixtures("tmp_path")
+def test_mirror_builder_consumes_normalized_root_before_legacy_source(tmp_path):
+    pytest.importorskip("pymatgen")
+    normalized_root = tmp_path / "reference_library_ingest"
+
+    ingest_cod_main(
+        [
+            "--manifest",
+            str(
+                _write_json(
+                    tmp_path / "cod_records.json",
+                    [
+                        {
+                            "source_id": "1001",
+                            "candidate_name": "Silicon",
+                            "cif_path": str(FIXTURE_ROOT / "cod" / "cod_si.cif"),
+                        },
+                        {
+                            "source_id": "1002",
+                            "candidate_name": "Sodium Chloride",
+                            "cif_path": str(FIXTURE_ROOT / "cod" / "cod_nacl.cif"),
+                        },
+                    ],
+                )
+            ),
+            "--output-root",
+            str(normalized_root),
+            "--generated-at",
+            GENERATED_AT,
+            "--provider-dataset-version",
+            DATASET_VERSION,
+            "--chunk-size",
+            "1",
+        ]
+    )
+    ingest_materials_project_main(
+        [
+            "--input-json",
+            str(
+                _write_json(
+                    tmp_path / "mp_records.json",
+                    [
+                        {
+                            "material_id": "mp-149",
+                            "formula_pretty": "Si",
+                            "structure_cif_path": str(FIXTURE_ROOT / "materials_project" / "mp_149_si.cif"),
+                        },
+                        {
+                            "material_id": "mp-22862",
+                            "formula_pretty": "NaCl",
+                            "structure_cif_path": str(FIXTURE_ROOT / "materials_project" / "mp_22862_nacl.cif"),
+                        },
+                    ],
+                )
+            ),
+            "--output-root",
+            str(normalized_root),
+            "--generated-at",
+            GENERATED_AT,
+            "--provider-dataset-version",
+            DATASET_VERSION,
+            "--chunk-size",
+            "1",
+        ]
+    )
+    ingest_openspecy_main(
+        [
+            "--input-json",
+            str(FIXTURE_ROOT / "openspecy" / "records.json"),
+            "--output-root",
+            str(normalized_root),
+            "--generated-at",
+            GENERATED_AT,
+            "--provider-dataset-version",
+            DATASET_VERSION,
+            "--chunk-size",
+            "2",
+        ]
+    )
+    ingest_rod_main(
+        [
+            "--manifest",
+            str(
+                _write_json(
+                    tmp_path / "rod_records.json",
+                    [
+                        {
+                            "source_id": "2001",
+                            "candidate_name": "Calcite",
+                            "jcamp_path": str(FIXTURE_ROOT / "rod" / "calcite_2001.jdx"),
+                        }
+                    ],
+                )
+            ),
+            "--output-root",
+            str(normalized_root),
+            "--generated-at",
+            GENERATED_AT,
+            "--provider-dataset-version",
+            DATASET_VERSION,
+        ]
+    )
+
+    mirror_root = tmp_path / "mirror"
+    build_mirror_main(
+        [
+            "--normalized-root",
+            str(normalized_root),
+            "--source",
+            str(FIXTURE_ROOT / "legacy_seed.json"),
+            "--output",
+            str(mirror_root),
+        ]
+    )
+
+    manifest = _read_json(mirror_root / "manifest.json")
+    assert {provider["name"] for provider in manifest["providers"]} == {"COD", "Materials Project", "OpenSpecy", "ROD"}
+    assert len(manifest["packages"]) == 7
+    assert {package["package_id"] for package in manifest["packages"]} >= {
+        "cod_xrd_0001",
+        "materials_project_xrd_0001",
+        "openspecy_ftir_0001",
+        "openspecy_raman_0001",
+        "rod_raman_0001",
+    }
+    assert all((mirror_root / "packages" / package["archive_name"]).exists() for package in manifest["packages"])
+    assert "legacy_ftir_fixture" not in {package["package_id"] for package in manifest["packages"]}
+
+
+def test_mirror_builder_falls_back_to_legacy_seed_when_normalized_root_is_empty(tmp_path):
+    mirror_root = tmp_path / "mirror"
+    build_mirror_main(
+        [
+            "--normalized-root",
+            str(tmp_path / "missing-normalized-root"),
+            "--source",
+            str(FIXTURE_ROOT / "legacy_seed.json"),
+            "--output",
+            str(mirror_root),
+        ]
+    )
+
+    manifest = _read_json(mirror_root / "manifest.json")
+    assert [package["package_id"] for package in manifest["packages"]] == ["legacy_ftir_fixture"]
+    assert (mirror_root / "packages" / "legacy_ftir_fixture-2026.03.fixture.zip").exists()

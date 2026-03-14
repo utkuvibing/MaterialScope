@@ -1390,20 +1390,143 @@ def _resolve_xrd_matching_config(processing: Mapping[str, Any]) -> dict[str, Any
     }
 
 
+_XRD_REFERENCE_DEFAULT_WAVELENGTH_ANGSTROM = 1.5406
+
+
+def _d_spacing_from_two_theta(two_theta_deg: float, wavelength_angstrom: float) -> float | None:
+    if two_theta_deg <= 0.0 or wavelength_angstrom <= 0.0 or two_theta_deg >= 180.0:
+        return None
+    theta_radians = np.radians(two_theta_deg / 2.0)
+    sine_value = float(np.sin(theta_radians))
+    if sine_value <= 0.0:
+        return None
+    return float(wavelength_angstrom / (2.0 * sine_value))
+
+
+def _two_theta_from_d_spacing(d_spacing: float, wavelength_angstrom: float) -> float | None:
+    if d_spacing <= 0.0 or wavelength_angstrom <= 0.0:
+        return None
+    ratio = float(wavelength_angstrom / (2.0 * d_spacing))
+    if ratio <= 0.0 or ratio >= 1.0:
+        return None
+    return float(np.degrees(2.0 * np.arcsin(ratio)))
+
+
+def _resolve_xrd_peak_wavelength(
+    peak: Mapping[str, Any],
+    *,
+    default: float | None = _XRD_REFERENCE_DEFAULT_WAVELENGTH_ANGSTROM,
+) -> float | None:
+    wavelength = _coerce_optional_float(
+        peak.get("reference_wavelength_angstrom")
+        or peak.get("wavelength_angstrom")
+        or peak.get("xrd_wavelength_angstrom"),
+        default,
+    )
+    if wavelength is None or wavelength <= 0.0:
+        return None
+    return float(wavelength)
+
+
+def _resolve_xrd_observed_space(dataset) -> str:
+    metadata = getattr(dataset, "metadata", {}) or {}
+    units = getattr(dataset, "units", {}) or {}
+    axis_role = str(metadata.get("xrd_axis_role") or "").strip().lower()
+    axis_unit = str(metadata.get("xrd_axis_unit") or units.get("temperature") or "").strip().lower()
+    if "d" in axis_role and "spacing" in axis_role:
+        return "d_spacing"
+    if "theta" in axis_role:
+        return "two_theta"
+    if any(token in axis_unit for token in ("d_spacing", "d-spacing", "angstrom")) and "theta" not in axis_unit:
+        return "d_spacing"
+    return "two_theta"
+
+
+def _resolve_xrd_comparison_value(
+    peak: Mapping[str, Any],
+    *,
+    comparison_space: str,
+    wavelength_angstrom: float | None,
+) -> float | None:
+    d_spacing = _coerce_optional_float(peak.get("d_spacing") or peak.get("d") or peak.get("dspace"))
+    position = _coerce_optional_float(
+        peak.get("position")
+        or peak.get("two_theta")
+        or peak.get("x")
+        or peak.get("temperature")
+    )
+    reference_wavelength = _resolve_xrd_peak_wavelength(peak, default=None)
+    if comparison_space == "d_spacing":
+        if d_spacing is not None:
+            return float(d_spacing)
+        if reference_wavelength is not None and position is not None:
+            return _d_spacing_from_two_theta(float(position), float(reference_wavelength))
+        return None
+    if wavelength_angstrom is not None and d_spacing is not None:
+        converted_position = _two_theta_from_d_spacing(float(d_spacing), float(wavelength_angstrom))
+        if converted_position is not None:
+            return converted_position
+    if position is not None:
+        return float(position)
+    if reference_wavelength is not None and d_spacing is not None:
+        return _two_theta_from_d_spacing(float(d_spacing), float(reference_wavelength))
+    return None
+
+
+def _xrd_tolerance_in_comparison_space(
+    reference_peak: Mapping[str, Any],
+    *,
+    comparison_space: str,
+    tolerance_deg: float,
+    wavelength_angstrom: float | None,
+) -> float:
+    if comparison_space != "d_spacing":
+        return float(tolerance_deg)
+    resolved_wavelength = wavelength_angstrom or _resolve_xrd_peak_wavelength(reference_peak, default=None)
+    if resolved_wavelength is None:
+        return float(tolerance_deg)
+    reference_two_theta = _resolve_xrd_comparison_value(
+        reference_peak,
+        comparison_space="two_theta",
+        wavelength_angstrom=resolved_wavelength,
+    )
+    reference_d = _resolve_xrd_comparison_value(
+        reference_peak,
+        comparison_space="d_spacing",
+        wavelength_angstrom=resolved_wavelength,
+    )
+    if reference_two_theta is None or reference_d is None:
+        return float(tolerance_deg)
+    low = max(reference_two_theta - tolerance_deg, 1e-6)
+    high = min(reference_two_theta + tolerance_deg, 179.999)
+    low_d = _d_spacing_from_two_theta(low, resolved_wavelength)
+    high_d = _d_spacing_from_two_theta(high, resolved_wavelength)
+    if low_d is None or high_d is None:
+        return float(tolerance_deg)
+    return float(max(abs(reference_d - low_d), abs(reference_d - high_d)))
+
+
 def _extract_xrd_reference_peaks(entry: Mapping[str, Any]) -> list[dict[str, float]]:
+    default_wavelength = _resolve_xrd_peak_wavelength(entry)
     raw_peaks = entry.get("peaks") or entry.get("reference_peaks") or []
     normalized: list[dict[str, float]] = []
     if isinstance(raw_peaks, list):
         for item in raw_peaks:
             if not isinstance(item, Mapping):
                 continue
+            peak_wavelength = _resolve_xrd_peak_wavelength(item, default=default_wavelength)
             position = _coerce_optional_float(
                 item.get("position")
                 or item.get("two_theta")
                 or item.get("x")
                 or item.get("temperature")
             )
-            if position is None:
+            d_spacing = _coerce_optional_float(item.get("d_spacing") or item.get("d") or item.get("dspace"))
+            if d_spacing is None and position is not None and peak_wavelength is not None:
+                d_spacing = _d_spacing_from_two_theta(float(position), float(peak_wavelength))
+            if position is None and d_spacing is not None and peak_wavelength is not None:
+                position = _two_theta_from_d_spacing(float(d_spacing), float(peak_wavelength))
+            if position is None and d_spacing is None:
                 continue
             intensity = _coerce_positive_float(
                 item.get("intensity")
@@ -1411,24 +1534,57 @@ def _extract_xrd_reference_peaks(entry: Mapping[str, Any]) -> list[dict[str, flo
                 or item.get("signal"),
                 1.0,
             )
-            normalized.append({"position": float(position), "intensity": float(intensity)})
+            peak_payload = {"intensity": float(intensity)}
+            if position is not None:
+                peak_payload["position"] = float(position)
+            if d_spacing is not None:
+                peak_payload["d_spacing"] = float(d_spacing)
+            if peak_wavelength is not None:
+                peak_payload["reference_wavelength_angstrom"] = float(peak_wavelength)
+            normalized.append(peak_payload)
 
     if not normalized:
         positions = _to_float_array(entry.get("peak_positions") or entry.get("positions") or entry.get("two_theta"))
         intensities = _to_float_array(entry.get("peak_intensities") or entry.get("intensities") or entry.get("signal"))
-        if positions is None:
+        d_spacings = _to_float_array(entry.get("peak_d_spacings") or entry.get("d_spacings") or entry.get("d_spacing"))
+        if positions is None and d_spacings is None:
             return []
-        if intensities is None or intensities.size != positions.size:
-            intensities = np.ones_like(positions, dtype=float)
-        for position, intensity in zip(positions, intensities):
-            normalized.append(
-                {
-                    "position": float(position),
-                    "intensity": float(max(float(intensity), 1e-9)),
-                }
-            )
+        if d_spacings is None and positions is not None and default_wavelength is not None:
+            converted = [
+                _d_spacing_from_two_theta(float(position), float(default_wavelength))
+                for position in positions.tolist()
+            ]
+            if all(value is not None for value in converted):
+                d_spacings = np.asarray([float(value) for value in converted], dtype=float)
+        if positions is None and d_spacings is not None and default_wavelength is not None:
+            converted = [
+                _two_theta_from_d_spacing(float(d_spacing), float(default_wavelength))
+                for d_spacing in d_spacings.tolist()
+            ]
+            if all(value is not None for value in converted):
+                positions = np.asarray([float(value) for value in converted], dtype=float)
+        point_count = len(positions) if positions is not None else len(d_spacings)
+        if intensities is None or intensities.size != point_count:
+            intensities = np.ones(point_count, dtype=float)
+        iterable_positions = positions.tolist() if positions is not None else [None] * point_count
+        iterable_d_spacings = d_spacings.tolist() if d_spacings is not None else [None] * point_count
+        for index, intensity in enumerate(intensities.tolist()):
+            peak_payload = {"intensity": float(max(float(intensity), 1e-9))}
+            position = iterable_positions[index]
+            d_spacing = iterable_d_spacings[index]
+            if position is not None:
+                peak_payload["position"] = float(position)
+            if d_spacing is not None:
+                peak_payload["d_spacing"] = float(d_spacing)
+            if default_wavelength is not None:
+                peak_payload["reference_wavelength_angstrom"] = float(default_wavelength)
+            normalized.append(peak_payload)
 
-    normalized.sort(key=lambda item: float(item["position"]))
+    normalized.sort(
+        key=lambda item: (
+            float(item.get("d_spacing")) if item.get("d_spacing") is not None else float(item.get("position", 0.0))
+        )
+    )
     return normalized
 
 
@@ -1501,6 +1657,8 @@ def _match_xrd_reference_peaks(
     reference_peaks: list[dict[str, float]],
     *,
     tolerance_deg: float,
+    comparison_space: str = "two_theta",
+    wavelength_angstrom: float | None = None,
 ) -> tuple[list[dict[str, float]], list[int]]:
     if not observed_peaks or not reference_peaks:
         return [], list(range(len(reference_peaks)))
@@ -1509,28 +1667,65 @@ def _match_xrd_reference_peaks(
     matches: list[dict[str, float]] = []
     unmatched_reference_indices: list[int] = []
     for ref_index, reference in enumerate(reference_peaks):
-        reference_position = float(reference["position"])
+        reference_position = _resolve_xrd_comparison_value(
+            reference,
+            comparison_space=comparison_space,
+            wavelength_angstrom=wavelength_angstrom,
+        )
+        if reference_position is None:
+            unmatched_reference_indices.append(ref_index)
+            continue
         best_observed_index: int | None = None
         best_delta: float | None = None
+        tolerance = _xrd_tolerance_in_comparison_space(
+            reference,
+            comparison_space=comparison_space,
+            tolerance_deg=tolerance_deg,
+            wavelength_angstrom=wavelength_angstrom,
+        )
         for obs_index, observed in enumerate(observed_peaks):
             if obs_index in used_observed:
                 continue
-            delta = abs(float(observed["position"]) - reference_position)
+            observed_position = _resolve_xrd_comparison_value(
+                observed,
+                comparison_space=comparison_space,
+                wavelength_angstrom=wavelength_angstrom,
+            )
+            if observed_position is None:
+                continue
+            delta = abs(float(observed_position) - float(reference_position))
             if best_delta is None or delta < best_delta:
                 best_delta = delta
                 best_observed_index = obs_index
-        if best_delta is None or best_delta > tolerance_deg or best_observed_index is None:
+        if best_delta is None or best_delta > tolerance or best_observed_index is None:
             unmatched_reference_indices.append(ref_index)
             continue
         used_observed.add(best_observed_index)
         observed = observed_peaks[best_observed_index]
+        observed_position = _resolve_xrd_comparison_value(
+            observed,
+            comparison_space=comparison_space,
+            wavelength_angstrom=wavelength_angstrom,
+        )
         matches.append(
             {
-                "reference_position": reference_position,
-                "observed_position": float(observed["position"]),
+                "reference_position": float(reference_position),
+                "observed_position": float(observed_position if observed_position is not None else observed.get("position", 0.0)),
                 "delta_position": float(best_delta),
+                "comparison_tolerance": float(tolerance),
                 "reference_intensity": float(reference["intensity"]),
                 "observed_intensity": float(observed.get("intensity", 0.0)),
+                "comparison_space": comparison_space,
+                "reference_d_spacing": _resolve_xrd_comparison_value(
+                    reference,
+                    comparison_space="d_spacing",
+                    wavelength_angstrom=wavelength_angstrom,
+                ),
+                "observed_d_spacing": _resolve_xrd_comparison_value(
+                    observed,
+                    comparison_space="d_spacing",
+                    wavelength_angstrom=wavelength_angstrom,
+                ),
             }
         )
     return matches, unmatched_reference_indices
@@ -1541,6 +1736,8 @@ def _rank_xrd_phase_candidates(
     observed_peaks: list[dict[str, float]],
     references: list[dict[str, Any]],
     matching_config: Mapping[str, Any],
+    comparison_space: str = "two_theta",
+    wavelength_angstrom: float | None = None,
 ) -> list[dict[str, Any]]:
     tolerance_deg = _coerce_positive_float(matching_config.get("tolerance_deg"), 0.28)
     top_n = _coerce_positive_int(matching_config.get("top_n"), 5)
@@ -1559,6 +1756,8 @@ def _rank_xrd_phase_candidates(
             observed_peaks=observed_peaks,
             reference_peaks=reference_peaks,
             tolerance_deg=prefilter_tolerance,
+            comparison_space=comparison_space,
+            wavelength_angstrom=wavelength_angstrom,
         )
         prefiltered.append(
             {
@@ -1584,6 +1783,8 @@ def _rank_xrd_phase_candidates(
             observed_peaks=observed_peaks,
             reference_peaks=reference_peaks,
             tolerance_deg=tolerance_deg,
+            comparison_space=comparison_space,
+            wavelength_angstrom=wavelength_angstrom,
         )
         reference_scale = max([float(item.get("intensity", 0.0)) for item in reference_peaks] + [1.0])
         total_reference_weight = sum(
@@ -1608,9 +1809,20 @@ def _rank_xrd_phase_candidates(
             if shared_peak_count > 0
             else None
         )
+        mean_delta_ratio = (
+            float(
+                sum(
+                    item["delta_position"] / max(float(item.get("comparison_tolerance") or tolerance_deg), 1e-9)
+                    for item in matches
+                )
+                / shared_peak_count
+            )
+            if shared_peak_count > 0
+            else None
+        )
         delta_score = (
-            float(max(0.0, 1.0 - (mean_delta / tolerance_deg)))
-            if mean_delta is not None and tolerance_deg > 0.0
+            float(max(0.0, 1.0 - mean_delta_ratio))
+            if mean_delta_ratio is not None
             else 0.0
         )
 
@@ -1621,7 +1833,15 @@ def _rank_xrd_phase_candidates(
             if float(item.get("intensity", 0.0)) >= major_threshold
         ]
         unmatched_major_positions = [
-            float(reference_peaks[idx]["position"])
+            float(
+                _resolve_xrd_comparison_value(
+                    reference_peaks[idx],
+                    comparison_space=comparison_space,
+                    wavelength_angstrom=wavelength_angstrom,
+                )
+                or reference_peaks[idx].get("position")
+                or 0.0
+            )
             for idx in unmatched_indices
             if idx in major_reference_indices
         ]
@@ -1643,6 +1863,7 @@ def _rank_xrd_phase_candidates(
                 "library_version": reference.get("package_version") or "",
                 "evidence": {
                     "metric": metric,
+                    "comparison_space": comparison_space,
                     "tolerance_deg": tolerance_deg,
                     "observed_peak_count": len(observed_peaks),
                     "reference_peak_count": len(reference_peaks),
@@ -1650,6 +1871,7 @@ def _rank_xrd_phase_candidates(
                     "weighted_overlap_score": round(weighted_overlap_score, 4),
                     "coverage_ratio": round(coverage_ratio, 4),
                     "mean_delta_position": round(mean_delta, 4) if mean_delta is not None else None,
+                    "mean_delta_ratio": round(mean_delta_ratio, 4) if mean_delta_ratio is not None else None,
                     "unmatched_major_peak_count": len(unmatched_major_positions),
                     "unmatched_major_peak_positions": [round(item, 4) for item in sorted(unmatched_major_positions)],
                     "library_provider": reference.get("provider") or "",
@@ -1713,10 +1935,20 @@ def _execute_xrd_batch(
     library_context = manager.library_context("XRD")
     references = _resolve_xrd_references(dataset=dataset, processing=processing)
     matching_config = _resolve_xrd_matching_config(processing)
+    observed_space = _resolve_xrd_observed_space(dataset)
+    wavelength_angstrom = _coerce_optional_float(dataset.metadata.get("xrd_wavelength_angstrom"))
+    matching_peaks = [dict(item) for item in peaks]
+    if observed_space == "d_spacing":
+        for peak in matching_peaks:
+            peak["d_spacing"] = float(peak.get("position", 0.0))
+            if wavelength_angstrom is not None:
+                peak["wavelength_angstrom"] = float(wavelength_angstrom)
     ranked_matches = _rank_xrd_phase_candidates(
-        observed_peaks=peaks,
+        observed_peaks=matching_peaks,
         references=references,
         matching_config=matching_config,
+        comparison_space=observed_space,
+        wavelength_angstrom=wavelength_angstrom,
     )
 
     minimum_score = float(matching_config["minimum_score"])
@@ -1780,6 +2012,8 @@ def _execute_xrd_batch(
             "xrd_axis_role": dataset.metadata.get("xrd_axis_role") or "two_theta",
             "xrd_axis_unit": (dataset.metadata.get("xrd_axis_unit") or (dataset.units or {}).get("temperature") or "degree_2theta"),
             "xrd_wavelength_angstrom": dataset.metadata.get("xrd_wavelength_angstrom"),
+            "xrd_comparison_space": observed_space,
+            "xrd_match_coordinate_space": (top_match or {}).get("evidence", {}).get("comparison_space") or observed_space,
             "xrd_preprocessing_order": ["axis_normalization", "smoothing", "baseline", "peak_detection"],
             "xrd_peak_detection_method": resolved_peak_detection["method"],
             "xrd_peak_prominence": resolved_peak_detection["prominence"],
@@ -1840,6 +2074,7 @@ def _execute_xrd_batch(
         "reference_candidate_count": len(references),
         "match_tolerance_deg": matching_config["tolerance_deg"],
         "match_metric": matching_config["metric"],
+        "match_coordinate_space": (top_match or {}).get("evidence", {}).get("comparison_space") or observed_space,
         "library_provider": top_provider,
         "library_package": top_package,
         "library_version": top_version,

@@ -7,27 +7,39 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from core.reference_library import build_reference_library_package
+from tools.library_ingest.common import iter_normalized_packages, normalized_package_dirs
 
 
-def _parse_args() -> argparse.Namespace:
+DEFAULT_LEGACY_SOURCE = Path("sample_data") / "reference_library_seed.json"
+DEFAULT_NORMALIZED_ROOT = Path("build") / "reference_library_ingest"
+DEFAULT_OUTPUT_ROOT = Path("build") / "reference_library_mirror"
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build ThermoAnalyzer reference-library mirror packages.")
     parser.add_argument(
+        "--normalized-root",
+        default=str(DEFAULT_NORMALIZED_ROOT),
+        help="Primary input root containing provider package_spec.json + entries.jsonl directories.",
+    )
+    parser.add_argument(
         "--source",
-        default=str(Path("sample_data") / "reference_library_seed.json"),
-        help="Path to the normalized seed/source JSON file.",
+        default=str(DEFAULT_LEGACY_SOURCE),
+        help="Legacy normalized seed/source JSON file. Used when --normalized-root has no package outputs.",
     )
     parser.add_argument(
         "--output",
-        default=str(Path("sample_data") / "reference_library_mirror"),
+        default=str(DEFAULT_OUTPUT_ROOT),
         help="Destination directory for the generated mirror.",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def _manifest_etag(payload: dict) -> str:
@@ -35,11 +47,41 @@ def _manifest_etag(payload: dict) -> str:
     return hashlib.sha256(body).hexdigest()
 
 
-def main() -> None:
-    args = _parse_args()
+def _seed_from_normalized_root(normalized_root: Path) -> dict[str, Any]:
+    packages: list[dict[str, Any]] = []
+    generated_at_values: list[str] = []
+    for spec, entries in iter_normalized_packages(normalized_root):
+        generated_at_values.append(spec.generated_at)
+        packages.append(
+            {
+                **spec.to_dict(),
+                "entries": entries,
+            }
+        )
+    packages.sort(
+        key=lambda item: (
+            str(item.get("provider") or "").lower(),
+            str(item.get("analysis_type") or "").upper(),
+            str(item.get("package_id") or "").lower(),
+        )
+    )
+    generated_at = max((value for value in generated_at_values if value), default="")
+    return {"generated_at": generated_at, "packages": packages}
+
+
+def _load_seed(args: argparse.Namespace) -> dict[str, Any]:
+    normalized_root = Path(args.normalized_root).resolve()
+    if normalized_package_dirs(normalized_root):
+        return _seed_from_normalized_root(normalized_root)
+
     source_path = Path(args.source).resolve()
+    return json.loads(source_path.read_text(encoding="utf-8"))
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parse_args(argv)
     output_root = Path(args.output).resolve()
-    seed = json.loads(source_path.read_text(encoding="utf-8"))
+    seed = _load_seed(args)
 
     output_root.mkdir(parents=True, exist_ok=True)
     packages_root = output_root / "packages"
@@ -65,6 +107,10 @@ def main() -> None:
                 "attribution": package.get("attribution") or "",
                 "priority": package.get("priority") or 0,
                 "published_at": package.get("published_at") or seed.get("generated_at") or "",
+                "generated_at": package.get("generated_at") or seed.get("generated_at") or "",
+                "provider_dataset_version": package.get("provider_dataset_version") or "",
+                "builder_version": package.get("builder_version") or "",
+                "normalized_schema_version": package.get("normalized_schema_version") or 1,
             },
             entries=package.get("entries") or [],
         )
@@ -100,6 +146,10 @@ def main() -> None:
                 "attribution": package.get("attribution") or "",
                 "priority": package.get("priority") or 0,
                 "published_at": package.get("published_at") or seed.get("generated_at") or "",
+                "generated_at": package.get("generated_at") or seed.get("generated_at") or "",
+                "provider_dataset_version": package.get("provider_dataset_version") or "",
+                "builder_version": package.get("builder_version") or "",
+                "normalized_schema_version": package.get("normalized_schema_version") or 1,
             }
         )
 

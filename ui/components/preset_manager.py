@@ -15,6 +15,21 @@ from core.preset_store import (
     save_preset,
 )
 from utils.i18n import tx
+from utils.session_state import advance_analysis_render_revision
+
+
+def _pending_workflow_key(workflow_select_key: str) -> str:
+    return f"{workflow_select_key}__pending"
+
+
+def seed_pending_workflow_template(workflow_select_key: str | None) -> None:
+    """Seed a workflow select widget before instantiation using a pending preset value."""
+    if not workflow_select_key:
+        return
+    pending_key = _pending_workflow_key(workflow_select_key)
+    pending_value = st.session_state.pop(pending_key, None)
+    if pending_value not in (None, ""):
+        st.session_state[workflow_select_key] = pending_value
 
 
 def render_processing_preset_panel(
@@ -71,8 +86,9 @@ def render_processing_preset_panel(
                     st.warning(tx("Preset bulunamadı.", "Preset not found."))
                 else:
                     state["processing"] = payload["processing"]
+                    advance_analysis_render_revision(state)
                     if workflow_select_key and payload.get("workflow_template_id"):
-                        st.session_state[workflow_select_key] = payload["workflow_template_id"]
+                        st.session_state[_pending_workflow_key(workflow_select_key)] = payload["workflow_template_id"]
                     st.success(
                         tx(
                             "{preset} uygulandı.",

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pandas as pd
 
 from core.data_io import ThermalDataset
@@ -67,3 +69,63 @@ def test_attach_xrd_report_figure_deduplicates_existing_figure_key(monkeypatch):
     )
 
     assert updated_record["artifacts"]["figure_keys"] == ["Aux Figure", figure_key]
+
+
+def test_xrd_page_uses_pending_workflow_seed_for_preset_application():
+    source = Path(xrd_page.__file__).read_text(encoding="utf-8")
+
+    assert 'seed_pending_workflow_template(f"xrd_template_{selected_key}")' in source
+
+
+def test_xrd_control_key_tracks_render_revision():
+    assert xrd_page._xrd_control_key("sample", "smooth_method", {}) == "xrd_smooth_method_sample_0"
+    assert xrd_page._xrd_control_key("sample", "smooth_method", {"_render_revision": 4}) == "xrd_smooth_method_sample_4"
+
+
+def test_sync_xrd_processing_from_controls_prefers_widget_state(monkeypatch):
+    dataset = _xrd_dataset()
+    processing = xrd_page._seed_xrd_processing_defaults({}, "xrd.general", dataset)
+    state = {"_render_revision": 2}
+    widget_state = {
+        "xrd_restrict_synthetic_xrd_2": True,
+        "xrd_axis_min_synthetic_xrd_2": 11.5,
+        "xrd_axis_max_synthetic_xrd_2": 76.0,
+        "xrd_smooth_method_synthetic_xrd_2": "moving_average",
+        "xrd_smooth_window_synthetic_xrd_2": 21,
+        "xrd_smooth_poly_synthetic_xrd_2": 5,
+        "xrd_baseline_method_synthetic_xrd_2": "linear",
+        "xrd_baseline_window_synthetic_xrd_2": 55,
+        "xrd_baseline_smooth_synthetic_xrd_2": 13,
+        "xrd_peak_prom_synthetic_xrd_2": 0.22,
+        "xrd_peak_dist_synthetic_xrd_2": 9,
+        "xrd_peak_width_synthetic_xrd_2": 4,
+        "xrd_peak_max_synthetic_xrd_2": 18,
+        "xrd_match_tol_synthetic_xrd_2": 0.19,
+        "xrd_match_min_synthetic_xrd_2": 0.61,
+        "xrd_match_topn_synthetic_xrd_2": 8,
+        "xrd_match_iw_synthetic_xrd_2": 0.47,
+        "xrd_match_major_synthetic_xrd_2": 0.58,
+    }
+    monkeypatch.setattr(xrd_page.st, "session_state", widget_state)
+
+    synced = xrd_page._sync_xrd_processing_from_controls(
+        processing,
+        dataset_key="synthetic_xrd",
+        dataset=dataset,
+        state=state,
+    )
+
+    axis_norm = synced["signal_pipeline"]["axis_normalization"]
+    smoothing = synced["signal_pipeline"]["smoothing"]
+    baseline = synced["signal_pipeline"]["baseline"]
+    peaks = synced["analysis_steps"]["peak_detection"]
+    context = synced["method_context"]
+
+    assert axis_norm["axis_min"] == 11.5
+    assert axis_norm["axis_max"] == 76.0
+    assert smoothing["method"] == "moving_average"
+    assert smoothing["window_length"] == 21
+    assert baseline["method"] == "linear"
+    assert peaks["prominence"] == 0.22
+    assert context["xrd_match_tolerance_deg"] == 0.19
+    assert context["xrd_match_top_n"] == 8
