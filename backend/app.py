@@ -8,6 +8,7 @@ import io
 from datetime import datetime
 
 import httpx
+from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException
 
 from backend import BACKEND_API_VERSION
@@ -75,6 +76,8 @@ from core.reference_library import ReferenceLibraryManager, get_reference_librar
 from core.result_serialization import split_valid_results
 from core.validation import validate_thermal_dataset
 from utils.license_manager import APP_VERSION, commercial_mode_enabled, load_license_state
+
+load_dotenv()
 
 
 def _require_token(expected_token: str | None, provided_token: str | None) -> None:

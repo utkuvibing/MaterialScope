@@ -7,6 +7,7 @@ Run with: streamlit run app.py
 """
 
 import streamlit as st
+from dotenv import load_dotenv
 
 from core.reference_library import maybe_refresh_library_manifest
 from core.project_io import PROJECT_EXTENSION, save_project_archive, load_project_archive
@@ -14,6 +15,8 @@ from utils.diagnostics import configure_diagnostics_logger, record_exception
 from utils.i18n import SUPPORTED_LANGUAGES, t, tx
 from utils.license_manager import APP_VERSION, commercial_mode_enabled, license_allows_write, load_license_state
 from utils.session_state import clear_project_state, ensure_session_state, replace_project_state
+
+load_dotenv()
 
 st.set_page_config(
     page_title="ThermoAnalyzer Professional",
