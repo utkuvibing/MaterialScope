@@ -603,8 +603,13 @@ def test_generate_docx_report_renders_xrd_no_match_caution_fields():
         xml = archive.read("word/document.xml").decode("utf-8")
 
     assert "XRD - synthetic_xrd" in xml
-    assert "Match Status" in xml
+    assert "Accepted Match Status" in xml
     assert "no_match" in xml
+    assert "Best Candidate Name" in xml
+    assert "Phase Alpha" in xml
+    assert "Best Candidate Score" in xml
+    assert "Shared Peaks" in xml
+    assert "Weighted Overlap Score" in xml
     assert "Caution Code" in xml
     assert "xrd_no_match" in xml
     assert "Phase Matching Metric" in xml

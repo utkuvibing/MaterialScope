@@ -226,6 +226,31 @@ def _resolve_xrd_matches(current_state, record):
     return normalized
 
 
+def _xrd_best_candidate_name(summary: dict | None, matches: list[dict] | None) -> str | None:
+    summary = summary or {}
+    candidate_name = summary.get("top_candidate_name") or summary.get("top_candidate_id")
+    if candidate_name not in (None, ""):
+        return str(candidate_name)
+    top = matches[0] if matches else None
+    if isinstance(top, dict):
+        return str(top.get("candidate_name") or top.get("candidate_id") or "") or None
+    return None
+
+
+def _xrd_best_candidate_score(summary: dict | None, matches: list[dict] | None) -> float | None:
+    summary = summary or {}
+    value = summary.get("top_candidate_score")
+    if value in (None, ""):
+        top = matches[0] if matches else None
+        value = (top or {}).get("normalized_score") if isinstance(top, dict) else None
+    try:
+        if value in (None, ""):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _xrd_figure_key(dataset_key: str) -> str:
     return f"XRD Analysis - {dataset_key}"
 
@@ -813,16 +838,27 @@ def render():
             except (TypeError, ValueError):
                 peak_count = 0
 
-        m1, m2, m3 = st.columns(3)
+        best_candidate_name = _xrd_best_candidate_name(summary, matches)
+        best_candidate_score = _xrd_best_candidate_score(summary, matches)
+        m1, m2, m3, m4 = st.columns(4)
         m1.metric(tx("Pik Sayısı", "Peak Count"), str(peak_count))
-        m2.metric(tx("En İyi Aday", "Top Candidate"), str(top.get("candidate_name")) if top else tx("Yok", "None"))
-        m3.metric(tx("Skor", "Score"), f"{float(top.get('normalized_score', 0.0)):.3f}" if top else "0.000")
+        m2.metric(tx("En İyi Aday", "Best Candidate"), best_candidate_name or tx("Yok", "None"))
+        m3.metric(tx("Aday Skoru", "Candidate Score"), f"{best_candidate_score:.3f}" if best_candidate_score is not None else "N/A")
+        m4.metric(tx("Kabul Durumu", "Accepted Match Status"), str(summary.get("match_status") or tx("Yok", "None")))
 
         if reference_count == 0:
             st.warning(
                 tx(
-                    "Referans faz kütüphanesi olmadığı için aday eşleşmesi üretilemez. Veri seti metadata içine `xrd_reference_library` ekleyin.",
-                    "No reference phase library is available, so candidate matching cannot be produced. Add `xrd_reference_library` to dataset metadata.",
+                    "Kurulu bir XRD referans paketi bulunamadı. Önce Kütüphane sayfasından sync yapın veya veri seti metadata içine `xrd_reference_library` ekleyin.",
+                    "No installed XRD reference package is available. Sync the Library page first or add `xrd_reference_library` to the dataset metadata.",
+                )
+            )
+        elif str(summary.get("match_status") or "").lower() == "no_match" and summary.get("top_candidate_reason_below_threshold"):
+            st.info(
+                tx(
+                    "En iyi aday kabul edilmedi: {reason}",
+                    "Best candidate was not accepted: {reason}",
+                    reason=summary.get("top_candidate_reason_below_threshold"),
                 )
             )
 
@@ -837,7 +873,12 @@ def render():
                         tx("Skor", "Score"): item.get("normalized_score"),
                         tx("Güven", "Confidence"): item.get("confidence_band"),
                         tx("Ortak Pik", "Shared Peaks"): evidence.get("shared_peak_count"),
+                        tx("Ağırlıklı Örtüşme", "Weighted Overlap"): evidence.get("weighted_overlap_score"),
+                        tx("Kapsama", "Coverage"): evidence.get("coverage_ratio"),
                         tx("Ortalama Δ2θ", "Mean Δ2θ"): evidence.get("mean_delta_position"),
+                        tx("Eşleşmeyen Majör Pik", "Unmatched Major Peaks"): evidence.get("unmatched_major_peak_count"),
+                        tx("Provider", "Provider"): item.get("library_provider"),
+                        tx("Paket", "Package"): item.get("library_package"),
                     }
                 )
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
@@ -856,6 +897,13 @@ def render():
                 "match_status": "matched" if derived_matches else "no_match",
                 "top_phase": derived_top.get("candidate_name") if derived_top else None,
                 "top_phase_score": float(derived_top.get("normalized_score", 0.0)) if derived_top else 0.0,
+                "top_candidate_name": derived_top.get("candidate_name") if derived_top else None,
+                "top_candidate_score": float(derived_top.get("normalized_score", 0.0)) if derived_top else None,
+                "top_candidate_shared_peak_count": ((derived_top or {}).get("evidence") or {}).get("shared_peak_count"),
+                "top_candidate_weighted_overlap_score": ((derived_top or {}).get("evidence") or {}).get("weighted_overlap_score"),
+                "top_candidate_coverage_ratio": ((derived_top or {}).get("evidence") or {}).get("coverage_ratio"),
+                "top_candidate_mean_delta_position": ((derived_top or {}).get("evidence") or {}).get("mean_delta_position"),
+                "top_candidate_unmatched_major_peak_count": ((derived_top or {}).get("evidence") or {}).get("unmatched_major_peak_count"),
             }
             if derived_summary["peak_count"] > 0:
                 st.warning(
@@ -878,14 +926,68 @@ def render():
         summary = record.get("summary") or {}
         st.markdown(f"**Result ID:** `{record.get('id')}`")
         st.markdown(f"**{tx('Durum', 'Status')}:** {record.get('status')}")
+        best_candidate_name = _xrd_best_candidate_name(summary, matches=[])
+        best_candidate_score = _xrd_best_candidate_score(summary, matches=[])
+        result_m1, result_m2, result_m3, result_m4 = st.columns(4)
+        result_m1.metric(tx("Kabul Durumu", "Accepted Match Status"), str(summary.get("match_status") or "N/A"))
+        result_m2.metric(tx("En İyi Aday", "Best Candidate"), best_candidate_name or tx("Yok", "None"))
+        result_m3.metric(
+            tx("Aday Skoru", "Candidate Score"),
+            f"{best_candidate_score:.3f}" if best_candidate_score is not None else "N/A",
+        )
+        result_m4.metric(tx("Güven Bandı", "Confidence Band"), str(summary.get("confidence_band") or "N/A"))
         if summary.get("caution_code"):
             st.warning(
                 tx(
-                    "Caution kodu: {code}",
-                    "Caution code: {code}",
+                    "Caution kodu: {code} | {message}",
+                    "Caution code: {code} | {message}",
                     code=summary.get("caution_code"),
+                    message=summary.get("caution_message") or tx("Mesaj yok", "No message"),
                 )
             )
+        if summary.get("top_candidate_reason_below_threshold"):
+            evidence_rows = [
+                {
+                    tx("Alan", "Field"): tx("En İyi Aday", "Best Candidate"),
+                    tx("Değer", "Value"): best_candidate_name or tx("Yok", "None"),
+                },
+                {
+                    tx("Alan", "Field"): tx("Aday Skoru", "Candidate Score"),
+                    tx("Değer", "Value"): f"{best_candidate_score:.3f}" if best_candidate_score is not None else "N/A",
+                },
+                {
+                    tx("Alan", "Field"): tx("Provider / Paket", "Provider / Package"),
+                    tx("Değer", "Value"): (
+                        f"{summary.get('top_candidate_provider') or 'N/A'} / {summary.get('top_candidate_package') or 'N/A'}"
+                    ),
+                },
+                {
+                    tx("Alan", "Field"): tx("Ortak Pik", "Shared Peaks"),
+                    tx("Değer", "Value"): summary.get("top_candidate_shared_peak_count"),
+                },
+                {
+                    tx("Alan", "Field"): tx("Ağırlıklı Örtüşme", "Weighted Overlap"),
+                    tx("Değer", "Value"): summary.get("top_candidate_weighted_overlap_score"),
+                },
+                {
+                    tx("Alan", "Field"): tx("Kapsama", "Coverage"),
+                    tx("Değer", "Value"): summary.get("top_candidate_coverage_ratio"),
+                },
+                {
+                    tx("Alan", "Field"): tx("Ortalama Δ2θ", "Mean Δ2θ"),
+                    tx("Değer", "Value"): summary.get("top_candidate_mean_delta_position"),
+                },
+                {
+                    tx("Alan", "Field"): tx("Eşleşmeyen Majör Pik", "Unmatched Major Peaks"),
+                    tx("Değer", "Value"): summary.get("top_candidate_unmatched_major_peak_count"),
+                },
+                {
+                    tx("Alan", "Field"): tx("Neden Kabul Edilmedi", "Why It Was Not Accepted"),
+                    tx("Değer", "Value"): summary.get("top_candidate_reason_below_threshold"),
+                },
+            ]
+            st.subheader(tx("En İyi Aday Özeti", "Best Candidate Summary"))
+            st.dataframe(pd.DataFrame(evidence_rows), use_container_width=True, hide_index=True)
         summary_rows = [{"key": key, "value": value} for key, value in summary.items()]
         st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
         attached_figures = [str(item) for item in ((record.get("artifacts") or {}).get("figure_keys") or []) if item not in (None, "")]

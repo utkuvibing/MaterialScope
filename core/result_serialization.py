@@ -453,6 +453,15 @@ def _build_xrd_scientific_context(
             notes="Qualitative ranking only; not quantitative phase fraction.",
         )
     ]
+    best_candidate_name = (
+        summary.get("top_candidate_name")
+        or summary.get("top_candidate_id")
+        or summary.get("top_phase")
+        or summary.get("top_phase_id")
+    )
+    best_candidate_score = summary.get("top_candidate_score")
+    if best_candidate_score in (None, ""):
+        best_candidate_score = summary.get("top_phase_score")
     interpretation = [
         build_interpretation(
             "Ranked candidate phases were generated from observed/reference peak overlap.",
@@ -461,12 +470,23 @@ def _build_xrd_scientific_context(
             unit="candidates",
         ),
         build_interpretation(
-            "Top-phase qualitative confidence was assigned from deterministic evidence metrics.",
-            metric="top_phase_score",
-            value=summary.get("top_phase_score"),
-            implication=f"match_status={summary.get('match_status')}",
+            "Best-ranked candidate evidence was retained separately from accepted match status.",
+            metric="top_candidate_score",
+            value=best_candidate_score,
+            implication=(
+                f"best_candidate={best_candidate_name or 'not_recorded'}; "
+                f"accepted_match_status={summary.get('match_status')}"
+            ),
         ),
     ]
+    if summary.get("match_status") == "no_match" and summary.get("top_candidate_reason_below_threshold"):
+        interpretation.append(
+            build_interpretation(
+                "The best-ranked candidate remained below the accepted qualitative phase-call threshold.",
+                metric="top_candidate_reason_below_threshold",
+                value=summary.get("top_candidate_reason_below_threshold"),
+            )
+        )
     limitations = [
         "Qualitative ranking is not a definitive identification or quantitative phase fraction.",
         "No-match and low-confidence outcomes remain valid cautionary results.",
@@ -475,11 +495,16 @@ def _build_xrd_scientific_context(
     caution_code = summary.get("caution_code")
     if caution_code:
         warnings.append(f"Caution: {caution_code}")
+    caution_message = str(summary.get("caution_message") or "").strip()
+    if caution_message:
+        warnings.append(caution_message)
     fit_quality = build_fit_quality(
         {
             "confidence_band": summary.get("confidence_band"),
             "top_phase_score": summary.get("top_phase_score"),
+            "top_candidate_score": best_candidate_score,
             "match_status": summary.get("match_status"),
+            "top_candidate_reason_below_threshold": summary.get("top_candidate_reason_below_threshold"),
         }
     )
     base_context = build_scientific_context(
@@ -1157,6 +1182,8 @@ def serialize_xrd_result(
         )
 
     normalized_summary = dict(summary or {})
+    top_row = normalized_rows[0] if normalized_rows else None
+    top_evidence = dict((top_row or {}).get("evidence") or {})
     normalized_summary.setdefault("peak_count", 0)
     normalized_summary.setdefault("candidate_count", len(normalized_rows))
     normalized_summary.setdefault("match_status", "no_match")
@@ -1175,6 +1202,19 @@ def serialize_xrd_result(
     normalized_summary.setdefault("sample_name", dataset.metadata.get("sample_name"))
     normalized_summary.setdefault("sample_mass", dataset.metadata.get("sample_mass"))
     normalized_summary.setdefault("heating_rate", dataset.metadata.get("heating_rate"))
+    normalized_summary.setdefault("top_candidate_id", (top_row or {}).get("candidate_id"))
+    normalized_summary.setdefault("top_candidate_name", (top_row or {}).get("candidate_name"))
+    normalized_summary.setdefault("top_candidate_score", (top_row or {}).get("normalized_score"))
+    normalized_summary.setdefault("top_candidate_confidence_band", (top_row or {}).get("confidence_band"))
+    normalized_summary.setdefault("top_candidate_provider", (top_row or {}).get("library_provider"))
+    normalized_summary.setdefault("top_candidate_package", (top_row or {}).get("library_package"))
+    normalized_summary.setdefault("top_candidate_version", (top_row or {}).get("library_version"))
+    normalized_summary.setdefault("top_candidate_shared_peak_count", top_evidence.get("shared_peak_count"))
+    normalized_summary.setdefault("top_candidate_weighted_overlap_score", top_evidence.get("weighted_overlap_score"))
+    normalized_summary.setdefault("top_candidate_coverage_ratio", top_evidence.get("coverage_ratio"))
+    normalized_summary.setdefault("top_candidate_mean_delta_position", top_evidence.get("mean_delta_position"))
+    normalized_summary.setdefault("top_candidate_unmatched_major_peak_count", top_evidence.get("unmatched_major_peak_count"))
+    normalized_summary.setdefault("top_candidate_reason_below_threshold", "")
     if normalized_rows and not normalized_summary.get("library_provider"):
         normalized_summary["library_provider"] = normalized_rows[0].get("library_provider")
     if normalized_rows and not normalized_summary.get("library_package"):
@@ -1191,9 +1231,66 @@ def serialize_xrd_result(
         )
     normalized_summary["top_phase_score"] = _clean_scalar(normalized_summary.get("top_phase_score"))
     normalized_summary["top_match_score"] = _clean_scalar(normalized_summary.get("top_match_score"))
+    normalized_summary["top_candidate_score"] = _clean_scalar(normalized_summary.get("top_candidate_score"))
+    normalized_summary["top_candidate_weighted_overlap_score"] = _clean_scalar(
+        normalized_summary.get("top_candidate_weighted_overlap_score")
+    )
+    normalized_summary["top_candidate_coverage_ratio"] = _clean_scalar(normalized_summary.get("top_candidate_coverage_ratio"))
+    normalized_summary["top_candidate_mean_delta_position"] = _clean_scalar(
+        normalized_summary.get("top_candidate_mean_delta_position")
+    )
 
     match_status = str(normalized_summary.get("match_status") or "").lower()
     confidence_band = str(normalized_summary.get("confidence_band") or "").lower()
+    if match_status == "no_match" and top_row and not str(normalized_summary.get("top_candidate_reason_below_threshold") or "").strip():
+        reasons: list[str] = []
+        top_candidate_score = normalized_summary.get("top_candidate_score")
+        minimum_score = _clean_scalar(((processing or {}).get("method_context") or {}).get("xrd_match_minimum_score"))
+        try:
+            parsed_score = float(top_candidate_score) if top_candidate_score not in (None, "") else None
+        except (TypeError, ValueError):
+            parsed_score = None
+        try:
+            parsed_minimum = float(minimum_score) if minimum_score not in (None, "") else None
+        except (TypeError, ValueError):
+            parsed_minimum = None
+        try:
+            unmatched_major = int(normalized_summary.get("top_candidate_unmatched_major_peak_count") or 0)
+        except (TypeError, ValueError):
+            unmatched_major = 0
+        try:
+            shared_peak_count = int(normalized_summary.get("top_candidate_shared_peak_count") or 0)
+        except (TypeError, ValueError):
+            shared_peak_count = 0
+        try:
+            coverage_ratio = float(normalized_summary.get("top_candidate_coverage_ratio"))
+        except (TypeError, ValueError):
+            coverage_ratio = None
+        try:
+            weighted_overlap = float(normalized_summary.get("top_candidate_weighted_overlap_score"))
+        except (TypeError, ValueError):
+            weighted_overlap = None
+
+        if parsed_score is not None and parsed_minimum is not None and parsed_score < parsed_minimum:
+            reasons.append("below minimum score threshold")
+        if unmatched_major > 0:
+            reasons.append("unmatched major reference peaks")
+        if coverage_ratio is not None and coverage_ratio < 0.5:
+            reasons.append("limited reference coverage")
+        if shared_peak_count <= 0:
+            reasons.append("insufficient shared peaks")
+        elif weighted_overlap is not None and weighted_overlap < 0.35:
+            reasons.append("weak overlap after penalty")
+        if ((dataset.metadata or {}).get("xrd_axis_role") or "").strip().lower() in {"two_theta", ""} and (
+            (dataset.metadata or {}).get("xrd_wavelength_angstrom") in (None, "")
+        ):
+            reasons.append("wavelength metadata missing")
+        if bool((dataset.metadata or {}).get("import_review_required")):
+            reasons.append("import review required")
+        if not reasons:
+            reasons.append("candidate exists but evidence remains insufficient for accepted qualitative match")
+        normalized_summary["top_candidate_reason_below_threshold"] = "; ".join(reasons[:3])
+
     caution_payload = {}
     if match_status == "no_match":
         caution_payload = {
@@ -1203,6 +1300,9 @@ def serialize_xrd_result(
                 or "No reference phase candidate met the minimum qualitative matching threshold."
             ),
             "top_phase_score": _clean_scalar(normalized_summary.get("top_phase_score")),
+            "top_candidate_name": normalized_summary.get("top_candidate_name"),
+            "top_candidate_score": _clean_scalar(normalized_summary.get("top_candidate_score")),
+            "top_candidate_reason_below_threshold": normalized_summary.get("top_candidate_reason_below_threshold"),
         }
     elif match_status == "matched" and confidence_band == "low":
         caution_payload = {
@@ -1212,6 +1312,8 @@ def serialize_xrd_result(
                 or "Top XRD candidate is low confidence; review evidence before interpretation."
             ),
             "top_phase_score": _clean_scalar(normalized_summary.get("top_phase_score")),
+            "top_candidate_name": normalized_summary.get("top_candidate_name"),
+            "top_candidate_score": _clean_scalar(normalized_summary.get("top_candidate_score")),
         }
 
     if caution_payload:

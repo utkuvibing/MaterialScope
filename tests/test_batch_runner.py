@@ -404,6 +404,9 @@ def test_execute_xrd_batch_template_returns_ranked_candidate_match_with_confiden
     assert outcome["record"]["summary"]["peak_count"] >= 3
     assert outcome["record"]["summary"]["match_status"] == "matched"
     assert outcome["record"]["summary"]["top_phase_id"] == "xrd_phase_alpha"
+    assert outcome["record"]["summary"]["top_candidate_id"] == "xrd_phase_alpha"
+    assert outcome["record"]["summary"]["top_candidate_name"] == "Phase Alpha"
+    assert outcome["record"]["summary"]["top_candidate_score"] == outcome["record"]["summary"]["top_phase_score"]
     assert outcome["record"]["summary"]["confidence_band"] in {"high", "medium", "low"}
     assert outcome["summary_row"]["peak_count"] == outcome["record"]["summary"]["peak_count"]
     assert outcome["summary_row"]["execution_status"] == "saved"
@@ -546,7 +549,14 @@ def test_execute_xrd_batch_template_keeps_no_match_as_cautionary_saved_output():
     assert outcome["record"]["summary"]["match_status"] == "no_match"
     assert outcome["record"]["summary"]["confidence_band"] == "no_match"
     assert outcome["record"]["summary"]["caution_code"] == "xrd_no_match"
+    assert outcome["record"]["summary"]["top_candidate_id"] == "xrd_phase_mismatch_a"
+    assert outcome["record"]["summary"]["top_candidate_name"] == "Mismatch A"
+    assert outcome["record"]["summary"]["top_candidate_score"] is not None
+    assert outcome["record"]["summary"]["top_candidate_reason_below_threshold"]
+    assert outcome["record"]["summary"]["top_candidate_unmatched_major_peak_count"] >= 0
+    assert "screening result" in outcome["record"]["summary"]["caution_message"].lower()
     assert outcome["record"]["review"]["caution"]["code"] == "xrd_no_match"
+    assert outcome["record"]["review"]["caution"]["top_candidate_name"] == "Mismatch A"
     assert outcome["summary_row"]["match_status"] == "no_match"
 
 
@@ -584,6 +594,7 @@ def test_execute_batch_template_uses_installed_global_reference_libraries(monkey
     assert xrd_outcome["record"]["summary"]["library_package"] == "cod_xrd_core"
     assert xrd_outcome["record"]["summary"]["library_provider"] == "COD"
     assert xrd_outcome["record"]["summary"]["library_cache_status"] == "warm"
+    assert xrd_outcome["record"]["summary"]["top_candidate_package"] == "cod_xrd_core"
     assert xrd_outcome["record"]["rows"][0]["library_package"] == "cod_xrd_core"
 
 

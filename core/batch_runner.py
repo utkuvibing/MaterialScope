@@ -1896,6 +1896,100 @@ def _rank_xrd_phase_candidates(
     return trimmed
 
 
+def _xrd_summary_scalar(value: Any, *, digits: int = 4) -> float | None:
+    parsed = _coerce_optional_float(value)
+    if parsed is None:
+        return None
+    return round(float(parsed), digits)
+
+
+def _xrd_reason_below_threshold(
+    *,
+    top_match: Mapping[str, Any] | None,
+    minimum_score: float,
+    dataset,
+    observed_space: str,
+) -> str:
+    if not top_match:
+        return "candidate evidence remains insufficient for an accepted qualitative match"
+
+    evidence = dict(top_match.get("evidence") or {})
+    reasons: list[str] = []
+    top_score = float(_coerce_optional_float(top_match.get("normalized_score"), 0.0) or 0.0)
+    shared_peak_count = _coerce_positive_int(evidence.get("shared_peak_count"), 0)
+    unmatched_major_peak_count = _coerce_positive_int(evidence.get("unmatched_major_peak_count"), 0)
+    weighted_overlap = _coerce_optional_float(evidence.get("weighted_overlap_score"))
+    coverage_ratio = _coerce_optional_float(evidence.get("coverage_ratio"))
+
+    if top_score < minimum_score:
+        reasons.append("below minimum score threshold")
+    if unmatched_major_peak_count > 0:
+        reasons.append("unmatched major reference peaks")
+    if coverage_ratio is not None and coverage_ratio < 0.5:
+        reasons.append("limited reference coverage")
+    if shared_peak_count <= 0:
+        reasons.append("insufficient shared peaks")
+    elif weighted_overlap is not None and weighted_overlap < 0.35:
+        reasons.append("weak overlap after penalty")
+    if observed_space == "two_theta" and _coerce_optional_float((dataset.metadata or {}).get("xrd_wavelength_angstrom")) is None:
+        reasons.append("wavelength metadata missing")
+    if bool((dataset.metadata or {}).get("import_review_required")):
+        reasons.append("import review required")
+    if not reasons:
+        reasons.append("candidate exists but evidence remains insufficient for accepted qualitative match")
+    return "; ".join(reasons[:3])
+
+
+def _build_xrd_top_candidate_summary(
+    *,
+    top_match: Mapping[str, Any] | None,
+    matched: bool,
+    minimum_score: float,
+    dataset,
+    observed_space: str,
+) -> dict[str, Any]:
+    if not top_match:
+        return {
+            "top_candidate_id": None,
+            "top_candidate_name": None,
+            "top_candidate_score": None,
+            "top_candidate_confidence_band": None,
+            "top_candidate_provider": None,
+            "top_candidate_package": None,
+            "top_candidate_version": None,
+            "top_candidate_shared_peak_count": None,
+            "top_candidate_weighted_overlap_score": None,
+            "top_candidate_coverage_ratio": None,
+            "top_candidate_mean_delta_position": None,
+            "top_candidate_unmatched_major_peak_count": None,
+            "top_candidate_reason_below_threshold": "",
+        }
+
+    evidence = dict(top_match.get("evidence") or {})
+    return {
+        "top_candidate_id": top_match.get("candidate_id"),
+        "top_candidate_name": top_match.get("candidate_name"),
+        "top_candidate_score": _xrd_summary_scalar(top_match.get("normalized_score")),
+        "top_candidate_confidence_band": top_match.get("confidence_band"),
+        "top_candidate_provider": top_match.get("library_provider") or "",
+        "top_candidate_package": top_match.get("library_package") or "",
+        "top_candidate_version": top_match.get("library_version") or "",
+        "top_candidate_shared_peak_count": _coerce_positive_int(evidence.get("shared_peak_count"), 0),
+        "top_candidate_weighted_overlap_score": _xrd_summary_scalar(evidence.get("weighted_overlap_score")),
+        "top_candidate_coverage_ratio": _xrd_summary_scalar(evidence.get("coverage_ratio")),
+        "top_candidate_mean_delta_position": _xrd_summary_scalar(evidence.get("mean_delta_position")),
+        "top_candidate_unmatched_major_peak_count": _coerce_positive_int(evidence.get("unmatched_major_peak_count"), 0),
+        "top_candidate_reason_below_threshold": ""
+        if matched
+        else _xrd_reason_below_threshold(
+            top_match=top_match,
+            minimum_score=minimum_score,
+            dataset=dataset,
+            observed_space=observed_space,
+        ),
+    }
+
+
 def _execute_xrd_batch(
     *,
     dataset_key: str,
@@ -1958,6 +2052,13 @@ def _execute_xrd_batch(
     top_provider = str(top_match.get("library_provider") or "") if top_match else ""
     top_package = str(top_match.get("library_package") or "") if top_match else ""
     top_version = str(top_match.get("library_version") or "") if top_match else ""
+    top_candidate_summary = _build_xrd_top_candidate_summary(
+        top_match=top_match,
+        matched=matched,
+        minimum_score=minimum_score,
+        dataset=dataset,
+        observed_space=observed_space,
+    )
     caution_payload = {}
     if not references:
         match_status = "not_run"
@@ -1972,25 +2073,49 @@ def _execute_xrd_batch(
         match_status = "matched" if matched else "no_match"
         confidence_band = top_match["confidence_band"] if matched and top_match else "no_match"
         if not matched:
+            candidate_label = top_candidate_summary.get("top_candidate_name") or top_candidate_summary.get("top_candidate_id") or "best-ranked candidate"
+            shared_peak_count = int(top_candidate_summary.get("top_candidate_shared_peak_count") or 0)
+            partial_agreement = shared_peak_count > 0 or float(top_candidate_summary.get("top_candidate_weighted_overlap_score") or 0.0) > 0.0
+            lead_sentence = (
+                f"A best-ranked candidate ({candidate_label}) was identified, but it did not meet the configured qualitative acceptance threshold."
+            )
+            if partial_agreement:
+                detail_sentence = (
+                    " The candidate shows partial peak agreement, but the current evidence remains insufficient for an accepted phase call."
+                )
+            else:
+                detail_sentence = " Available evidence remains insufficient for an accepted phase call."
+            reason_sentence = top_candidate_summary.get("top_candidate_reason_below_threshold") or ""
+            if reason_sentence:
+                reason_sentence = f" Primary limiting factors: {reason_sentence}."
             caution_payload = {
                 "code": "xrd_no_match",
-                "message": "No reference phase candidate met the minimum qualitative matching threshold.",
+                "message": (
+                    f"{lead_sentence}{detail_sentence}{reason_sentence} Interpret as a screening result rather than a confirmed identification."
+                ),
                 "minimum_score": minimum_score,
                 "top_phase_score": round(top_score, 4),
+                "top_candidate_name": top_candidate_summary.get("top_candidate_name"),
+                "top_candidate_score": top_candidate_summary.get("top_candidate_score"),
+                "top_candidate_reason_below_threshold": top_candidate_summary.get("top_candidate_reason_below_threshold"),
             }
         elif confidence_band == "low":
             caution_payload = {
                 "code": "xrd_low_confidence",
-                "message": "Top XRD candidate is low confidence; review evidence before interpretation.",
+                "message": "An accepted XRD candidate was retained, but confidence remains low. Review shared peaks, coverage, and unmatched major peaks before interpretation.",
                 "minimum_score": minimum_score,
                 "top_phase_score": round(top_score, 4),
+                "top_candidate_name": top_candidate_summary.get("top_candidate_name"),
+                "top_candidate_score": top_candidate_summary.get("top_candidate_score"),
             }
         if library_context["reference_candidate_count"] <= 0 and not caution_payload:
             caution_payload = {
                 "code": "xrd_reference_coverage_limited",
-                "message": "Installed XRD library coverage is limited; treat qualitative candidate ranking with caution.",
+                "message": "Installed XRD library coverage is limited. Candidate ranking can support screening, but do not treat the top-ranked phase as confirmed without review.",
                 "minimum_score": minimum_score,
                 "top_phase_score": round(top_score, 4),
+                "top_candidate_name": top_candidate_summary.get("top_candidate_name"),
+                "top_candidate_score": top_candidate_summary.get("top_candidate_score"),
             }
 
     resolved_axis_normalization = {
@@ -2083,6 +2208,7 @@ def _execute_xrd_batch(
         "library_reference_package_count": library_context["reference_package_count"],
         "library_reference_candidate_count": library_context["reference_candidate_count"],
     }
+    summary.update(top_candidate_summary)
     rows = [
         {
             "rank": item["rank"],

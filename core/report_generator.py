@@ -267,6 +267,27 @@ def _paper_display_label(dataset_key: str | None, datasets: dict, *, record: dic
     return "Unnamed dataset"
 
 
+def _xrd_best_candidate_name(summary: dict[str, Any]) -> str:
+    return str(
+        summary.get("top_candidate_name")
+        or summary.get("top_candidate_id")
+        or summary.get("top_phase")
+        or summary.get("top_phase_id")
+        or "N/A"
+    )
+
+
+def _xrd_best_candidate_score(summary: dict[str, Any]) -> Any:
+    value = summary.get("top_candidate_score")
+    if value in (None, ""):
+        value = summary.get("top_phase_score")
+    return value
+
+
+def _xrd_has_best_candidate(summary: dict[str, Any]) -> bool:
+    return _xrd_best_candidate_name(summary) != "N/A"
+
+
 def _main_conditions_payload(dataset_key: str, dataset) -> dict[str, str]:
     metadata = getattr(dataset, "metadata", {}) or {}
     def value_or_not_recorded(value: Any) -> str:
@@ -337,25 +358,37 @@ def _record_key_results(record: dict) -> dict[str, str]:
             "heating_rate",
         )
     elif analysis_type == "XRD":
-        keep = (
-            "match_status",
-            "top_phase_id",
-            "top_phase",
-            "top_phase_score",
-            "confidence_band",
-            "candidate_count",
-            "reference_candidate_count",
-            "match_tolerance_deg",
-            "library_provider",
-            "library_package",
-            "library_version",
-            "library_sync_mode",
-            "library_cache_status",
-            "caution_code",
-            "caution_message",
-            "sample_name",
-            "sample_mass",
-            "heating_rate",
+        return _table_payload(
+            {
+                "Accepted Match Status": summary.get("match_status"),
+                "Top Phase": summary.get("top_phase") or summary.get("top_phase_id"),
+                "Top Phase Score": summary.get("top_phase_score"),
+                "Best Candidate Name": _xrd_best_candidate_name(summary),
+                "Best Candidate Score": _xrd_best_candidate_score(summary),
+                "Best Candidate Provider": summary.get("top_candidate_provider") or summary.get("library_provider"),
+                "Best Candidate Package": summary.get("top_candidate_package") or summary.get("library_package"),
+                "Best Candidate Version": summary.get("top_candidate_version") or summary.get("library_version"),
+                "Shared Peaks": summary.get("top_candidate_shared_peak_count"),
+                "Weighted Overlap Score": summary.get("top_candidate_weighted_overlap_score"),
+                "Coverage Ratio": summary.get("top_candidate_coverage_ratio"),
+                "Mean Delta Position": summary.get("top_candidate_mean_delta_position"),
+                "Unmatched Major Peak Count": summary.get("top_candidate_unmatched_major_peak_count"),
+                "Best Candidate Reason Below Threshold": summary.get("top_candidate_reason_below_threshold"),
+                "Confidence Band": summary.get("confidence_band"),
+                "Candidate Count": summary.get("candidate_count"),
+                "Reference Candidate Count": summary.get("reference_candidate_count"),
+                "Match Tolerance (deg)": summary.get("match_tolerance_deg"),
+                "Library Provider": summary.get("library_provider"),
+                "Library Package": summary.get("library_package"),
+                "Library Version": summary.get("library_version"),
+                "Library Sync Mode": summary.get("library_sync_mode"),
+                "Library Cache Status": summary.get("library_cache_status"),
+                "Caution Code": summary.get("caution_code"),
+                "Caution Message": summary.get("caution_message"),
+                "Sample Name": summary.get("sample_name"),
+                "Sample Mass": summary.get("sample_mass"),
+                "Heating Rate": summary.get("heating_rate"),
+            }
         )
     else:
         keep = tuple(summary.keys())
@@ -405,8 +438,9 @@ def _record_metric_snapshot(record: dict) -> str:
     if analysis_type == "XRD":
         match_status = str(summary.get("match_status") or "not_recorded")
         confidence_band = str(summary.get("confidence_band") or "not_recorded")
-        top_score = _format_number(summary.get("top_phase_score"), digits=3)
+        top_score = _format_number(_xrd_best_candidate_score(summary), digits=3)
         top_phase = summary.get("top_phase") or summary.get("top_phase_id") or "N/A"
+        best_candidate = _xrd_best_candidate_name(summary)
         library_label = summary.get("library_package") or summary.get("library_provider") or "embedded"
         if match_status.lower() == "matched":
             return ", ".join(
@@ -415,6 +449,20 @@ def _record_metric_snapshot(record: dict) -> str:
                     f"score {top_score}",
                     f"confidence {confidence_band}",
                     f"library {library_label}",
+                ]
+            )
+        if _xrd_has_best_candidate(summary):
+            caution = summary.get("caution_code") or "xrd_no_match"
+            shared_peaks = _format_value(summary.get("top_candidate_shared_peak_count"))
+            reason = summary.get("top_candidate_reason_below_threshold") or "evidence below acceptance threshold"
+            return ", ".join(
+                [
+                    f"best candidate {best_candidate}",
+                    f"score {top_score}",
+                    f"shared peaks {shared_peaks}",
+                    f"accepted match status {match_status}",
+                    f"caution {caution}",
+                    f"reason {reason}",
                 ]
             )
         caution = summary.get("caution_code") or "xrd_no_match"
@@ -1269,9 +1317,10 @@ def _record_main_mini_table(record: dict) -> tuple[list[str], list[list[str]]] |
     elif analysis == "XRD":
         payload = [
             ["Peak Count", _format_value(summary.get("peak_count"))],
-            ["Top Phase Score", _format_number(summary.get("top_phase_score"), digits=3)],
-            ["Confidence Band", _format_value(summary.get("confidence_band"))],
-            ["Match Status", _format_value(summary.get("match_status"))],
+            ["Accepted Match Status", _format_value(summary.get("match_status"))],
+            ["Best Candidate", _xrd_best_candidate_name(summary)],
+            ["Best Candidate Score", _format_number(_xrd_best_candidate_score(summary), digits=3)],
+            ["Caution Code", _format_value(summary.get("caution_code"))],
         ]
     else:
         payload = []
@@ -1360,12 +1409,27 @@ def _xrd_caution_note(summary_payload: dict[str, Any]) -> str:
     match_status = str(summary_payload.get("match_status") or "").strip().lower()
     confidence_band = str(summary_payload.get("confidence_band") or "").strip().lower()
     caution_message = str(summary_payload.get("caution_message") or "").strip()
+    best_candidate = _xrd_best_candidate_name(summary_payload)
+    reason = str(summary_payload.get("top_candidate_reason_below_threshold") or "").strip()
     if match_status == "not_run":
         return caution_message or "Phase matching was not run because no reference library candidates were available."
     if match_status == "no_match":
-        return caution_message or "No candidate exceeded the minimum match threshold; treat as qualitative caution outcome."
+        if caution_message:
+            return caution_message
+        if best_candidate != "N/A":
+            if reason:
+                return (
+                    f"A best-ranked candidate ({best_candidate}) was identified, but it did not meet the configured "
+                    f"qualitative acceptance threshold. Primary limiting factors: {reason}. Interpret as a screening "
+                    "result rather than a confirmed identification."
+                )
+            return (
+                f"A best-ranked candidate ({best_candidate}) was identified, but evidence remained insufficient for an "
+                "accepted qualitative phase call. Interpret as a screening result rather than a confirmed identification."
+            )
+        return "No candidate exceeded the minimum match threshold; treat as qualitative caution outcome."
     if match_status == "matched" and confidence_band == "low":
-        return caution_message or "Top candidate is low confidence; review peak-evidence table before interpretation."
+        return caution_message or "An accepted candidate was retained, but confidence is low; review the peak-evidence table before interpretation."
     return "None"
 
 
@@ -1412,6 +1476,9 @@ def _domain_method_summary(record: dict) -> dict[str, str] | None:
             "Phase Matching Tolerance (deg)": _format_value(method_context.get("xrd_match_tolerance_deg")),
             "Phase Matching Minimum Score": _format_value(method_context.get("xrd_match_minimum_score")),
             "Match Status": summary_payload.get("match_status") or "Not recorded",
+            "Best Candidate": _xrd_best_candidate_name(summary_payload),
+            "Best Candidate Score": _format_value(_xrd_best_candidate_score(summary_payload)),
+            "Best Candidate Reason": summary_payload.get("top_candidate_reason_below_threshold") or "Not recorded",
             "Confidence Band": summary_payload.get("confidence_band") or "Not recorded",
             "Caution Code": summary_payload.get("caution_code") or "None",
             "Caution Note": _xrd_caution_note(summary_payload),

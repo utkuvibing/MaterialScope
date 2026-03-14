@@ -344,6 +344,9 @@ def test_serialize_xrd_result_keeps_candidate_evidence_and_confidence_band_field
     assert record["analysis_type"] == "XRD"
     assert record["summary"]["top_phase_id"] == "xrd_phase_alpha"
     assert record["summary"]["top_match_id"] == "xrd_phase_alpha"
+    assert record["summary"]["top_candidate_id"] == "xrd_phase_alpha"
+    assert record["summary"]["top_candidate_name"] == "Phase Alpha"
+    assert record["summary"]["top_candidate_score"] == 0.79
     assert record["summary"]["confidence_band"] == "medium"
     assert record["summary"]["library_provider"] == "COD"
     assert record["rows"][0]["library_package"] == "cod_xrd_core"
@@ -391,5 +394,12 @@ def test_serialize_xrd_result_adds_no_match_caution_semantics():
 
     assert record["summary"]["match_status"] == "no_match"
     assert record["summary"]["caution_code"] == "xrd_no_match"
+    assert record["summary"]["top_candidate_id"] == "xrd_phase_alpha"
+    assert record["summary"]["top_candidate_name"] == "Phase Alpha"
+    assert record["summary"]["top_candidate_score"] == 0.33
+    assert record["summary"]["top_candidate_weighted_overlap_score"] == 0.12
+    assert record["summary"]["top_candidate_reason_below_threshold"]
     assert record["review"]["caution"]["code"] == "xrd_no_match"
+    assert record["review"]["caution"]["top_candidate_name"] == "Phase Alpha"
     assert any("no-match" in item.lower() for item in record["scientific_context"]["limitations"])
+    assert record["scientific_context"]["fit_quality"]["top_candidate_score"] == 0.33
