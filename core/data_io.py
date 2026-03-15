@@ -1406,7 +1406,8 @@ def read_thermal_data(
 
     if resolved_type == "XRD":
         axis_column = str(col_map.get("temperature") or "")
-        xrd_axis_mapping_review_required = not _is_xrd_axis_hint(axis_column)
+        xrd_axis_mapping_confirmed = bool(metadata.get("xrd_axis_mapping_confirmed"))
+        xrd_axis_mapping_review_required = (not xrd_axis_mapping_confirmed) and (not _is_xrd_axis_hint(axis_column))
         if xrd_axis_mapping_review_required:
             import_warnings.append(
                 f"XRD axis column '{axis_column}' is not explicitly labeled as 2theta/angle; review mapping before stable analysis."
@@ -1463,6 +1464,7 @@ def read_thermal_data(
         base_meta["xrd_axis_column"] = col_map.get("temperature", "")
         base_meta["xrd_axis_unit"] = units.get("temperature", "degree_2theta")
         base_meta["xrd_wavelength_angstrom"] = metadata.get("xrd_wavelength_angstrom")
+        base_meta["xrd_axis_mapping_confirmed"] = bool(metadata.get("xrd_axis_mapping_confirmed"))
         base_meta["xrd_axis_mapping_review_required"] = bool(xrd_axis_mapping_review_required)
         base_meta["xrd_stable_matching_blocked"] = bool(xrd_axis_mapping_review_required)
         base_meta["xrd_provenance_state"] = xrd_provenance_state

@@ -584,6 +584,31 @@ class TestReadCSV:
         assert ds.metadata["xrd_provenance_state"] == "incomplete"
         assert "2theta/angle" in " ".join(ds.metadata["import_warnings"]).lower()
 
+    def test_read_xrd_manual_mapping_honors_explicit_axis_confirmation_override(self):
+        buf = io.BytesIO()
+        pd.DataFrame(
+            {
+                "Run": [1, 2, 3],
+                "Temperature": [5.01, 5.02, 5.03],
+                "Intensity": [10100, 10210, 10080],
+            }
+        ).to_excel(buf, index=False)
+        buf.seek(0)
+        buf.name = "generic_columns.xlsx"
+
+        ds = read_thermal_data(
+            buf,
+            column_mapping={"temperature": "Temperature", "signal": "Intensity"},
+            data_type="XRD",
+            metadata={"xrd_axis_mapping_confirmed": True, "xrd_wavelength_angstrom": 1.5406},
+        )
+
+        assert ds.data_type == "XRD"
+        assert ds.metadata["xrd_axis_mapping_confirmed"] is True
+        assert ds.metadata["xrd_axis_mapping_review_required"] is False
+        assert ds.metadata["xrd_stable_matching_blocked"] is False
+        assert ds.metadata["xrd_wavelength_angstrom"] == 1.5406
+
     def test_read_xrd_cif_supports_bounded_powder_pattern_loop(self):
         buf = io.StringIO(
             "data_demo\n"

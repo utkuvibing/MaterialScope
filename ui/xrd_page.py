@@ -562,6 +562,129 @@ def _seed_xrd_processing_defaults(processing, workflow_template_id: str, dataset
     return seeded
 
 
+def _xrd_axis_review_required(dataset, processing) -> bool:
+    method_context = ((processing or {}).get("method_context") or {}) if isinstance(processing, Mapping) else {}
+    if method_context.get("xrd_axis_mapping_review_required") is not None:
+        return bool(method_context.get("xrd_axis_mapping_review_required"))
+    return bool((getattr(dataset, "metadata", {}) or {}).get("xrd_axis_mapping_review_required"))
+
+
+def _xrd_current_wavelength(dataset, processing) -> float | None:
+    method_context = ((processing or {}).get("method_context") or {}) if isinstance(processing, Mapping) else {}
+    raw_value = method_context.get("xrd_wavelength_angstrom")
+    if raw_value in (None, ""):
+        raw_value = (getattr(dataset, "metadata", {}) or {}).get("xrd_wavelength_angstrom")
+    try:
+        if raw_value in (None, ""):
+            return None
+        return float(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _apply_xrd_input_review(*, dataset, state, wavelength_angstrom: float | None) -> None:
+    metadata = getattr(dataset, "metadata", {}) or {}
+    units = getattr(dataset, "units", {}) or {}
+    metadata["xrd_axis_role"] = "two_theta"
+    metadata["xrd_axis_unit"] = "degree_2theta"
+    metadata["xrd_axis_mapping_confirmed"] = True
+    metadata["xrd_axis_mapping_review_required"] = False
+    metadata["xrd_stable_matching_blocked"] = False
+    units["temperature"] = "degree_2theta"
+    if wavelength_angstrom is not None and wavelength_angstrom > 0:
+        metadata["xrd_wavelength_angstrom"] = float(wavelength_angstrom)
+        metadata["xrd_provenance_state"] = "complete"
+        metadata["xrd_provenance_warning"] = ""
+    else:
+        metadata["xrd_wavelength_angstrom"] = None
+        metadata["xrd_provenance_state"] = "incomplete"
+        metadata["xrd_provenance_warning"] = (
+            "XRD wavelength is not recorded; qualitative phase matching provenance remains incomplete."
+        )
+    state["processing"] = update_method_context(
+        state.get("processing"),
+        {
+            "xrd_axis_role": metadata["xrd_axis_role"],
+            "xrd_axis_unit": metadata["xrd_axis_unit"],
+            "xrd_axis_mapping_review_required": False,
+            "xrd_stable_matching_blocked": False,
+            "xrd_wavelength_angstrom": metadata.get("xrd_wavelength_angstrom"),
+            "xrd_provenance_state": metadata.get("xrd_provenance_state"),
+            "xrd_provenance_warning": metadata.get("xrd_provenance_warning"),
+        },
+        analysis_type="XRD",
+    )
+
+
+def _render_xrd_input_review_panel(*, dataset_key: str, dataset, state, lang: str) -> None:
+    review_required = _xrd_axis_review_required(dataset, state.get("processing"))
+    current_wavelength = _xrd_current_wavelength(dataset, state.get("processing"))
+    if not review_required and current_wavelength is not None:
+        return
+
+    axis_column = (
+        (getattr(dataset, "metadata", {}) or {}).get("xrd_axis_column")
+        or (getattr(dataset, "original_columns", {}) or {}).get("temperature")
+        or "temperature"
+    )
+    with st.expander(tx("XRD Girdi İncelemesi", "XRD Input Review"), expanded=review_required):
+        if review_required:
+            st.warning(
+                tx(
+                    f"`{axis_column}` kolonu 2theta/açı olarak açık etiketli değil. Kararlı XRD eşleştirmesi için bu ekseni açıkça onaylayın.",
+                    f"The `{axis_column}` column is not explicitly labeled as 2theta/angle. Confirm this axis before stable XRD matching.",
+                )
+            )
+        if current_wavelength is None:
+            st.info(
+                tx(
+                    "XRD dalgaboyu kayıtlı değil. Eşleştirme yine çalışabilir, ancak provenance eksik kalır.",
+                    "XRD wavelength is not recorded. Matching can still run, but provenance remains incomplete.",
+                )
+            )
+
+        confirm_axis = st.checkbox(
+            tx(
+                f"`{axis_column}` kolonunun XRD 2θ / difraksiyon açısı ekseni olduğunu onaylıyorum.",
+                f"I confirm that `{axis_column}` is the XRD 2theta / diffraction-angle axis.",
+            ),
+            value=not review_required,
+            key=f"xrd_axis_review_confirm_{dataset_key}",
+        )
+        wavelength_value = st.number_input(
+            tx("XRD Dalgaboyu (Å)", "XRD Wavelength (Å)"),
+            min_value=0.0,
+            value=float(current_wavelength or 1.5406),
+            step=0.0001,
+            format="%.4f",
+            key=f"xrd_axis_review_wavelength_{dataset_key}",
+        )
+        if st.button(tx("XRD Girdi Onayını Uygula", "Apply XRD Input Review"), key=f"xrd_axis_review_apply_{dataset_key}"):
+            if review_required and not confirm_axis:
+                st.error(
+                    tx(
+                        "Kararlı XRD akışına devam etmek için ekseni 2theta/açı olarak onaylayın.",
+                        "Confirm the axis as 2theta/angle before continuing in the stable XRD flow.",
+                    )
+                )
+                return
+            _apply_xrd_input_review(
+                dataset=dataset,
+                state=state,
+                wavelength_angstrom=float(wavelength_value) if wavelength_value > 0 else None,
+            )
+            _log_event(
+                "xrd_input_review_applied",
+                dataset_key=dataset_key,
+                analysis_type="XRD",
+                details={
+                    "axis_column": str(axis_column),
+                    "wavelength_angstrom": float(wavelength_value) if wavelength_value > 0 else None,
+                },
+            )
+            st.rerun()
+
+
 def _find_xrd_record(results, dataset_key: str):
     if not isinstance(results, dict):
         return None
@@ -1244,6 +1367,12 @@ def render():
         workflow_select_key=f"xrd_template_{selected_key}",
     )
 
+    _render_xrd_input_review_panel(
+        dataset_key=selected_key,
+        dataset=dataset,
+        state=state,
+        lang=lang,
+    )
     dataset_validation = validate_thermal_dataset(dataset, analysis_type="XRD", processing=state.get("processing"))
     if dataset_validation["status"] == "fail":
         st.error(

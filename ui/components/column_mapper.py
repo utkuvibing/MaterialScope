@@ -6,6 +6,25 @@ import pandas as pd
 from utils.i18n import tx
 
 
+def _looks_like_xrd_axis_label(column_name: str | None) -> bool:
+    token = str(column_name or "").strip().lower()
+    if not token:
+        return False
+    return any(
+        hint in token
+        for hint in (
+            "2theta",
+            "2 theta",
+            "2θ",
+            "theta",
+            "two theta",
+            "angle",
+            "diffract",
+            "xrd",
+        )
+    )
+
+
 def render_column_mapper(df, guessed_mapping=None, data_type=None, key_prefix="colmap"):
     """Render column mapping UI and return user-confirmed mapping.
 
@@ -133,6 +152,7 @@ def render_column_mapper(df, guessed_mapping=None, data_type=None, key_prefix="c
         )
     heating_rate = None
     xrd_wavelength_angstrom = None
+    xrd_axis_mapping_confirmed = False
     with meta_col3:
         if selected_type == "XRD":
             xrd_wavelength_angstrom = st.number_input(
@@ -148,6 +168,22 @@ def render_column_mapper(df, guessed_mapping=None, data_type=None, key_prefix="c
                 tx("Isıtma Hızı (°C/dk)", "Heating Rate (°C/min)"), min_value=0.0, value=10.0,
                 step=1.0, format="%.1f", key=f"{key_prefix}_rate",
             )
+
+    if selected_type == "XRD" and temp_col != none_label and not _looks_like_xrd_axis_label(temp_col):
+        st.warning(
+            tx(
+                "Seçilen X ekseni kolonu 2theta/açı olarak açık etiketli değil. Bu kolon gerçekten XRD 2θ ekseni ise aşağıda açıkça onaylayın.",
+                "The selected X-axis column is not explicitly labeled as 2theta/angle. Confirm it below only if this column truly represents the XRD 2theta axis.",
+            )
+        )
+        xrd_axis_mapping_confirmed = st.checkbox(
+            tx(
+                f"`{temp_col}` kolonunun XRD 2θ / difraksiyon açısı ekseni olduğunu onaylıyorum.",
+                f"I confirm that `{temp_col}` is the XRD 2theta / diffraction-angle axis.",
+            ),
+            value=False,
+            key=f"{key_prefix}_xrd_axis_confirmed",
+        )
 
     # Validation
     errors = []
@@ -175,6 +211,7 @@ def render_column_mapper(df, guessed_mapping=None, data_type=None, key_prefix="c
             "xrd_wavelength_angstrom": (
                 xrd_wavelength_angstrom if selected_type == "XRD" and xrd_wavelength_angstrom and xrd_wavelength_angstrom > 0 else None
             ),
+            "xrd_axis_mapping_confirmed": bool(xrd_axis_mapping_confirmed) if selected_type == "XRD" else None,
         },
     }
     return mapping

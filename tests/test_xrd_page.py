@@ -235,6 +235,40 @@ def test_build_processed_plot_adds_match_overlay_traces():
     assert "Eşleşmeyen Referans Pik" in trace_names
 
 
+def test_apply_xrd_input_review_clears_axis_block_and_sets_wavelength():
+    dataset = _xrd_dataset()
+    dataset.metadata["xrd_axis_column"] = "temperature"
+    dataset.metadata["xrd_axis_mapping_review_required"] = True
+    dataset.metadata["xrd_stable_matching_blocked"] = True
+    dataset.metadata["xrd_wavelength_angstrom"] = None
+    state = {"processing": xrd_page._seed_xrd_processing_defaults({}, "xrd.general", dataset)}
+
+    xrd_page._apply_xrd_input_review(dataset=dataset, state=state, wavelength_angstrom=1.5406)
+
+    assert dataset.metadata["xrd_axis_mapping_confirmed"] is True
+    assert dataset.metadata["xrd_axis_mapping_review_required"] is False
+    assert dataset.metadata["xrd_stable_matching_blocked"] is False
+    assert dataset.metadata["xrd_wavelength_angstrom"] == 1.5406
+    assert dataset.metadata["xrd_provenance_state"] == "complete"
+    assert state["processing"]["method_context"]["xrd_axis_mapping_review_required"] is False
+    assert state["processing"]["method_context"]["xrd_wavelength_angstrom"] == 1.5406
+
+
+def test_apply_xrd_input_review_preserves_incomplete_provenance_without_wavelength():
+    dataset = _xrd_dataset()
+    dataset.metadata["xrd_axis_mapping_review_required"] = True
+    dataset.metadata["xrd_stable_matching_blocked"] = True
+    state = {"processing": xrd_page._seed_xrd_processing_defaults({}, "xrd.general", dataset)}
+
+    xrd_page._apply_xrd_input_review(dataset=dataset, state=state, wavelength_angstrom=None)
+
+    assert dataset.metadata["xrd_axis_mapping_review_required"] is False
+    assert dataset.metadata["xrd_stable_matching_blocked"] is False
+    assert dataset.metadata["xrd_provenance_state"] == "incomplete"
+    assert "wavelength" in dataset.metadata["xrd_provenance_warning"].lower()
+    assert state["processing"]["method_context"]["xrd_provenance_state"] == "incomplete"
+
+
 def test_save_xrd_graph_snapshot_to_session_sets_primary_and_prunes(monkeypatch):
     dataset = _xrd_dataset()
     record = {
