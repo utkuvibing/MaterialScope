@@ -456,6 +456,7 @@ class ManagedLibraryCloudService:
         metadata: Mapping[str, Any],
         observed_space: str,
         reference_count: int,
+        coverage_details: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         from core.batch_runner import _build_xrd_top_candidate_summary
 
@@ -470,6 +471,15 @@ class ManagedLibraryCloudService:
             observed_space=str(observed_space or "two_theta"),
         )
         provider_scope = self._provider_scope("XRD", rows)
+        coverage_payload = dict(coverage_details or {})
+        provider_candidate_counts = {
+            str(provider_id): int(count or 0)
+            for provider_id, count in dict(coverage_payload.get("provider_candidate_counts") or {}).items()
+            if str(provider_id).strip()
+        }
+        coverage_tier = str(coverage_payload.get("coverage_tier") or "").strip()
+        coverage_warning_code = str(coverage_payload.get("coverage_warning_code") or "").strip()
+        coverage_warning_message = str(coverage_payload.get("coverage_warning_message") or "").strip()
         if reference_count <= 0:
             match_status = "not_run"
             caution_code = "xrd_reference_library_unavailable"
@@ -490,6 +500,8 @@ class ManagedLibraryCloudService:
                     " The candidate shows partial peak agreement, but unmatched major peaks and/or limited coverage prevent an accepted phase call."
                     f"{reason} Interpret as a screening result rather than a confirmed identification."
                 )
+                if coverage_warning_message:
+                    caution_message = f"{caution_message} Hosted coverage note: {coverage_warning_message}"
             elif str(top.get("confidence_band") or "").lower() == "low":
                 caution_code = "xrd_low_confidence"
                 caution_message = (
@@ -516,6 +528,12 @@ class ManagedLibraryCloudService:
                 "top_phase_id": top.get("candidate_id") if matched and top else None,
                 "top_phase": top.get("candidate_name") if matched and top else None,
                 "top_phase_score": round(top_score, 4),
+                "reference_candidate_count": int(reference_count),
+                "xrd_provider_candidate_counts": provider_candidate_counts,
+                "xrd_coverage_tier": coverage_tier,
+                "xrd_coverage_warning_code": coverage_warning_code,
+                "xrd_coverage_warning_message": coverage_warning_message,
+                "xrd_seed_coverage_only": coverage_tier == "seed_dev",
                 "confidence_band": str(top.get("confidence_band") or "no_match") if matched and top else "no_match",
                 "caution_code": caution_code,
                 "caution_message": caution_message,
@@ -713,6 +731,7 @@ class ManagedLibraryCloudService:
                 if wavelength_angstrom is not None:
                     peak["wavelength_angstrom"] = float(wavelength_angstrom)
         references = self.hosted_catalog.load_entries("XRD")
+        coverage_details = dict((self.hosted_catalog.coverage().get("XRD") or {}))
         reference_lookup = self._reference_lookup(references)
         rows = _rank_xrd_phase_candidates(
             observed_peaks=matching_peaks,
@@ -734,6 +753,7 @@ class ManagedLibraryCloudService:
             },
             observed_space=observed_space,
             reference_count=len(references),
+            coverage_details=coverage_details,
         )
         response = self._attach_hosted_summary_provenance(
             response,

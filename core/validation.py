@@ -571,15 +571,42 @@ def _check_xrd_workflow(
     wavelength = method_context.get("xrd_wavelength_angstrom")
     if wavelength in (None, ""):
         wavelength = metadata.get("xrd_wavelength_angstrom")
+    axis_mapping_review_required = bool(
+        method_context.get("xrd_axis_mapping_review_required")
+        if method_context.get("xrd_axis_mapping_review_required") is not None
+        else metadata.get("xrd_axis_mapping_review_required")
+    )
+    stable_matching_blocked = bool(
+        method_context.get("xrd_stable_matching_blocked")
+        if method_context.get("xrd_stable_matching_blocked") is not None
+        else metadata.get("xrd_stable_matching_blocked")
+    )
+    provenance_state = str(
+        method_context.get("xrd_provenance_state")
+        or metadata.get("xrd_provenance_state")
+        or ("complete" if wavelength not in (None, "") else "incomplete")
+    ).strip()
+    provenance_warning = str(
+        method_context.get("xrd_provenance_warning")
+        or metadata.get("xrd_provenance_warning")
+        or ""
+    ).strip()
     peak_count = method_context.get("xrd_peak_count")
     match_metric = str(method_context.get("xrd_match_metric") or "").strip().lower()
     match_tolerance = method_context.get("xrd_match_tolerance_deg")
     match_top_n = method_context.get("xrd_match_top_n")
     match_minimum_score = method_context.get("xrd_match_minimum_score")
     reference_candidate_count = method_context.get("xrd_reference_candidate_count")
+    coverage_tier = str(method_context.get("xrd_coverage_tier") or "").strip()
+    coverage_warning = str(method_context.get("xrd_coverage_warning_message") or "").strip()
+    provider_candidate_counts = method_context.get("xrd_provider_candidate_counts") or {}
     checks["xrd_axis_role"] = axis_role or "not recorded"
     checks["xrd_axis_unit"] = axis_unit or "not recorded"
     checks["xrd_wavelength_angstrom"] = wavelength if wavelength not in (None, "") else "not recorded"
+    checks["xrd_axis_mapping_review_required"] = axis_mapping_review_required
+    checks["xrd_stable_matching_blocked"] = stable_matching_blocked
+    checks["xrd_provenance_state"] = provenance_state or "not recorded"
+    checks["xrd_provenance_warning"] = provenance_warning or "not recorded"
     checks["xrd_peak_count"] = peak_count if peak_count not in (None, "") else "not recorded"
     checks["xrd_match_metric"] = match_metric or "not recorded"
     checks["xrd_match_tolerance_deg"] = match_tolerance if match_tolerance not in (None, "") else "not recorded"
@@ -589,9 +616,15 @@ def _check_xrd_workflow(
     )
     checks["library_sync_mode"] = method_context.get("library_sync_mode") or "not recorded"
     checks["library_cache_status"] = method_context.get("library_cache_status") or "not recorded"
+    checks["xrd_coverage_tier"] = coverage_tier or "not recorded"
+    checks["xrd_provider_candidate_counts"] = provider_candidate_counts or {}
     checks["xrd_reference_candidate_count"] = (
         reference_candidate_count if reference_candidate_count not in (None, "") else "not recorded"
     )
+    if axis_mapping_review_required or stable_matching_blocked:
+        issues.append(
+            "XRD axis mapping requires explicit 2theta/angle confirmation before stable qualitative matching."
+        )
     if not axis_role:
         warnings.append("XRD axis role is not recorded in processing context.")
     if not axis_unit:
@@ -599,6 +632,13 @@ def _check_xrd_workflow(
     if wavelength in (None, ""):
         warnings.append(
             "XRD wavelength is not recorded; set xrd_wavelength_angstrom for deterministic qualitative matching provenance."
+        )
+    if provenance_state.lower() != "complete" and provenance_warning:
+        warnings.append(provenance_warning)
+    if coverage_tier == "seed_dev":
+        warnings.append(
+            coverage_warning
+            or "XRD hosted coverage is still seed/dev sized; no-match outcomes may reflect insufficient corpus depth."
         )
     if peak_count not in (None, ""):
         try:
@@ -782,6 +822,9 @@ def enrich_xrd_result_validation(
     checks["top_phase_id"] = top_phase_id if top_phase_id not in (None, "") else "not_recorded"
     checks["top_phase_score"] = top_phase_score if top_phase_score not in (None, "") else "not_recorded"
     checks["caution_code"] = caution_code or "not_recorded"
+    checks["xrd_coverage_tier"] = summary.get("xrd_coverage_tier") or "not_recorded"
+    checks["xrd_provider_candidate_counts"] = summary.get("xrd_provider_candidate_counts") or {}
+    checks["xrd_provenance_state"] = summary.get("xrd_provenance_state") or "not_recorded"
 
     if match_status not in _XRD_MATCH_STATUSES:
         issues.append("XRD match_status must be one of 'matched', 'no_match', or 'not_run'.")
@@ -817,6 +860,19 @@ def enrich_xrd_result_validation(
         warnings.append("XRD top candidate is low confidence; review evidence before interpretation.")
         if not caution_code:
             warnings.append("XRD low-confidence output is missing caution_code metadata.")
+
+    coverage_tier = str(summary.get("xrd_coverage_tier") or "").strip().lower()
+    if coverage_tier == "seed_dev":
+        warnings.append(
+            str(summary.get("xrd_coverage_warning_message") or "").strip()
+            or "XRD hosted coverage is still seed/dev sized; no-match outcomes may reflect insufficient corpus depth."
+        )
+    provenance_state = str(summary.get("xrd_provenance_state") or "").strip().lower()
+    if provenance_state == "incomplete":
+        warnings.append(
+            str(summary.get("xrd_provenance_warning") or "").strip()
+            or "XRD wavelength is not recorded; qualitative phase matching provenance remains incomplete."
+        )
 
     if top_phase_score not in (None, ""):
         parsed_score = _coerce_float(top_phase_score)

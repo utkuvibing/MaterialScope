@@ -2258,6 +2258,15 @@ def _execute_xrd_batch(
     matching_config = _resolve_xrd_matching_config(processing)
     observed_space = _resolve_xrd_observed_space(dataset)
     wavelength_angstrom = _coerce_optional_float(dataset.metadata.get("xrd_wavelength_angstrom"))
+    xrd_provenance_state = str(
+        (dataset.metadata or {}).get("xrd_provenance_state")
+        or ("complete" if wavelength_angstrom is not None else "incomplete")
+    ).strip()
+    xrd_provenance_warning = str((dataset.metadata or {}).get("xrd_provenance_warning") or "").strip()
+    if not xrd_provenance_warning and xrd_provenance_state.lower() != "complete":
+        xrd_provenance_warning = (
+            "XRD wavelength is not recorded; qualitative phase matching provenance remains incomplete."
+        )
     cloud_client = get_library_cloud_client()
     cloud_payload: Mapping[str, Any] | None = None
     references: list[dict[str, Any]] = []
@@ -2267,6 +2276,11 @@ def _execute_xrd_batch(
     library_result_source = ""
     library_provider_scope: list[str] = []
     library_offline_limited_mode = True
+    cloud_reference_candidate_count = 0
+    cloud_provider_candidate_counts: dict[str, int] = {}
+    cloud_coverage_tier = ""
+    cloud_coverage_warning_code = ""
+    cloud_coverage_warning_message = ""
 
     if cloud_client.configured:
         cloud_candidate_payload = cloud_client.search(
@@ -2314,6 +2328,23 @@ def _execute_xrd_batch(
             library_request_id = str(cloud_payload.get("request_id") or "")
             library_access_mode = str(cloud_payload.get("library_access_mode") or "cloud_full_access")
             library_result_source = str(cloud_payload.get("library_result_source") or "cloud_search")
+            cloud_summary = dict(cloud_payload.get("summary") or {})
+            cloud_reference_candidate_count = max(
+                0,
+                int(
+                    cloud_summary.get("reference_candidate_count")
+                    or cloud_payload.get("reference_candidate_count")
+                    or len(ranked_matches)
+                ),
+            )
+            cloud_provider_candidate_counts = {
+                str(provider_id): int(count or 0)
+                for provider_id, count in dict(cloud_summary.get("xrd_provider_candidate_counts") or {}).items()
+                if str(provider_id).strip()
+            }
+            cloud_coverage_tier = str(cloud_summary.get("xrd_coverage_tier") or "").strip()
+            cloud_coverage_warning_code = str(cloud_summary.get("xrd_coverage_warning_code") or "").strip()
+            cloud_coverage_warning_message = str(cloud_summary.get("xrd_coverage_warning_message") or "").strip()
             library_provider_scope = [
                 str(item)
                 for item in (cloud_payload.get("library_provider_scope") or [])
@@ -2363,7 +2394,8 @@ def _execute_xrd_batch(
         if cloud_match_status == "not_run":
             references = []
         else:
-            references = [{}] * max(cloud_candidate_count, len(ranked_matches), 1)
+            reference_count = max(cloud_reference_candidate_count, cloud_candidate_count, len(ranked_matches), 1)
+            references = [{}] * reference_count
         if not library_result_source:
             library_result_source = "cloud_search"
 
@@ -2404,6 +2436,8 @@ def _execute_xrd_batch(
             continue
         if top_candidate_summary.get(key) in (None, "", []):
             top_candidate_summary[key] = value
+    if cloud_payload is not None and cloud_coverage_warning_message and not cloud_caution_message:
+        cloud_caution_message = cloud_coverage_warning_message
 
     caution_payload = {}
     if not references:
@@ -2471,6 +2505,14 @@ def _execute_xrd_batch(
         "axis_min": axis_min,
         "axis_max": axis_max,
     }
+    effective_library_reference_package_count = library_context["reference_package_count"]
+    effective_library_reference_candidate_count = library_context["reference_candidate_count"]
+    if cloud_payload is not None and library_result_source == "cloud_search":
+        effective_library_reference_candidate_count = max(len(references), cloud_reference_candidate_count)
+        if cloud_provider_candidate_counts:
+            effective_library_reference_package_count = len(cloud_provider_candidate_counts)
+        elif library_provider_scope:
+            effective_library_reference_package_count = len(library_provider_scope)
     processing = update_processing_step(processing, "axis_normalization", resolved_axis_normalization, analysis_type="XRD")
     processing = update_processing_step(processing, "smoothing", smoothing, analysis_type="XRD")
     processing = update_processing_step(processing, "baseline", baseline, analysis_type="XRD")
@@ -2484,6 +2526,8 @@ def _execute_xrd_batch(
             "xrd_axis_role": dataset.metadata.get("xrd_axis_role") or "two_theta",
             "xrd_axis_unit": (dataset.metadata.get("xrd_axis_unit") or (dataset.units or {}).get("temperature") or "degree_2theta"),
             "xrd_wavelength_angstrom": dataset.metadata.get("xrd_wavelength_angstrom"),
+            "xrd_provenance_state": xrd_provenance_state,
+            "xrd_provenance_warning": xrd_provenance_warning,
             "xrd_comparison_space": observed_space,
             "xrd_match_coordinate_space": (top_match or {}).get("evidence", {}).get("comparison_space") or observed_space,
             "xrd_preprocessing_order": ["axis_normalization", "smoothing", "baseline", "peak_detection"],
@@ -2495,6 +2539,10 @@ def _execute_xrd_batch(
             "xrd_peak_ranking": resolved_peak_detection["peak_ranking"],
             "xrd_peak_count": len(peaks),
             "xrd_reference_candidate_count": len(references),
+            "xrd_provider_candidate_counts": cloud_provider_candidate_counts,
+            "xrd_coverage_tier": cloud_coverage_tier,
+            "xrd_coverage_warning_code": cloud_coverage_warning_code,
+            "xrd_coverage_warning_message": cloud_coverage_warning_message,
             "xrd_match_metric": matching_config["metric"],
             "xrd_match_tolerance_deg": matching_config["tolerance_deg"],
             "xrd_match_top_n": matching_config["top_n"],
@@ -2503,8 +2551,8 @@ def _execute_xrd_batch(
             "xrd_match_major_peak_fraction": matching_config["major_peak_fraction"],
             "library_sync_mode": library_context["library_sync_mode"],
             "library_cache_status": library_context["library_cache_status"],
-            "library_reference_package_count": library_context["reference_package_count"],
-            "library_reference_candidate_count": library_context["reference_candidate_count"],
+            "library_reference_package_count": effective_library_reference_package_count,
+            "library_reference_candidate_count": effective_library_reference_candidate_count,
             "library_access_mode": library_access_mode,
             "library_request_id": library_request_id,
             "library_result_source": library_result_source,
@@ -2527,6 +2575,9 @@ def _execute_xrd_batch(
             "peak_count": len(peaks),
             "match_status": match_status,
             "reference_candidate_count": len(references),
+            "xrd_provider_candidate_counts": cloud_provider_candidate_counts,
+            "xrd_coverage_tier": cloud_coverage_tier,
+            "xrd_provenance_state": xrd_provenance_state,
             "library_provider": top_provider,
             "library_package": top_package,
             "library_version": top_version,
@@ -2554,6 +2605,13 @@ def _execute_xrd_batch(
         "caution_code": str(caution_payload.get("code") or ""),
         "caution_message": str(caution_payload.get("message") or ""),
         "reference_candidate_count": len(references),
+        "xrd_provider_candidate_counts": cloud_provider_candidate_counts,
+        "xrd_coverage_tier": cloud_coverage_tier,
+        "xrd_coverage_warning_code": cloud_coverage_warning_code,
+        "xrd_coverage_warning_message": cloud_coverage_warning_message,
+        "xrd_seed_coverage_only": cloud_coverage_tier == "seed_dev",
+        "xrd_provenance_state": xrd_provenance_state,
+        "xrd_provenance_warning": xrd_provenance_warning,
         "match_tolerance_deg": matching_config["tolerance_deg"],
         "match_metric": matching_config["metric"],
         "match_coordinate_space": (top_match or {}).get("evidence", {}).get("comparison_space") or observed_space,
@@ -2562,8 +2620,8 @@ def _execute_xrd_batch(
         "library_version": top_version,
         "library_sync_mode": library_context["library_sync_mode"],
         "library_cache_status": library_context["library_cache_status"],
-        "library_reference_package_count": library_context["reference_package_count"],
-        "library_reference_candidate_count": library_context["reference_candidate_count"],
+        "library_reference_package_count": effective_library_reference_package_count,
+        "library_reference_candidate_count": effective_library_reference_candidate_count,
         "library_access_mode": library_access_mode,
         "library_request_id": library_request_id,
         "library_result_source": library_result_source,

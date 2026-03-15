@@ -349,7 +349,6 @@ def _make_xrd_no_match_record():
             "display_name": "Synthetic XRD Pattern",
             "xrd_axis_role": "two_theta",
             "xrd_axis_unit": "degree_2theta",
-            "xrd_wavelength_angstrom": 1.5406,
         },
         data_type="XRD",
         units={"temperature": "degree_2theta", "signal": "counts"},
@@ -381,17 +380,34 @@ def _make_xrd_no_match_record():
             "peak_count": 4,
             "match_status": "no_match",
             "candidate_count": 1,
+            "reference_candidate_count": 6,
             "top_phase_id": None,
             "top_phase": None,
             "top_phase_score": 0.33,
             "confidence_band": "no_match",
             "caution_code": "xrd_no_match",
-            "caution_message": "No candidate exceeded threshold; qualitative caution required.",
-            "library_access_mode": "limited_cached_fallback",
+            "caution_message": (
+                "No candidate exceeded threshold; qualitative caution required. "
+                "Hosted coverage note: XRD hosted coverage is still seed/dev sized."
+            ),
+            "library_access_mode": "cloud_full_access",
             "library_request_id": "libreq_report_xrd_001",
-            "library_result_source": "limited_fallback_cache",
-            "library_provider_scope": ["cod"],
-            "library_offline_limited_mode": True,
+            "library_result_source": "cloud_search",
+            "library_provider_scope": ["cod", "materials_project"],
+            "library_offline_limited_mode": False,
+            "xrd_provider_candidate_counts": {"cod": 4, "materials_project": 2},
+            "xrd_coverage_tier": "seed_dev",
+            "xrd_coverage_warning_message": (
+                "XRD hosted coverage is still seed/dev sized (6 candidates across 2 providers). "
+                "Cloud matching is online, but no-match outcomes can still reflect insufficient corpus depth."
+            ),
+            "xrd_provenance_state": "incomplete",
+            "xrd_provenance_warning": (
+                "XRD wavelength is not recorded; qualitative phase matching provenance remains incomplete."
+            ),
+            "top_candidate_weighted_overlap_score": 0.11,
+            "top_candidate_coverage_ratio": 0.08,
+            "top_candidate_unmatched_major_peak_count": 3,
         },
         rows=[
             {
@@ -625,10 +641,21 @@ def test_generate_docx_report_renders_xrd_no_match_caution_fields():
     assert "Caution Code" in xml
     assert "xrd_no_match" in xml
     assert "Library Result Source" in xml
-    assert "limited_fallback_cache" in xml
+    assert "cloud_search" in xml
     assert "Library Access Mode" in xml
-    assert "limited_cached_fallback" in xml
+    assert "cloud_full_access" in xml
     assert "Phase Matching Metric" in xml
+    assert "Provider Candidate Counts" in xml
+    assert "cod=4.0000" in xml
+    assert "materials_project=2.0000" in xml
+    assert "Xrd Coverage Tier" in xml
+    assert "seed_dev" in xml
+    assert "Xrd Coverage Warning" in xml
+    assert "seed/dev sized" in xml
+    assert "Xrd Provenance State" in xml
+    assert "incomplete" in xml
+    assert "Xrd Provenance Warning" in xml
+    assert "qualitative phase matching provenance remains incomplete" in xml
     assert "qualitative caution" in xml
 
 

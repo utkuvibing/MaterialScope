@@ -41,8 +41,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--normalized-root",
-        default=str(BUILD_ROOT),
-        help="Normalized provider package root containing package_spec.json + entries.jsonl outputs.",
+        default=None,
+        help=(
+            "Normalized provider package root containing package_spec.json + entries.jsonl outputs. "
+            "When omitted, the publisher auto-detects the most complete local/dev normalized root."
+        ),
     )
     parser.add_argument(
         "--output-root",

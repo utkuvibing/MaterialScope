@@ -1,0 +1,16 @@
+{
+  "package_id": "rod_raman_0001",
+  "analysis_type": "RAMAN",
+  "provider": "ROD",
+  "version": "2026.03.14-b1",
+  "source_url": "https://solsa.crystallography.net/rod/new.html",
+  "license_name": "CC0-1.0",
+  "license_text": "",
+  "attribution": "Spectral references normalized from ROD mineral library records.",
+  "priority": 80,
+  "published_at": "2026-03-14T14:52:12+00:00",
+  "generated_at": "2026-03-14T14:52:12+00:00",
+  "provider_dataset_version": "2026.03.14",
+  "builder_version": "b1",
+  "normalized_schema_version": 1
+}

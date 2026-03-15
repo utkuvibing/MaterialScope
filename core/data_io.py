@@ -1406,7 +1406,8 @@ def read_thermal_data(
 
     if resolved_type == "XRD":
         axis_column = str(col_map.get("temperature") or "")
-        if not _is_xrd_axis_hint(axis_column):
+        xrd_axis_mapping_review_required = not _is_xrd_axis_hint(axis_column)
+        if xrd_axis_mapping_review_required:
             import_warnings.append(
                 f"XRD axis column '{axis_column}' is not explicitly labeled as 2theta/angle; review mapping before stable analysis."
             )
@@ -1421,6 +1422,12 @@ def read_thermal_data(
                 "XRD wavelength was not provided; set xrd_wavelength_angstrom for deterministic phase-matching provenance."
             )
             import_confidence = _classify_import_confidence(import_confidence, "medium")
+        xrd_provenance_state, xrd_provenance_warning = _xrd_provenance_state(
+            wavelength_angstrom=metadata.get("xrd_wavelength_angstrom")
+        )
+    else:
+        xrd_axis_mapping_review_required = False
+        xrd_provenance_state, xrd_provenance_warning = ("complete", "")
 
     import_warnings = list(dict.fromkeys(warning for warning in import_warnings if warning))
 
@@ -1456,6 +1463,10 @@ def read_thermal_data(
         base_meta["xrd_axis_column"] = col_map.get("temperature", "")
         base_meta["xrd_axis_unit"] = units.get("temperature", "degree_2theta")
         base_meta["xrd_wavelength_angstrom"] = metadata.get("xrd_wavelength_angstrom")
+        base_meta["xrd_axis_mapping_review_required"] = bool(xrd_axis_mapping_review_required)
+        base_meta["xrd_stable_matching_blocked"] = bool(xrd_axis_mapping_review_required)
+        base_meta["xrd_provenance_state"] = xrd_provenance_state
+        base_meta["xrd_provenance_warning"] = xrd_provenance_warning
     for optional_key in ("atmosphere", "operator", "calibration_id", "method_template_id"):
         if metadata.get(optional_key) not in (None, ""):
             base_meta[optional_key] = metadata[optional_key]
@@ -1772,6 +1783,7 @@ def _normalize_xrd_dataset(
     if resolved_type != "XRD":
         warnings_list.append(f"XRD parser normalized requested data type '{resolved_type or 'UNKNOWN'}' to 'XRD'.")
         resolved_type = "XRD"
+    xrd_provenance_state, xrd_provenance_warning = _xrd_provenance_state(wavelength_angstrom=wavelength_angstrom)
 
     signal_unit = "counts"
     display_name = metadata.get("display_name") or os.path.basename(source_name) or metadata.get("sample_name", "")
@@ -1802,6 +1814,10 @@ def _normalize_xrd_dataset(
         "xrd_axis_column": "XRD_AXIS",
         "xrd_axis_unit": "degree_2theta",
         "xrd_wavelength_angstrom": wavelength_angstrom,
+        "xrd_axis_mapping_review_required": False,
+        "xrd_stable_matching_blocked": False,
+        "xrd_provenance_state": xrd_provenance_state,
+        "xrd_provenance_warning": xrd_provenance_warning,
     }
     payload_meta.update(metadata)
 
@@ -1825,18 +1841,30 @@ def _looks_like_xrd_cif(source_name: str, text: str, *, data_type: str | None = 
 
 
 def _looks_like_xrd_measured_pattern(source_name: str, text: str, *, data_type: str | None = None) -> bool:
-    if str(data_type or "").upper().strip() == "XRD":
-        return True
-
     suffix = str(Path(str(source_name or "")).suffix).lower()
     sample = str(text or "")[:5000].lower()
     has_hint = any(token in sample for token in ("2theta", "two theta", "xrd", "diffract", "intensity", "counts"))
+    declared_xrd = str(data_type or "").upper().strip() == "XRD"
+
+    if suffix in {".xlsx", ".xls"} or sample.startswith("pk\x03\x04"):
+        return False
 
     if suffix == ".xy":
         return True
     if suffix == ".dat":
-        return has_hint
+        return bool(has_hint or declared_xrd)
+    if declared_xrd:
+        return has_hint and any(token in sample for token in ("2theta", "two theta", "xrd", "diffract"))
     return has_hint and ("2theta" in sample or "two theta" in sample)
+
+
+def _xrd_provenance_state(*, wavelength_angstrom: float | None) -> tuple[str, str]:
+    if wavelength_angstrom in (None, ""):
+        return (
+            "incomplete",
+            "XRD wavelength is not recorded; qualitative phase matching provenance remains incomplete.",
+        )
+    return ("complete", "")
 
 
 def _parse_xrd_measured_dataset(

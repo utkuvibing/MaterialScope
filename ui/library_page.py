@@ -274,6 +274,15 @@ def render() -> None:
 
     if cloud_coverage_payload:
         st.subheader(tx("Hosted Cloud Coverage", "Hosted Cloud Coverage"))
+        xrd_coverage = dict(((cloud_coverage_payload.get("coverage") or {}).get("XRD") or {}))
+        xrd_coverage_warning = str(xrd_coverage.get("coverage_warning_message") or "").strip()
+        if xrd_coverage_warning:
+            st.warning(
+                tx(
+                    f"XRD hosted coverage uyarısı: {xrd_coverage_warning}",
+                    f"XRD hosted coverage warning: {xrd_coverage_warning}",
+                )
+            )
         coverage_rows = []
         for modality, details in (cloud_coverage_payload.get("coverage") or {}).items():
             if not isinstance(details, dict):
@@ -283,10 +292,17 @@ def render() -> None:
                     tx("Analiz", "Analysis"): modality,
                     tx("Toplam Aday", "Total Candidates"): int(details.get("total_candidate_count") or 0),
                     tx("Deduped", "Deduped"): int(details.get("deduped_candidate_count") or 0),
+                    tx("Coverage Tier", "Coverage Tier"): details.get("coverage_tier") or "N/A",
+                    tx("Provider Candidate Counts", "Provider Candidate Counts"): " | ".join(
+                        f"{provider}:{count}"
+                        for provider, count in sorted((details.get("provider_candidate_counts") or {}).items())
+                    )
+                    or "N/A",
                     tx("Tazelik", "Freshness"): details.get("freshness_state") or "unknown",
                     tx("Veri Seti Yayını", "Dataset Publish"): details.get("published_at") or "N/A",
                     tx("Son Başarılı Ingest", "Last Successful Ingest"): details.get("last_successful_ingest_at") or "N/A",
                     tx("Başarısız Ingest", "Failed Ingests"): int(details.get("failed_ingest_count") or 0),
+                    tx("Coverage Warning", "Coverage Warning"): details.get("coverage_warning_message") or "N/A",
                     tx("Providerlar", "Providers"): ", ".join(sorted((details.get("providers") or {}).keys())),
                 }
             )

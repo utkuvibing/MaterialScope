@@ -150,8 +150,14 @@ After provider ingest normalization, publish hosted datasets with:
 python tools/publish_hosted_library.py --output-root build/reference_library_hosted
 ```
 
-`tools/publish_hosted_library.py` auto-detects `build/reference_library_ingest_live` first and falls back to `build/reference_library_ingest`.
+`tools/publish_hosted_library.py` auto-detects the most complete local/dev normalized root. In this repo that means `sample_data/reference_library_ingest_cloud_dev` is preferred over the tiny seed-sized `build/reference_library_ingest*` roots when it is present.
 When `THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH=true`, `python -m backend.main` also bootstraps `build/reference_library_hosted` automatically if the hosted manifest is missing but a sibling normalized ingest root is available.
+
+Local/dev XRD coverage notes:
+- Seed/dev hosted coverage is surfaced explicitly in the Library page and XRD summaries.
+- `cloud_full_access` means the cloud path is active; it does not hide coverage quality warnings.
+- Suspicious XRD axis mappings now require explicit 2theta/angle confirmation before stable qualitative matching.
+- Missing `xrd_wavelength_angstrom` is preserved as incomplete provenance in XRD summaries and reports.
 
 ### Local cloud smoke helper
 

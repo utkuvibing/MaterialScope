@@ -93,6 +93,8 @@ def _run_cloud_smoke_chain(client: TestClient, bearer: dict[str, str]) -> None:
         assert coverage_payload["coverage"][modality]["total_candidate_count"] >= 1
         assert "providers" in coverage_payload["coverage"][modality]
     assert coverage_payload["coverage"]["XRD"]["providers"]["cod"]["dataset_version"] == "2026.03.fixture"
+    assert coverage_payload["coverage"]["XRD"]["coverage_tier"] == "seed_dev"
+    assert coverage_payload["coverage"]["XRD"]["coverage_warning_code"] == "xrd_seed_coverage_only"
 
     ftir_response = client.post(
         "/v1/library/search/ftir",
@@ -155,6 +157,9 @@ def _run_cloud_smoke_chain(client: TestClient, bearer: dict[str, str]) -> None:
     assert xrd_payload["library_result_source"] == "cloud_search"
     assert xrd_payload["request_id"]
     assert xrd_payload["summary"]["active_dataset_version"] == "2026.03.fixture"
+    assert xrd_payload["summary"]["reference_candidate_count"] == 2
+    assert xrd_payload["summary"]["xrd_provider_candidate_counts"] == {"cod": 1, "materials_project": 1}
+    assert xrd_payload["summary"]["xrd_coverage_tier"] == "seed_dev"
     assert xrd_payload["rows"][0]["evidence"]["hosted_dataset_version"] == "2026.03.fixture"
 
 
@@ -687,6 +692,52 @@ def test_local_dev_bootstraps_hosted_catalog_from_live_ingest_sibling(tmp_path, 
     assert status_payload["library_mode"] == "cloud_full_access"
     assert status_payload["cloud_access_enabled"] is True
     assert status_payload["cloud_provider_count"] >= 1
+
+
+def test_local_dev_bootstrap_prefers_expanded_sample_data_xrd_corpus(tmp_path, monkeypatch):
+    home_root = tmp_path / "home"
+    mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
+    hosted_root = tmp_path / "reference_library_hosted"
+    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
+    monkeypatch.setenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_ENABLED", "true")
+    monkeypatch.setenv("THERMOANALYZER_LIBRARY_HOSTED_ROOT", str(hosted_root))
+    monkeypatch.setenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", "1")
+
+    app = create_app(api_token="test-token")
+    client = TestClient(app)
+    bootstrap_status = dict(app.state.cloud_library_bootstrap_status or {})
+    assert "sample_data" in str(bootstrap_status.get("source_root") or "").lower()
+
+    bearer = _cloud_bearer_header(client)
+    coverage_response = client.get("/v1/library/coverage", headers=bearer)
+    assert coverage_response.status_code == 200
+    coverage_payload = coverage_response.json()
+    assert coverage_payload["coverage"]["XRD"]["total_candidate_count"] == 29
+    assert coverage_payload["coverage"]["XRD"]["providers"]["cod"]["candidate_count"] == 27
+    assert coverage_payload["coverage"]["XRD"]["coverage_tier"] == "expanded"
+    assert coverage_payload["coverage"]["XRD"]["coverage_warning_code"] == ""
+
+    xrd_response = client.post(
+        "/v1/library/search/xrd",
+        headers=bearer,
+        json={
+            "observed_peaks": [
+                {"position": 11.22, "intensity": 0.32},
+                {"position": 18.38, "intensity": 1.0},
+                {"position": 23.65, "intensity": 0.41},
+            ],
+            "xrd_axis_role": "two_theta",
+            "xrd_axis_unit": "degree_2theta",
+            "xrd_wavelength_angstrom": 1.5406,
+        },
+    )
+    assert xrd_response.status_code == 200
+    xrd_payload = xrd_response.json()
+    assert xrd_payload["library_result_source"] == "cloud_search"
+    assert xrd_payload["summary"]["reference_candidate_count"] == 29
+    assert xrd_payload["summary"]["xrd_coverage_tier"] == "expanded"
 
 
 def test_runtime_cloud_client_stays_strict_without_dev_override(tmp_path, monkeypatch):

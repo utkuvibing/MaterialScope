@@ -327,6 +327,8 @@ def test_validate_xrd_processing_fails_when_peak_controls_missing():
 def test_validate_xrd_processing_warns_when_wavelength_context_is_missing():
     dataset = _make_xrd_dataset()
     dataset.metadata["xrd_wavelength_angstrom"] = None
+    dataset.metadata["xrd_provenance_state"] = "incomplete"
+    dataset.metadata["xrd_provenance_warning"] = "XRD wavelength is not recorded; qualitative phase matching provenance remains incomplete."
     processing = ensure_processing_payload(
         analysis_type="XRD",
         workflow_template="xrd.general",
@@ -356,6 +358,40 @@ def test_validate_xrd_processing_warns_when_wavelength_context_is_missing():
     assert summary["status"] == "warn"
     assert summary["issues"] == []
     assert any("xrd wavelength is not recorded" in warning.lower() for warning in summary["warnings"])
+    assert summary["checks"]["xrd_provenance_state"] == "incomplete"
+
+
+def test_validate_xrd_processing_fails_when_axis_mapping_requires_review():
+    dataset = _make_xrd_dataset()
+    dataset.metadata["xrd_axis_mapping_review_required"] = True
+    dataset.metadata["xrd_stable_matching_blocked"] = True
+    processing = ensure_processing_payload(
+        analysis_type="XRD",
+        workflow_template="xrd.general",
+        workflow_template_label="General XRD",
+    )
+    processing = update_processing_step(
+        processing,
+        "peak_detection",
+        {"method": "scipy_find_peaks", "prominence": 0.09, "distance": 7, "width": 3, "max_peaks": 10},
+        analysis_type="XRD",
+    )
+    processing = update_method_context(
+        processing,
+        {
+            "xrd_reference_candidate_count": 12,
+            "xrd_match_metric": "peak_overlap_weighted",
+            "xrd_match_tolerance_deg": 0.28,
+            "xrd_match_top_n": 5,
+            "xrd_match_minimum_score": 0.42,
+        },
+        analysis_type="XRD",
+    )
+
+    summary = validate_thermal_dataset(dataset, analysis_type="XRD", processing=processing)
+
+    assert summary["status"] == "fail"
+    assert any("2theta/angle confirmation" in issue.lower() for issue in summary["issues"])
 
 
 def test_validate_tga_processing_checks_unit_plausibility_and_step_context():

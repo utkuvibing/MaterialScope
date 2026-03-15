@@ -620,6 +620,8 @@ def test_execute_xrd_batch_template_keeps_no_match_as_cautionary_saved_output():
     assert outcome["record"]["summary"]["top_candidate_score"] is not None
     assert outcome["record"]["summary"]["top_candidate_reason_below_threshold"]
     assert outcome["record"]["summary"]["top_candidate_unmatched_major_peak_count"] >= 0
+    assert outcome["record"]["summary"]["top_candidate_weighted_overlap_score"] is not None
+    assert outcome["record"]["summary"]["top_candidate_coverage_ratio"] is not None
     assert "matched_peak_pairs" in outcome["record"]["rows"][0]["evidence"]
     assert "unmatched_observed_peaks" in outcome["record"]["rows"][0]["evidence"]
     assert "unmatched_reference_peaks" in outcome["record"]["rows"][0]["evidence"]
@@ -627,6 +629,43 @@ def test_execute_xrd_batch_template_keeps_no_match_as_cautionary_saved_output():
     assert outcome["record"]["review"]["caution"]["code"] == "xrd_no_match"
     assert outcome["record"]["review"]["caution"]["top_candidate_name"] == "Mismatch A"
     assert outcome["summary_row"]["match_status"] == "no_match"
+
+
+def test_execute_xrd_batch_template_surfaces_missing_wavelength_provenance_in_summary():
+    dataset = _make_xrd_dataset()
+    dataset.metadata.pop("xrd_wavelength_angstrom", None)
+
+    outcome = execute_batch_template(
+        dataset_key="synthetic_xrd_missing_lambda",
+        dataset=dataset,
+        analysis_type="XRD",
+        workflow_template_id="xrd.general",
+        batch_run_id="batch_xrd_missing_lambda",
+    )
+
+    assert outcome["status"] == "saved"
+    assert outcome["record"]["summary"]["xrd_provenance_state"] == "incomplete"
+    assert "wavelength" in outcome["record"]["summary"]["xrd_provenance_warning"].lower()
+    assert "wavelength" in " ".join(outcome["validation"]["warnings"]).lower()
+
+
+def test_execute_xrd_batch_template_blocks_stable_match_when_axis_mapping_requires_review():
+    dataset = _make_xrd_dataset(include_reference_library=False)
+    dataset.metadata["xrd_axis_mapping_review_required"] = True
+    dataset.metadata["xrd_stable_matching_blocked"] = True
+
+    outcome = execute_batch_template(
+        dataset_key="synthetic_xrd_review",
+        dataset=dataset,
+        analysis_type="XRD",
+        workflow_template_id="xrd.general",
+        batch_run_id="batch_xrd_review_block",
+    )
+
+    assert outcome["status"] == "blocked"
+    assert outcome["record"] is None
+    assert outcome["validation"]["status"] == "fail"
+    assert any("2theta/angle confirmation" in issue.lower() for issue in outcome["validation"]["issues"])
 
 
 def test_execute_batch_template_uses_installed_global_reference_libraries(monkeypatch):

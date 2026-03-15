@@ -19,6 +19,8 @@ HOSTED_SCHEMA_VERSION = 1
 _FRESH_THRESHOLD = timedelta(days=14)
 _AGING_THRESHOLD = timedelta(days=45)
 _LOCAL_NORMALIZED_ROOT_NAMES = ("reference_library_ingest_live", "reference_library_ingest")
+_SAMPLE_NORMALIZED_ROOT_NAMES = ("reference_library_ingest_cloud_dev",)
+_XRD_SEED_COVERAGE_THRESHOLD = 12
 
 
 def utcnow_iso() -> str:
@@ -158,6 +160,53 @@ def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
 
 def _dataset_file_name(modality: str) -> str:
     return "signals.npz" if _normalize_modality(modality) in {"FTIR", "RAMAN"} else "peaks.npz"
+
+
+def _count_jsonl_rows(path: Path) -> int:
+    if not path.exists():
+        return 0
+    return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+
+
+def xrd_coverage_profile(
+    *,
+    total_candidate_count: Any,
+    provider_rows: Mapping[str, Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    total_count = max(0, _coerce_int(total_candidate_count, 0))
+    provider_payload = {
+        str(provider_id): max(0, _coerce_int((row or {}).get("candidate_count"), 0))
+        for provider_id, row in (provider_rows or {}).items()
+        if str(provider_id).strip()
+    }
+    provider_count = len(provider_payload)
+    if total_count <= 0:
+        return {
+            "coverage_tier": "empty",
+            "coverage_warning_code": "xrd_hosted_coverage_empty",
+            "coverage_warning_message": "No hosted XRD candidates are currently published.",
+            "provider_candidate_counts": provider_payload,
+            "seed_coverage_only": False,
+        }
+    if total_count <= _XRD_SEED_COVERAGE_THRESHOLD:
+        return {
+            "coverage_tier": "seed_dev",
+            "coverage_warning_code": "xrd_seed_coverage_only",
+            "coverage_warning_message": (
+                f"XRD hosted coverage is still seed/dev sized ({total_count} candidates across "
+                f"{provider_count} provider{'s' if provider_count != 1 else ''}). Cloud matching is online, "
+                "but no-match outcomes can still reflect insufficient corpus depth."
+            ),
+            "provider_candidate_counts": provider_payload,
+            "seed_coverage_only": True,
+        }
+    return {
+        "coverage_tier": "expanded",
+        "coverage_warning_code": "",
+        "coverage_warning_message": "",
+        "provider_candidate_counts": provider_payload,
+        "seed_coverage_only": False,
+    }
 
 
 def write_hosted_dataset(
@@ -529,6 +578,13 @@ class HostedLibraryCatalog:
                 "failed_ingest_count": sum(_coerce_int(item.get("failed_ingest_count"), 0) for item in datasets),
                 "providers": provider_rows,
             }
+            if modality == "XRD":
+                coverage[modality].update(
+                    xrd_coverage_profile(
+                        total_candidate_count=coverage[modality]["total_candidate_count"],
+                        provider_rows=provider_rows,
+                    )
+                )
         return coverage
 
     def live_provider_ids(self, *, modality: str | None = None) -> set[str]:
@@ -563,9 +619,12 @@ def _normalized_root_candidates(*, hosted_root: Path, explicit_root: str | Path 
     candidates: list[Path] = []
     if explicit_root:
         candidates.append(Path(explicit_root).resolve())
-    search_roots = [hosted_root.parent, PROJECT_ROOT / "build"]
+    search_roots = [hosted_root.parent, PROJECT_ROOT / "build", PROJECT_ROOT / "sample_data"]
     for base_root in search_roots:
-        for name in _LOCAL_NORMALIZED_ROOT_NAMES:
+        root_names = _LOCAL_NORMALIZED_ROOT_NAMES
+        if base_root == PROJECT_ROOT / "sample_data":
+            root_names = _SAMPLE_NORMALIZED_ROOT_NAMES
+        for name in root_names:
             candidates.append((base_root / name).resolve())
     deduped: list[Path] = []
     seen: set[str] = set()
@@ -578,14 +637,47 @@ def _normalized_root_candidates(*, hosted_root: Path, explicit_root: str | Path 
     return deduped
 
 
-def _normalized_root_score(root: Path) -> tuple[int, float]:
+def _candidate_origin_priority(*, candidate: Path, hosted_root: Path, explicit_root: str | Path | None = None) -> int:
+    if explicit_root:
+        explicit_path = Path(explicit_root).resolve()
+        if candidate == explicit_path:
+            return 4
+    sample_root = (PROJECT_ROOT / "sample_data").resolve()
+    build_root = (PROJECT_ROOT / "build").resolve()
+    hosted_parent = hosted_root.parent.resolve()
+    try:
+        if hosted_parent != build_root and candidate.is_relative_to(hosted_parent):
+            return 3
+    except ValueError:
+        pass
+    try:
+        if candidate.is_relative_to(sample_root):
+            return 2
+    except ValueError:
+        pass
+    return 1
+
+
+def _normalized_root_score(root: Path) -> tuple[int, int, int, float]:
     if not root.exists():
-        return (0, 0.0)
+        return (0, 0, 0, 0.0)
     spec_paths = [path for path in root.rglob("package_spec.json") if (path.parent / "entries.jsonl").exists()]
     if not spec_paths:
-        return (0, 0.0)
-    latest_mtime = max(path.stat().st_mtime for path in spec_paths)
-    return (len(spec_paths), latest_mtime)
+        return (0, 0, 0, 0.0)
+    latest_mtime = 0.0
+    total_entry_count = 0
+    xrd_entry_count = 0
+    for spec_path in spec_paths:
+        latest_mtime = max(latest_mtime, spec_path.stat().st_mtime, (spec_path.parent / "entries.jsonl").stat().st_mtime)
+        entry_count = _count_jsonl_rows(spec_path.parent / "entries.jsonl")
+        total_entry_count += entry_count
+        try:
+            payload = json.loads(spec_path.read_text(encoding="utf-8"))
+        except Exception:
+            payload = {}
+        if _normalize_modality((payload or {}).get("analysis_type")) == "XRD":
+            xrd_entry_count += entry_count
+    return (xrd_entry_count, total_entry_count, len(spec_paths), latest_mtime)
 
 
 def discover_local_normalized_root(
@@ -594,13 +686,24 @@ def discover_local_normalized_root(
     explicit_root: str | Path | None = None,
 ) -> Path | None:
     target_root = resolve_hosted_root(hosted_root)
+    if explicit_root:
+        explicit_path = Path(explicit_root).resolve()
+        if _normalized_root_score(explicit_path)[1] > 0:
+            return explicit_path
     ranked = sorted(
-        ((candidate, _normalized_root_score(candidate)) for candidate in _normalized_root_candidates(hosted_root=target_root, explicit_root=explicit_root)),
-        key=lambda item: item[1],
+        (
+            (
+                candidate,
+                _candidate_origin_priority(candidate=candidate, hosted_root=target_root, explicit_root=explicit_root),
+                _normalized_root_score(candidate),
+            )
+            for candidate in _normalized_root_candidates(hosted_root=target_root, explicit_root=explicit_root)
+        ),
+        key=lambda item: (item[1], item[2]),
         reverse=True,
     )
-    for candidate, score in ranked:
-        if score[0] > 0:
+    for candidate, _origin_priority, score in ranked:
+        if score[1] > 0:
             return candidate
     return None
 

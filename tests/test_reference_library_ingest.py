@@ -539,7 +539,48 @@ def test_publish_hosted_library_builds_hosted_manifest_and_coverage(tmp_path):
     assert set(coverage["RAMAN"]["providers"]) == {"openspecy", "rod"}
     assert coverage["XRD"]["total_candidate_count"] == 4
     assert set(coverage["XRD"]["providers"]) == {"cod", "materials_project"}
+    assert coverage["XRD"]["coverage_tier"] == "seed_dev"
+    assert coverage["XRD"]["coverage_warning_code"] == "xrd_seed_coverage_only"
     raman_entries = catalog.load_entries("RAMAN")
     assert raman_entries[0]["package_version"] == DATASET_VERSION
     assert raman_entries[0]["provider_dataset_version"] == DATASET_VERSION
     assert raman_entries[0]["canonical_material_key"]
+
+
+def test_publish_hosted_library_uses_expanded_local_dev_xrd_corpus(tmp_path):
+    normalized_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_ingest_cloud_dev"
+    hosted_root = tmp_path / "reference_library_hosted"
+
+    publish_hosted_main(
+        [
+            "--normalized-root",
+            str(normalized_root),
+            "--output-root",
+            str(hosted_root),
+        ]
+    )
+
+    coverage = HostedLibraryCatalog(hosted_root).coverage()
+    assert coverage["XRD"]["total_candidate_count"] == 29
+    assert coverage["XRD"]["providers"]["cod"]["candidate_count"] == 27
+    assert coverage["XRD"]["providers"]["materials_project"]["candidate_count"] == 2
+    assert coverage["XRD"]["coverage_tier"] == "expanded"
+    assert coverage["XRD"]["coverage_warning_code"] == ""
+
+
+def test_publish_hosted_library_defaults_to_expanded_local_dev_xrd_corpus(tmp_path):
+    hosted_root = tmp_path / "reference_library_hosted"
+
+    publish_hosted_main(
+        [
+            "--output-root",
+            str(hosted_root),
+        ]
+    )
+
+    coverage = HostedLibraryCatalog(hosted_root).coverage()
+    assert coverage["XRD"]["total_candidate_count"] == 29
+    assert coverage["XRD"]["providers"]["cod"]["candidate_count"] == 27
+    assert coverage["XRD"]["providers"]["materials_project"]["candidate_count"] == 2
+    assert coverage["XRD"]["coverage_tier"] == "expanded"
+    assert coverage["XRD"]["coverage_warning_code"] == ""
