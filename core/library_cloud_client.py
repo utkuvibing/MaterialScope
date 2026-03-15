@@ -23,6 +23,7 @@ CLOUD_ENABLED_ENV = "THERMOANALYZER_LIBRARY_CLOUD_ENABLED"
 DEV_CLOUD_AUTH_ENV = "THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH"
 LIBRARY_LICENSE_HEADER = "X-TA-License"
 AUTHORIZATION_HEADER = "Authorization"
+HEALTH_PATH = "/health"
 TOKEN_SKEW_SECONDS = 20
 DEFAULT_TIMEOUT_SECONDS = 20.0
 
@@ -53,7 +54,9 @@ class ManagedLibraryCloudClient:
         self._token_value = ""
         self._token_expires_epoch = 0.0
         self._last_error = ""
+        self._last_error_kind = ""
         self._last_auth_mode = ""
+        self._env_signature = _client_env_signature()
 
     @property
     def configured(self) -> bool:
@@ -69,6 +72,10 @@ class ManagedLibraryCloudClient:
         return self._last_error
 
     @property
+    def last_error_kind(self) -> str:
+        return self._last_error_kind
+
+    @property
     def dev_auth_override_used(self) -> bool:
         return self._last_auth_mode == "dev_override"
 
@@ -78,6 +85,13 @@ class ManagedLibraryCloudClient:
 
     def _dev_auth_override_enabled(self) -> bool:
         return _truthy(os.getenv(DEV_CLOUD_AUTH_ENV, ""))
+
+    @property
+    def enabled_by_env(self) -> bool:
+        enabled_override = os.getenv(CLOUD_ENABLED_ENV, "").strip()
+        if not enabled_override:
+            return True
+        return _truthy(enabled_override)
 
     def _local_dev_context(self) -> bool:
         if not commercial_mode_enabled():
@@ -107,13 +121,50 @@ class ManagedLibraryCloudClient:
             encoded = encode_license_key(payload)
         except Exception as exc:  # pragma: no cover - malformed local env edge path
             self._last_auth_mode = ""
-            self._last_error = (
+            self._set_error(
                 f"{failure_message} Dev cloud auth override is enabled, but a temporary trial payload "
-                f"could not be generated: {exc}"
+                f"could not be generated: {exc}",
+                kind="dev_override_failed",
             )
             return None
         self._last_auth_mode = "dev_override"
         return encoded
+
+    def _set_error(self, message: str, *, kind: str) -> None:
+        self._last_error = str(message or "").strip()
+        self._last_error_kind = str(kind or "").strip()
+
+    def _clear_error(self) -> None:
+        self._last_error = ""
+        self._last_error_kind = ""
+
+    def _connection_error_message(self) -> str:
+        return f"Cloud backend is not reachable at {self.base_url}"
+
+    def _handle_request_exception(self, exc: Exception, *, path: str, auth_phase: bool) -> None:
+        if isinstance(exc, httpx.TransportError):
+            self._set_error(self._connection_error_message(), kind="connection_refused")
+            return
+        if isinstance(exc, httpx.HTTPStatusError):
+            detail = (exc.response.text or "").strip()
+            status_code = int(exc.response.status_code)
+            if auth_phase and status_code in {401, 403}:
+                suffix = f": {detail}" if detail else "."
+                self._set_error(
+                    f"Cloud auth/token request was rejected by {self.base_url}{suffix}",
+                    kind="auth_failed",
+                )
+                return
+            suffix = f": {detail}" if detail else "."
+            self._set_error(
+                f"Cloud request failed ({path}) with HTTP {status_code}{suffix}",
+                kind="request_failed",
+            )
+            return
+        self._set_error(
+            f"Cloud {'auth/token' if auth_phase else 'request'} failed ({path}): {exc}",
+            kind="request_failed" if not auth_phase else "auth_failed",
+        )
 
     def _token_valid(self) -> bool:
         if not self._token_value:
@@ -129,14 +180,14 @@ class ManagedLibraryCloudClient:
             encoded = self._dev_override_license(failure_message=failure_message)
             if encoded:
                 return encoded
-            self._last_error = self._with_dev_hint(failure_message)
+            self._set_error(self._with_dev_hint(failure_message), kind="license_state_unavailable")
             return None
         if str(license_state.get("status") or "") not in {"trial", "activated"}:
             failure_message = "Cloud library access requires trial or activated license status."
             encoded = self._dev_override_license(failure_message=failure_message)
             if encoded:
                 return encoded
-            self._last_error = self._with_dev_hint(failure_message)
+            self._set_error(self._with_dev_hint(failure_message), kind="license_status_invalid")
             return None
         payload = license_state.get("license")
         if not isinstance(payload, Mapping):
@@ -144,7 +195,10 @@ class ManagedLibraryCloudClient:
             encoded = self._dev_override_license(failure_message=failure_message)
             if encoded:
                 return encoded
-            self._last_error = self._with_dev_hint(failure_message, payload_hint=True)
+            self._set_error(
+                self._with_dev_hint(failure_message, payload_hint=True),
+                kind="license_payload_missing",
+            )
             return None
         try:
             encoded = encode_license_key(dict(payload))
@@ -153,14 +207,23 @@ class ManagedLibraryCloudClient:
             encoded = self._dev_override_license(failure_message=failure_message)
             if encoded:
                 return encoded
-            self._last_error = self._with_dev_hint(failure_message, payload_hint=True)
+            self._set_error(
+                self._with_dev_hint(failure_message, payload_hint=True),
+                kind="license_payload_invalid",
+            )
             return None
         self._last_auth_mode = "stored_license"
         return encoded
 
     def _acquire_token(self) -> str | None:
         if not self.configured:
-            self._last_error = "Cloud library URL is not configured."
+            kind = "cloud_disabled" if self.base_url and not self.enabled_by_env else "cloud_not_configured"
+            message = (
+                "Cloud library access is disabled by THERMOANALYZER_LIBRARY_CLOUD_ENABLED."
+                if kind == "cloud_disabled"
+                else "Cloud library URL is not configured."
+            )
+            self._set_error(message, kind=kind)
             self._last_auth_mode = ""
             return None
         if self._token_valid():
@@ -178,19 +241,22 @@ class ManagedLibraryCloudClient:
             response.raise_for_status()
             payload = response.json()
         except Exception as exc:
-            self._last_error = f"Cloud auth/token request failed: {exc}"
+            self._handle_request_exception(exc, path="/v1/library/auth/token", auth_phase=True)
             self._last_auth_mode = ""
             return None
 
         token = str(payload.get("access_token") or "").strip()
         expires_epoch = _parse_expiry_epoch(payload.get("expires_at"))
         if not token or expires_epoch <= 0.0:
-            self._last_error = "Cloud auth/token response is missing access_token or expires_at."
+            self._set_error(
+                "Cloud auth/token response is missing access_token or expires_at.",
+                kind="auth_failed",
+            )
             self._last_auth_mode = ""
             return None
         self._token_value = token
         self._token_expires_epoch = expires_epoch
-        self._last_error = ""
+        self._clear_error()
         return self._token_value
 
     def _request(
@@ -202,7 +268,13 @@ class ManagedLibraryCloudClient:
         requires_token: bool = True,
     ) -> dict[str, Any] | None:
         if not self.configured:
-            self._last_error = "Cloud library URL is not configured."
+            kind = "cloud_disabled" if self.base_url and not self.enabled_by_env else "cloud_not_configured"
+            message = (
+                "Cloud library access is disabled by THERMOANALYZER_LIBRARY_CLOUD_ENABLED."
+                if kind == "cloud_disabled"
+                else "Cloud library URL is not configured."
+            )
+            self._set_error(message, kind=kind)
             return None
 
         headers: dict[str, str] = {}
@@ -223,13 +295,50 @@ class ManagedLibraryCloudClient:
             response.raise_for_status()
             payload = response.json()
             if isinstance(payload, Mapping):
-                self._last_error = ""
+                self._clear_error()
                 return dict(payload)
-            self._last_error = f"Cloud {path} returned non-object payload."
+            self._set_error(f"Cloud {path} returned non-object payload.", kind="request_failed")
             return None
         except Exception as exc:
-            self._last_error = f"Cloud request failed ({path}): {exc}"
+            self._handle_request_exception(exc, path=path, auth_phase=False)
             return None
+
+    def health_probe(self) -> dict[str, Any]:
+        if not self.base_url:
+            return {
+                "url": "",
+                "state": "not_configured",
+                "message": "Cloud library URL is not configured.",
+            }
+        if not self.enabled_by_env:
+            return {
+                "url": self.base_url,
+                "state": "disabled",
+                "message": "Cloud library access is disabled by THERMOANALYZER_LIBRARY_CLOUD_ENABLED.",
+            }
+        try:
+            response = httpx.get(f"{self.base_url}{HEALTH_PATH}", timeout=self.timeout_seconds)
+            response.raise_for_status()
+            payload = response.json() if response.headers.get("content-type", "").lower().startswith("application/json") else {}
+            return {
+                "url": self.base_url,
+                "state": "reachable",
+                "message": "Cloud backend is reachable.",
+                "service": payload.get("service") if isinstance(payload, Mapping) else "",
+                "api_version": payload.get("api_version") if isinstance(payload, Mapping) else "",
+            }
+        except Exception as exc:
+            if isinstance(exc, httpx.TransportError):
+                return {
+                    "url": self.base_url,
+                    "state": "connection_refused",
+                    "message": self._connection_error_message(),
+                }
+            return {
+                "url": self.base_url,
+                "state": "unhealthy",
+                "message": f"Cloud backend health probe failed at {self.base_url}: {exc}",
+            }
 
     def search(self, *, analysis_type: str, payload: Mapping[str, Any]) -> dict[str, Any] | None:
         token = str(analysis_type or "").strip().upper()
@@ -261,8 +370,16 @@ class ManagedLibraryCloudClient:
 _CLIENT_INSTANCE: ManagedLibraryCloudClient | None = None
 
 
+def _client_env_signature() -> tuple[str, str, str]:
+    return (
+        str(os.getenv(CLOUD_URL_ENV, "")).strip().rstrip("/"),
+        str(os.getenv(CLOUD_ENABLED_ENV, "")).strip(),
+        str(os.getenv(DEV_CLOUD_AUTH_ENV, "")).strip(),
+    )
+
+
 def get_library_cloud_client() -> ManagedLibraryCloudClient:
     global _CLIENT_INSTANCE
-    if _CLIENT_INSTANCE is None:
+    if _CLIENT_INSTANCE is None or getattr(_CLIENT_INSTANCE, "_env_signature", ()) != _client_env_signature():
         _CLIENT_INSTANCE = ManagedLibraryCloudClient()
     return _CLIENT_INSTANCE

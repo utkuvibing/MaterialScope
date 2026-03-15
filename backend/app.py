@@ -6,6 +6,7 @@ import base64
 import binascii
 import io
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -87,7 +88,7 @@ from core.result_serialization import split_valid_results
 from core.validation import validate_thermal_dataset
 from utils.license_manager import APP_VERSION, commercial_mode_enabled, load_license_state
 
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / ".env", override=False)
 
 
 def _require_token(expected_token: str | None, provided_token: str | None) -> None:

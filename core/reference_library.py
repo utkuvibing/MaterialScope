@@ -622,6 +622,9 @@ class ReferenceLibraryManager:
             "last_error": state.last_error,
             "sync_due": self.needs_manifest_refresh() if self.client.configured else False,
             "library_mode": library_mode,
+            "cloud_url": str(os.getenv(LIBRARY_ENV_CLOUD_URL, "")).strip(),
+            "cloud_enabled_by_env": bool(str(os.getenv(LIBRARY_ENV_CLOUD_URL, "")).strip())
+            and (str(os.getenv(LIBRARY_ENV_CLOUD_ENABLED, "")).strip() == "" or _truthy(os.getenv(LIBRARY_ENV_CLOUD_ENABLED, ""))),
             "cloud_access_enabled": cloud_access_enabled,
             "cloud_provider_count": max(0, int(state.cloud_provider_count or 0)) if cloud_access_enabled else 0,
             "fallback_package_count": len(fallback_packages),
@@ -773,6 +776,8 @@ class ReferenceLibraryManager:
             "library_providers": [item.provider for item in installed],
             "library_packages": [item.package_id for item in installed],
             "library_mode": status.get("library_mode", LIBRARY_MODE_NOT_CONFIGURED),
+            "cloud_url": str(status.get("cloud_url") or "").strip(),
+            "cloud_enabled_by_env": bool(status.get("cloud_enabled_by_env")),
             "cloud_access_enabled": bool(status.get("cloud_access_enabled")),
             "cloud_provider_count": _coerce_int(status.get("cloud_provider_count"), 0),
             "fallback_package_count": _coerce_int(status.get("fallback_package_count"), 0),

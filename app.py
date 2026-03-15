@@ -6,6 +6,8 @@ Supports DSC, TGA, DTA, FTIR, RAMAN, and XRD data analysis.
 Run with: streamlit run app.py
 """
 
+from pathlib import Path
+
 import streamlit as st
 from dotenv import load_dotenv
 
@@ -16,7 +18,7 @@ from utils.i18n import SUPPORTED_LANGUAGES, t, tx
 from utils.license_manager import APP_VERSION, commercial_mode_enabled, license_allows_write, load_license_state
 from utils.session_state import clear_project_state, ensure_session_state, replace_project_state
 
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).resolve().with_name(".env"), override=False)
 
 st.set_page_config(
     page_title="ThermoAnalyzer Professional",

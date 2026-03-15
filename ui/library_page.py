@@ -30,11 +30,15 @@ def render() -> None:
     cloud_client = get_library_cloud_client()
     cloud_coverage_payload: dict | None = None
     hosted_provider_rows: list[dict] = []
+    cloud_probe = cloud_client.health_probe()
+    cloud_auth_state = "not_started"
+    cloud_auth_message = ""
 
-    if cloud_client.configured:
+    if cloud_probe.get("state") == "reachable":
         coverage_payload = cloud_client.coverage()
         if isinstance(coverage_payload, dict):
             cloud_coverage_payload = coverage_payload
+            cloud_auth_state = "ready"
             coverage = coverage_payload.get("coverage") or {}
             seen_providers: dict[str, dict] = {}
             provider_label = tx("Provider", "Provider")
@@ -95,9 +99,23 @@ def render() -> None:
             status = manager.status()
             st.session_state["library_status"] = status
         elif cloud_client.last_error:
+            cloud_auth_state = "auth_failed" if cloud_client.last_error_kind == "auth_failed" else "request_failed"
+            cloud_auth_message = cloud_client.last_error
             manager.record_cloud_lookup(success=False, error=cloud_client.last_error)
             status = manager.status()
             st.session_state["library_status"] = status
+    elif cloud_probe.get("state") in {"connection_refused", "unhealthy"}:
+        cloud_auth_state = "backend_unreachable"
+        cloud_auth_message = str(cloud_probe.get("message") or "").strip()
+        manager.record_cloud_lookup(success=False, error=cloud_auth_message)
+        status = manager.status()
+        st.session_state["library_status"] = status
+    elif cloud_probe.get("state") == "disabled":
+        cloud_auth_state = "disabled"
+        cloud_auth_message = str(cloud_probe.get("message") or "").strip()
+    else:
+        cloud_auth_state = "not_configured"
+        cloud_auth_message = str(cloud_probe.get("message") or "").strip()
 
     sync_col, refresh_col, info_col = st.columns([1, 1, 2])
     if sync_col.button(tx("Fallback Cache Sync", "Sync Fallback Cache"), key="library_sync_btn", width="stretch"):
@@ -150,6 +168,13 @@ def render() -> None:
     c1.metric(tx("Cloud Provider", "Cloud Providers"), str(status.get("cloud_provider_count", 0)))
     c2.metric(tx("Son cloud sorgu", "Last cloud lookup"), cloud_last_lookup)
     c3.metric(tx("Son cloud hata", "Last cloud error"), cloud_last_error or tx("Yok", "None"))
+
+    probe_cols = st.columns([1, 1, 2])
+    probe_cols[0].metric(tx("Cloud Backend", "Cloud Backend"), _cloud_probe_label(cloud_probe.get("state"), lang))
+    probe_cols[1].metric(tx("Cloud Kimlik", "Cloud Auth"), _cloud_auth_label(cloud_auth_state, lang))
+    probe_cols[2].caption(
+        f"{tx('Cloud URL', 'Cloud URL')}: `{cloud_probe.get('url') or status.get('cloud_url') or 'N/A'}`"
+    )
 
     mode = str(status.get("library_mode") or "")
     if mode == "not_configured":
@@ -211,6 +236,16 @@ def render() -> None:
         st.error(f"{tx('Son hata', 'Last error')}: {status['last_error']}")
     if status.get("last_cloud_error"):
         st.warning(f"{tx('Cloud hata', 'Cloud error')}: {status['last_cloud_error']}")
+    if cloud_auth_message and cloud_auth_message != status.get("last_cloud_error"):
+        if cloud_probe.get("state") in {"connection_refused", "unhealthy"}:
+            st.error(cloud_auth_message)
+            st.caption(tx("Local dev için backend'i `python -m backend.main` ile başlat.", "Start the backend with `python -m backend.main` for local dev."))
+        elif cloud_auth_state == "disabled":
+            st.info(cloud_auth_message)
+        elif cloud_auth_state == "not_configured":
+            st.info(cloud_auth_message)
+        else:
+            st.warning(cloud_auth_message)
 
     st.caption(
         f"{tx('Fallback Feed', 'Fallback Feed')}: `{status.get('feed_source') or 'N/A'}`  |  "
@@ -322,6 +357,32 @@ def _label(value: object, lang: str) -> str:
         "cloud_full_access": "Cloud Tam Erişim" if lang == "tr" else "Cloud Full Access",
         "limited_cached_fallback": "Sınırlı Fallback" if lang == "tr" else "Limited Cached Fallback",
         "not_configured": "Yapılandırılmadı" if lang == "tr" else "Not Configured",
+    }
+    token = str(value or "")
+    return mapping.get(token, token or "N/A")
+
+
+def _cloud_probe_label(value: object, lang: str) -> str:
+    mapping = {
+        "reachable": "Ulaşılabilir" if lang == "tr" else "Reachable",
+        "connection_refused": "Erişilemiyor" if lang == "tr" else "Not Reachable",
+        "unhealthy": "Sağlıksız" if lang == "tr" else "Unhealthy",
+        "disabled": "Devre Dışı" if lang == "tr" else "Disabled",
+        "not_configured": "Yapılandırılmadı" if lang == "tr" else "Not Configured",
+    }
+    token = str(value or "")
+    return mapping.get(token, token or "N/A")
+
+
+def _cloud_auth_label(value: object, lang: str) -> str:
+    mapping = {
+        "ready": "Hazır" if lang == "tr" else "Ready",
+        "auth_failed": "Auth Hatası" if lang == "tr" else "Auth Failed",
+        "request_failed": "İstek Hatası" if lang == "tr" else "Request Failed",
+        "backend_unreachable": "Backend Yok" if lang == "tr" else "Backend Unreachable",
+        "disabled": "Devre Dışı" if lang == "tr" else "Disabled",
+        "not_configured": "Yapılandırılmadı" if lang == "tr" else "Not Configured",
+        "not_started": "Başlamadı" if lang == "tr" else "Not Started",
     }
     token = str(value or "")
     return mapping.get(token, token or "N/A")

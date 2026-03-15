@@ -37,6 +37,8 @@ class LibraryStatusResponse(BaseModel):
     sync_due: bool = False
     license_status: str | None = None
     library_mode: str = "not_configured"
+    cloud_url: str = ""
+    cloud_enabled_by_env: bool = False
     cloud_access_enabled: bool = False
     cloud_provider_count: int = 0
     fallback_package_count: int = 0

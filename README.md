@@ -124,6 +124,8 @@ python -m backend.main
 
 Default URL: `http://localhost:8000`
 
+On local/dev runs, start the backend before opening the Library page if you expect `cloud_full_access`. The backend now logs both the startup target and the bound address so reachability problems are obvious.
+
 ### Local cloud-library dev config
 
 Use the same repo-root `.env` for both Streamlit (`app.py`) and backend (`backend/app.py`).

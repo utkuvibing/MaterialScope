@@ -3,10 +3,16 @@
 import base64
 import io
 import json
+import os
+import socket
+import subprocess
+import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
+import httpx
 from fastapi.testclient import TestClient
 
 from backend.app import create_app
@@ -163,6 +169,30 @@ def _route_runtime_cloud_client(monkeypatch, api_client: TestClient) -> None:
 
     monkeypatch.setattr("core.library_cloud_client.httpx.post", _post)
     monkeypatch.setattr("core.library_cloud_client.httpx.request", _request)
+    monkeypatch.setattr("core.library_cloud_client.httpx.get", lambda url, *, timeout=None: api_client.get(_path(url)))
+
+
+def _find_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return int(probe.getsockname()[1])
+
+
+def _wait_for_backend_health(base_url: str, *, timeout_seconds: float = 20.0) -> dict[str, object]:
+    deadline = time.time() + float(timeout_seconds)
+    last_error = ""
+    while time.time() < deadline:
+        try:
+            response = httpx.get(f"{base_url}/health", timeout=1.5)
+            response.raise_for_status()
+            payload = response.json()
+            if isinstance(payload, dict):
+                return payload
+            last_error = f"Non-object /health payload: {payload!r}"
+        except Exception as exc:
+            last_error = str(exc)
+        time.sleep(0.2)
+    raise AssertionError(f"Backend did not become healthy at {base_url}: {last_error}")
 
 
 def _write_hosted_root(root: Path) -> None:
@@ -491,6 +521,23 @@ def test_runtime_cloud_client_stays_strict_without_dev_override(tmp_path, monkey
     assert "trial or activated license status" in str(status_payload["last_cloud_error"])
 
 
+def test_runtime_cloud_client_reports_connection_refused_precisely(monkeypatch):
+    port = _find_free_port()
+    base_url = f"http://127.0.0.1:{port}"
+    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_URL", base_url)
+    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_ENABLED", "true")
+    monkeypatch.setenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", "1")
+
+    cloud_client = ManagedLibraryCloudClient(base_url=base_url, timeout_seconds=1.0)
+    probe = cloud_client.health_probe()
+    assert probe["state"] == "connection_refused"
+    assert probe["message"] == f"Cloud backend is not reachable at {base_url}"
+
+    assert cloud_client.coverage() is None
+    assert cloud_client.last_error == f"Cloud backend is not reachable at {base_url}"
+    assert cloud_client.last_error_kind == "connection_refused"
+
+
 def test_runtime_cloud_client_dev_override_enables_real_cloud_full_access(tmp_path, monkeypatch):
     home_root = tmp_path / "home"
     mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
@@ -571,6 +618,64 @@ def test_runtime_cloud_client_dev_override_enables_real_cloud_full_access(tmp_pa
     assert status_payload["cloud_access_enabled"] is True
     assert status_payload["cloud_provider_count"] >= 1
     assert status_payload["last_cloud_error"] in {"", None}
+
+
+def test_backend_main_starts_and_runtime_client_reaches_cloud_chain(tmp_path, monkeypatch):
+    home_root = tmp_path / "home"
+    hosted_root = tmp_path / "reference_library_hosted"
+    mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
+    _write_hosted_root(hosted_root)
+    port = _find_free_port()
+    base_url = f"http://127.0.0.1:{port}"
+
+    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
+    monkeypatch.setenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    monkeypatch.setenv("THERMOANALYZER_LIBRARY_HOSTED_ROOT", str(hosted_root))
+    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_URL", base_url)
+    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_ENABLED", "true")
+    monkeypatch.setenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", "1")
+
+    env = os.environ.copy()
+    repo_root = Path(__file__).resolve().parents[1]
+    process = subprocess.Popen(
+        [sys.executable, "-m", "backend.main", "--host", "127.0.0.1", "--port", str(port)],
+        cwd=str(repo_root),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    output = ""
+    try:
+        health_payload = _wait_for_backend_health(base_url)
+        assert health_payload["status"] == "ok"
+
+        auth_response = httpx.post(
+            f"{base_url}/v1/library/auth/token",
+            headers=_cloud_license_header(),
+            timeout=5.0,
+        )
+        assert auth_response.status_code == 200
+
+        cloud_client = ManagedLibraryCloudClient(base_url=base_url, timeout_seconds=5.0)
+        providers_payload = cloud_client.providers()
+        assert providers_payload is not None
+        assert providers_payload["library_access_mode"] == "cloud_full_access"
+
+        coverage_payload = cloud_client.coverage()
+        assert coverage_payload is not None
+        assert coverage_payload["library_access_mode"] == "cloud_full_access"
+        assert coverage_payload["coverage"]["FTIR"]["total_candidate_count"] >= 1
+    finally:
+        process.terminate()
+        try:
+            output, _ = process.communicate(timeout=10.0)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            output, _ = process.communicate(timeout=10.0)
+
+    assert f"ThermoAnalyzer backend starting on {base_url}" in output
+    assert f"ThermoAnalyzer backend listening on {base_url}" in output
 
 
 def test_runtime_cloud_client_production_error_remains_strict_without_dev_hint(tmp_path, monkeypatch):
