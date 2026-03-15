@@ -524,7 +524,7 @@ class ReferenceLibraryManager:
         enabled_override = os.getenv(LIBRARY_ENV_CLOUD_ENABLED, "")
         if enabled_override != "" and not _truthy(enabled_override):
             return False
-        return bool(state.cloud_access_enabled)
+        return bool(state.cloud_access_enabled) and max(0, int(state.cloud_provider_count or 0)) > 0
 
     def _allow_full_provider_sync(self) -> bool:
         return _truthy(os.getenv(LIBRARY_ENV_ALLOW_FULL_PROVIDER_SYNC, ""))
@@ -731,7 +731,9 @@ class ReferenceLibraryManager:
         enabled_override = os.getenv(LIBRARY_ENV_CLOUD_ENABLED, "")
         cloud_configured = bool(cloud_root) and (enabled_override == "" or _truthy(enabled_override))
         effective_provider_count = max(0, int(provider_count)) if provider_count is not None else None
-        cloud_success = bool(success and cloud_configured and (effective_provider_count is None or effective_provider_count > 0))
+        zero_provider_lookup = bool(success and effective_provider_count is not None and effective_provider_count <= 0)
+        missing_provider_lookup = bool(success and effective_provider_count is None)
+        cloud_success = bool(success and cloud_configured and effective_provider_count is not None and effective_provider_count > 0)
         state.cloud_access_enabled = cloud_success
         state.last_cloud_lookup_at = utcnow_iso()
         if effective_provider_count is not None:
@@ -740,7 +742,12 @@ class ReferenceLibraryManager:
             state.last_cloud_error = ""
         else:
             state.cloud_provider_count = 0
-            state.last_cloud_error = str(error or "").strip()
+            if zero_provider_lookup:
+                state.last_cloud_error = str(error or "Cloud coverage lookup returned zero providers.").strip()
+            elif missing_provider_lookup:
+                state.last_cloud_error = str(error or "Cloud coverage lookup did not report provider coverage.").strip()
+            else:
+                state.last_cloud_error = str(error or "").strip()
         self.save_sync_state(state)
 
     def _install_package(self, package: LibraryPackage, raw: bytes) -> tuple[Path, Path]:
