@@ -20,7 +20,7 @@ WORKSPACE_DEFAULTS = {
     "analysis_history": [],
     "support_events": [],
     "branding": {
-        "report_title": "ThermoAnalyzer Professional Report",
+        "report_title": "MaterialScope Professional Report",
         "company_name": "",
         "lab_name": "",
         "analyst_name": "",
@@ -135,4 +135,3 @@ def summarize_result(record: dict[str, Any]) -> ResultSummary:
         calibration_state=method_context.get("calibration_state") or provenance.get("calibration_state"),
         reference_state=method_context.get("reference_state") or provenance.get("reference_state"),
     )
-

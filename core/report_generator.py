@@ -2549,7 +2549,7 @@ def _add_cover_page(doc: Document, branding: dict | None, license_state: dict | 
     title_para = doc.add_paragraph()
     title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    title = branding.get("report_title") or "ThermoAnalyzer Professional Report"
+    title = branding.get("report_title") or "MaterialScope Professional Report"
     title_run = title_para.add_run(normalize_report_text(title))
     title_run.bold = True
     title_run.font.size = Pt(20)
@@ -3154,7 +3154,7 @@ def generate_pdf_report(
             add_matrix_table(headers, rows, width=portrait_width * 0.6, compact=True)
             story.append(Spacer(1, 4))
 
-    title = (branding or {}).get('report_title') or 'ThermoAnalyzer Scientific Report'
+    title = (branding or {}).get('report_title') or 'MaterialScope Scientific Report'
     story.append(Paragraph(normalize_report_text(title), title_style))
     story.append(Paragraph(normalize_report_text(datetime.datetime.now().strftime('Generated: %Y-%m-%d %H:%M')), small_style))
     if branding:

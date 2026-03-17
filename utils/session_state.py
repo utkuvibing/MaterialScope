@@ -17,7 +17,7 @@ SESSION_DEFAULTS = {
     "support_events": [],
     "diagnostics_log_path": "",
     "branding": {
-        "report_title": "ThermoAnalyzer Professional Report",
+        "report_title": "MaterialScope Professional Report",
         "company_name": "",
         "lab_name": "",
         "analyst_name": "",

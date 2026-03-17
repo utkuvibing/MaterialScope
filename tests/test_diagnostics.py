@@ -60,7 +60,7 @@ def test_serialize_support_snapshot_includes_recent_support_events_and_results(t
         "analysis_history": [{"event_id": "evt-1", "action": "Data Loaded"}],
         "support_events": [],
         "comparison_workspace": {"analysis_type": "DSC", "selected_datasets": ["synthetic_dsc"], "figure_key": None},
-        "branding": {"report_title": "ThermoAnalyzer Professional Report", "company_name": "Acme"},
+        "branding": {"report_title": "MaterialScope Professional Report", "company_name": "Acme"},
         "license_state": {"status": "development", "source": "local", "commercial_mode": False},
         "diagnostics_log_path": str(log_path),
     }

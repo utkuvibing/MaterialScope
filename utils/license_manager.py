@@ -1,4 +1,4 @@
-"""Offline license helpers for ThermoAnalyzer Professional."""
+"""Offline license helpers for MaterialScope."""
 
 from __future__ import annotations
 

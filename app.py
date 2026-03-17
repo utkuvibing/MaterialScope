@@ -1,4 +1,4 @@
-"""ThermoAnalyzer - Streamlit entrypoint.
+"""MaterialScope - Streamlit entrypoint.
 
 Vendor-independent thermal analysis data processing tool.
 Supports DSC, TGA, DTA, FTIR, RAMAN, and XRD data analysis.
@@ -21,7 +21,7 @@ from utils.session_state import clear_project_state, ensure_session_state, repla
 load_dotenv(dotenv_path=Path(__file__).resolve().with_name(".env"), override=False)
 
 st.set_page_config(
-    page_title="ThermoAnalyzer Professional",
+    page_title="MaterialScope",
     page_icon="🔬",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -346,7 +346,7 @@ def _render_project_sidebar():
             st.download_button(
                 t("sidebar.project.download"),
                 data=st.session_state["project_archive_bytes"],
-                file_name=f"thermoanalyzer_project{PROJECT_EXTENSION}",
+                file_name=f"materialscope_project{PROJECT_EXTENSION}",
                 mime="application/zip",
                 key="project_save",
                 on_click="ignore",
@@ -359,7 +359,7 @@ def _render_project_sidebar():
         t("sidebar.project.load"),
         type=[PROJECT_EXTENSION.lstrip(".")],
         key="project_loader",
-        help="Load a previously saved ThermoAnalyzer project archive.",
+        help="Load a previously saved MaterialScope project archive.",
     )
     if uploaded_project is not None and st.button(t("sidebar.project.load_selected"), key="project_load_btn"):
         try:
@@ -438,8 +438,8 @@ with st.sidebar:
     with st.expander(t("sidebar.about")):
         if st.session_state.get("ui_language", "tr") == "tr":
             st.markdown(
-                f"**ThermoAnalyzer Professional v{APP_VERSION}**\n\n"
-                "QC ve Ar-Ge laboratuvarları için cihazdan bağımsız DSC/TGA/DTA/FTIR/RAMAN/XRD çalışma alanı.\n\n"
+                f"**MaterialScope v{APP_VERSION}**\n\n"
+                "QC ve Ar-Ge laboratuvarları için cihazdan bağımsız, çok modlu DSC/TGA/DTA/FTIR/RAMAN/XRD karakterizasyon çalışma alanı.\n\n"
                 "**Kararlı beta kapsamı**\n"
                 "- CSV/TXT/XLSX DSC, TGA, DTA, FTIR, RAMAN ve XRD koşularını içe aktar\n"
                 "- DSC, TGA, DTA, FTIR, RAMAN ve XRD analiz akışlarını çalıştır\n"
@@ -459,8 +459,8 @@ with st.sidebar:
             )
         else:
             st.markdown(
-                f"**ThermoAnalyzer Professional v{APP_VERSION}**\n\n"
-                "Vendor-independent DSC/TGA/DTA/FTIR/RAMAN/XRD workbench for QC and R&D labs.\n\n"
+                f"**MaterialScope v{APP_VERSION}**\n\n"
+                "Vendor-independent multimodal DSC/TGA/DTA/FTIR/RAMAN/XRD characterization workbench for QC and R&D labs.\n\n"
                 "**Stable beta scope**\n"
                 "- Import DSC, TGA, DTA, FTIR, RAMAN, and XRD runs from CSV/TXT/XLSX exports\n"
                 "- Execute stable DSC, TGA, DTA, FTIR, RAMAN, and XRD analysis workflows\n"

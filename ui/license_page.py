@@ -117,7 +117,7 @@ def render():
         with st.form("branding_form", clear_on_submit=False):
             report_title = st.text_input(
                 "Rapor başlığı" if lang == "tr" else "Report title",
-                value=branding.get("report_title", "ThermoAnalyzer Professional Report"),
+                value=branding.get("report_title", "MaterialScope Professional Report"),
             )
             company_name = st.text_input("Şirket" if lang == "tr" else "Company", value=company_default)
             lab_name = st.text_input("Laboratuvar" if lang == "tr" else "Laboratory", value=branding.get("lab_name", ""))

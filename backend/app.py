@@ -1,4 +1,4 @@
-"""FastAPI app for incremental ThermoAnalyzer desktop backend tranches."""
+"""FastAPI app for incremental MaterialScope desktop backend tranches."""
 
 from __future__ import annotations
 
@@ -165,7 +165,7 @@ def _backend_license_state() -> dict:
 
 def create_app(*, api_token: str | None = None, store: ProjectStore | None = None, library_manager: ReferenceLibraryManager | None = None) -> FastAPI:
     """Create a backend app instance with an in-memory project store."""
-    app = FastAPI(title="ThermoAnalyzer Backend", version=BACKEND_API_VERSION)
+    app = FastAPI(title="MaterialScope Backend", version=BACKEND_API_VERSION)
     project_store = store or ProjectStore()
     global_library_manager = library_manager or get_reference_library_manager()
     cloud_library_service = ManagedLibraryCloudService(global_library_manager)
@@ -403,7 +403,7 @@ def create_app(*, api_token: str | None = None, store: ProjectStore | None = Non
         archive_base64 = base64.b64encode(archive_bytes).decode("ascii")
         return ProjectSaveResponse(
             project_id=request.project_id,
-            file_name=f"thermoanalyzer_project{PROJECT_EXTENSION}",
+            file_name=f"materialscope_project{PROJECT_EXTENSION}",
             archive_base64=archive_base64,
         )
 

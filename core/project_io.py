@@ -330,7 +330,7 @@ def _slugify(value: str) -> str:
 
 def _serialize_branding(branding: Mapping[str, Any]) -> dict[str, Any]:
     return {
-        "report_title": branding.get("report_title", "ThermoAnalyzer Professional Report"),
+        "report_title": branding.get("report_title", "MaterialScope Professional Report"),
         "company_name": branding.get("company_name", ""),
         "lab_name": branding.get("lab_name", ""),
         "analyst_name": branding.get("analyst_name", ""),
@@ -349,7 +349,7 @@ def _deserialize_branding(manifest: Mapping[str, Any], archive_members: dict[str
     else:
         branding["logo_bytes"] = None
     branding.setdefault("logo_name", "")
-    branding.setdefault("report_title", "ThermoAnalyzer Professional Report")
+    branding.setdefault("report_title", "MaterialScope Professional Report")
     branding.setdefault("company_name", "")
     branding.setdefault("lab_name", "")
     branding.setdefault("analyst_name", "")

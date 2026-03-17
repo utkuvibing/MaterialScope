@@ -1,4 +1,4 @@
-"""Minimal UI translation helpers for ThermoAnalyzer."""
+"""Minimal UI translation helpers for MaterialScope."""
 
 from __future__ import annotations
 
@@ -12,12 +12,12 @@ SUPPORTED_LANGUAGES = {
 
 TRANSLATIONS = {
     "app.brand": {
-        "tr": "THERMOANALYZER PRO",
-        "en": "THERMOANALYZER PRO",
+        "tr": "MaterialScope",
+        "en": "MaterialScope",
     },
     "app.tagline": {
-        "tr": "Cihazdan bağımsız DSC/TGA/DTA/FTIR/RAMAN/XRD çalışma alanı",
-        "en": "Vendor-independent DSC/TGA/DTA/FTIR/RAMAN/XRD workbench",
+        "tr": "Çok modlu DSC/TGA/DTA/FTIR/RAMAN/XRD karakterizasyon çalışma alanı",
+        "en": "Multimodal DSC/TGA/DTA/FTIR/RAMAN/XRD characterization workbench",
     },
     "app.preview_toggle": {
         "tr": "Laboratuvar Önizleme Modüllerini Göster",
@@ -128,8 +128,8 @@ TRANSLATIONS = {
         "en": "Analysis Pipeline",
     },
     "sidebar.about": {
-        "tr": "ThermoAnalyzer Hakkında",
-        "en": "About ThermoAnalyzer",
+        "tr": "MaterialScope Hakkında",
+        "en": "About MaterialScope",
     },
     "home.title": {
         "tr": "Veri Al",

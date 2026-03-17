@@ -91,7 +91,7 @@ def _render_preview(datasets, valid_results, issues, branding, comparison_worksp
     analyst = branding.get("analyst_name") or "Not set"
 
     st.subheader("Marka" if lang == "tr" else "Branding")
-    st.write(f"**{'Rapor Başlığı' if lang == 'tr' else 'Report Title'}:** {branding.get('report_title') or 'ThermoAnalyzer Professional Report'}")
+    st.write(f"**{'Rapor Başlığı' if lang == 'tr' else 'Report Title'}:** {branding.get('report_title') or 'MaterialScope Professional Report'}")
     st.write(f"**{'Şirket' if lang == 'tr' else 'Company'}:** {company}")
     st.write(f"**{'Laboratuvar' if lang == 'tr' else 'Laboratory'}:** {lab_name}")
     st.write(f"**{'Analist' if lang == 'tr' else 'Analyst'}:** {analyst}")
@@ -162,7 +162,7 @@ def _render_preview(datasets, valid_results, issues, branding, comparison_worksp
             st.download_button(
                 label="Destek Snapshot İndir" if lang == "tr" else "Download Support Snapshot",
                 data=st.session_state["prepared_support_snapshot"],
-                file_name="thermoanalyzer_support_snapshot.json",
+                file_name="materialscope_support_snapshot.json",
                 mime="application/json",
                 key="dl_support_snapshot",
                 on_click="ignore",
@@ -224,7 +224,7 @@ def _render_data_export(datasets, write_enabled, lang):
                     {
                         "label": "Veri çalışma kitabını indir" if lang == "tr" else "Download Data Workbook",
                         "data": buffer.getvalue(),
-                        "file_name": "thermoanalyzer_data.xlsx",
+                        "file_name": "materialscope_data.xlsx",
                         "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         "key": "dl_data_xlsx",
                     }
@@ -311,7 +311,7 @@ def _render_result_export(valid_results, issues, write_enabled, lang):
         c1.download_button(
             label="Sonuç CSV indir" if lang == "tr" else "Download Results CSV",
             data=st.session_state["prepared_results_csv"],
-            file_name="thermoanalyzer_results.csv",
+            file_name="materialscope_results.csv",
             mime="text/csv",
             key="dl_results_csv",
             on_click="ignore",
@@ -320,7 +320,7 @@ def _render_result_export(valid_results, issues, write_enabled, lang):
         c2.download_button(
             label="Sonuç Excel indir" if lang == "tr" else "Download Results Excel",
             data=st.session_state["prepared_results_xlsx"],
-            file_name="thermoanalyzer_results.xlsx",
+            file_name="materialscope_results.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="dl_results_xlsx",
             on_click="ignore",
@@ -398,7 +398,7 @@ def _render_report_export(
         st.download_button(
             label="DOCX raporu indir" if lang == "tr" else "Download DOCX Report",
             data=st.session_state["prepared_report_docx"],
-            file_name="thermoanalyzer_report.docx",
+            file_name="materialscope_report.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             key="dl_report_docx",
             on_click="ignore",
@@ -409,7 +409,7 @@ def _render_report_export(
             st.download_button(
                 label="PDF raporu indir" if lang == "tr" else "Download PDF Report",
                 data=st.session_state["prepared_report_pdf"],
-                file_name="thermoanalyzer_report.pdf",
+                file_name="materialscope_report.pdf",
                 mime="application/pdf",
                 key="dl_report_pdf",
                 on_click="ignore",

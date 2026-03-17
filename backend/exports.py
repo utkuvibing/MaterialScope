@@ -48,7 +48,7 @@ def build_export_preparation(state: dict[str, Any]) -> dict[str, Any]:
         "skipped_record_issues": issues,
         "supported_outputs": ["results_csv", "report_docx"],
         "branding": {
-            "report_title": branding.get("report_title") or "ThermoAnalyzer Professional Report",
+            "report_title": branding.get("report_title") or "MaterialScope Professional Report",
             "company_name": branding.get("company_name") or "",
             "lab_name": branding.get("lab_name") or "",
             "analyst_name": branding.get("analyst_name") or "",
@@ -64,7 +64,7 @@ def generate_results_csv_artifact(state: dict[str, Any], *, selected_result_ids:
     csv_base64 = base64.b64encode(csv_text.encode("utf-8")).decode("ascii")
     return {
         "output_type": "results_csv",
-        "file_name": "thermoanalyzer_results.csv",
+        "file_name": "materialscope_results.csv",
         "mime_type": "text/csv",
         "included_result_ids": list(selected.keys()),
         "skipped_record_issues": issues,
@@ -91,7 +91,7 @@ def generate_report_docx_artifact(state: dict[str, Any], *, selected_result_ids:
     docx_base64 = base64.b64encode(docx_bytes).decode("ascii")
     return {
         "output_type": "report_docx",
-        "file_name": "thermoanalyzer_report.docx",
+        "file_name": "materialscope_report.docx",
         "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "included_result_ids": list(selected.keys()),
         "skipped_record_issues": issues,

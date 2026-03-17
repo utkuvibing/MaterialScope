@@ -42,7 +42,7 @@ def _sample_session_state(thermal_dataset) -> dict:
         "results": {},
         "figures": {},
         "analysis_history": [{"action": "Data Loaded", "page": "Import"}],
-        "branding": {"report_title": "ThermoAnalyzer Professional Report"},
+        "branding": {"report_title": "MaterialScope Professional Report"},
         "comparison_workspace": {"analysis_type": "DSC", "selected_datasets": ["synthetic_dsc"]},
     }
 
@@ -1030,8 +1030,8 @@ def test_backend_main_starts_and_runtime_client_reaches_cloud_chain(tmp_path, mo
             process.kill()
             output, _ = process.communicate(timeout=10.0)
 
-    assert f"ThermoAnalyzer backend starting on {base_url}" in output
-    assert f"ThermoAnalyzer backend listening on {base_url}" in output
+    assert f"MaterialScope backend starting on {base_url}" in output
+    assert f"MaterialScope backend listening on {base_url}" in output
 
 
 def test_runtime_cloud_client_production_error_remains_strict_without_dev_hint(tmp_path, monkeypatch):

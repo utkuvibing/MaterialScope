@@ -1,12 +1,12 @@
-# ThermoAnalyzer
+# MaterialScope
 
-ThermoAnalyzer is a desktop analysis platform for thermal and materials characterization workflows. It brings DSC, TGA, DTA, FTIR, Raman, and XRD into one product with reproducible processing, managed cloud-backed library search, publication-grade reporting, and project archives.
+MaterialScope is a desktop analysis platform for thermal and broader materials characterization workflows. It brings DSC, TGA, DTA, FTIR, Raman, and XRD into one product with reproducible processing, managed cloud-backed library search, publication-grade reporting, and project archives.
 
-The product is designed so users stay inside ThermoAnalyzer instead of switching between vendor software, spreadsheet cleanup, library viewers, and separate reporting tools.
+The product is designed so users stay inside MaterialScope instead of switching between vendor software, spreadsheet cleanup, library viewers, and separate reporting tools.
 
 ---
 
-## What ThermoAnalyzer Covers
+## What MaterialScope Covers
 
 ### Stable workflows
 - DSC
@@ -68,9 +68,9 @@ The product is designed so users stay inside ThermoAnalyzer instead of switching
 
 ## Managed Library Model
 
-ThermoAnalyzer uses a managed cloud-library architecture:
+MaterialScope uses a managed cloud-library architecture:
 
-- full library search comes from ThermoAnalyzer cloud endpoints
+- full library search comes from MaterialScope cloud endpoints
 - local sync is reserved for small fallback packages only
 - `full_provider` local sync is blocked by default
 - fallback mode is explicitly reduced-capability and not equivalent to cloud full access
