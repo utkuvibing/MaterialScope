@@ -97,6 +97,18 @@ def test_xrd_candidate_display_name_prefers_richer_fields_over_raw_provider_ids(
     assert xrd_page._xrd_candidate_display_name(candidate) == "MgB2"
 
 
+def test_xrd_visible_candidate_name_uses_scientific_formula_formatting():
+    candidate = {
+        "candidate_name": "COD 1000026",
+        "formula": "MgB2",
+        "library_provider": "COD",
+        "candidate_id": "cod_1000026",
+        "source_id": "1000026",
+    }
+
+    assert xrd_page._xrd_visible_candidate_name(candidate) == "MgB₂"
+
+
 def test_xrd_candidate_display_name_humanizes_cod_raw_ids():
     candidate = {
         "candidate_name": "COD 1000026",
@@ -117,6 +129,18 @@ def test_xrd_candidate_display_name_humanizes_materials_project_ids():
     }
 
     assert xrd_page._xrd_candidate_display_name(candidate) == "Materials Project mp-149"
+
+
+def test_xrd_best_candidate_name_uses_scientific_display_name():
+    summary = {
+        "top_candidate_name": "COD 1000026",
+        "top_candidate_id": "cod_1000026",
+        "top_candidate_formula": "MgB2",
+        "top_candidate_source_id": "1000026",
+        "top_candidate_provider": "COD",
+    }
+
+    assert xrd_page._xrd_best_candidate_name(summary, matches=[]) == "MgB₂"
 
 
 def test_xrd_plot_defaults_disable_match_label_and_connector_noise():
@@ -324,9 +348,30 @@ def test_build_processed_plot_uses_humanized_overlay_name_and_hover_metadata():
     assert "Provider" in matched_trace.hovertext[0]
     assert ("Candidate ID" in matched_trace.hovertext[0]) or ("Aday Kimliği" in matched_trace.hovertext[0])
     assert ("Source ID" in matched_trace.hovertext[0]) or ("Kaynak Kimliği" in matched_trace.hovertext[0])
-    assert "MgB2" in matched_trace.hovertext[0]
-    assert any("MgB2 (#1)" in str(annotation.text) for annotation in fig.layout.annotations)
+    assert "MgB₂" in matched_trace.hovertext[0]
+    assert "COD 1000026" in matched_trace.hovertext[0]
+    assert any("MgB₂ (#1)" in str(annotation.text) for annotation in fig.layout.annotations)
     assert any(text for text in peak_label_trace.text)
+
+
+def test_xrd_selected_candidate_caption_uses_scientific_name_and_preserves_raw_ids():
+    caption = xrd_page._xrd_selected_candidate_caption(
+        {
+            "rank": 1,
+            "candidate_name": "COD 1000026",
+            "candidate_id": "cod_1000026",
+            "formula": "MgB2",
+            "source_id": "1000026",
+            "library_provider": "COD",
+            "library_package": "cod_xrd_cloud",
+        },
+        lang="en",
+    )
+
+    assert "MgB₂ (#1)" in caption
+    assert "cod_xrd_cloud" in caption
+    assert "cod_1000026" in caption
+    assert "1000026" in caption
 
 
 def test_xrd_match_marker_style_presets_keep_color_shape_controls():
@@ -473,6 +518,7 @@ def test_save_xrd_graph_snapshot_to_session_sets_primary_and_prunes(monkeypatch)
     assert "XRD Snapshot - synthetic_xrd - old_0" not in xrd_page.st.session_state["figures"]
     assert xrd_page.st.session_state["figures"][snapshot_key] == b"png-bytes"
     assert updated_record["artifacts"]["figure_snapshots"][-1]["selected_candidate_display_name"] == "Phase Alpha"
+    assert updated_record["artifacts"]["figure_snapshots"][-1]["selected_candidate_display_name_unicode"] == "Phase Alpha"
 
 
 def test_xrd_snapshot_figure_key_uses_humanized_candidate_name():
@@ -489,6 +535,7 @@ def test_xrd_snapshot_figure_key_uses_humanized_candidate_name():
     )
 
     assert "MgB2" in key
+    assert "MgB₂" not in key
 
 
 def test_apply_xrd_input_review_clears_stale_import_warnings():

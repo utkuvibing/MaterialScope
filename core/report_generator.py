@@ -337,7 +337,21 @@ def _paper_display_label(dataset_key: str | None, datasets: dict, *, record: dic
 
 
 def _xrd_best_candidate_name(summary: dict[str, Any]) -> str:
-    return str(xrd_candidate_display_name(summary) or "N/A")
+    return str(
+        summary.get("top_candidate_display_name_unicode")
+        or summary.get("top_phase_display_name_unicode")
+        or xrd_candidate_display_name(summary, target="unicode")
+        or "N/A"
+    )
+
+
+def _xrd_top_phase_name(summary: dict[str, Any]) -> str:
+    return str(
+        summary.get("top_phase_display_name_unicode")
+        or summary.get("top_candidate_display_name_unicode")
+        or xrd_candidate_display_name(summary, target="unicode")
+        or "N/A"
+    )
 
 
 def _xrd_best_candidate_score(summary: dict[str, Any]) -> Any:
@@ -429,7 +443,7 @@ def _record_key_results(record: dict) -> dict[str, str]:
         return _table_payload(
             {
                 "Accepted Match Status": summary.get("match_status"),
-                "Top Phase": summary.get("top_phase_display_name") or _xrd_best_candidate_name(summary),
+                "Top Phase": _xrd_top_phase_name(summary),
                 "Top Phase Score": summary.get("top_phase_score"),
                 "Best Candidate Name": _xrd_best_candidate_name(summary),
                 "Best Candidate Score": _xrd_best_candidate_score(summary),
@@ -520,7 +534,7 @@ def _record_metric_snapshot(record: dict) -> str:
         match_status = str(summary.get("match_status") or "not_recorded")
         confidence_band = str(summary.get("confidence_band") or "not_recorded")
         top_score = _format_number(_xrd_best_candidate_score(summary), digits=3)
-        top_phase = summary.get("top_phase") or summary.get("top_phase_id") or "N/A"
+        top_phase = _xrd_top_phase_name(summary)
         best_candidate = _xrd_best_candidate_name(summary)
         library_label = summary.get("library_package") or summary.get("library_provider") or "embedded"
         result_source = summary.get("library_result_source") or "unknown_source"

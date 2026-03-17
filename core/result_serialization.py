@@ -19,7 +19,11 @@ from core.scientific_sections import (
     normalize_scientific_context,
 )
 from core.tga_processor import MassLossStep, TGAResult
-from core.xrd_display import xrd_candidate_display_name, xrd_candidate_display_payload
+from core.xrd_display import (
+    xrd_candidate_display_name,
+    xrd_candidate_display_payload,
+    xrd_candidate_display_variants,
+)
 
 
 REQUIRED_RESULT_KEYS = {
@@ -478,7 +482,7 @@ def _build_xrd_scientific_context(
             notes="Qualitative ranking only; not quantitative phase fraction.",
         )
     ]
-    best_candidate_name = xrd_candidate_display_name(summary)
+    best_candidate_name = xrd_candidate_display_name(summary, target="unicode")
     best_candidate_score = summary.get("top_candidate_score")
     if best_candidate_score in (None, ""):
         best_candidate_score = summary.get("top_phase_score")
@@ -1277,8 +1281,11 @@ def serialize_xrd_result(
     normalized_summary.setdefault("top_candidate_unmatched_major_peak_count", top_evidence.get("unmatched_major_peak_count"))
     normalized_summary.setdefault("top_candidate_reason_below_threshold", "")
     top_display = xrd_candidate_display_payload(normalized_summary, top_row)
+    top_display_variants = xrd_candidate_display_variants(normalized_summary, top_row)
     normalized_summary.setdefault("top_candidate_display_name", top_display.get("display_name"))
     normalized_summary.setdefault("top_phase_display_name", top_display.get("display_name"))
+    normalized_summary.setdefault("top_candidate_display_name_unicode", top_display_variants.get("unicode_display_name"))
+    normalized_summary.setdefault("top_phase_display_name_unicode", top_display_variants.get("unicode_display_name"))
     if normalized_rows and not normalized_summary.get("library_provider"):
         normalized_summary["library_provider"] = normalized_rows[0].get("library_provider")
     if normalized_rows and not normalized_summary.get("library_package"):

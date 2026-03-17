@@ -470,7 +470,9 @@ def test_serialize_xrd_result_adds_humanized_display_fields_without_losing_raw_i
 
     assert record["summary"]["top_candidate_name"] == "COD 1000026"
     assert record["summary"]["top_candidate_display_name"] == "MgB2"
+    assert record["summary"]["top_candidate_display_name_unicode"] == "MgB₂"
     assert record["summary"]["top_phase_display_name"] == "MgB2"
+    assert record["summary"]["top_phase_display_name_unicode"] == "MgB₂"
     assert record["rows"][0]["display_name"] == "MgB2"
     assert record["rows"][0]["source_id"] == "1000026"
 

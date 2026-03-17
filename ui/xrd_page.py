@@ -21,8 +21,10 @@ from core.processing_schema import (
 )
 from core.validation import validate_thermal_dataset
 from core.xrd_display import (
+    format_scientific_formula_text,
     xrd_candidate_display_name as resolve_xrd_candidate_display_name,
     xrd_candidate_display_payload as resolve_xrd_candidate_display_payload,
+    xrd_candidate_display_variants as resolve_xrd_candidate_display_variants,
 )
 from ui.components.chrome import render_page_header
 from ui.components.history_tracker import _log_event
@@ -274,15 +276,31 @@ def _xrd_candidate_display_payload(
     return resolve_xrd_candidate_display_payload(match_or_row, reference_entry)
 
 
+def _xrd_candidate_display_variants(
+    match_or_row: Mapping[str, Any] | None,
+    reference_entry: Mapping[str, Any] | None = None,
+) -> dict[str, str | None]:
+    return resolve_xrd_candidate_display_variants(match_or_row, reference_entry)
+
+
 def _xrd_candidate_display_name(
     match_or_row: Mapping[str, Any] | None,
     reference_entry: Mapping[str, Any] | None = None,
+    *,
+    target: str = "plain",
 ) -> str | None:
-    return resolve_xrd_candidate_display_name(match_or_row, reference_entry)
+    return resolve_xrd_candidate_display_name(match_or_row, reference_entry, target=target)
+
+
+def _xrd_visible_candidate_name(
+    match_or_row: Mapping[str, Any] | None,
+    reference_entry: Mapping[str, Any] | None = None,
+) -> str | None:
+    return _xrd_candidate_display_name(match_or_row, reference_entry, target="unicode")
 
 
 def _xrd_selected_candidate_label(selected_match: Mapping[str, Any] | None) -> str:
-    display_name = _xrd_candidate_display_name(selected_match) or "N/A"
+    display_name = _xrd_visible_candidate_name(selected_match) or "N/A"
     rank = int((selected_match or {}).get("rank") or 0)
     return f"{display_name} (#{rank})" if rank > 0 else display_name
 
@@ -317,11 +335,12 @@ def _xrd_candidate_hover_lines(selected_match: Mapping[str, Any] | None) -> list
     source_id = str(payload.get("source_id") or "").strip()
     formula = str(payload.get("formula_pretty") or payload.get("formula") or "").strip()
     raw_label = str((selected_match or {}).get("candidate_name") or "").strip()
-    display_name = str(payload.get("display_name") or raw_label or candidate_id or source_id or "N/A").strip()
+    display_name = str(_xrd_visible_candidate_name(selected_match) or raw_label or candidate_id or source_id or "N/A").strip()
+    scientific_formula = format_scientific_formula_text(formula, target="unicode") if formula else ""
 
     lines = [f"<b>{tx('Aday', 'Candidate')}</b>: {display_name}"]
-    if formula and formula != display_name:
-        lines.append(f"<b>{tx('Formül', 'Formula')}</b>: {formula}")
+    if scientific_formula and scientific_formula != display_name:
+        lines.append(f"<b>{tx('Formül', 'Formula')}</b>: {scientific_formula}")
     if provider:
         lines.append(f"<b>{tx('Provider', 'Provider')}</b>: {provider}")
     if package:
@@ -940,12 +959,12 @@ def _resolve_xrd_matches(current_state, record):
 
 def _xrd_best_candidate_name(summary: dict | None, matches: list[dict] | None) -> str | None:
     summary = summary or {}
-    candidate_name = _xrd_candidate_display_name(summary)
+    candidate_name = _xrd_visible_candidate_name(summary)
     if candidate_name not in (None, ""):
         return str(candidate_name)
     top = matches[0] if matches else None
     if isinstance(top, dict):
-        return str(_xrd_candidate_display_name(top) or top.get("candidate_name") or top.get("candidate_id") or "") or None
+        return str(_xrd_visible_candidate_name(top) or top.get("candidate_name") or top.get("candidate_id") or "") or None
     return None
 
 
@@ -1475,6 +1494,7 @@ def _save_xrd_graph_snapshot_to_session(
         "selected_candidate_id": (selected_match or {}).get("candidate_id"),
         "selected_candidate_name": (selected_match or {}).get("candidate_name"),
         "selected_candidate_display_name": _xrd_candidate_display_name(selected_match),
+        "selected_candidate_display_name_unicode": _xrd_visible_candidate_name(selected_match),
         "selected_candidate_rank": (selected_match or {}).get("rank"),
         "plot_settings": dict(plot_settings or {}),
         "layer_flags": {
@@ -2022,7 +2042,7 @@ def render():
                     display_score = float(item.get("normalized_score", 0.0))
                 except (TypeError, ValueError):
                     display_score = 0.0
-                candidate_name = str(_xrd_candidate_display_name(item) or item.get("candidate_name") or item.get("candidate_id") or "N/A")
+                candidate_name = str(_xrd_visible_candidate_name(item) or item.get("candidate_name") or item.get("candidate_id") or "N/A")
                 option = f"#{int(item.get('rank') or 0)} {candidate_name} | {display_score:.3f}"
                 candidate_options.append(option)
                 option_to_match[option] = item
@@ -2170,7 +2190,7 @@ def render():
                 rows.append(
                     {
                         tx("Sıra", "Rank"): item.get("rank"),
-                        tx("Aday", "Candidate"): _xrd_candidate_display_name(item),
+                        tx("Aday", "Candidate"): _xrd_visible_candidate_name(item),
                         tx("Ham Etiket", "Raw Label"): item.get("candidate_name"),
                         tx("Aday ID", "Candidate ID"): item.get("candidate_id"),
                         tx("Kaynak ID", "Source ID"): item.get("source_id"),
@@ -2201,9 +2221,11 @@ def render():
                 "match_status": "matched" if derived_matches else "no_match",
                 "top_phase": derived_top.get("candidate_name") if derived_top else None,
                 "top_phase_display_name": _xrd_candidate_display_name(derived_top) if derived_top else None,
+                "top_phase_display_name_unicode": _xrd_visible_candidate_name(derived_top) if derived_top else None,
                 "top_phase_score": float(derived_top.get("normalized_score", 0.0)) if derived_top else 0.0,
                 "top_candidate_name": derived_top.get("candidate_name") if derived_top else None,
                 "top_candidate_display_name": _xrd_candidate_display_name(derived_top) if derived_top else None,
+                "top_candidate_display_name_unicode": _xrd_visible_candidate_name(derived_top) if derived_top else None,
                 "top_candidate_score": float(derived_top.get("normalized_score", 0.0)) if derived_top else None,
                 "top_candidate_shared_peak_count": ((derived_top or {}).get("evidence") or {}).get("shared_peak_count"),
                 "top_candidate_weighted_overlap_score": ((derived_top or {}).get("evidence") or {}).get("weighted_overlap_score"),

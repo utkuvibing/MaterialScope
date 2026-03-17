@@ -678,8 +678,85 @@ def test_record_key_results_uses_humanized_xrd_display_name():
         }
     )
 
-    assert payload["Top Phase"] == "MgB2"
-    assert payload["Best Candidate Name"] == "MgB2"
+    assert payload["Top Phase"] == "MgB₂"
+    assert payload["Best Candidate Name"] == "MgB₂"
+
+
+def test_generate_docx_report_uses_scientific_xrd_candidate_names():
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": [18.2, 27.5, 36.1], "signal": [130.0, 290.0, 175.0]}),
+        metadata={
+            "sample_name": "SyntheticXRD",
+            "display_name": "Synthetic XRD Pattern",
+            "xrd_axis_role": "two_theta",
+            "xrd_axis_unit": "degree_2theta",
+            "xrd_wavelength_angstrom": 1.5406,
+        },
+        data_type="XRD",
+        units={"temperature": "degree_2theta", "signal": "counts"},
+        original_columns={"temperature": "two_theta", "signal": "intensity"},
+        file_path="",
+    )
+    processing = ensure_processing_payload(
+        analysis_type="XRD",
+        workflow_template="xrd.general",
+        workflow_template_label="General XRD",
+    )
+    processing = update_method_context(
+        processing,
+        {
+            "xrd_match_metric": "peak_overlap_weighted",
+            "xrd_match_tolerance_deg": 0.28,
+            "xrd_match_minimum_score": 0.42,
+            "xrd_match_top_n": 5,
+        },
+        analysis_type="XRD",
+    )
+    record = serialize_xrd_result(
+        "synthetic_xrd_formula",
+        dataset,
+        summary={
+            "peak_count": 3,
+            "match_status": "matched",
+            "candidate_count": 1,
+            "top_phase": "COD 1000026",
+            "top_phase_id": "cod_1000026",
+            "top_phase_score": 0.91,
+            "confidence_band": "high",
+            "library_provider": "COD",
+        },
+        rows=[
+            {
+                "rank": 1,
+                "candidate_id": "cod_1000026",
+                "candidate_name": "COD 1000026",
+                "formula": "MgB2",
+                "source_id": "1000026",
+                "normalized_score": 0.91,
+                "confidence_band": "high",
+                "library_provider": "COD",
+                "evidence": {
+                    "shared_peak_count": 3,
+                    "weighted_overlap_score": 0.91,
+                    "mean_delta_position": 0.04,
+                    "unmatched_major_peak_count": 0,
+                    "tolerance_deg": 0.28,
+                },
+            }
+        ],
+        processing=processing,
+        validation={"status": "pass", "issues": [], "warnings": []},
+    )
+
+    docx_bytes = generate_docx_report(
+        results={record["id"]: record},
+        datasets={"synthetic_xrd_formula": dataset},
+    )
+
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "MgB₂" in xml
 
 
 def test_generate_docx_report_hides_operational_fields_from_experimental_conditions(thermal_dataset):
