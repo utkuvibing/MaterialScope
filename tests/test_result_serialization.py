@@ -595,6 +595,116 @@ def test_serialize_xrd_result_builds_reference_dossiers_with_truncated_peaks_and
     assert first_dossier["source_assets"][1]["label"] == "Provider Reference"
 
 
+def test_split_valid_results_rebuilds_stale_xrd_reference_dossiers_from_rows():
+    dataset = _xrd_dataset()
+    processing = ensure_processing_payload(analysis_type="XRD", workflow_template="xrd.general")
+    peaks = [
+        {
+            "peak_number": idx + 1,
+            "position": 10.0 + (idx * 1.1),
+            "d_spacing": 4.0 - (idx * 0.05),
+            "intensity": float(100 - idx),
+        }
+        for idx in range(25)
+    ]
+    record = serialize_xrd_result(
+        "synthetic_xrd_stale_dossier",
+        dataset,
+        summary={
+            "peak_count": 4,
+            "match_status": "matched",
+            "candidate_count": 1,
+            "top_phase_id": "cod_1000026",
+            "top_phase": "COD 1000026",
+            "top_phase_score": 0.91,
+            "confidence_band": "high",
+            "library_request_id": "libreq_xrd_stale_001",
+        },
+        rows=[
+            {
+                "rank": 1,
+                "candidate_id": "cod_1000026",
+                "candidate_name": "COD 1000026",
+                "formula": "MgB2",
+                "source_id": "1000026",
+                "normalized_score": 0.91,
+                "confidence_band": "high",
+                "library_provider": "COD",
+                "library_package": "cod_xrd_core",
+                "library_version": "2026.03-core",
+                "reference_metadata": {
+                    "source_url": "https://example.test/cod/1000026",
+                    "provider_url": "https://provider.example.test/cod/1000026",
+                    "space_group": "P6/mmm",
+                    "symmetry": "hexagonal",
+                },
+                "reference_peaks": peaks,
+                "source_assets": [
+                    {
+                        "kind": "source_url",
+                        "label": "Source Reference",
+                        "url": "https://example.test/cod/1000026",
+                        "available": True,
+                    },
+                    {
+                        "kind": "source_url",
+                        "label": "Provider Reference",
+                        "url": "https://provider.example.test/cod/1000026",
+                        "available": True,
+                    },
+                ],
+                "evidence": {
+                    "shared_peak_count": 6,
+                    "weighted_overlap_score": 0.91,
+                    "coverage_ratio": 0.81,
+                    "mean_delta_position": 0.03,
+                    "unmatched_major_peak_count": 0,
+                    "matched_peak_pairs": [{"observed_index": idx, "reference_index": idx} for idx in range(3)],
+                    "unmatched_reference_peaks": [{"reference_index": 20, "is_major": True}],
+                },
+            }
+        ],
+        processing=processing,
+        validation={"status": "pass", "issues": [], "warnings": []},
+    )
+    record["report_payload"] = {
+        "xrd_reference_dossier_limit": 3,
+        "xrd_reference_peak_display_limit": 20,
+        "xrd_reference_dossiers": [
+            {
+                "rank": 1,
+                "candidate_overview": {"display_name_unicode": "MgB₂"},
+                "reference_peaks": {
+                    "display_rows": [],
+                    "displayed_peak_count": 0,
+                    "total_peak_count": 0,
+                    "truncated_count": 0,
+                    "selection_policy": "matched_and_major_then_fill_to_top_20_by_intensity",
+                },
+                "reference_metadata": {"source_url": None, "provider_url": None},
+                "structure_payload": {
+                    "availability": "none",
+                    "source_asset_count": 0,
+                    "rendered_asset_count": 0,
+                },
+                "source_assets": [],
+            }
+        ],
+    }
+
+    valid, issues = split_valid_results({record["id"]: record})
+
+    assert issues == []
+    dossier = valid[record["id"]]["report_payload"]["xrd_reference_dossiers"][0]
+    assert dossier["reference_peaks"]["displayed_peak_count"] == 20
+    assert dossier["reference_peaks"]["total_peak_count"] == 25
+    assert dossier["reference_peaks"]["truncated_count"] == 5
+    assert dossier["reference_metadata"]["source_url"] == "https://example.test/cod/1000026"
+    assert dossier["reference_metadata"]["provider_url"] == "https://provider.example.test/cod/1000026"
+    assert len(dossier["source_assets"]) == 2
+    assert dossier["structure_payload"]["source_asset_count"] == 2
+
+
 def test_serialize_xrd_result_gates_stronger_scientific_claims_on_strong_evidence():
     dataset = _xrd_dataset()
     processing = ensure_processing_payload(analysis_type="XRD", workflow_template="xrd.general")

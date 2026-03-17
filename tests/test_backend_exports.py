@@ -294,6 +294,144 @@ def _build_xrd_export_state() -> tuple[dict, str]:
     return state, xrd_record["id"]
 
 
+def _build_rich_xrd_export_state(*, stale_report_payload: bool = False) -> tuple[dict, str]:
+    dataset_key = "xrd_export_rich"
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": [18.2, 27.5, 36.1], "signal": [130.0, 290.0, 175.0]}),
+        metadata={
+            "sample_name": "SyntheticXRDFormula",
+            "sample_mass": 1.0,
+            "instrument": "XRDBench",
+            "vendor": "TestVendor",
+            "display_name": "Synthetic XRD Formula Pattern",
+            "xrd_axis_role": "two_theta",
+            "xrd_axis_unit": "degree_2theta",
+            "xrd_wavelength_angstrom": 1.5406,
+        },
+        data_type="XRD",
+        units={"temperature": "degree_2theta", "signal": "counts"},
+        original_columns={"temperature": "two_theta", "signal": "intensity"},
+        file_path="",
+    )
+    processing = ensure_processing_payload(analysis_type="XRD", workflow_template="xrd.general")
+    processing = update_method_context(
+        processing,
+        {
+            "xrd_match_metric": "peak_overlap_weighted",
+            "xrd_match_tolerance_deg": 0.28,
+            "xrd_match_minimum_score": 0.42,
+            "xrd_match_top_n": 5,
+        },
+        analysis_type="XRD",
+    )
+    xrd_record = serialize_xrd_result(
+        dataset_key,
+        dataset,
+        summary={
+            "peak_count": 3,
+            "match_status": "matched",
+            "candidate_count": 1,
+            "top_phase": "COD 1000026",
+            "top_phase_id": "cod_1000026",
+            "top_phase_score": 0.91,
+            "confidence_band": "high",
+            "library_provider": "COD",
+        },
+        rows=[
+            {
+                "rank": 1,
+                "candidate_id": "cod_1000026",
+                "candidate_name": "COD 1000026",
+                "formula": "MgB2",
+                "source_id": "1000026",
+                "normalized_score": 0.91,
+                "confidence_band": "high",
+                "library_provider": "COD",
+                "library_package": "cod_xrd_core",
+                "library_version": "2026.03-core",
+                "reference_metadata": {
+                    "source_url": "https://example.test/cod/1000026",
+                    "provider_url": "https://provider.example.test/cod/1000026",
+                    "provider_dataset_version": "2026.03",
+                    "space_group": "P6/mmm",
+                    "symmetry": "hexagonal",
+                    "attribution": "COD reference dataset",
+                },
+                "reference_peaks": [
+                    {
+                        "peak_number": idx + 1,
+                        "position": 27.5 + (idx * 0.37),
+                        "d_spacing": 3.24 - (idx * 0.04),
+                        "intensity": 100.0 - idx,
+                    }
+                    for idx in range(25)
+                ],
+                "source_assets": [
+                    {
+                        "kind": "source_url",
+                        "label": "Source Reference",
+                        "url": "https://example.test/cod/1000026",
+                        "available": True,
+                    },
+                    {
+                        "kind": "source_url",
+                        "label": "Provider Reference",
+                        "url": "https://provider.example.test/cod/1000026",
+                        "available": True,
+                    },
+                ],
+                "evidence": {
+                    "shared_peak_count": 3,
+                    "weighted_overlap_score": 0.91,
+                    "coverage_ratio": 0.88,
+                    "mean_delta_position": 0.04,
+                    "unmatched_major_peak_count": 0,
+                    "matched_peak_pairs": [{"observed_index": 0, "reference_index": 0}],
+                },
+            }
+        ],
+        artifacts={"report_figure_key": "XRD Snapshot - xrd_export_rich - r1_MgB2"},
+        processing=processing,
+        validation={"status": "pass", "issues": [], "warnings": []},
+    )
+    if stale_report_payload:
+        xrd_record["report_payload"] = {
+            "xrd_reference_dossier_limit": 3,
+            "xrd_reference_peak_display_limit": 20,
+            "xrd_reference_dossiers": [
+                {
+                    "rank": 1,
+                    "candidate_overview": {"display_name_unicode": "MgB₂"},
+                    "reference_peaks": {
+                        "display_rows": [],
+                        "displayed_peak_count": 0,
+                        "total_peak_count": 0,
+                        "truncated_count": 0,
+                        "selection_policy": "matched_and_major_then_fill_to_top_20_by_intensity",
+                    },
+                    "reference_metadata": {"source_url": None, "provider_url": None},
+                    "structure_payload": {
+                        "availability": "none",
+                        "source_asset_count": 0,
+                        "rendered_asset_count": 0,
+                    },
+                    "source_assets": [],
+                }
+            ],
+        }
+    state = {
+        "datasets": {dataset_key: dataset},
+        "results": {xrd_record["id"]: xrd_record},
+        "figures": {},
+        "comparison_workspace": {
+            "analysis_type": "XRD",
+            "selected_datasets": [dataset_key],
+            "notes": "XRD qualitative caution lane",
+        },
+    }
+    return state, xrd_record["id"]
+
+
 def test_export_preparation_includes_spectral_workspace_and_results():
     state, result_id = _build_spectral_export_state()
     prep = build_export_preparation(state)
@@ -365,3 +503,20 @@ def test_export_artifacts_preserve_xrd_caution_fields_and_method_context():
     assert "XRD Library and Access Context" in appendix_xml
     assert "XRD Match and Provenance Context" in appendix_xml
     assert "Candidate Evidence Summary" in appendix_xml
+
+
+def test_export_docx_artifact_rebuilds_stale_xrd_dossier_payload_from_rows():
+    state, result_id = _build_rich_xrd_export_state(stale_report_payload=True)
+
+    docx_artifact = generate_report_docx_artifact(state, selected_result_ids=[result_id])
+    docx_bytes = base64.b64decode(docx_artifact["artifact_base64"].encode("ascii"))
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "Candidate Reference Dossier" in xml
+    assert "Reference Peaks" in xml
+    assert "Showing 20 of 25 reference peaks" in xml
+    assert "Remaining peaks omitted from visible table by display policy" in xml
+    assert "https://example.test/cod/1000026" in xml
+    assert "https://provider.example.test/cod/1000026" in xml
+    assert "Linked Source and Provider Assets" in xml

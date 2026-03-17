@@ -1157,6 +1157,56 @@ def test_generate_pdf_report_exports_xrd_reference_dossier_sections():
     assert "MgB₂" in extracted
 
 
+def test_generate_reports_rebuild_stale_xrd_dossiers_before_docx_pdf_export():
+    pytest.importorskip("reportlab")
+    pypdf = pytest.importorskip("pypdf")
+    record, dataset = _make_xrd_formula_result()
+    record["report_payload"] = {
+        "xrd_reference_dossier_limit": 3,
+        "xrd_reference_peak_display_limit": 20,
+        "xrd_reference_dossiers": [
+            {
+                "rank": 1,
+                "candidate_overview": {"display_name_unicode": "MgB₂"},
+                "reference_peaks": {
+                    "display_rows": [],
+                    "displayed_peak_count": 0,
+                    "total_peak_count": 0,
+                    "truncated_count": 0,
+                    "selection_policy": "matched_and_major_then_fill_to_top_20_by_intensity",
+                },
+                "reference_metadata": {"source_url": None, "provider_url": None},
+                "structure_payload": {
+                    "availability": "none",
+                    "source_asset_count": 0,
+                    "rendered_asset_count": 0,
+                },
+                "source_assets": [],
+            }
+        ],
+    }
+
+    docx_bytes = generate_docx_report(
+        results={record["id"]: record},
+        datasets={"synthetic_xrd_formula": dataset},
+    )
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    pdf_bytes = generate_pdf_report(
+        results={record["id"]: record},
+        datasets={"synthetic_xrd_formula": dataset},
+    )
+    extracted = "\n".join(page.extract_text() or "" for page in pypdf.PdfReader(io.BytesIO(pdf_bytes)).pages)
+
+    assert "Showing 20 of 25 reference peaks" in xml
+    assert "https://example.test/cod/1000026" in xml
+    assert "https://provider.example.test/cod/1000026" in xml
+    assert "Showing 20 of 25 reference peaks" in extracted
+    assert "example.test" in extracted
+    assert "provider.example.test" in extracted
+
+
 def test_generate_pdf_report_renders_xrd_domain_specific_scientific_reasoning_sections():
     pytest.importorskip("reportlab")
     pypdf = pytest.importorskip("pypdf")

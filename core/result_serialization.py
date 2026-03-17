@@ -66,6 +66,24 @@ def _clean_scalar(value: Any) -> Any:
     return value
 
 
+def _normalize_xrd_report_payload(record: Mapping[str, Any]) -> dict[str, Any]:
+    report_payload = copy.deepcopy(record.get("report_payload") or {})
+    if str(record.get("analysis_type") or "").upper() != "XRD":
+        return report_payload
+
+    rows = [dict(item) for item in (record.get("rows") or []) if isinstance(item, Mapping)]
+    summary = dict(record.get("summary") or {})
+    report_payload["xrd_reference_dossier_limit"] = XRD_REFERENCE_DOSSIER_LIMIT
+    report_payload["xrd_reference_peak_display_limit"] = XRD_REFERENCE_PEAK_DISPLAY_LIMIT
+    report_payload["xrd_reference_dossiers"] = build_xrd_reference_dossiers(
+        summary,
+        rows,
+        dossier_limit=XRD_REFERENCE_DOSSIER_LIMIT,
+        peak_display_limit=XRD_REFERENCE_PEAK_DISPLAY_LIMIT,
+    )
+    return report_payload
+
+
 def make_result_record(
     *,
     result_id: str,
@@ -87,7 +105,7 @@ def make_result_record(
     if status not in VALID_STATUSES:
         raise ValueError(f"Unsupported result status: {status}")
 
-    return {
+    record = {
         "id": result_id,
         "analysis_type": analysis_type,
         "status": status,
@@ -103,6 +121,8 @@ def make_result_record(
         "scientific_context": normalize_scientific_context(scientific_context),
         "report_payload": copy.deepcopy(report_payload or {}),
     }
+    record["report_payload"] = _normalize_xrd_report_payload(record)
+    return record
 
 
 def _validation_warnings(validation: dict[str, Any] | None) -> list[str]:
@@ -1689,6 +1709,7 @@ def split_valid_results(results: dict[str, Any]) -> tuple[dict[str, dict[str, An
         normalized.setdefault("validation", {})
         normalized.setdefault("review", {})
         normalized.setdefault("report_payload", {})
+        normalized["report_payload"] = _normalize_xrd_report_payload(normalized)
         normalized["scientific_context"] = normalize_scientific_context(
             normalized.get("scientific_context")
         )
