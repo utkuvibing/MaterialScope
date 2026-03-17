@@ -350,8 +350,18 @@ def test_export_artifacts_preserve_xrd_caution_fields_and_method_context():
     with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
         xml = archive.read("word/document.xml").decode("utf-8")
 
+    appendix_index = xml.index("Appendix A")
+    main_xml = xml[:appendix_index]
+    appendix_xml = xml[appendix_index:]
+
     assert "XRD - xrd_export_seed" in xml
-    assert "Top Phase Score" in xml
+    assert "Best Candidate" in main_xml
     assert "Caution Code" in xml
     assert "xrd_no_match" in xml
-    assert "Phase Matching Metric" in xml
+    assert "Match Metric" in main_xml
+    assert "Top Candidates" in main_xml
+    assert "Match Tolerance (deg)" not in main_xml
+    assert "Match Tolerance (deg)" in appendix_xml
+    assert "XRD Library and Access Context" in appendix_xml
+    assert "XRD Match and Provenance Context" in appendix_xml
+    assert "Candidate Evidence Summary" in appendix_xml
