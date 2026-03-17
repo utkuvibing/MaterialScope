@@ -428,6 +428,53 @@ def test_serialize_xrd_result_adds_no_match_caution_semantics():
     assert record["scientific_context"]["fit_quality"]["top_candidate_score"] == 0.33
 
 
+def test_serialize_xrd_result_adds_humanized_display_fields_without_losing_raw_ids():
+    dataset = _xrd_dataset()
+    processing = ensure_processing_payload(analysis_type="XRD", workflow_template="xrd.general")
+
+    record = serialize_xrd_result(
+        "synthetic_xrd",
+        dataset,
+        summary={
+            "peak_count": 4,
+            "match_status": "matched",
+            "candidate_count": 1,
+            "top_phase_id": "cod_1000026",
+            "top_phase": "COD 1000026",
+            "top_phase_score": 0.91,
+            "confidence_band": "high",
+            "library_provider": "COD",
+        },
+        rows=[
+            {
+                "rank": 1,
+                "candidate_id": "cod_1000026",
+                "candidate_name": "COD 1000026",
+                "formula": "MgB2",
+                "source_id": "1000026",
+                "normalized_score": 0.91,
+                "confidence_band": "high",
+                "library_provider": "COD",
+                "evidence": {
+                    "shared_peak_count": 4,
+                    "weighted_overlap_score": 0.91,
+                    "mean_delta_position": 0.04,
+                    "unmatched_major_peak_count": 0,
+                    "tolerance_deg": 0.28,
+                },
+            }
+        ],
+        processing=processing,
+        validation={"status": "pass", "issues": [], "warnings": []},
+    )
+
+    assert record["summary"]["top_candidate_name"] == "COD 1000026"
+    assert record["summary"]["top_candidate_display_name"] == "MgB2"
+    assert record["summary"]["top_phase_display_name"] == "MgB2"
+    assert record["rows"][0]["display_name"] == "MgB2"
+    assert record["rows"][0]["source_id"] == "1000026"
+
+
 def test_collect_figure_keys_prefers_primary_report_figure_when_present():
     results = {
         "xrd_demo": {

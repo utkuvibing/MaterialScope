@@ -31,6 +31,7 @@ from core.result_serialization import (
 )
 from core.tga_processor import TGAProcessor, resolve_tga_unit_interpretation
 from core.validation import enrich_spectral_result_validation, enrich_xrd_result_validation, validate_thermal_dataset
+from core.xrd_display import xrd_candidate_display_payload
 
 
 _DSC_TEMPLATE_DEFAULTS = {
@@ -858,6 +859,11 @@ def _normalize_cloud_ranked_rows(rows: Any) -> list[dict[str, Any]]:
             "library_provider": str(item.get("library_provider") or ""),
             "library_package": str(item.get("library_package") or ""),
             "library_version": str(item.get("library_version") or ""),
+            "display_name": str(item.get("display_name") or "") or None,
+            "phase_name": str(item.get("phase_name") or "") or None,
+            "formula_pretty": str(item.get("formula_pretty") or "") or None,
+            "formula": str(item.get("formula") or "") or None,
+            "source_id": str(item.get("source_id") or "") or None,
             "evidence": dict(item.get("evidence") or {}),
         }
         normalized.append(payload)
@@ -1291,6 +1297,11 @@ def _execute_spectral_batch(
             "rank": item["rank"],
             "candidate_id": item["candidate_id"],
             "candidate_name": item["candidate_name"],
+            "display_name": item.get("display_name"),
+            "phase_name": item.get("phase_name"),
+            "formula_pretty": item.get("formula_pretty"),
+            "formula": item.get("formula"),
+            "source_id": item.get("source_id"),
             "normalized_score": item["normalized_score"],
             "confidence_band": item["confidence_band"],
             "library_provider": item.get("library_provider") or "",
@@ -2077,6 +2088,7 @@ def _rank_xrd_phase_candidates(
         score -= 0.15 * major_penalty
         score = float(max(0.0, min(1.0, score)))
         confidence_band = _confidence_band(score, minimum_score)
+        display_payload = xrd_candidate_display_payload(reference)
         ranked.append(
             {
                 "candidate_id": reference["candidate_id"],
@@ -2086,6 +2098,11 @@ def _rank_xrd_phase_candidates(
                 "library_provider": reference.get("provider") or "",
                 "library_package": reference.get("package_id") or "",
                 "library_version": reference.get("package_version") or "",
+                "display_name": display_payload.get("display_name"),
+                "phase_name": display_payload.get("phase_name"),
+                "formula_pretty": display_payload.get("formula_pretty"),
+                "formula": display_payload.get("formula"),
+                "source_id": display_payload.get("source_id"),
                 "evidence": {
                     "metric": metric,
                     "comparison_space": comparison_space,
@@ -2180,6 +2197,12 @@ def _build_xrd_top_candidate_summary(
         return {
             "top_candidate_id": None,
             "top_candidate_name": None,
+            "top_candidate_display_name": None,
+            "top_phase_display_name": None,
+            "top_candidate_phase_name": None,
+            "top_candidate_formula_pretty": None,
+            "top_candidate_formula": None,
+            "top_candidate_source_id": None,
             "top_candidate_score": None,
             "top_candidate_confidence_band": None,
             "top_candidate_provider": None,
@@ -2194,9 +2217,16 @@ def _build_xrd_top_candidate_summary(
         }
 
     evidence = dict(top_match.get("evidence") or {})
+    display_payload = xrd_candidate_display_payload(top_match)
     return {
         "top_candidate_id": top_match.get("candidate_id"),
         "top_candidate_name": top_match.get("candidate_name"),
+        "top_candidate_display_name": display_payload.get("display_name"),
+        "top_phase_display_name": display_payload.get("display_name"),
+        "top_candidate_phase_name": display_payload.get("phase_name"),
+        "top_candidate_formula_pretty": display_payload.get("formula_pretty"),
+        "top_candidate_formula": display_payload.get("formula"),
+        "top_candidate_source_id": display_payload.get("source_id"),
         "top_candidate_score": _xrd_summary_scalar(top_match.get("normalized_score")),
         "top_candidate_confidence_band": top_match.get("confidence_band"),
         "top_candidate_provider": top_match.get("library_provider") or "",
@@ -2454,7 +2484,12 @@ def _execute_xrd_batch(
         match_status = "matched" if matched else "no_match"
         confidence_band = top_match["confidence_band"] if matched and top_match else "no_match"
         if not matched:
-            candidate_label = top_candidate_summary.get("top_candidate_name") or top_candidate_summary.get("top_candidate_id") or "best-ranked candidate"
+            candidate_label = (
+                top_candidate_summary.get("top_candidate_display_name")
+                or top_candidate_summary.get("top_candidate_name")
+                or top_candidate_summary.get("top_candidate_id")
+                or "best-ranked candidate"
+            )
             shared_peak_count = int(top_candidate_summary.get("top_candidate_shared_peak_count") or 0)
             partial_agreement = shared_peak_count > 0 or float(top_candidate_summary.get("top_candidate_weighted_overlap_score") or 0.0) > 0.0
             lead_sentence = (
@@ -2476,6 +2511,7 @@ def _execute_xrd_batch(
                 "minimum_score": minimum_score,
                 "top_phase_score": round(top_score, 4),
                 "top_candidate_name": top_candidate_summary.get("top_candidate_name"),
+                "top_candidate_display_name": top_candidate_summary.get("top_candidate_display_name"),
                 "top_candidate_score": top_candidate_summary.get("top_candidate_score"),
                 "top_candidate_reason_below_threshold": top_candidate_summary.get("top_candidate_reason_below_threshold"),
             }
@@ -2487,6 +2523,7 @@ def _execute_xrd_batch(
                 "minimum_score": minimum_score,
                 "top_phase_score": round(top_score, 4),
                 "top_candidate_name": top_candidate_summary.get("top_candidate_name"),
+                "top_candidate_display_name": top_candidate_summary.get("top_candidate_display_name"),
                 "top_candidate_score": top_candidate_summary.get("top_candidate_score"),
             }
         if len(references) <= 0 and not caution_payload:
@@ -2496,6 +2533,7 @@ def _execute_xrd_batch(
                 "minimum_score": minimum_score,
                 "top_phase_score": round(top_score, 4),
                 "top_candidate_name": top_candidate_summary.get("top_candidate_name"),
+                "top_candidate_display_name": top_candidate_summary.get("top_candidate_display_name"),
                 "top_candidate_score": top_candidate_summary.get("top_candidate_score"),
             }
 

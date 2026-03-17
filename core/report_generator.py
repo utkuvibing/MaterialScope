@@ -20,6 +20,7 @@ from core.scientific_sections import (
     normalize_scientific_context,
     scientific_context_to_report_sections,
 )
+from core.xrd_display import xrd_candidate_display_name
 from utils.reference_data import find_nearest_reference
 
 try:
@@ -336,13 +337,7 @@ def _paper_display_label(dataset_key: str | None, datasets: dict, *, record: dic
 
 
 def _xrd_best_candidate_name(summary: dict[str, Any]) -> str:
-    return str(
-        summary.get("top_candidate_name")
-        or summary.get("top_candidate_id")
-        or summary.get("top_phase")
-        or summary.get("top_phase_id")
-        or "N/A"
-    )
+    return str(xrd_candidate_display_name(summary) or "N/A")
 
 
 def _xrd_best_candidate_score(summary: dict[str, Any]) -> Any:
@@ -434,7 +429,7 @@ def _record_key_results(record: dict) -> dict[str, str]:
         return _table_payload(
             {
                 "Accepted Match Status": summary.get("match_status"),
-                "Top Phase": summary.get("top_phase") or summary.get("top_phase_id"),
+                "Top Phase": summary.get("top_phase_display_name") or _xrd_best_candidate_name(summary),
                 "Top Phase Score": summary.get("top_phase_score"),
                 "Best Candidate Name": _xrd_best_candidate_name(summary),
                 "Best Candidate Score": _xrd_best_candidate_score(summary),

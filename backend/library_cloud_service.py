@@ -26,6 +26,7 @@ from core.reference_library import (
     ReferenceLibraryManager,
     get_reference_library_manager,
 )
+from core.xrd_display import xrd_candidate_display_payload
 from utils.license_manager import APP_VERSION, get_storage_dir, validate_encoded_license_key
 
 
@@ -315,6 +316,12 @@ class ManagedLibraryCloudService:
             )
             evidence = dict(payload.get("evidence") or {})
             if reference:
+                display_payload = xrd_candidate_display_payload(payload, reference)
+                payload.setdefault("display_name", display_payload.get("display_name"))
+                payload.setdefault("phase_name", display_payload.get("phase_name"))
+                payload.setdefault("formula_pretty", display_payload.get("formula_pretty"))
+                payload.setdefault("formula", display_payload.get("formula"))
+                payload.setdefault("source_id", display_payload.get("source_id"))
                 evidence.setdefault("canonical_material_key", str(reference.get("canonical_material_key") or ""))
                 evidence.setdefault("provider_dataset_version", str(reference.get("provider_dataset_version") or ""))
                 evidence.setdefault("hosted_dataset_version", str(reference.get("hosted_dataset_version") or reference.get("package_version") or ""))

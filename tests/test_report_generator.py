@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
+from core import report_generator
 from core.data_io import ThermalDataset
 from core.dsc_processor import GlassTransition
 from core.peak_analysis import ThermalPeak
@@ -657,6 +658,28 @@ def test_generate_docx_report_renders_xrd_no_match_caution_fields():
     assert "Xrd Provenance Warning" in xml
     assert "qualitative phase matching provenance remains incomplete" in xml
     assert "qualitative caution" in xml
+
+
+def test_record_key_results_uses_humanized_xrd_display_name():
+    payload = report_generator._record_key_results(
+        {
+            "analysis_type": "XRD",
+            "summary": {
+                "match_status": "matched",
+                "top_phase": "COD 1000026",
+                "top_phase_id": "cod_1000026",
+                "top_candidate_name": "COD 1000026",
+                "top_candidate_id": "cod_1000026",
+                "top_candidate_formula": "MgB2",
+                "top_candidate_source_id": "1000026",
+                "top_candidate_provider": "COD",
+                "top_candidate_score": 0.91,
+            },
+        }
+    )
+
+    assert payload["Top Phase"] == "MgB2"
+    assert payload["Best Candidate Name"] == "MgB2"
 
 
 def test_generate_docx_report_hides_operational_fields_from_experimental_conditions(thermal_dataset):

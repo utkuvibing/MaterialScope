@@ -19,6 +19,7 @@ from core.scientific_sections import (
     normalize_scientific_context,
 )
 from core.tga_processor import MassLossStep, TGAResult
+from core.xrd_display import xrd_candidate_display_name, xrd_candidate_display_payload
 
 
 REQUIRED_RESULT_KEYS = {
@@ -477,12 +478,7 @@ def _build_xrd_scientific_context(
             notes="Qualitative ranking only; not quantitative phase fraction.",
         )
     ]
-    best_candidate_name = (
-        summary.get("top_candidate_name")
-        or summary.get("top_candidate_id")
-        or summary.get("top_phase")
-        or summary.get("top_phase_id")
-    )
+    best_candidate_name = xrd_candidate_display_name(summary)
     best_candidate_score = summary.get("top_candidate_score")
     if best_candidate_score in (None, ""):
         best_candidate_score = summary.get("top_phase_score")
@@ -1217,11 +1213,17 @@ def serialize_xrd_result(
     normalized_rows: list[dict[str, Any]] = []
     for index, item in enumerate(rows or [], start=1):
         payload = dict(item or {})
+        display_payload = xrd_candidate_display_payload(payload)
         normalized_rows.append(
             {
                 "rank": int(payload.get("rank") or index),
                 "candidate_id": payload.get("candidate_id"),
                 "candidate_name": payload.get("candidate_name"),
+                "display_name": payload.get("display_name") or display_payload.get("display_name"),
+                "phase_name": payload.get("phase_name") or display_payload.get("phase_name"),
+                "formula_pretty": payload.get("formula_pretty") or display_payload.get("formula_pretty"),
+                "formula": payload.get("formula") or display_payload.get("formula"),
+                "source_id": payload.get("source_id") or display_payload.get("source_id"),
                 "normalized_score": _clean_scalar(payload.get("normalized_score")),
                 "confidence_band": payload.get("confidence_band"),
                 "library_provider": payload.get("library_provider"),
@@ -1259,6 +1261,10 @@ def serialize_xrd_result(
     normalized_summary.setdefault("heating_rate", dataset.metadata.get("heating_rate"))
     normalized_summary.setdefault("top_candidate_id", (top_row or {}).get("candidate_id"))
     normalized_summary.setdefault("top_candidate_name", (top_row or {}).get("candidate_name"))
+    normalized_summary.setdefault("top_candidate_phase_name", (top_row or {}).get("phase_name"))
+    normalized_summary.setdefault("top_candidate_formula_pretty", (top_row or {}).get("formula_pretty"))
+    normalized_summary.setdefault("top_candidate_formula", (top_row or {}).get("formula"))
+    normalized_summary.setdefault("top_candidate_source_id", (top_row or {}).get("source_id"))
     normalized_summary.setdefault("top_candidate_score", (top_row or {}).get("normalized_score"))
     normalized_summary.setdefault("top_candidate_confidence_band", (top_row or {}).get("confidence_band"))
     normalized_summary.setdefault("top_candidate_provider", (top_row or {}).get("library_provider"))
@@ -1270,6 +1276,9 @@ def serialize_xrd_result(
     normalized_summary.setdefault("top_candidate_mean_delta_position", top_evidence.get("mean_delta_position"))
     normalized_summary.setdefault("top_candidate_unmatched_major_peak_count", top_evidence.get("unmatched_major_peak_count"))
     normalized_summary.setdefault("top_candidate_reason_below_threshold", "")
+    top_display = xrd_candidate_display_payload(normalized_summary, top_row)
+    normalized_summary.setdefault("top_candidate_display_name", top_display.get("display_name"))
+    normalized_summary.setdefault("top_phase_display_name", top_display.get("display_name"))
     if normalized_rows and not normalized_summary.get("library_provider"):
         normalized_summary["library_provider"] = normalized_rows[0].get("library_provider")
     if normalized_rows and not normalized_summary.get("library_package"):
@@ -1377,6 +1386,7 @@ def serialize_xrd_result(
             ),
             "top_phase_score": _clean_scalar(normalized_summary.get("top_phase_score")),
             "top_candidate_name": normalized_summary.get("top_candidate_name"),
+            "top_candidate_display_name": normalized_summary.get("top_candidate_display_name"),
             "top_candidate_score": _clean_scalar(normalized_summary.get("top_candidate_score")),
             "top_candidate_reason_below_threshold": normalized_summary.get("top_candidate_reason_below_threshold"),
         }
@@ -1389,6 +1399,7 @@ def serialize_xrd_result(
             ),
             "top_phase_score": _clean_scalar(normalized_summary.get("top_phase_score")),
             "top_candidate_name": normalized_summary.get("top_candidate_name"),
+            "top_candidate_display_name": normalized_summary.get("top_candidate_display_name"),
             "top_candidate_score": _clean_scalar(normalized_summary.get("top_candidate_score")),
         }
 

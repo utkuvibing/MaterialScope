@@ -85,6 +85,47 @@ def test_xrd_control_key_tracks_render_revision():
     assert xrd_page._xrd_control_key("sample", "smooth_method", {"_render_revision": 4}) == "xrd_smooth_method_sample_4"
 
 
+def test_xrd_candidate_display_name_prefers_richer_fields_over_raw_provider_ids():
+    candidate = {
+        "candidate_name": "COD 1000026",
+        "formula": "MgB2",
+        "library_provider": "COD",
+        "candidate_id": "cod_1000026",
+        "source_id": "1000026",
+    }
+
+    assert xrd_page._xrd_candidate_display_name(candidate) == "MgB2"
+
+
+def test_xrd_candidate_display_name_humanizes_cod_raw_ids():
+    candidate = {
+        "candidate_name": "COD 1000026",
+        "library_provider": "COD",
+        "candidate_id": "cod_1000026",
+        "source_id": "1000026",
+    }
+
+    assert xrd_page._xrd_candidate_display_name(candidate) == "COD #1000026"
+
+
+def test_xrd_candidate_display_name_humanizes_materials_project_ids():
+    candidate = {
+        "candidate_name": "mp-149",
+        "library_provider": "Materials Project",
+        "candidate_id": "materials_project_mp_149",
+        "source_id": "mp-149",
+    }
+
+    assert xrd_page._xrd_candidate_display_name(candidate) == "Materials Project mp-149"
+
+
+def test_xrd_plot_defaults_disable_match_label_and_connector_noise():
+    defaults = xrd_page._normalize_xrd_plot_settings({})
+
+    assert defaults["show_match_labels"] is False
+    assert defaults["show_match_connectors"] is False
+
+
 def test_sync_xrd_processing_from_controls_prefers_widget_state(monkeypatch):
     dataset = _xrd_dataset()
     processing = xrd_page._seed_xrd_processing_defaults({}, "xrd.general", dataset)
@@ -235,6 +276,67 @@ def test_build_processed_plot_adds_match_overlay_traces():
     assert "Eşleşmeyen Referans Pik" in trace_names
 
 
+def test_build_processed_plot_uses_humanized_overlay_name_and_hover_metadata():
+    dataset = _xrd_dataset()
+    state = {
+        "peaks": [
+            {"position": 18.2, "intensity": 130.0},
+            {"position": 27.5, "intensity": 290.0},
+            {"position": 36.1, "intensity": 175.0},
+        ]
+    }
+    selected_match = {
+        "rank": 1,
+        "candidate_id": "cod_1000026",
+        "candidate_name": "COD 1000026",
+        "formula": "MgB2",
+        "source_id": "1000026",
+        "library_provider": "COD",
+        "library_package": "cod_xrd_cloud",
+        "evidence": {
+            "matched_peak_pairs": [
+                {
+                    "observed_position": 27.5,
+                    "observed_intensity": 290.0,
+                    "reference_position": 27.62,
+                    "reference_intensity": 1.0,
+                    "delta_position": 0.12,
+                }
+            ],
+            "unmatched_observed_peaks": [{"position": 18.2, "intensity": 130.0}],
+            "unmatched_reference_peaks": [{"position": 36.4, "intensity": 0.8, "is_major": True}],
+        },
+    }
+
+    fig = xrd_page._build_processed_plot(
+        "synthetic_xrd",
+        dataset,
+        state,
+        "en",
+        plot_settings=xrd_page._normalize_xrd_plot_settings({}),
+        selected_match=selected_match,
+    )
+
+    matched_trace = next(trace for trace in fig.data if trace.name in {"Matched Peaks", "Eşleşen Pikler"})
+    peak_label_trace = next(trace for trace in fig.data if getattr(trace, "mode", "") == "text")
+
+    assert matched_trace.text is None
+    assert "Provider" in matched_trace.hovertext[0]
+    assert ("Candidate ID" in matched_trace.hovertext[0]) or ("Aday Kimliği" in matched_trace.hovertext[0])
+    assert ("Source ID" in matched_trace.hovertext[0]) or ("Kaynak Kimliği" in matched_trace.hovertext[0])
+    assert "MgB2" in matched_trace.hovertext[0]
+    assert any("MgB2 (#1)" in str(annotation.text) for annotation in fig.layout.annotations)
+    assert any(text for text in peak_label_trace.text)
+
+
+def test_xrd_match_marker_style_presets_keep_color_shape_controls():
+    color_only = xrd_page._xrd_match_marker_style("matched_reference", {"style_preset": "color_only"})
+    shape_only = xrd_page._xrd_match_marker_style("matched_reference", {"style_preset": "shape_only"})
+
+    assert color_only["symbol"] == "circle"
+    assert shape_only["color"] == "#CBD5E1"
+
+
 def test_apply_xrd_input_review_clears_axis_block_and_sets_wavelength():
     dataset = _xrd_dataset()
     dataset.metadata["xrd_axis_column"] = "temperature"
@@ -370,6 +472,23 @@ def test_save_xrd_graph_snapshot_to_session_sets_primary_and_prunes(monkeypatch)
     assert len(updated_record["artifacts"]["figure_snapshots"]) == 10
     assert "XRD Snapshot - synthetic_xrd - old_0" not in xrd_page.st.session_state["figures"]
     assert xrd_page.st.session_state["figures"][snapshot_key] == b"png-bytes"
+    assert updated_record["artifacts"]["figure_snapshots"][-1]["selected_candidate_display_name"] == "Phase Alpha"
+
+
+def test_xrd_snapshot_figure_key_uses_humanized_candidate_name():
+    key = xrd_page._xrd_snapshot_figure_key(
+        "synthetic_xrd",
+        {
+            "rank": 1,
+            "candidate_id": "cod_1000026",
+            "candidate_name": "COD 1000026",
+            "formula": "MgB2",
+            "library_provider": "COD",
+            "source_id": "1000026",
+        },
+    )
+
+    assert "MgB2" in key
 
 
 def test_apply_xrd_input_review_clears_stale_import_warnings():

@@ -20,6 +20,10 @@ from core.processing_schema import (
     update_processing_step,
 )
 from core.validation import validate_thermal_dataset
+from core.xrd_display import (
+    xrd_candidate_display_name as resolve_xrd_candidate_display_name,
+    xrd_candidate_display_payload as resolve_xrd_candidate_display_payload,
+)
 from ui.components.chrome import render_page_header
 from ui.components.history_tracker import _log_event
 from ui.components.preset_manager import render_processing_preset_panel, seed_pending_workflow_template
@@ -71,8 +75,8 @@ _XRD_PLOT_DEFAULTS = {
     "show_matched_peaks": True,
     "show_unmatched_observed": True,
     "show_unmatched_reference": True,
-    "show_match_connectors": True,
-    "show_match_labels": True,
+    "show_match_connectors": False,
+    "show_match_labels": False,
     "style_preset": "color_shape",
     "only_selected_candidate": True,
     "x_range_enabled": False,
@@ -263,6 +267,93 @@ def _short_candidate_label(candidate_name: str | None, *, max_len: int = 20) -> 
     return f"{text[: max_len - 1]}…"
 
 
+def _xrd_candidate_display_payload(
+    match_or_row: Mapping[str, Any] | None,
+    reference_entry: Mapping[str, Any] | None = None,
+) -> dict[str, str | None]:
+    return resolve_xrd_candidate_display_payload(match_or_row, reference_entry)
+
+
+def _xrd_candidate_display_name(
+    match_or_row: Mapping[str, Any] | None,
+    reference_entry: Mapping[str, Any] | None = None,
+) -> str | None:
+    return resolve_xrd_candidate_display_name(match_or_row, reference_entry)
+
+
+def _xrd_selected_candidate_label(selected_match: Mapping[str, Any] | None) -> str:
+    display_name = _xrd_candidate_display_name(selected_match) or "N/A"
+    rank = int((selected_match or {}).get("rank") or 0)
+    return f"{display_name} (#{rank})" if rank > 0 else display_name
+
+
+def _xrd_match_peak_label(pair: Mapping[str, Any], *, lang: str) -> str:
+    try:
+        delta_value = float(pair.get("delta_position"))
+    except (TypeError, ValueError):
+        return ""
+    comparison_space = str(pair.get("comparison_space") or "two_theta").strip().lower()
+    if comparison_space == "d_spacing":
+        return f"Δd={delta_value:.3f} Å"
+    return f"{tx('Δ2θ', 'Δ2θ')}: {delta_value:.2f}°"
+
+
+def _xrd_candidate_hover_lines(selected_match: Mapping[str, Any] | None) -> list[str]:
+    payload = _xrd_candidate_display_payload(selected_match)
+    evidence = dict(((selected_match or {}).get("evidence") or {}))
+    provider = str(
+        (selected_match or {}).get("library_provider")
+        or evidence.get("library_provider")
+        or payload.get("library_provider")
+        or ""
+    ).strip()
+    package = str(
+        (selected_match or {}).get("library_package")
+        or evidence.get("library_package")
+        or payload.get("library_package")
+        or ""
+    ).strip()
+    candidate_id = str((selected_match or {}).get("candidate_id") or payload.get("candidate_id") or "").strip()
+    source_id = str(payload.get("source_id") or "").strip()
+    formula = str(payload.get("formula_pretty") or payload.get("formula") or "").strip()
+    raw_label = str((selected_match or {}).get("candidate_name") or "").strip()
+    display_name = str(payload.get("display_name") or raw_label or candidate_id or source_id or "N/A").strip()
+
+    lines = [f"<b>{tx('Aday', 'Candidate')}</b>: {display_name}"]
+    if formula and formula != display_name:
+        lines.append(f"<b>{tx('Formül', 'Formula')}</b>: {formula}")
+    if provider:
+        lines.append(f"<b>{tx('Provider', 'Provider')}</b>: {provider}")
+    if package:
+        lines.append(f"<b>{tx('Paket', 'Package')}</b>: {package}")
+    if candidate_id:
+        lines.append(f"<b>{tx('Aday Kimliği', 'Candidate ID')}</b>: {candidate_id}")
+    if source_id:
+        lines.append(f"<b>{tx('Kaynak Kimliği', 'Source ID')}</b>: {source_id}")
+    if raw_label and raw_label not in {display_name, candidate_id, source_id}:
+        lines.append(f"<b>{tx('Ham Etiket', 'Raw Label')}</b>: {raw_label}")
+    return lines
+
+
+def _xrd_selected_candidate_caption(selected_match: Mapping[str, Any] | None, *, lang: str) -> str:
+    if not selected_match:
+        return ""
+    payload = _xrd_candidate_display_payload(selected_match)
+    provider = str((selected_match or {}).get("library_provider") or payload.get("library_provider") or "").strip() or "N/A"
+    package = str((selected_match or {}).get("library_package") or payload.get("library_package") or "").strip() or "N/A"
+    candidate_id = str((selected_match or {}).get("candidate_id") or payload.get("candidate_id") or "").strip() or "N/A"
+    source_id = str(payload.get("source_id") or "").strip() or "N/A"
+    return tx(
+        "Seçili aday: {label} | Provider/Paket: {provider} / {package} | Aday ID: {candidate_id} | Kaynak ID: {source_id}",
+        "Selected candidate: {label} | Provider/Package: {provider} / {package} | Candidate ID: {candidate_id} | Source ID: {source_id}",
+        label=_xrd_selected_candidate_label(selected_match),
+        provider=provider,
+        package=package,
+        candidate_id=candidate_id,
+        source_id=source_id,
+    )
+
+
 def _reference_marker_y(value: Any, observed_max_intensity: float) -> float:
     try:
         parsed = float(value)
@@ -352,6 +443,9 @@ def _build_processed_plot(
     smoothed = _to_array((state or {}).get("smoothed"))
     corrected = _to_array((state or {}).get("corrected"))
     peaks = (state or {}).get("peaks") or []
+    peak_x: list[float] = []
+    peak_y: list[float] = []
+    peak_text: list[str] = []
 
     if smoothed is not None and smoothed.shape[0] == axis.shape[0]:
         fig.add_trace(
@@ -381,17 +475,13 @@ def _build_processed_plot(
             _xrd_peak_label(peak_x[idx], peak_y[idx], settings=settings, lang=lang) if idx in label_indices else ""
             for idx in range(len(peaks))
         ]
-        peak_mode = "markers+text" if any(peak_text) else "markers"
         fig.add_trace(
             go.Scatter(
                 x=peak_x,
                 y=peak_y,
-                mode=peak_mode,
+                mode="markers",
                 name=tx("Pikler", "Peaks"),
                 marker=dict(color="#DC2626", size=int(settings.get("marker_size", 8)), symbol="diamond"),
-                text=peak_text if any(peak_text) else None,
-                textposition="top center",
-                textfont=dict(size=10, color="#F8FAFC"),
                 hovertemplate="<b>2θ</b>: %{x:.4f}<br><b>Intensity</b>: %{y:.3f}<extra></extra>",
             )
         )
@@ -401,8 +491,24 @@ def _build_processed_plot(
         matched_pairs = [item for item in (evidence.get("matched_peak_pairs") or []) if isinstance(item, Mapping)]
         unmatched_observed = [item for item in (evidence.get("unmatched_observed_peaks") or []) if isinstance(item, Mapping)]
         unmatched_reference = [item for item in (evidence.get("unmatched_reference_peaks") or []) if isinstance(item, Mapping)]
-        candidate_label = f"{_short_candidate_label(selected_match.get('candidate_name'))} (#{int(selected_match.get('rank') or 1)})"
+        candidate_label = _xrd_selected_candidate_label(selected_match)
         observed_max = max([float(item.get("intensity", 0.0)) for item in peaks] + [1.0])
+        hover_suffix = "".join(f"<br>{line}" for line in _xrd_candidate_hover_lines(selected_match))
+
+        fig.add_annotation(
+            x=0.995,
+            y=0.99,
+            xref="paper",
+            yref="paper",
+            xanchor="right",
+            yanchor="top",
+            text=f"{tx('Aday', 'Candidate')}: {_short_candidate_label(candidate_label, max_len=42)}",
+            showarrow=False,
+            bgcolor="rgba(15, 23, 42, 0.72)",
+            bordercolor="rgba(148, 163, 184, 0.4)",
+            borderwidth=1,
+            font=dict(size=11, color="#E2E8F0"),
+        )
 
         if settings.get("show_match_connectors", True):
             for pair in matched_pairs:
@@ -427,7 +533,29 @@ def _build_processed_plot(
             matched_ref_style = _xrd_match_marker_style("matched_reference", settings)
             matched_x = [float(item.get("observed_position", 0.0)) for item in matched_pairs]
             matched_y = [float(item.get("observed_intensity", 0.0)) for item in matched_pairs]
-            matched_text = [candidate_label] * len(matched_pairs) if settings.get("show_match_labels", True) else None
+            matched_text = (
+                [_xrd_match_peak_label(item, lang=lang) for item in matched_pairs]
+                if settings.get("show_match_labels", True)
+                else None
+            )
+            matched_hover = [
+                (
+                    f"<b>Observed 2θ</b>: {float(item.get('observed_position', 0.0)):.4f}"
+                    f"<br><b>Observed Intensity</b>: {float(item.get('observed_intensity', 0.0)):.3f}"
+                    f"<br><b>{tx('Δ2θ', 'Δ2θ')}</b>: {float(item.get('delta_position') or 0.0):.4f}"
+                    f"{hover_suffix}"
+                )
+                for item in matched_pairs
+            ]
+            matched_ref_hover = [
+                (
+                    f"<b>Reference 2θ</b>: {float(item.get('reference_position', 0.0)):.4f}"
+                    f"<br><b>Scaled Ref Intensity</b>: {float(_reference_marker_y(item.get('reference_intensity'), observed_max)):.3f}"
+                    f"<br><b>{tx('Δ2θ', 'Δ2θ')}</b>: {float(item.get('delta_position') or 0.0):.4f}"
+                    f"{hover_suffix}"
+                )
+                for item in matched_pairs
+            ]
             fig.add_trace(
                 go.Scatter(
                     x=matched_x,
@@ -443,11 +571,8 @@ def _build_processed_plot(
                     text=matched_text,
                     textposition="top center",
                     textfont=dict(size=10, color="#86EFAC"),
-                    hovertemplate=(
-                        "<b>Observed 2θ</b>: %{x:.4f}<br>"
-                        "<b>Observed Intensity</b>: %{y:.3f}<br>"
-                        "<extra></extra>"
-                    ),
+                    hovertext=matched_hover,
+                    hoverinfo="text",
                 )
             )
             fig.add_trace(
@@ -461,16 +586,21 @@ def _build_processed_plot(
                         size=int(settings.get("marker_size", 8)),
                         symbol=matched_ref_style["symbol"],
                     ),
-                    hovertemplate=(
-                        "<b>Reference 2θ</b>: %{x:.4f}<br>"
-                        "<b>Scaled Ref Intensity</b>: %{y:.3f}<br>"
-                        "<extra></extra>"
-                    ),
+                    hovertext=matched_ref_hover,
+                    hoverinfo="text",
                 )
             )
 
         if settings.get("show_unmatched_observed", True) and unmatched_observed:
             unmatched_obs_style = _xrd_match_marker_style("unmatched_observed", settings)
+            unmatched_obs_hover = [
+                (
+                    f"<b>Observed 2θ</b>: {float(item.get('position', 0.0)):.4f}"
+                    f"<br><b>Intensity</b>: {float(item.get('intensity', 0.0)):.3f}"
+                    f"{hover_suffix}"
+                )
+                for item in unmatched_observed
+            ]
             fig.add_trace(
                 go.Scatter(
                     x=[float(item.get("position", 0.0)) for item in unmatched_observed],
@@ -482,7 +612,8 @@ def _build_processed_plot(
                         size=int(settings.get("marker_size", 8)),
                         symbol=unmatched_obs_style["symbol"],
                     ),
-                    hovertemplate="<b>Observed 2θ</b>: %{x:.4f}<br><b>Intensity</b>: %{y:.3f}<extra></extra>",
+                    hovertext=unmatched_obs_hover,
+                    hoverinfo="text",
                 )
             )
 
@@ -494,6 +625,7 @@ def _build_processed_plot(
                     f"<b>Reference 2θ</b>: {float(item.get('position', 0.0)):.4f}"
                     f"<br><b>Scaled Ref Intensity</b>: {float(y_val):.3f}"
                     f"<br><b>Major Peak</b>: {'yes' if bool(item.get('is_major')) else 'no'}"
+                    f"{hover_suffix}"
                 )
                 for item, y_val in zip(unmatched_reference, ref_y)
             ]
@@ -512,6 +644,20 @@ def _build_processed_plot(
                     hoverinfo="text",
                 )
             )
+
+    if any(peak_text):
+        fig.add_trace(
+            go.Scatter(
+                x=peak_x,
+                y=peak_y,
+                mode="text",
+                text=peak_text,
+                textposition="top center",
+                textfont=dict(size=10, color="#F8FAFC"),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
 
     for trace in fig.data:
         if "lines" not in str(getattr(trace, "mode", "")):
@@ -776,8 +922,16 @@ def _resolve_xrd_matches(current_state, record):
                 "rank": row.get("rank") or index,
                 "candidate_id": row.get("candidate_id"),
                 "candidate_name": row.get("candidate_name"),
+                "display_name": row.get("display_name"),
+                "phase_name": row.get("phase_name"),
+                "formula_pretty": row.get("formula_pretty"),
+                "formula": row.get("formula"),
+                "source_id": row.get("source_id"),
                 "normalized_score": row.get("normalized_score"),
                 "confidence_band": row.get("confidence_band"),
+                "library_provider": row.get("library_provider"),
+                "library_package": row.get("library_package"),
+                "library_version": row.get("library_version"),
                 "evidence": row.get("evidence") or {},
             }
         )
@@ -786,12 +940,12 @@ def _resolve_xrd_matches(current_state, record):
 
 def _xrd_best_candidate_name(summary: dict | None, matches: list[dict] | None) -> str | None:
     summary = summary or {}
-    candidate_name = summary.get("top_candidate_name") or summary.get("top_candidate_id")
+    candidate_name = _xrd_candidate_display_name(summary)
     if candidate_name not in (None, ""):
         return str(candidate_name)
     top = matches[0] if matches else None
     if isinstance(top, dict):
-        return str(top.get("candidate_name") or top.get("candidate_id") or "") or None
+        return str(_xrd_candidate_display_name(top) or top.get("candidate_name") or top.get("candidate_id") or "") or None
     return None
 
 
@@ -1105,7 +1259,7 @@ def _render_xrd_plot_settings_panel(dataset_key: str, state: dict, settings: Map
                 key=_xrd_control_key(dataset_key, "plot_show_matched", state),
             )
             show_match_labels = st.checkbox(
-                tx("Eşleşme etiketleri (aday + sıra)", "Match labels (candidate + rank)"),
+                tx("Kısa eşleşme etiketleri", "Short match labels"),
                 value=bool(settings.get("show_match_labels", True)),
                 key=_xrd_control_key(dataset_key, "plot_show_match_labels", state),
             )
@@ -1199,7 +1353,7 @@ def _slug_token(value: Any, fallback: str = "snapshot") -> str:
 def _xrd_snapshot_figure_key(dataset_key: str, selected_match: Mapping[str, Any] | None) -> str:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     rank = int((selected_match or {}).get("rank") or 0)
-    candidate = _slug_token((selected_match or {}).get("candidate_name") or (selected_match or {}).get("candidate_id") or "candidate")
+    candidate = _slug_token(_xrd_candidate_display_name(selected_match) or (selected_match or {}).get("candidate_id") or "candidate")
     return f"XRD Snapshot - {dataset_key} - {timestamp} - r{rank}_{candidate}"
 
 
@@ -1320,6 +1474,7 @@ def _save_xrd_graph_snapshot_to_session(
         "source_tab": "phase_candidates",
         "selected_candidate_id": (selected_match or {}).get("candidate_id"),
         "selected_candidate_name": (selected_match or {}).get("candidate_name"),
+        "selected_candidate_display_name": _xrd_candidate_display_name(selected_match),
         "selected_candidate_rank": (selected_match or {}).get("rank"),
         "plot_settings": dict(plot_settings or {}),
         "layer_flags": {
@@ -1867,7 +2022,7 @@ def render():
                     display_score = float(item.get("normalized_score", 0.0))
                 except (TypeError, ValueError):
                     display_score = 0.0
-                candidate_name = str(item.get("candidate_name") or item.get("candidate_id") or "N/A")
+                candidate_name = str(_xrd_candidate_display_name(item) or item.get("candidate_name") or item.get("candidate_id") or "N/A")
                 option = f"#{int(item.get('rank') or 0)} {candidate_name} | {display_score:.3f}"
                 candidate_options.append(option)
                 option_to_match[option] = item
@@ -1893,6 +2048,7 @@ def render():
                 key=f"xrd_match_plot_{selected_key}",
             )
             selected_evidence = dict((selected_match.get("evidence") or {}))
+            st.caption(_xrd_selected_candidate_caption(selected_match, lang=lang))
             st.caption(
                 tx(
                     "Seçili aday grafikte renk/şekil ile gösterildi. Eşleşen pikler, eşleşmeyen gözlenen/referans pikler ve bağlantı çizgileri Grafik Ayarları'ndan yönetilir.",
@@ -2014,7 +2170,10 @@ def render():
                 rows.append(
                     {
                         tx("Sıra", "Rank"): item.get("rank"),
-                        tx("Aday", "Candidate"): item.get("candidate_name"),
+                        tx("Aday", "Candidate"): _xrd_candidate_display_name(item),
+                        tx("Ham Etiket", "Raw Label"): item.get("candidate_name"),
+                        tx("Aday ID", "Candidate ID"): item.get("candidate_id"),
+                        tx("Kaynak ID", "Source ID"): item.get("source_id"),
                         tx("Skor", "Score"): item.get("normalized_score"),
                         tx("Güven", "Confidence"): item.get("confidence_band"),
                         tx("Ortak Pik", "Shared Peaks"): evidence.get("shared_peak_count"),
@@ -2041,8 +2200,10 @@ def render():
                 "candidate_count": len(derived_matches),
                 "match_status": "matched" if derived_matches else "no_match",
                 "top_phase": derived_top.get("candidate_name") if derived_top else None,
+                "top_phase_display_name": _xrd_candidate_display_name(derived_top) if derived_top else None,
                 "top_phase_score": float(derived_top.get("normalized_score", 0.0)) if derived_top else 0.0,
                 "top_candidate_name": derived_top.get("candidate_name") if derived_top else None,
+                "top_candidate_display_name": _xrd_candidate_display_name(derived_top) if derived_top else None,
                 "top_candidate_score": float(derived_top.get("normalized_score", 0.0)) if derived_top else None,
                 "top_candidate_shared_peak_count": ((derived_top or {}).get("evidence") or {}).get("shared_peak_count"),
                 "top_candidate_weighted_overlap_score": ((derived_top or {}).get("evidence") or {}).get("weighted_overlap_score"),

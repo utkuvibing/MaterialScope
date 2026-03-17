@@ -96,6 +96,11 @@ class LibrarySearchRow(BaseModel):
     rank: int
     candidate_id: str
     candidate_name: str
+    display_name: str | None = None
+    phase_name: str | None = None
+    formula_pretty: str | None = None
+    formula: str | None = None
+    source_id: str | None = None
     normalized_score: float
     confidence_band: str
     library_provider: str = ""
