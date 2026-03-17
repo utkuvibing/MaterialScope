@@ -523,9 +523,16 @@ def test_serialize_xrd_result_builds_reference_dossiers_with_truncated_peaks_and
                 "provider_dataset_version": "2026.03",
                 "hosted_dataset_version": "2026.03.fixture",
                 "source_url": "https://example.test/cod/1000026",
+                "provider_url": "https://provider.example.test/cod/1000026",
+                "space_group": "P6/mmm",
+                "symmetry": "hexagonal",
                 "attribution": "COD reference dataset",
             },
             "reference_peaks": peaks,
+            "source_assets": [
+                {"kind": "source_url", "label": "Source Reference", "url": "https://example.test/cod/1000026", "available": True},
+                {"kind": "source_url", "label": "Provider Reference", "url": "https://provider.example.test/cod/1000026", "available": True},
+            ],
             "evidence": {
                 "shared_peak_count": 6,
                 "weighted_overlap_score": 0.91,
@@ -580,9 +587,12 @@ def test_serialize_xrd_result_builds_reference_dossiers_with_truncated_peaks_and
     assert first_dossier["provenance"]["raw_label"] == "COD 1000026"
     assert first_dossier["provenance"]["candidate_id"] == "cod_1000026"
     assert first_dossier["reference_metadata"]["source_url"] == "https://example.test/cod/1000026"
+    assert first_dossier["reference_metadata"]["provider_url"] == "https://provider.example.test/cod/1000026"
     assert first_dossier["reference_peaks"]["displayed_peak_count"] == 20
     assert first_dossier["reference_peaks"]["total_peak_count"] == 25
     assert first_dossier["reference_peaks"]["truncated_count"] == 5
+    assert first_dossier["structure_payload"]["provider_url"] == "https://provider.example.test/cod/1000026"
+    assert first_dossier["source_assets"][1]["label"] == "Provider Reference"
 
 
 def test_serialize_xrd_result_gates_stronger_scientific_claims_on_strong_evidence():

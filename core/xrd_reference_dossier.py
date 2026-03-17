@@ -13,7 +13,10 @@ from core.xrd_display import (
 XRD_REFERENCE_DOSSIER_LIMIT = 3
 XRD_REFERENCE_PEAK_DISPLAY_LIMIT = 20
 XRD_REFERENCE_PEAK_SELECTION_POLICY = "matched_and_major_then_fill_to_top_20_by_intensity"
-XRD_NO_VISUAL_ASSET_NOTE = "No provider structure image or visual asset was available in the current reference payload."
+XRD_NO_VISUAL_ASSET_NOTE = (
+    "No provider structure image or visual asset was available in the current reference payload. "
+    "Structure metadata and traceable source links are provided for follow-up review."
+)
 
 
 def _text(value: Any) -> str | None:
@@ -228,6 +231,9 @@ def build_xrd_reference_bundle(
         "formula": structure_formula,
         "formula_unicode": _text(base_structure.get("formula_unicode")) or format_scientific_formula_text(structure_formula, target="unicode"),
         "source_url": structure_source_url,
+        "provider_url": _text(base_structure.get("provider_url") or reference_metadata.get("provider_url")),
+        "source_asset_count": len(source_assets),
+        "rendered_asset_count": sum(1 for asset in source_assets if asset.get("artifact_key") and asset.get("available")),
         "notes": _text(base_structure.get("notes")),
     }
 
@@ -407,6 +413,9 @@ def build_xrd_reference_dossiers(
                     "formula": _text(_mapping(bundle.get("structure_payload")).get("formula")),
                     "formula_unicode": _text(_mapping(bundle.get("structure_payload")).get("formula_unicode")),
                     "source_url": _text(_mapping(bundle.get("structure_payload")).get("source_url")),
+                    "provider_url": _text(_mapping(bundle.get("structure_payload")).get("provider_url")),
+                    "source_asset_count": _int(_mapping(bundle.get("structure_payload")).get("source_asset_count")),
+                    "rendered_asset_count": _int(_mapping(bundle.get("structure_payload")).get("rendered_asset_count")),
                     "notes": _text(_mapping(bundle.get("structure_payload")).get("notes")),
                 },
                 "source_assets": _list_of_mappings(bundle.get("source_assets")),

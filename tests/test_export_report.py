@@ -365,12 +365,19 @@ def _make_xrd_formula_result():
                 "library_version": "2026.03-core",
                 "reference_metadata": {
                     "source_url": "https://example.test/cod/1000026",
+                    "provider_url": "https://provider.example.test/cod/1000026",
                     "provider_dataset_version": "2026.03",
+                    "space_group": "P6/mmm",
+                    "symmetry": "hexagonal",
                     "attribution": "COD reference dataset",
                 },
                 "reference_peaks": [
-                    {"peak_number": 1, "position": 27.5, "d_spacing": 3.24, "intensity": 100.0},
-                    {"peak_number": 2, "position": 36.1, "d_spacing": 2.48, "intensity": 65.0},
+                    {"peak_number": idx + 1, "position": 27.5 + (idx * 0.37), "d_spacing": 3.24 - (idx * 0.04), "intensity": 100.0 - idx}
+                    for idx in range(25)
+                ],
+                "source_assets": [
+                    {"kind": "source_url", "label": "Source Reference", "url": "https://example.test/cod/1000026", "available": True},
+                    {"kind": "source_url", "label": "Provider Reference", "url": "https://provider.example.test/cod/1000026", "available": True},
                 ],
                 "evidence": {
                     "shared_peak_count": 3,
@@ -1117,6 +1124,10 @@ def test_generate_docx_report_exports_xrd_reference_dossier_sections():
     assert "Rank #1" in xml
     assert "Reference Peaks" in xml
     assert "https://example.test/cod/1000026" in xml
+    assert "https://provider.example.test/cod/1000026" in xml
+    assert "Linked Source and Provider Assets" in xml
+    assert "Showing 20 of 25 reference peaks" in xml
+    assert "Remaining peaks omitted from visible table by display policy" in xml
     assert "MgB₂" in xml
     assert record["artifacts"]["report_figure_key"].endswith("r1_MgB2")
     assert "MgB₂" not in record["artifacts"]["report_figure_key"]
@@ -1138,6 +1149,10 @@ def test_generate_pdf_report_exports_xrd_reference_dossier_sections():
     assert "Rank #1" in extracted
     assert "Reference Peaks" in extracted
     assert "example.test" in extracted
+    assert "provider.example.test" in extracted
+    assert "Linked Source and Provider Assets" in extracted
+    assert "Showing 20 of 25 reference peaks" in extracted
+    assert "Remaining peaks omitted from visible table by display policy" in extracted
     assert "1000026" in extracted
     assert "MgB₂" in extracted
 

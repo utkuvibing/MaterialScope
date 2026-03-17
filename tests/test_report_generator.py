@@ -423,13 +423,20 @@ def _make_xrd_no_match_record():
                 "library_version": "2026.03-core",
                 "reference_metadata": {
                     "source_url": "https://example.test/xrd/alpha-001",
+                    "provider_url": "https://provider.example.test/cod/alpha-001",
                     "provider_dataset_version": "2026.03",
                     "hosted_dataset_version": "2026.03.fixture",
+                    "space_group": "P6/mmm",
+                    "symmetry": "hexagonal",
                     "attribution": "Hosted XRD seed dataset",
                 },
                 "reference_peaks": [
-                    {"peak_number": idx + 1, "position": 18.0 + idx, "d_spacing": 4.8 - (idx * 0.1), "intensity": 100 - idx}
-                    for idx in range(6)
+                    {"peak_number": idx + 1, "position": 18.0 + (idx * 0.42), "d_spacing": 4.8 - (idx * 0.05), "intensity": 100 - idx}
+                    for idx in range(25)
+                ],
+                "source_assets": [
+                    {"kind": "source_url", "label": "Source Reference", "url": "https://example.test/xrd/alpha-001", "available": True},
+                    {"kind": "source_url", "label": "Provider Reference", "url": "https://provider.example.test/cod/alpha-001", "available": True},
                 ],
                 "evidence": {
                     "shared_peak_count": 0,
@@ -814,12 +821,19 @@ def test_generate_docx_report_uses_scientific_xrd_candidate_names():
                 "library_version": "2026.03-core",
                 "reference_metadata": {
                     "source_url": "https://example.test/cod/1000026",
+                    "provider_url": "https://provider.example.test/cod/1000026",
                     "provider_dataset_version": "2026.03",
+                    "space_group": "P6/mmm",
+                    "symmetry": "hexagonal",
                     "attribution": "COD reference dataset",
                 },
                 "reference_peaks": [
-                    {"peak_number": 1, "position": 27.5, "d_spacing": 3.24, "intensity": 100.0},
-                    {"peak_number": 2, "position": 36.1, "d_spacing": 2.48, "intensity": 65.0},
+                    {"peak_number": idx + 1, "position": 27.5 + (idx * 0.37), "d_spacing": 3.24 - (idx * 0.04), "intensity": 100.0 - idx}
+                    for idx in range(25)
+                ],
+                "source_assets": [
+                    {"kind": "source_url", "label": "Source Reference", "url": "https://example.test/cod/1000026", "available": True},
+                    {"kind": "source_url", "label": "Provider Reference", "url": "https://provider.example.test/cod/1000026", "available": True},
                 ],
                 "evidence": {
                     "shared_peak_count": 3,
@@ -846,6 +860,10 @@ def test_generate_docx_report_uses_scientific_xrd_candidate_names():
     assert "Candidate Reference Dossier" in xml
     assert "Rank #1" in xml
     assert "https://example.test/cod/1000026" in xml
+    assert "https://provider.example.test/cod/1000026" in xml
+    assert "Linked Source and Provider Assets" in xml
+    assert "Showing 20 of 25 reference peaks" in xml
+    assert "Remaining peaks omitted from visible table by display policy" in xml
 
 
 def test_generate_docx_report_adds_xrd_reference_dossier_sections_with_caution_safe_wording():
@@ -872,8 +890,14 @@ def test_generate_docx_report_adds_xrd_reference_dossier_sections_with_caution_s
     assert "Provenance / Attribution" in appendix_xml
     assert "alpha-001" in appendix_xml
     assert "https://example.test/xrd/alpha-001" in appendix_xml
+    assert "https://provider.example.test/cod/alpha-001" in appendix_xml
+    assert "Linked Source and Provider Assets" in appendix_xml
+    assert "Showing 20 of 25 reference peaks" in appendix_xml
+    assert "Remaining peaks omitted from visible table by display policy" in appendix_xml
+    assert "P6/mmm" in appendix_xml
+    assert "hexagonal" in appendix_xml
     assert "screening only" in appendix_xml.lower()
-    assert "No provider structure image or visual asset was available in the current reference payload." in appendix_xml
+    assert "Structure metadata and traceable source links are provided for follow-up review." in appendix_xml
 
 
 def test_generate_docx_report_renders_xrd_domain_specific_scientific_reasoning_sections():

@@ -2049,6 +2049,9 @@ def _xrd_reference_dossier_metadata_payload(dossier: Mapping[str, Any]) -> dict[
     metadata = dict(dossier.get("reference_metadata") or {})
     return _table_payload(
         {
+            "provider": metadata.get("provider"),
+            "package_id": metadata.get("package_id"),
+            "package_version": metadata.get("package_version"),
             "provider_dataset_version": metadata.get("provider_dataset_version"),
             "hosted_dataset_version": metadata.get("hosted_dataset_version"),
             "hosted_published_at": metadata.get("hosted_published_at"),
@@ -2068,7 +2071,26 @@ def _xrd_reference_dossier_metadata_payload(dossier: Mapping[str, Any]) -> dict[
     )
 
 
-def _xrd_reference_peak_matrix(dossier: Mapping[str, Any]) -> tuple[list[str], list[list[str]], str | None]:
+def _xrd_reference_peak_display_payload(dossier: Mapping[str, Any]) -> dict[str, str]:
+    reference_peaks = dict(dossier.get("reference_peaks") or {})
+    displayed = int(reference_peaks.get("displayed_peak_count") or 0)
+    total = int(reference_peaks.get("total_peak_count") or 0)
+    truncated = int(reference_peaks.get("truncated_count") or 0)
+    selection_policy = str(reference_peaks.get("selection_policy") or "").strip()
+    readable_policy = ""
+    if selection_policy == "matched_and_major_then_fill_to_top_20_by_intensity":
+        readable_policy = "Matched and major peaks were prioritized, then remaining slots were filled by descending intensity."
+    return _table_payload(
+        {
+            "displayed_reference_peaks": displayed,
+            "total_reference_peaks": total,
+            "truncated_reference_peaks": truncated,
+            "selection_policy": readable_policy or selection_policy,
+        }
+    )
+
+
+def _xrd_reference_peak_matrix(dossier: Mapping[str, Any]) -> tuple[list[str], list[list[str]], list[str]]:
     reference_peaks = dict(dossier.get("reference_peaks") or {})
     headers = ["Peak #", "2θ", "d-spacing", "Relative Intensity", "Matched", "Major"]
     rows = [
@@ -2085,38 +2107,85 @@ def _xrd_reference_peak_matrix(dossier: Mapping[str, Any]) -> tuple[list[str], l
     ]
     displayed = int(reference_peaks.get("displayed_peak_count") or len(rows) or 0)
     total = int(reference_peaks.get("total_peak_count") or len(rows) or 0)
-    note = None
+    notes: list[str] = []
     if total > displayed > 0:
-        note = f"Showing {displayed} of {total} reference peaks."
+        notes.append(f"Showing {displayed} of {total} reference peaks.")
+        notes.append("Remaining peaks omitted from visible table by display policy.")
     elif total and not rows:
-        note = f"{total} reference peaks were available, but none were selected for display."
-    return headers, rows, note
+        notes.append(f"{total} reference peaks were available, but none were selected for display.")
+    policy = _xrd_reference_peak_display_payload(dossier).get("Selection Policy")
+    if policy:
+        notes.append(policy)
+    return headers, rows, notes
 
 
 def _xrd_structure_visual_payload(dossier: Mapping[str, Any]) -> dict[str, str]:
     structure = dict(dossier.get("structure_payload") or {})
+    metadata = dict(dossier.get("reference_metadata") or {})
     source_assets = [dict(item) for item in (dossier.get("source_assets") or []) if isinstance(item, Mapping)]
+    availability = normalize_report_text(structure.get("availability") or "none").replace("_", " ")
     payload = _table_payload(
         {
-            "availability": structure.get("availability"),
-            "space_group": structure.get("space_group"),
-            "symmetry": structure.get("symmetry"),
-            "formula": structure.get("formula_unicode") or structure.get("formula"),
-            "source_url": structure.get("source_url"),
-            "notes": structure.get("notes"),
+            "availability_state": availability,
+            "formula": structure.get("formula_unicode") or metadata.get("formula_unicode") or structure.get("formula") or metadata.get("formula_pretty") or metadata.get("formula"),
+            "formula_raw": structure.get("formula") or metadata.get("formula"),
+            "space_group": structure.get("space_group") or metadata.get("space_group"),
+            "symmetry": structure.get("symmetry") or metadata.get("symmetry"),
+            "source_url": structure.get("source_url") or metadata.get("source_url"),
+            "provider_url": structure.get("provider_url") or metadata.get("provider_url"),
+            "linked_source_count": structure.get("source_asset_count") or len(source_assets),
+            "embeddable_visual_asset_count": structure.get("rendered_asset_count"),
+            "notes": structure.get("notes") or metadata.get("attribution"),
         }
     )
-    for index, asset in enumerate(source_assets, start=1):
-        label = normalize_report_text(asset.get("label") or f"Asset {index}")
-        url = asset.get("url")
-        artifact_key = asset.get("artifact_key")
-        if url:
-            payload[f"Source Asset {index}"] = normalize_report_text(f"{label}: {url}")
-        elif artifact_key:
-            payload[f"Source Asset {index}"] = normalize_report_text(f"{label}: {artifact_key}")
-        else:
-            payload[f"Source Asset {index}"] = label
+    if not source_assets:
+        payload["Fallback Note"] = normalize_report_text(XRD_NO_VISUAL_ASSET_NOTE)
     return payload
+
+
+def _xrd_asset_label(dossier: Mapping[str, Any], asset: Mapping[str, Any], *, index: int) -> str:
+    label = normalize_report_text(asset.get("label") or f"Asset {index}")
+    provider = normalize_report_text(
+        (dossier.get("candidate_overview") or {}).get("provider")
+        or (dossier.get("reference_metadata") or {}).get("provider")
+        or ""
+    )
+    if provider and label in {"Source Reference", "Provider Reference", "Reference Image", "Crystal Structure Asset"}:
+        return normalize_report_text(f"{provider} {label}")
+    return label
+
+
+def _xrd_source_asset_matrix(dossier: Mapping[str, Any]) -> tuple[list[str], list[list[str]]]:
+    rows: list[list[str]] = []
+    for index, asset in enumerate((dossier.get("source_assets") or []), start=1):
+        if not isinstance(asset, Mapping):
+            continue
+        location = normalize_report_text(
+            asset.get("url")
+            or asset.get("artifact_key")
+            or "Not recorded"
+        )
+        rows.append(
+            [
+                _xrd_asset_label(dossier, asset, index=index),
+                _format_value(asset.get("kind")).replace("_", " "),
+                _format_value(asset.get("available")),
+                location,
+            ]
+        )
+    return ["Label", "Type", "Available", "Link / Asset"], rows
+
+
+def _xrd_source_asset_lines(dossier: Mapping[str, Any]) -> list[str]:
+    lines: list[str] = []
+    for index, asset in enumerate((dossier.get("source_assets") or []), start=1):
+        if not isinstance(asset, Mapping):
+            continue
+        location = str(asset.get("url") or asset.get("artifact_key") or "").strip()
+        if not location:
+            continue
+        lines.append(f"{_xrd_asset_label(dossier, asset, index=index)}: {location}")
+    return lines
 
 
 def _xrd_provenance_payload(dossier: Mapping[str, Any]) -> dict[str, str]:
@@ -2184,15 +2253,27 @@ def _render_xrd_reference_dossier_docx(doc: Document, dossier: Mapping[str, Any]
     _add_key_value_table(doc, _xrd_reference_dossier_metadata_payload(dossier))
     doc.add_paragraph()
 
-    headers, rows, note = _xrd_reference_peak_matrix(dossier)
+    doc.add_paragraph("Reference Peaks", style="Heading 4")
+    _add_key_value_table(doc, _xrd_reference_peak_display_payload(dossier))
+    doc.add_paragraph()
+    headers, rows, notes = _xrd_reference_peak_matrix(dossier)
     if rows:
-        _render_docx_matrix_table(doc, headers, rows, heading="Reference Peaks", heading_level=4)
-        if note:
-            doc.add_paragraph(normalize_report_text(note))
-            doc.add_paragraph()
+        _render_docx_matrix_table(doc, headers, rows)
+    for note in notes:
+        doc.add_paragraph(normalize_report_text(note))
+    if rows or notes:
+        doc.add_paragraph()
 
     doc.add_paragraph("Structure / Visual Evidence", style="Heading 4")
     _add_key_value_table(doc, _xrd_structure_visual_payload(dossier))
+    doc.add_paragraph()
+    asset_headers, asset_rows = _xrd_source_asset_matrix(dossier)
+    if asset_rows:
+        _render_docx_matrix_table(doc, asset_headers, asset_rows, heading="Linked Source and Provider Assets", heading_level=4)
+    for line in _xrd_source_asset_lines(dossier):
+        doc.add_paragraph(normalize_report_text(line))
+    if asset_rows or _xrd_source_asset_lines(dossier):
+        doc.add_paragraph()
     rendered_assets = _xrd_renderable_assets(dossier, figures)
     if rendered_assets:
         for label, png_bytes in rendered_assets:
@@ -2246,20 +2327,34 @@ def _render_xrd_reference_dossier_pdf(
     add_kv_table(_xrd_reference_dossier_metadata_payload(dossier), width=portrait_width, compact=True)
     story.append(spacer_factory(1, 4))
 
-    headers, rows, note = _xrd_reference_peak_matrix(dossier)
+    add_heading("Reference Peaks", level=3)
+    add_kv_table(_xrd_reference_peak_display_payload(dossier), width=portrait_width, compact=True)
+    story.append(spacer_factory(1, 4))
+    headers, rows, notes = _xrd_reference_peak_matrix(dossier)
     if rows:
         matrix_layout = _choose_portrait_or_landscape_table_layout(headers, rows, portrait_width=portrait_width)
         ensure_template("Landscape" if matrix_layout == "landscape" else "Portrait")
-        add_heading("Reference Peaks", level=3)
         add_matrix_table(headers, rows, width=landscape_width if matrix_layout == "landscape" else portrait_width, compact=True)
-        if note:
-            story.append(spacer_factory(1, 2))
-            story.append(paragraph_factory(normalize_report_text(note), small_style))
+    for note in notes:
+        story.append(spacer_factory(1, 2))
+        story.append(paragraph_factory(normalize_report_text(note), small_style))
+    if rows or notes:
         story.append(spacer_factory(1, 4))
 
     ensure_template("Portrait")
     add_heading("Structure / Visual Evidence", level=3)
     add_kv_table(_xrd_structure_visual_payload(dossier), width=portrait_width, compact=True)
+    story.append(spacer_factory(1, 3))
+    asset_headers, asset_rows = _xrd_source_asset_matrix(dossier)
+    asset_lines = _xrd_source_asset_lines(dossier)
+    if asset_rows:
+        add_heading("Linked Source and Provider Assets", level=3)
+        add_matrix_table(asset_headers, asset_rows, width=portrait_width, compact=True)
+        story.append(spacer_factory(1, 4))
+    for line in asset_lines:
+        story.append(paragraph_factory(normalize_report_text(line), body_style))
+    if asset_lines:
+        story.append(spacer_factory(1, 4))
     rendered_assets = _xrd_renderable_assets(dossier, figures)
     if rendered_assets:
         for label, png_bytes in rendered_assets:
