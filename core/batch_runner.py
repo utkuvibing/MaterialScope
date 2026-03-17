@@ -21,6 +21,7 @@ from core.processing_schema import (
 )
 from core.provenance import build_calibration_reference_context, build_result_provenance
 from core.reference_library import get_reference_library_manager
+from core.xrd_reference_dossier import build_xrd_reference_bundle
 from core.result_serialization import (
     make_result_record,
     serialize_dsc_result,
@@ -863,7 +864,19 @@ def _normalize_cloud_ranked_rows(rows: Any) -> list[dict[str, Any]]:
             "phase_name": str(item.get("phase_name") or "") or None,
             "formula_pretty": str(item.get("formula_pretty") or "") or None,
             "formula": str(item.get("formula") or "") or None,
+            "display_name_unicode": str(item.get("display_name_unicode") or "") or None,
+            "formula_unicode": str(item.get("formula_unicode") or "") or None,
             "source_id": str(item.get("source_id") or "") or None,
+            "reference_metadata": dict(item.get("reference_metadata") or {}),
+            "reference_peaks": [
+                dict(peak) for peak in (item.get("reference_peaks") or [])
+                if isinstance(peak, Mapping)
+            ],
+            "structure_payload": dict(item.get("structure_payload") or {}),
+            "source_assets": [
+                dict(asset) for asset in (item.get("source_assets") or [])
+                if isinstance(asset, Mapping)
+            ],
             "evidence": dict(item.get("evidence") or {}),
         }
         normalized.append(payload)
@@ -2089,6 +2102,21 @@ def _rank_xrd_phase_candidates(
         score = float(max(0.0, min(1.0, score)))
         confidence_band = _confidence_band(score, minimum_score)
         display_payload = xrd_candidate_display_payload(reference)
+        reference_bundle = build_xrd_reference_bundle(
+            {
+                "candidate_id": reference.get("candidate_id"),
+                "candidate_name": reference.get("candidate_name"),
+                "library_provider": reference.get("provider"),
+                "library_package": reference.get("package_id"),
+                "library_version": reference.get("package_version"),
+                "display_name": display_payload.get("display_name"),
+                "phase_name": display_payload.get("phase_name"),
+                "formula_pretty": display_payload.get("formula_pretty"),
+                "formula": display_payload.get("formula"),
+                "source_id": display_payload.get("source_id"),
+            },
+            reference,
+        )
         ranked.append(
             {
                 "candidate_id": reference["candidate_id"],
@@ -2102,7 +2130,13 @@ def _rank_xrd_phase_candidates(
                 "phase_name": display_payload.get("phase_name"),
                 "formula_pretty": display_payload.get("formula_pretty"),
                 "formula": display_payload.get("formula"),
+                "display_name_unicode": reference_bundle.get("display_name_unicode"),
+                "formula_unicode": reference_bundle.get("formula_unicode"),
                 "source_id": display_payload.get("source_id"),
+                "reference_metadata": reference_bundle.get("reference_metadata") or {},
+                "reference_peaks": reference_bundle.get("reference_peaks") or [],
+                "structure_payload": reference_bundle.get("structure_payload") or {},
+                "source_assets": reference_bundle.get("source_assets") or [],
                 "evidence": {
                     "metric": metric,
                     "comparison_space": comparison_space,
@@ -2672,11 +2706,22 @@ def _execute_xrd_batch(
             "rank": item["rank"],
             "candidate_id": item["candidate_id"],
             "candidate_name": item["candidate_name"],
+            "display_name": item.get("display_name"),
+            "display_name_unicode": item.get("display_name_unicode"),
+            "phase_name": item.get("phase_name"),
+            "formula_pretty": item.get("formula_pretty"),
+            "formula": item.get("formula"),
+            "formula_unicode": item.get("formula_unicode"),
+            "source_id": item.get("source_id"),
             "normalized_score": item["normalized_score"],
             "confidence_band": item["confidence_band"],
             "library_provider": item.get("library_provider") or "",
             "library_package": item.get("library_package") or "",
             "library_version": item.get("library_version") or "",
+            "reference_metadata": copy.deepcopy(item.get("reference_metadata") or {}),
+            "reference_peaks": copy.deepcopy(item.get("reference_peaks") or []),
+            "structure_payload": copy.deepcopy(item.get("structure_payload") or {}),
+            "source_assets": copy.deepcopy(item.get("source_assets") or []),
             "evidence": item["evidence"],
         }
         for item in ranked_matches

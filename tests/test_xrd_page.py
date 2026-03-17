@@ -545,6 +545,42 @@ def test_xrd_snapshot_figure_key_uses_humanized_candidate_name():
     assert "MgB₂" not in key
 
 
+def test_resolve_xrd_matches_preserves_reference_dossier_fields_from_saved_record():
+    record = {
+        "rows": [
+            {
+                "rank": 1,
+                "candidate_id": "cod_1000026",
+                "candidate_name": "COD 1000026",
+                "display_name": "MgB2",
+                "display_name_unicode": "MgB₂",
+                "formula": "MgB2",
+                "formula_unicode": "MgB₂",
+                "source_id": "1000026",
+                "normalized_score": 0.91,
+                "confidence_band": "high",
+                "library_provider": "COD",
+                "library_package": "cod_xrd_core",
+                "library_version": "2026.03-core",
+                "reference_metadata": {"source_url": "https://example.test/cod/1000026"},
+                "reference_peaks": [{"peak_number": 1, "position": 27.5, "intensity": 100.0}],
+                "structure_payload": {"availability": "source_only"},
+                "source_assets": [{"kind": "source_url", "label": "Source Reference", "url": "https://example.test/cod/1000026", "available": True}],
+                "evidence": {"shared_peak_count": 3},
+            }
+        ]
+    }
+
+    matches = xrd_page._resolve_xrd_matches(current_state={}, record=record)
+
+    assert matches[0]["display_name_unicode"] == "MgB₂"
+    assert matches[0]["formula_unicode"] == "MgB₂"
+    assert matches[0]["reference_metadata"]["source_url"] == "https://example.test/cod/1000026"
+    assert matches[0]["reference_peaks"][0]["peak_number"] == 1
+    assert matches[0]["structure_payload"]["availability"] == "source_only"
+    assert matches[0]["source_assets"][0]["label"] == "Source Reference"
+
+
 def test_apply_xrd_input_review_clears_stale_import_warnings():
     """After applying XRD input review with wavelength, resolved axis/wavelength
     import warnings should be cleared from the list."""

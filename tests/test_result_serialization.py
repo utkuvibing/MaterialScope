@@ -163,6 +163,7 @@ def test_validate_result_record_rejects_non_dict_scientific_context():
 def test_split_valid_results_backfills_scientific_context():
     record = _base_record()
     record.pop("scientific_context", None)
+    record.pop("report_payload", None)
 
     valid, issues = split_valid_results({"demo_result": record})
 
@@ -181,6 +182,7 @@ def test_split_valid_results_backfills_scientific_context():
         "alternative_hypotheses": [],
         "next_experiments": [],
     }
+    assert valid["demo_result"]["report_payload"] == {}
 
 
 def test_flatten_result_records_emits_scientific_context_section():
@@ -189,11 +191,13 @@ def test_flatten_result_records_emits_scientific_context_section():
         "methodology": {"workflow_template": "General DSC"},
         "equations": [{"name": "Energy", "formula": "DeltaH=int(q dT)"}],
     }
+    record["report_payload"] = {"appendix_note": "demo"}
 
     flat_rows = flatten_result_records({"demo_result": record})
 
     assert any(row["section"] == "scientific_context" and row["field"] == "methodology" for row in flat_rows)
     assert any(row["section"] == "scientific_context" and row["field"] == "equations" for row in flat_rows)
+    assert any(row["section"] == "report_payload" and row["field"] == "appendix_note" for row in flat_rows)
 
 
 def test_serialize_ftir_result_persists_no_match_caution_and_evidence():
@@ -424,6 +428,7 @@ def test_serialize_xrd_result_adds_no_match_caution_semantics():
     assert record["summary"]["top_candidate_reason_below_threshold"]
     assert record["review"]["caution"]["code"] == "xrd_no_match"
     assert record["review"]["caution"]["top_candidate_name"] == "Phase Alpha"
+    assert "screening only" in record["report_payload"]["xrd_reference_dossiers"][0]["match_evidence"]["caution_note"].lower()
     assert any("no-match" in item.lower() for item in record["scientific_context"]["limitations"])
     assert record["scientific_context"]["fit_quality"]["top_candidate_score"] == 0.33
 
@@ -475,6 +480,97 @@ def test_serialize_xrd_result_adds_humanized_display_fields_without_losing_raw_i
     assert record["summary"]["top_phase_display_name_unicode"] == "MgB₂"
     assert record["rows"][0]["display_name"] == "MgB2"
     assert record["rows"][0]["source_id"] == "1000026"
+
+
+def test_serialize_xrd_result_builds_reference_dossiers_with_truncated_peaks_and_preserves_raw_fields():
+    dataset = _xrd_dataset()
+    processing = ensure_processing_payload(analysis_type="XRD", workflow_template="xrd.general")
+
+    peaks = [
+        {
+            "peak_number": idx + 1,
+            "position": 10.0 + (idx * 1.1),
+            "d_spacing": 4.0 - (idx * 0.05),
+            "intensity": float(100 - idx),
+        }
+        for idx in range(25)
+    ]
+    rows = [
+        {
+            "rank": 1,
+            "candidate_id": "cod_1000026",
+            "candidate_name": "COD 1000026",
+            "formula": "MgB2",
+            "source_id": "1000026",
+            "normalized_score": 0.91,
+            "confidence_band": "high",
+            "library_provider": "COD",
+            "library_package": "cod_xrd_core",
+            "library_version": "2026.03-core",
+            "reference_metadata": {
+                "provider_dataset_version": "2026.03",
+                "hosted_dataset_version": "2026.03.fixture",
+                "source_url": "https://example.test/cod/1000026",
+                "attribution": "COD reference dataset",
+            },
+            "reference_peaks": peaks,
+            "evidence": {
+                "shared_peak_count": 6,
+                "weighted_overlap_score": 0.91,
+                "coverage_ratio": 0.81,
+                "mean_delta_position": 0.03,
+                "unmatched_major_peak_count": 0,
+                "matched_peak_pairs": [{"observed_index": idx, "reference_index": idx} for idx in range(3)],
+                "unmatched_observed_peaks": [],
+                "unmatched_reference_peaks": [{"reference_index": 20, "is_major": True}],
+            },
+        },
+        *[
+            {
+                "rank": idx,
+                "candidate_id": f"xrd_phase_{idx}",
+                "candidate_name": f"Phase {idx}",
+                "normalized_score": 0.6 - (idx * 0.05),
+                "confidence_band": "medium",
+                "library_provider": "COD",
+                "evidence": {"shared_peak_count": 2, "coverage_ratio": 0.2},
+            }
+            for idx in range(2, 5)
+        ],
+    ]
+
+    record = serialize_xrd_result(
+        "synthetic_xrd_dossier",
+        dataset,
+        summary={
+            "peak_count": 4,
+            "match_status": "matched",
+            "candidate_count": 4,
+            "top_phase_id": "cod_1000026",
+            "top_phase": "COD 1000026",
+            "top_phase_score": 0.91,
+            "confidence_band": "high",
+            "library_request_id": "libreq_xrd_dossier_001",
+        },
+        rows=rows,
+        processing=processing,
+        validation={"status": "pass", "issues": [], "warnings": []},
+    )
+
+    assert record["rows"][0]["candidate_name"] == "COD 1000026"
+    assert record["rows"][0]["source_id"] == "1000026"
+    assert record["report_payload"]["xrd_reference_dossier_limit"] == 3
+    assert record["report_payload"]["xrd_reference_peak_display_limit"] == 20
+    assert len(record["report_payload"]["xrd_reference_dossiers"]) == 3
+    first_dossier = record["report_payload"]["xrd_reference_dossiers"][0]
+    assert first_dossier["candidate_overview"]["display_name_unicode"] == "MgB₂"
+    assert first_dossier["candidate_overview"]["formula_unicode"] == "MgB₂"
+    assert first_dossier["provenance"]["raw_label"] == "COD 1000026"
+    assert first_dossier["provenance"]["candidate_id"] == "cod_1000026"
+    assert first_dossier["reference_metadata"]["source_url"] == "https://example.test/cod/1000026"
+    assert first_dossier["reference_peaks"]["displayed_peak_count"] == 20
+    assert first_dossier["reference_peaks"]["total_peak_count"] == 25
+    assert first_dossier["reference_peaks"]["truncated_count"] == 5
 
 
 def test_collect_figure_keys_prefers_primary_report_figure_when_present():

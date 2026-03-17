@@ -12,6 +12,7 @@ from typing import Any, Mapping, Optional, Union
 from core.batch_runner import normalize_batch_summary_rows, summarize_batch_outcomes
 from core.mechanism_rules import tga_mechanism_signals
 from core.processing_schema import ensure_processing_payload
+from core.xrd_reference_dossier import XRD_NO_VISUAL_ASSET_NOTE
 from core.result_serialization import flatten_result_records, partition_results_by_status, split_valid_results
 from core.scientific_sections import (
     build_tga_scientific_narrative,
@@ -1998,6 +1999,289 @@ def _record_appendix_sections(record: dict) -> list[tuple[str, dict[str, str]]]:
     return sections
 
 
+def _xrd_reference_dossiers(record: dict) -> list[dict[str, Any]]:
+    if str(record.get("analysis_type") or "").upper() != "XRD":
+        return []
+    payload = (record.get("report_payload") or {}).get("xrd_reference_dossiers") or []
+    return [dict(item) for item in payload if isinstance(item, Mapping)]
+
+
+def _xrd_reference_dossier_overview_payload(dossier: Mapping[str, Any]) -> dict[str, str]:
+    overview = dict(dossier.get("candidate_overview") or {})
+    return _table_payload(
+        {
+            "rank": dossier.get("rank"),
+            "candidate": overview.get("display_name_unicode") or overview.get("display_name"),
+            "scientific_formula": overview.get("formula_unicode") or overview.get("formula"),
+            "raw_label": overview.get("raw_label"),
+            "candidate_id": overview.get("candidate_id"),
+            "source_id": overview.get("source_id"),
+            "provider": overview.get("provider"),
+            "package": overview.get("package"),
+            "package_version": overview.get("package_version"),
+            "confidence_band": overview.get("confidence_band"),
+            "match_status": overview.get("match_status"),
+            "candidate_score": overview.get("candidate_score"),
+            "canonical_material_key": overview.get("canonical_material_key"),
+        }
+    )
+
+
+def _xrd_reference_dossier_match_payload(dossier: Mapping[str, Any]) -> dict[str, str]:
+    evidence = dict(dossier.get("match_evidence") or {})
+    return _table_payload(
+        {
+            "shared_peak_count": evidence.get("shared_peak_count"),
+            "weighted_overlap_score": evidence.get("weighted_overlap_score"),
+            "coverage_ratio": evidence.get("coverage_ratio"),
+            "mean_delta_position": evidence.get("mean_delta_position"),
+            "unmatched_major_peak_count": evidence.get("unmatched_major_peak_count"),
+            "matched_peak_pair_count": evidence.get("matched_peak_pair_count"),
+            "unmatched_observed_count": evidence.get("unmatched_observed_count"),
+            "unmatched_reference_count": evidence.get("unmatched_reference_count"),
+            "reason_below_threshold": evidence.get("reason_below_threshold"),
+            "caution_note": evidence.get("caution_note"),
+        }
+    )
+
+
+def _xrd_reference_dossier_metadata_payload(dossier: Mapping[str, Any]) -> dict[str, str]:
+    metadata = dict(dossier.get("reference_metadata") or {})
+    return _table_payload(
+        {
+            "provider_dataset_version": metadata.get("provider_dataset_version"),
+            "hosted_dataset_version": metadata.get("hosted_dataset_version"),
+            "hosted_published_at": metadata.get("hosted_published_at"),
+            "published_at": metadata.get("published_at"),
+            "generated_at": metadata.get("generated_at"),
+            "last_updated": metadata.get("last_updated"),
+            "canonical_material_key": metadata.get("canonical_material_key"),
+            "space_group": metadata.get("space_group"),
+            "symmetry": metadata.get("symmetry"),
+            "formula": metadata.get("formula_unicode") or metadata.get("formula_pretty") or metadata.get("formula"),
+            "phase_name": metadata.get("phase_name"),
+            "display_name": metadata.get("display_name_unicode") or metadata.get("display_name"),
+            "source_url": metadata.get("source_url"),
+            "provider_url": metadata.get("provider_url"),
+            "attribution": metadata.get("attribution"),
+        }
+    )
+
+
+def _xrd_reference_peak_matrix(dossier: Mapping[str, Any]) -> tuple[list[str], list[list[str]], str | None]:
+    reference_peaks = dict(dossier.get("reference_peaks") or {})
+    headers = ["Peak #", "2θ", "d-spacing", "Relative Intensity", "Matched", "Major"]
+    rows = [
+        [
+            _format_value(item.get("peak_number")),
+            _format_number(item.get("position"), digits=3),
+            _format_number(item.get("d_spacing"), digits=4),
+            _format_number(item.get("relative_intensity"), digits=3),
+            _format_value(item.get("matched")),
+            _format_value(item.get("major")),
+        ]
+        for item in (reference_peaks.get("display_rows") or [])
+        if isinstance(item, Mapping)
+    ]
+    displayed = int(reference_peaks.get("displayed_peak_count") or len(rows) or 0)
+    total = int(reference_peaks.get("total_peak_count") or len(rows) or 0)
+    note = None
+    if total > displayed > 0:
+        note = f"Showing {displayed} of {total} reference peaks."
+    elif total and not rows:
+        note = f"{total} reference peaks were available, but none were selected for display."
+    return headers, rows, note
+
+
+def _xrd_structure_visual_payload(dossier: Mapping[str, Any]) -> dict[str, str]:
+    structure = dict(dossier.get("structure_payload") or {})
+    source_assets = [dict(item) for item in (dossier.get("source_assets") or []) if isinstance(item, Mapping)]
+    payload = _table_payload(
+        {
+            "availability": structure.get("availability"),
+            "space_group": structure.get("space_group"),
+            "symmetry": structure.get("symmetry"),
+            "formula": structure.get("formula_unicode") or structure.get("formula"),
+            "source_url": structure.get("source_url"),
+            "notes": structure.get("notes"),
+        }
+    )
+    for index, asset in enumerate(source_assets, start=1):
+        label = normalize_report_text(asset.get("label") or f"Asset {index}")
+        url = asset.get("url")
+        artifact_key = asset.get("artifact_key")
+        if url:
+            payload[f"Source Asset {index}"] = normalize_report_text(f"{label}: {url}")
+        elif artifact_key:
+            payload[f"Source Asset {index}"] = normalize_report_text(f"{label}: {artifact_key}")
+        else:
+            payload[f"Source Asset {index}"] = label
+    return payload
+
+
+def _xrd_provenance_payload(dossier: Mapping[str, Any]) -> dict[str, str]:
+    provenance = dict(dossier.get("provenance") or {})
+    return _table_payload(
+        {
+            "provider": provenance.get("provider"),
+            "package": provenance.get("package"),
+            "package_version": provenance.get("package_version"),
+            "library_request_id": provenance.get("library_request_id"),
+            "candidate_id": provenance.get("candidate_id"),
+            "source_id": provenance.get("source_id"),
+            "raw_label": provenance.get("raw_label"),
+            "attribution": provenance.get("attribution"),
+        }
+    )
+
+
+def _xrd_renderable_assets(dossier: Mapping[str, Any], figures: dict | None) -> list[tuple[str, bytes]]:
+    rendered: list[tuple[str, bytes]] = []
+    if not isinstance(figures, Mapping):
+        return rendered
+    for asset in dossier.get("source_assets") or []:
+        if not isinstance(asset, Mapping):
+            continue
+        artifact_key = str(asset.get("artifact_key") or "").strip()
+        if not artifact_key:
+            continue
+        png_bytes = figures.get(artifact_key)
+        if isinstance(png_bytes, (bytes, bytearray)):
+            rendered.append((str(asset.get("label") or artifact_key), bytes(png_bytes)))
+    return rendered
+
+
+def _render_docx_matrix_table(doc: Document, headers: list[str], rows: list[list[Any]], *, heading: str | None = None, heading_level: int = 3) -> None:
+    if not headers or not rows:
+        return
+    portrait_width = _docx_section_text_width_inches(doc.sections[-1]) * 72.0
+    layout = _choose_portrait_or_landscape_table_layout(headers, rows, portrait_width=portrait_width)
+    if layout == "landscape":
+        landscape_section = doc.add_section(WD_SECTION_START.NEW_PAGE)
+        _set_docx_section_orientation(landscape_section, landscape=True)
+    if heading:
+        doc.add_paragraph(normalize_report_text(heading), style=f"Heading {heading_level}")
+    _add_results_table(doc, headers, rows)
+    doc.add_paragraph()
+    if layout == "landscape":
+        portrait_section = doc.add_section(WD_SECTION_START.NEW_PAGE)
+        _set_docx_section_orientation(portrait_section, landscape=False)
+
+
+def _render_xrd_reference_dossier_docx(doc: Document, dossier: Mapping[str, Any], *, figures: dict | None) -> None:
+    rank = _format_value(dossier.get("rank"))
+    doc.add_paragraph(normalize_report_text(f"Candidate Reference Dossier — Rank #{rank}"), style="Heading 3")
+
+    doc.add_paragraph("Candidate Overview", style="Heading 4")
+    _add_key_value_table(doc, _xrd_reference_dossier_overview_payload(dossier))
+    doc.add_paragraph()
+
+    doc.add_paragraph("Match Evidence Summary", style="Heading 4")
+    _add_key_value_table(doc, _xrd_reference_dossier_match_payload(dossier))
+    doc.add_paragraph()
+
+    doc.add_paragraph("Reference Metadata", style="Heading 4")
+    _add_key_value_table(doc, _xrd_reference_dossier_metadata_payload(dossier))
+    doc.add_paragraph()
+
+    headers, rows, note = _xrd_reference_peak_matrix(dossier)
+    if rows:
+        _render_docx_matrix_table(doc, headers, rows, heading="Reference Peaks", heading_level=4)
+        if note:
+            doc.add_paragraph(normalize_report_text(note))
+            doc.add_paragraph()
+
+    doc.add_paragraph("Structure / Visual Evidence", style="Heading 4")
+    _add_key_value_table(doc, _xrd_structure_visual_payload(dossier))
+    rendered_assets = _xrd_renderable_assets(dossier, figures)
+    if rendered_assets:
+        for label, png_bytes in rendered_assets:
+            try:
+                doc.add_picture(io.BytesIO(png_bytes), width=Inches(4.8))
+                doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                doc.add_paragraph(normalize_report_text(label))
+            except Exception:
+                doc.add_paragraph(normalize_report_text(f"{label}: asset could not be embedded."))
+        doc.add_paragraph()
+    else:
+        doc.add_paragraph(normalize_report_text(XRD_NO_VISUAL_ASSET_NOTE))
+        doc.add_paragraph()
+
+    doc.add_paragraph("Provenance / Attribution", style="Heading 4")
+    _add_key_value_table(doc, _xrd_provenance_payload(dossier))
+    doc.add_paragraph()
+
+
+def _render_xrd_reference_dossier_pdf(
+    story,
+    dossier: Mapping[str, Any],
+    *,
+    figures: dict | None,
+    add_heading,
+    add_kv_table,
+    add_matrix_table,
+    ensure_template,
+    portrait_width: float,
+    landscape_width: float,
+    body_style,
+    small_style,
+    caption_style,
+    paragraph_factory,
+    image_factory,
+    spacer_factory,
+) -> None:
+    rank = _format_value(dossier.get("rank"))
+    ensure_template("Portrait")
+    add_heading(f"Candidate Reference Dossier — Rank #{rank}", level=3)
+
+    add_heading("Candidate Overview", level=3)
+    add_kv_table(_xrd_reference_dossier_overview_payload(dossier), width=portrait_width, compact=True)
+    story.append(spacer_factory(1, 4))
+
+    add_heading("Match Evidence Summary", level=3)
+    add_kv_table(_xrd_reference_dossier_match_payload(dossier), width=portrait_width, compact=True)
+    story.append(spacer_factory(1, 4))
+
+    add_heading("Reference Metadata", level=3)
+    add_kv_table(_xrd_reference_dossier_metadata_payload(dossier), width=portrait_width, compact=True)
+    story.append(spacer_factory(1, 4))
+
+    headers, rows, note = _xrd_reference_peak_matrix(dossier)
+    if rows:
+        matrix_layout = _choose_portrait_or_landscape_table_layout(headers, rows, portrait_width=portrait_width)
+        ensure_template("Landscape" if matrix_layout == "landscape" else "Portrait")
+        add_heading("Reference Peaks", level=3)
+        add_matrix_table(headers, rows, width=landscape_width if matrix_layout == "landscape" else portrait_width, compact=True)
+        if note:
+            story.append(spacer_factory(1, 2))
+            story.append(paragraph_factory(normalize_report_text(note), small_style))
+        story.append(spacer_factory(1, 4))
+
+    ensure_template("Portrait")
+    add_heading("Structure / Visual Evidence", level=3)
+    add_kv_table(_xrd_structure_visual_payload(dossier), width=portrait_width, compact=True)
+    rendered_assets = _xrd_renderable_assets(dossier, figures)
+    if rendered_assets:
+        for label, png_bytes in rendered_assets:
+            try:
+                image = image_factory(io.BytesIO(png_bytes))
+                image._restrictSize(portrait_width * 0.72, 180)
+                story.append(spacer_factory(1, 3))
+                story.append(image)
+                story.append(paragraph_factory(normalize_report_text(label), caption_style))
+            except Exception:
+                story.append(paragraph_factory(normalize_report_text(f"{label}: asset could not be embedded."), body_style))
+        story.append(spacer_factory(1, 4))
+    else:
+        story.append(spacer_factory(1, 2))
+        story.append(paragraph_factory(normalize_report_text(XRD_NO_VISUAL_ASSET_NOTE), body_style))
+        story.append(spacer_factory(1, 4))
+
+    add_heading("Provenance / Attribution", level=3)
+    add_kv_table(_xrd_provenance_payload(dossier), width=portrait_width, compact=True)
+    story.append(spacer_factory(1, 6))
+
+
 def _render_record_mapping(doc: Document, title: str, payload: dict | None) -> None:
     payload = payload or {}
     if not payload:
@@ -2029,19 +2313,7 @@ def _render_record_mapping(doc: Document, title: str, payload: dict | None) -> N
 
 
 def _render_docx_matrix_section(doc: Document, title: str, headers: list[str], rows: list[list[Any]]) -> None:
-    if not headers or not rows:
-        return
-    portrait_width = _docx_section_text_width_inches(doc.sections[-1]) * 72.0
-    layout = _choose_portrait_or_landscape_table_layout(headers, rows, portrait_width=portrait_width)
-    if layout == "landscape":
-        landscape_section = doc.add_section(WD_SECTION_START.NEW_PAGE)
-        _set_docx_section_orientation(landscape_section, landscape=True)
-    doc.add_paragraph(normalize_report_text(title), style="Heading 3")
-    _add_results_table(doc, headers, rows)
-    doc.add_paragraph()
-    if layout == "landscape":
-        portrait_section = doc.add_section(WD_SECTION_START.NEW_PAGE)
-        _set_docx_section_orientation(portrait_section, landscape=False)
+    _render_docx_matrix_table(doc, headers, rows, heading=title, heading_level=3)
 
 
 def _render_main_record_docx(
@@ -2095,6 +2367,7 @@ def _render_appendix_docx(
     records: list[dict],
     datasets: dict,
     comparison_payload: dict[str, Any] | None,
+    figures: dict | None,
 ) -> None:
     dataset_sections = []
     for dataset_key, dataset in datasets.items():
@@ -2106,9 +2379,10 @@ def _render_appendix_docx(
     for record in records:
         sections = _record_appendix_sections(record)
         matrix_sections = _record_appendix_matrix_sections(record)
+        dossiers = _xrd_reference_dossiers(record)
         full_rows = _record_full_rows(record)
-        if sections or matrix_sections or full_rows:
-            record_sections.append((record, sections, matrix_sections, full_rows))
+        if sections or matrix_sections or dossiers or full_rows:
+            record_sections.append((record, sections, matrix_sections, dossiers, full_rows))
 
     comparison_has_content = bool(comparison_payload and (comparison_payload.get("appendix_overview") or comparison_payload.get("appendix_batch_rows")))
     if not (dataset_sections or record_sections or comparison_has_content):
@@ -2162,12 +2436,14 @@ def _render_appendix_docx(
                 ],
             )
 
-    for record, sections, matrix_sections, full_rows in record_sections:
+    for record, sections, matrix_sections, dossiers, full_rows in record_sections:
         doc.add_paragraph(_record_title(record), style="Heading 2")
         for title, payload in sections:
             _render_record_mapping(doc, title, payload)
         for title, headers, rows in matrix_sections:
             _render_docx_matrix_section(doc, title, headers, rows)
+        for dossier in dossiers:
+            _render_xrd_reference_dossier_docx(doc, dossier, figures=figures)
         if full_rows:
             headers, rows = full_rows
             _render_docx_matrix_section(doc, "Full Raw Data Table", headers, rows)
@@ -2341,7 +2617,7 @@ def generate_docx_report(
         doc.add_paragraph(normalize_report_text(final_conclusion))
         doc.add_paragraph()
 
-    _render_appendix_docx(doc, records=all_records, datasets=datasets, comparison_payload=comparison_payload)
+    _render_appendix_docx(doc, records=all_records, datasets=datasets, comparison_payload=comparison_payload, figures=figures)
 
     buffer = io.BytesIO()
     doc.save(buffer)
@@ -2919,9 +3195,10 @@ def generate_pdf_report(
     for record in all_records:
         sections = _record_appendix_sections(record)
         matrix_sections = _record_appendix_matrix_sections(record)
+        dossiers = _xrd_reference_dossiers(record)
         full_rows = _record_full_rows(record)
-        if sections or matrix_sections or full_rows:
-            record_sections.append((record, sections, matrix_sections, full_rows))
+        if sections or matrix_sections or dossiers or full_rows:
+            record_sections.append((record, sections, matrix_sections, dossiers, full_rows))
 
     comparison_has_content = bool(comparison_payload and (comparison_payload.get('appendix_overview') or comparison_payload.get('appendix_batch_rows')))
     if dataset_sections or record_sections or comparison_has_content:
@@ -2979,7 +3256,7 @@ def generate_pdf_report(
                 add_matrix_table(batch_headers, batch_matrix, width=landscape_width if batch_layout == 'landscape' else portrait_width, compact=True)
                 story.append(Spacer(1, 4))
 
-        for record, sections, matrix_sections, full_rows in record_sections:
+        for record, sections, matrix_sections, dossiers, full_rows in record_sections:
             ensure_template('Portrait')
             add_heading(_record_title(record), level=2)
             for title, payload in sections:
@@ -2992,6 +3269,24 @@ def generate_pdf_report(
                 add_heading(title, level=3)
                 add_matrix_table(headers, rows, width=landscape_width if matrix_layout == 'landscape' else portrait_width, compact=True)
                 story.append(Spacer(1, 4))
+            for dossier in dossiers:
+                _render_xrd_reference_dossier_pdf(
+                    story,
+                    dossier,
+                    figures=figures,
+                    add_heading=add_heading,
+                    add_kv_table=add_kv_table,
+                    add_matrix_table=add_matrix_table,
+                    ensure_template=ensure_template,
+                    portrait_width=portrait_width,
+                    landscape_width=landscape_width,
+                    body_style=body_style,
+                    small_style=small_style,
+                    caption_style=caption_style,
+                    paragraph_factory=Paragraph,
+                    image_factory=Image,
+                    spacer_factory=Spacer,
+                )
             if full_rows:
                 headers, rows = full_rows
                 raw_layout = _choose_portrait_or_landscape_table_layout(headers, rows, portrait_width=portrait_width)

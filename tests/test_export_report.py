@@ -361,6 +361,17 @@ def _make_xrd_formula_result():
                 "normalized_score": 0.91,
                 "confidence_band": "high",
                 "library_provider": "COD",
+                "library_package": "cod_xrd_core",
+                "library_version": "2026.03-core",
+                "reference_metadata": {
+                    "source_url": "https://example.test/cod/1000026",
+                    "provider_dataset_version": "2026.03",
+                    "attribution": "COD reference dataset",
+                },
+                "reference_peaks": [
+                    {"peak_number": 1, "position": 27.5, "d_spacing": 3.24, "intensity": 100.0},
+                    {"peak_number": 2, "position": 36.1, "d_spacing": 2.48, "intensity": 65.0},
+                ],
                 "evidence": {
                     "shared_peak_count": 3,
                     "weighted_overlap_score": 0.91,
@@ -1089,3 +1100,43 @@ def test_generate_pdf_report_uses_scientific_xrd_text_and_unicode_font():
     assert b"DejaVuSans" in pdf_bytes
     assert record["artifacts"]["report_figure_key"].endswith("r1_MgB2")
     assert "MgB₂" not in record["artifacts"]["report_figure_key"]
+
+
+def test_generate_docx_report_exports_xrd_reference_dossier_sections():
+    record, dataset = _make_xrd_formula_result()
+
+    docx_bytes = generate_docx_report(
+        results={record["id"]: record},
+        datasets={"synthetic_xrd_formula": dataset},
+    )
+
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "Candidate Reference Dossier" in xml
+    assert "Rank #1" in xml
+    assert "Reference Peaks" in xml
+    assert "https://example.test/cod/1000026" in xml
+    assert "MgB₂" in xml
+    assert record["artifacts"]["report_figure_key"].endswith("r1_MgB2")
+    assert "MgB₂" not in record["artifacts"]["report_figure_key"]
+
+
+def test_generate_pdf_report_exports_xrd_reference_dossier_sections():
+    pytest.importorskip("reportlab")
+    pypdf = pytest.importorskip("pypdf")
+    record, dataset = _make_xrd_formula_result()
+
+    pdf_bytes = generate_pdf_report(
+        results={record["id"]: record},
+        datasets={"synthetic_xrd_formula": dataset},
+    )
+
+    extracted = "\n".join(page.extract_text() or "" for page in pypdf.PdfReader(io.BytesIO(pdf_bytes)).pages)
+
+    assert "Candidate Reference Dossier" in extracted
+    assert "Rank #1" in extracted
+    assert "Reference Peaks" in extracted
+    assert "example.test" in extracted
+    assert "1000026" in extracted
+    assert "MgB₂" in extracted

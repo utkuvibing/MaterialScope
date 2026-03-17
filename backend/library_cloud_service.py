@@ -26,6 +26,7 @@ from core.reference_library import (
     ReferenceLibraryManager,
     get_reference_library_manager,
 )
+from core.xrd_reference_dossier import build_xrd_reference_bundle
 from core.xrd_display import xrd_candidate_display_payload
 from utils.license_manager import APP_VERSION, get_storage_dir, validate_encoded_license_key
 
@@ -322,6 +323,13 @@ class ManagedLibraryCloudService:
                 payload.setdefault("formula_pretty", display_payload.get("formula_pretty"))
                 payload.setdefault("formula", display_payload.get("formula"))
                 payload.setdefault("source_id", display_payload.get("source_id"))
+                reference_bundle = build_xrd_reference_bundle(payload, reference)
+                payload["display_name_unicode"] = reference_bundle.get("display_name_unicode")
+                payload["formula_unicode"] = reference_bundle.get("formula_unicode")
+                payload["reference_metadata"] = reference_bundle.get("reference_metadata") or {}
+                payload["reference_peaks"] = reference_bundle.get("reference_peaks") or []
+                payload["structure_payload"] = reference_bundle.get("structure_payload") or {}
+                payload["source_assets"] = reference_bundle.get("source_assets") or []
                 evidence.setdefault("canonical_material_key", str(reference.get("canonical_material_key") or ""))
                 evidence.setdefault("provider_dataset_version", str(reference.get("provider_dataset_version") or ""))
                 evidence.setdefault("hosted_dataset_version", str(reference.get("hosted_dataset_version") or reference.get("package_version") or ""))

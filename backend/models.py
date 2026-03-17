@@ -97,15 +97,21 @@ class LibrarySearchRow(BaseModel):
     candidate_id: str
     candidate_name: str
     display_name: str | None = None
+    display_name_unicode: str | None = None
     phase_name: str | None = None
     formula_pretty: str | None = None
     formula: str | None = None
+    formula_unicode: str | None = None
     source_id: str | None = None
     normalized_score: float
     confidence_band: str
     library_provider: str = ""
     library_package: str = ""
     library_version: str = ""
+    reference_metadata: dict[str, Any] = Field(default_factory=dict)
+    reference_peaks: list[dict[str, Any]] = Field(default_factory=list)
+    structure_payload: dict[str, Any] = Field(default_factory=dict)
+    source_assets: list[dict[str, Any]] = Field(default_factory=list)
     evidence: dict[str, Any] = Field(default_factory=dict)
 
 

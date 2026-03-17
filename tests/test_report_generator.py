@@ -415,14 +415,29 @@ def _make_xrd_no_match_record():
                 "rank": 1,
                 "candidate_id": "xrd_phase_alpha",
                 "candidate_name": "Phase Alpha",
+                "source_id": "alpha-001",
                 "normalized_score": 0.33,
                 "confidence_band": "no_match",
+                "library_provider": "COD",
+                "library_package": "cod_xrd_core",
+                "library_version": "2026.03-core",
+                "reference_metadata": {
+                    "source_url": "https://example.test/xrd/alpha-001",
+                    "provider_dataset_version": "2026.03",
+                    "hosted_dataset_version": "2026.03.fixture",
+                    "attribution": "Hosted XRD seed dataset",
+                },
+                "reference_peaks": [
+                    {"peak_number": idx + 1, "position": 18.0 + idx, "d_spacing": 4.8 - (idx * 0.1), "intensity": 100 - idx}
+                    for idx in range(6)
+                ],
                 "evidence": {
                     "shared_peak_count": 0,
                     "weighted_overlap_score": 0.11,
                     "mean_delta_position": None,
                     "unmatched_major_peak_count": 3,
                     "tolerance_deg": 0.28,
+                    "matched_peak_pairs": [{"observed_index": 0, "reference_index": 0}],
                 },
             }
         ],
@@ -795,6 +810,17 @@ def test_generate_docx_report_uses_scientific_xrd_candidate_names():
                 "normalized_score": 0.91,
                 "confidence_band": "high",
                 "library_provider": "COD",
+                "library_package": "cod_xrd_core",
+                "library_version": "2026.03-core",
+                "reference_metadata": {
+                    "source_url": "https://example.test/cod/1000026",
+                    "provider_dataset_version": "2026.03",
+                    "attribution": "COD reference dataset",
+                },
+                "reference_peaks": [
+                    {"peak_number": 1, "position": 27.5, "d_spacing": 3.24, "intensity": 100.0},
+                    {"peak_number": 2, "position": 36.1, "d_spacing": 2.48, "intensity": 65.0},
+                ],
                 "evidence": {
                     "shared_peak_count": 3,
                     "weighted_overlap_score": 0.91,
@@ -817,6 +843,37 @@ def test_generate_docx_report_uses_scientific_xrd_candidate_names():
         xml = archive.read("word/document.xml").decode("utf-8")
 
     assert "MgB₂" in xml
+    assert "Candidate Reference Dossier" in xml
+    assert "Rank #1" in xml
+    assert "https://example.test/cod/1000026" in xml
+
+
+def test_generate_docx_report_adds_xrd_reference_dossier_sections_with_caution_safe_wording():
+    xrd_record, xrd_dataset = _make_xrd_no_match_record()
+
+    docx_bytes = generate_docx_report(
+        results={xrd_record["id"]: xrd_record},
+        datasets={"synthetic_xrd": xrd_dataset},
+    )
+
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    appendix_index = xml.index("Appendix A")
+    appendix_xml = xml[appendix_index:]
+
+    assert "Candidate Reference Dossier" in appendix_xml
+    assert "Rank #1" in appendix_xml
+    assert "Candidate Overview" in appendix_xml
+    assert "Match Evidence Summary" in appendix_xml
+    assert "Reference Metadata" in appendix_xml
+    assert "Reference Peaks" in appendix_xml
+    assert "Structure / Visual Evidence" in appendix_xml
+    assert "Provenance / Attribution" in appendix_xml
+    assert "alpha-001" in appendix_xml
+    assert "https://example.test/xrd/alpha-001" in appendix_xml
+    assert "screening only" in appendix_xml.lower()
+    assert "No provider structure image or visual asset was available in the current reference payload." in appendix_xml
 
 
 def test_generate_docx_report_hides_operational_fields_from_experimental_conditions(thermal_dataset):

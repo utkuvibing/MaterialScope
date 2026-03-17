@@ -949,12 +949,18 @@ def _resolve_xrd_matches(current_state, record):
                 "phase_name": row.get("phase_name"),
                 "formula_pretty": row.get("formula_pretty"),
                 "formula": row.get("formula"),
+                "display_name_unicode": row.get("display_name_unicode"),
+                "formula_unicode": row.get("formula_unicode"),
                 "source_id": row.get("source_id"),
                 "normalized_score": row.get("normalized_score"),
                 "confidence_band": row.get("confidence_band"),
                 "library_provider": row.get("library_provider"),
                 "library_package": row.get("library_package"),
                 "library_version": row.get("library_version"),
+                "reference_metadata": row.get("reference_metadata") or {},
+                "reference_peaks": row.get("reference_peaks") or [],
+                "structure_payload": row.get("structure_payload") or {},
+                "source_assets": row.get("source_assets") or [],
                 "evidence": row.get("evidence") or {},
             }
         )

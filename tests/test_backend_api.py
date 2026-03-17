@@ -161,6 +161,11 @@ def _run_cloud_smoke_chain(client: TestClient, bearer: dict[str, str]) -> None:
     assert xrd_payload["summary"]["xrd_provider_candidate_counts"] == {"cod": 1, "materials_project": 1}
     assert xrd_payload["summary"]["xrd_coverage_tier"] == "seed_dev"
     assert xrd_payload["rows"][0]["evidence"]["hosted_dataset_version"] == "2026.03.fixture"
+    assert all("display_name_unicode" in row for row in xrd_payload["rows"])
+    assert all("formula_unicode" in row for row in xrd_payload["rows"])
+    assert all("reference_metadata" in row for row in xrd_payload["rows"])
+    assert all("reference_peaks" in row for row in xrd_payload["rows"])
+    assert any(bool(row.get("reference_metadata")) or bool(row.get("reference_peaks")) for row in xrd_payload["rows"])
 
 
 def _route_runtime_cloud_client(monkeypatch, api_client: TestClient) -> None:

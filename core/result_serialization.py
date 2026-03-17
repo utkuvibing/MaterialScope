@@ -9,6 +9,12 @@ from typing import Any, Iterable, Mapping
 
 from core.dsc_processor import GlassTransition
 from core.peak_analysis import ThermalPeak
+from core.xrd_reference_dossier import (
+    XRD_REFERENCE_DOSSIER_LIMIT,
+    XRD_REFERENCE_PEAK_DISPLAY_LIMIT,
+    build_xrd_reference_bundle,
+    build_xrd_reference_dossiers,
+)
 from core.scientific_reasoning import build_scientific_reasoning
 from core.scientific_sections import (
     build_equation,
@@ -42,6 +48,7 @@ OPTIONAL_RESULT_KEYS = {
     "validation",
     "review",
     "scientific_context",
+    "report_payload",
 }
 
 VALID_STATUSES = {"stable", "experimental"}
@@ -74,6 +81,7 @@ def make_result_record(
     validation: dict[str, Any] | None = None,
     review: dict[str, Any] | None = None,
     scientific_context: dict[str, Any] | None = None,
+    report_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a normalized result record."""
     if status not in VALID_STATUSES:
@@ -93,6 +101,7 @@ def make_result_record(
         "validation": copy.deepcopy(validation or {}),
         "review": copy.deepcopy(review or {}),
         "scientific_context": normalize_scientific_context(scientific_context),
+        "report_payload": copy.deepcopy(report_payload or {}),
     }
 
 
@@ -1218,21 +1227,28 @@ def serialize_xrd_result(
     for index, item in enumerate(rows or [], start=1):
         payload = dict(item or {})
         display_payload = xrd_candidate_display_payload(payload)
+        reference_bundle = build_xrd_reference_bundle(payload)
         normalized_rows.append(
             {
                 "rank": int(payload.get("rank") or index),
                 "candidate_id": payload.get("candidate_id"),
                 "candidate_name": payload.get("candidate_name"),
                 "display_name": payload.get("display_name") or display_payload.get("display_name"),
+                "display_name_unicode": payload.get("display_name_unicode") or reference_bundle.get("display_name_unicode"),
                 "phase_name": payload.get("phase_name") or display_payload.get("phase_name"),
                 "formula_pretty": payload.get("formula_pretty") or display_payload.get("formula_pretty"),
                 "formula": payload.get("formula") or display_payload.get("formula"),
+                "formula_unicode": payload.get("formula_unicode") or reference_bundle.get("formula_unicode"),
                 "source_id": payload.get("source_id") or display_payload.get("source_id"),
                 "normalized_score": _clean_scalar(payload.get("normalized_score")),
                 "confidence_band": payload.get("confidence_band"),
                 "library_provider": payload.get("library_provider"),
                 "library_package": payload.get("library_package"),
                 "library_version": payload.get("library_version"),
+                "reference_metadata": copy.deepcopy(reference_bundle.get("reference_metadata") or {}),
+                "reference_peaks": copy.deepcopy(reference_bundle.get("reference_peaks") or []),
+                "structure_payload": copy.deepcopy(reference_bundle.get("structure_payload") or {}),
+                "source_assets": copy.deepcopy(reference_bundle.get("source_assets") or []),
                 "evidence": copy.deepcopy(payload.get("evidence") or {}),
             }
         )
@@ -1423,6 +1439,17 @@ def serialize_xrd_result(
     elif "caution" not in review_payload:
         review_payload["caution"] = {}
 
+    report_payload = {
+        "xrd_reference_dossier_limit": XRD_REFERENCE_DOSSIER_LIMIT,
+        "xrd_reference_peak_display_limit": XRD_REFERENCE_PEAK_DISPLAY_LIMIT,
+        "xrd_reference_dossiers": build_xrd_reference_dossiers(
+            normalized_summary,
+            normalized_rows,
+            dossier_limit=XRD_REFERENCE_DOSSIER_LIMIT,
+            peak_display_limit=XRD_REFERENCE_PEAK_DISPLAY_LIMIT,
+        ),
+    }
+
     return make_result_record(
         result_id=f"xrd_{dataset_key}",
         analysis_type="XRD",
@@ -1444,6 +1471,7 @@ def serialize_xrd_result(
             processing=processing,
             validation=validation,
         ),
+        report_payload=report_payload,
     )
 
 
@@ -1660,6 +1688,7 @@ def split_valid_results(results: dict[str, Any]) -> tuple[dict[str, dict[str, An
         normalized.setdefault("provenance", {})
         normalized.setdefault("validation", {})
         normalized.setdefault("review", {})
+        normalized.setdefault("report_payload", {})
         normalized["scientific_context"] = normalize_scientific_context(
             normalized.get("scientific_context")
         )
@@ -1700,7 +1729,7 @@ def flatten_result_records(results: dict[str, dict[str, Any]]) -> list[dict[str,
             rows.append({**base, "section": "metadata", "row_index": "", "field": key, "value": _flat_value(value)})
         for key, value in record.get("summary", {}).items():
             rows.append({**base, "section": "summary", "row_index": "", "field": key, "value": _flat_value(value)})
-        for section_name in ("processing", "provenance", "validation", "review", "scientific_context"):
+        for section_name in ("processing", "provenance", "validation", "review", "scientific_context", "report_payload"):
             for key, value in record.get(section_name, {}).items():
                 rows.append({**base, "section": section_name, "row_index": "", "field": key, "value": _flat_value(value)})
         for index, row in enumerate(record.get("rows", []), start=1):
