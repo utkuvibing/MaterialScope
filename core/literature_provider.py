@@ -129,11 +129,26 @@ class LiteratureProvider(Protocol):
     provider_id: str
     provider_result_source: str
     last_request_id: str
+    last_query_status: str
+    last_error_message: str
 
     def search(self, query: str, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         ...
 
     def fetch_accessible_text(self, candidate: dict[str, Any]) -> dict[str, Any] | None:
+        ...
+
+
+class MetadataSearchClient(Protocol):
+    """Expected injected metadata-search client contract for live provider adapters.
+
+    The client is responsible for performing a query against a legal-safe metadata API.
+    It should accept `(query, filters)` and return either:
+    - a mapping with `results` plus optional request/status metadata, or
+    - a list of already-normalized metadata rows.
+    """
+
+    def __call__(self, query: str, filters: dict[str, Any]) -> Any:
         ...
 
 
@@ -150,6 +165,8 @@ class FixtureLiteratureProvider:
         raw_payload = json.loads(self.fixture_path.read_text(encoding="utf-8"))
         self._sources = normalize_literature_sources(raw_payload.get("sources") or [])
         self.last_request_id = ""
+        self.last_query_status = ""
+        self.last_error_message = ""
 
     def search(self, query: str, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         filters = dict(filters or {})
@@ -166,6 +183,8 @@ class FixtureLiteratureProvider:
         query_tokens = _tokenize(query)
         request_id = f"litreq_{self.provider_id}_{uuid.uuid4().hex[:12]}"
         self.last_request_id = request_id
+        self.last_query_status = "success"
+        self.last_error_message = ""
 
         ranked: list[tuple[int, dict[str, Any]]] = []
         for source in self._sources:
@@ -218,7 +237,9 @@ class FixtureLiteratureProvider:
                 str(item[1].get("title") or ""),
             )
         )
-        return [candidate for _score, candidate in ranked[: int(filters.get("top_k") or 5)]]
+        results = [candidate for _score, candidate in ranked[: int(filters.get("top_k") or 5)]]
+        self.last_query_status = "success" if results else "no_results"
+        return results
 
     def fetch_accessible_text(self, candidate: dict[str, Any]) -> dict[str, Any] | None:
         access_class = str(candidate.get("access_class") or "metadata_only").lower()
@@ -264,10 +285,12 @@ class MetadataAPILiteratureProvider:
     def __init__(
         self,
         *,
-        search_client: Callable[[str, dict[str, Any]], Any] | None = None,
+        search_client: MetadataSearchClient | None = None,
     ) -> None:
         self._search_client = search_client
         self.last_request_id = ""
+        self.last_query_status = ""
+        self.last_error_message = ""
 
     def _request_payload(self, query: str, filters: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -280,22 +303,37 @@ class MetadataAPILiteratureProvider:
     def search(self, query: str, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         payload = self._request_payload(query, dict(filters or {}))
         self.last_request_id = payload["request_id"]
+        self.last_error_message = ""
         if self._search_client is None:
+            self.last_query_status = "not_configured"
             return []
 
-        raw_response = self._search_client(query, dict(filters or {}))
+        try:
+            raw_response = self._search_client(query, dict(filters or {}))
+        except Exception as exc:
+            self.last_query_status = "provider_unavailable"
+            self.last_error_message = _clean_text(exc) or exc.__class__.__name__
+            return []
         result_source = payload["result_source"]
         request_id = payload["request_id"]
+        query_status = "success"
         rows: list[dict[str, Any]] = []
 
         if isinstance(raw_response, Mapping):
             request_id = _clean_text(raw_response.get("request_id")) or request_id
             result_source = _clean_text(raw_response.get("result_source")) or result_source
+            query_status = _clean_text(raw_response.get("query_status")).lower() or query_status
+            if not query_status and _clean_text(raw_response.get("error")):
+                query_status = "provider_unavailable"
+            self.last_error_message = _clean_text(raw_response.get("error") or raw_response.get("detail"))
             rows = [dict(item) for item in (raw_response.get("results") or []) if isinstance(item, Mapping)]
         elif isinstance(raw_response, list):
             rows = [dict(item) for item in raw_response if isinstance(item, Mapping)]
 
         self.last_request_id = request_id
+        if not rows and query_status == "success":
+            query_status = "no_results"
+        self.last_query_status = query_status
         normalized: list[dict[str, Any]] = []
         for item in normalize_literature_sources(rows):
             provenance = dict(item.get("provenance") or {})
@@ -339,6 +377,12 @@ class OpenAlexLikeLiteratureProvider(MetadataAPILiteratureProvider):
 
     Legal guardrail: this provider is metadata-first and only uses abstract or
     open-access text when the provider response already exposes it legally.
+
+    Expected client behavior:
+    - accepts `(query, filters)`
+    - returns metadata rows plus optional `request_id`, `result_source`, `query_status`, and `error`
+    - may expose abstract/open-access URL signals when legally available
+    - must not scrape web pages or fetch closed/paywalled full text
     """
 
     provider_id = "openalex_like_provider"
@@ -353,10 +397,14 @@ class MultiLiteratureProviderAggregator:
         self.providers = list(providers)
         self.last_request_id = ""
         self.last_request_ids: list[str] = []
+        self.last_query_status = ""
+        self.last_error_message = ""
 
     def search(self, query: str, filters: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         aggregated: dict[str, dict[str, Any]] = {}
         self.last_request_ids = []
+        statuses: list[str] = []
+        errors: list[str] = []
         for provider in self.providers:
             for candidate in provider.search(query, filters=filters):
                 identity = citation_identity_key(candidate)
@@ -367,7 +415,24 @@ class MultiLiteratureProviderAggregator:
             request_id = _clean_text(getattr(provider, "last_request_id", ""))
             if request_id and request_id not in self.last_request_ids:
                 self.last_request_ids.append(request_id)
+            status = _clean_text(getattr(provider, "last_query_status", "")).lower()
+            if status:
+                statuses.append(status)
+            error = _clean_text(getattr(provider, "last_error_message", ""))
+            if error:
+                errors.append(error)
         self.last_request_id = self.last_request_ids[-1] if self.last_request_ids else ""
+        if aggregated:
+            self.last_query_status = "success"
+        elif statuses and all(status == "not_configured" for status in statuses):
+            self.last_query_status = "not_configured"
+        elif "provider_unavailable" in statuses:
+            self.last_query_status = "provider_unavailable"
+        elif statuses:
+            self.last_query_status = "no_results"
+        else:
+            self.last_query_status = ""
+        self.last_error_message = "; ".join(errors)
         return list(aggregated.values())
 
     def fetch_accessible_text(self, candidate: dict[str, Any]) -> dict[str, Any] | None:

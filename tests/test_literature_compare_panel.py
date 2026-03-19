@@ -305,6 +305,119 @@ def test_render_literature_sections_localizes_xrd_note_in_turkish(monkeypatch):
     assert not any("Secondary metadata: claim" in item for item in captions)
 
 
+def test_render_literature_sections_renders_xrd_zero_hit_real_search_block(monkeypatch):
+    captions: list[str] = []
+    markdowns: list[str] = []
+
+    fake_st = SimpleNamespace(
+        caption=lambda text: captions.append(str(text)),
+        markdown=lambda text: markdowns.append(str(text)),
+        warning=lambda text: captions.append(str(text)),
+        container=lambda: nullcontext(),
+    )
+    monkeypatch.setattr(literature_compare_panel, "st", fake_st)
+
+    literature_compare_panel.render_literature_sections(
+        {
+            "analysis_type": "XRD",
+            "summary": {
+                "match_status": "no_match",
+                "confidence_band": "no_match",
+                "top_candidate_name": "cod_1000026",
+                "top_candidate_display_name_unicode": "MgB₂",
+            },
+            "literature_context": {
+                "query_text": "\"MgB₂\" XRD powder diffraction phase identification crystal structure MgB2",
+                "query_display_title": "MgB₂",
+                "query_display_mode": "XRD / phase identification",
+                "query_display_terms": ["powder diffraction", "crystal structure", "phase identification"],
+                "candidate_name": "MgB2",
+                "candidate_display_name": "MgB₂",
+                "candidate_id": "cod_1000026",
+                "match_status_snapshot": "no_match",
+                "confidence_band_snapshot": "no_match",
+                "real_literature_available": False,
+                "fixture_fallback_used": False,
+                "fixture_fallback_allowed": False,
+                "provider_query_status": "no_results",
+                "no_results_reason": "no_real_results",
+                "source_count": 0,
+                "citation_count": 0,
+            },
+            "literature_claims": [],
+            "literature_comparisons": [],
+            "citations": [],
+        },
+        lang="en",
+    )
+
+    assert markdowns[0] == "**XRD Candidate Evidence Summary**"
+    assert any("**Literature Search Summary**" == item for item in markdowns)
+    assert any("**Real Literature Search Status**" == item for item in markdowns)
+    assert any("Candidate phase: MgB₂" in item for item in captions)
+    assert any("No displayable real papers were found for this candidate phase" in item for item in captions)
+    assert any("accepted XRD result remains no_match" in item for item in captions)
+    assert not any("Candidate phase: cod_1000026" in item for item in captions)
+    assert not any(item == "**Literature Check For Top-Ranked Candidate**" for item in markdowns)
+    assert not any(item == "\"MgB₂\" XRD powder diffraction phase identification crystal structure MgB2" for item in markdowns)
+
+
+def test_render_literature_sections_keeps_turkish_zero_hit_copy_fully_turkish(monkeypatch):
+    captions: list[str] = []
+    markdowns: list[str] = []
+
+    fake_st = SimpleNamespace(
+        caption=lambda text: captions.append(str(text)),
+        markdown=lambda text: markdowns.append(str(text)),
+        warning=lambda text: captions.append(str(text)),
+        container=lambda: nullcontext(),
+    )
+    monkeypatch.setattr(literature_compare_panel, "st", fake_st)
+
+    literature_compare_panel.render_literature_sections(
+        {
+            "analysis_type": "XRD",
+            "summary": {
+                "match_status": "no_match",
+                "confidence_band": "no_match",
+                "top_candidate_name": "cod_1000026",
+                "top_candidate_display_name_unicode": "MgB₂",
+            },
+            "literature_context": {
+                "query_text": "\"MgB₂\" XRD powder diffraction phase identification crystal structure MgB2",
+                "query_display_title": "MgB₂",
+                "query_display_mode": "XRD / faz tanımlama",
+                "query_display_terms": ["powder diffraction", "crystal structure", "phase identification"],
+                "candidate_name": "MgB2",
+                "candidate_display_name": "MgB₂",
+                "candidate_id": "cod_1000026",
+                "match_status_snapshot": "no_match",
+                "confidence_band_snapshot": "no_match",
+                "real_literature_available": False,
+                "fixture_fallback_used": False,
+                "fixture_fallback_allowed": False,
+                "provider_query_status": "no_results",
+                "no_results_reason": "no_real_results",
+                "source_count": 0,
+                "citation_count": 0,
+            },
+            "literature_claims": [],
+            "literature_comparisons": [],
+            "citations": [],
+        },
+        lang="tr",
+    )
+
+    assert any("Gerçek literatür araması tamamlandı" in item for item in captions)
+    assert any("Bu aday faz için gösterilebilir gerçek yayın bulunamadı" in item for item in captions)
+    assert any("yalnızca bu sorguda uygun bibliyografik sonuç bulunamadı" in item for item in captions)
+    assert any("Kabul edilen XRD sonucu no_match olarak kalır" in item for item in captions)
+    assert any("Aday faz: MgB₂" in item for item in captions)
+    assert not any("Aday faz: cod_1000026" in item for item in captions)
+    assert not any("Real literature search completed" in item for item in captions)
+    assert not any("Search Interpretation" in item for item in markdowns)
+
+
 def test_render_literature_sections_shows_fixture_banner_and_demo_citation_guardrail(monkeypatch):
     captions: list[str] = []
     markdowns: list[str] = []

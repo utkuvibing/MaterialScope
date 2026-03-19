@@ -248,13 +248,13 @@ def _confidence_text(lang: str, value: str) -> str:
 
 def _evidence_badge_text(lang: str, key: str) -> str:
     labels = {
-        "fixture": ("fixture", "fixture"),
-        "metadata": ("metadata", "metadata"),
+        "fixture": ("demo/fixture", "demo/fixture"),
+        "metadata": ("üstveri", "metadata"),
         "abstract": ("özet", "abstract"),
         "open_access": ("açık erişim", "open access"),
-        "user_document": ("kullanıcı dokümanı", "user document"),
+        "user_document": ("kullanıcı belgesi", "user document"),
     }
-    tr, en = labels.get(key, ("metadata", "metadata"))
+    tr, en = labels.get(key, ("üstveri", "metadata"))
     return _ui_text(lang, tr, en)
 
 
@@ -271,12 +271,35 @@ def _validation_posture_text(lang: str, value: str) -> str:
 
 def _match_status_text(lang: str, value: str) -> str:
     labels = {
-        "matched": ("matched", "matched"),
-        "no_match": ("no_match", "no_match"),
-        "not_run": ("not_run", "not_run"),
+        "matched": ("eşleşti", "matched"),
+        "no_match": ("eşleşme yok", "no_match"),
+        "not_run": ("çalıştırılmadı", "not_run"),
     }
     tr, en = labels.get(_clean_text(value).lower(), (value or "n/a", value or "n/a"))
     return _ui_text(lang, tr, en)
+
+
+def _xrd_search_mode_text(lang: str, value: str) -> str:
+    token = _clean_text(value).lower()
+    labels = {
+        "xrd / phase identification": ("XRD / faz tanımlama", "XRD / phase identification"),
+        "xrd / faz tanımlama": ("XRD / faz tanımlama", "XRD / phase identification"),
+    }
+    tr, en = labels.get(token, (value or "XRD / faz tanımlama", value or "XRD / phase identification"))
+    return _ui_text(lang, tr, en)
+
+
+def _to_float_text(value: Any, *, digits: int = 3) -> str:
+    try:
+        if value in (None, ""):
+            return ""
+        return f"{float(value):.{digits}f}"
+    except (TypeError, ValueError):
+        return _clean_text(value)
+
+
+def _query_terms(value: Any) -> list[str]:
+    return [item for item in _to_text_list(value) if item]
 
 
 def _xrd_comparison_note_text(row: Mapping[str, Any], *, lang: str) -> str:
@@ -316,6 +339,151 @@ def _xrd_comparison_note_text(row: Mapping[str, Any], *, lang: str) -> str:
         "Kaynak en iyi adayla ilişkilidir, ancak mevcut XRD kanıtı sınırlıdır ve faz doğrulaması sağlamaz.",
         "This source is relevant to the top-ranked candidate, but the current XRD evidence remains limited and non-validating.",
     )
+
+
+def _xrd_search_interpretation_lines(candidate_summary: Mapping[str, Any], *, lang: str) -> list[str]:
+    candidate = _clean_text(candidate_summary.get("best_ranked_candidate")) or _ui_text(lang, "aday faz", "the candidate phase")
+    match_status = _clean_text(candidate_summary.get("accepted_match_status")).lower()
+    lines = [
+        _ui_text(
+            lang,
+            "Arama en iyi aday faz etrafında kurgulandı: {candidate}.",
+            "The search was centered on the top-ranked candidate phase: {candidate}.",
+            candidate=candidate,
+        ),
+        _ui_text(
+            lang,
+            "Literatür katmanı faz doğrulaması yapmaz; yalnızca aday faz bağlamı sunar.",
+            "The literature layer does not validate a phase call; it only adds candidate-phase context.",
+        ),
+    ]
+    if match_status == "no_match":
+        lines.append(
+            _ui_text(
+                lang,
+                "Kabul edilen XRD sonucu no_match olarak kalır.",
+                "The accepted XRD result remains no_match.",
+            )
+        )
+    return lines
+
+
+def _render_xrd_search_summary(candidate_summary: Mapping[str, Any], *, lang: str) -> None:
+    candidate = _clean_text(candidate_summary.get("query_display_title") or candidate_summary.get("best_ranked_candidate"))
+    mode = _xrd_search_mode_text(lang, _clean_text(candidate_summary.get("query_display_mode")) or "XRD / phase identification")
+    extra_terms = ", ".join(_query_terms(candidate_summary.get("query_display_terms")))
+    raw_query = _clean_text(candidate_summary.get("query_text"))
+
+    st.markdown(f"**{_ui_text(lang, 'Literatür Arama Özeti', 'Literature Search Summary')}**")
+    with _streamlit_block():
+        st.caption(
+            _ui_text(
+                lang,
+                "Aday faz: {candidate}",
+                "Candidate phase: {candidate}",
+                candidate=candidate or _ui_text(lang, "kayıt yok", "not recorded"),
+            )
+        )
+        st.caption(
+            _ui_text(
+                lang,
+                "Arama modu: {mode}",
+                "Search mode: {mode}",
+                mode=mode,
+            )
+        )
+        if extra_terms:
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Ek terimler: {terms}",
+                    "Extra terms: {terms}",
+                    terms=extra_terms,
+                )
+            )
+        if raw_query:
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Teknik sorgu: {query}",
+                    "Technical query: {query}",
+                    query=raw_query,
+                )
+            )
+
+
+def _render_xrd_no_results_status(candidate_summary: Mapping[str, Any], *, lang: str) -> None:
+    reason = _clean_text(candidate_summary.get("no_results_reason")).lower()
+    status = _clean_text(candidate_summary.get("provider_query_status")).lower()
+    provider_error = _clean_text(candidate_summary.get("provider_error_message"))
+
+    st.markdown(f"**{_ui_text(lang, 'Gerçek Literatür Arama Durumu', 'Real Literature Search Status')}**")
+    with _streamlit_block():
+        if reason == "provider_unavailable" or status == "provider_unavailable":
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Gerçek literatür araması tamamlanamadı",
+                    "The real literature search could not be completed",
+                )
+            )
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Sağlayıcı geçici olarak kullanılamıyor veya yanıt üretmedi; bu nedenle gösterilebilir gerçek yayın alınamadı.",
+                    "The provider was unavailable or did not return a usable response, so no real papers could be shown.",
+                )
+            )
+        elif reason == "not_configured" or status == "not_configured":
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Gerçek literatür araması yapılandırılmadı",
+                    "Real literature search is not configured",
+                )
+            )
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Bu ortamda gerçek OpenAlex-benzeri sağlayıcı istemcisi bağlı değil; bu nedenle gösterilebilir gerçek yayın alınamadı.",
+                    "No live OpenAlex-like provider client is configured in this environment, so no real papers could be shown.",
+                )
+            )
+        else:
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Gerçek literatür araması tamamlandı",
+                    "The real literature search completed",
+                )
+            )
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Bu aday faz için gösterilebilir gerçek yayın bulunamadı",
+                    "No displayable real papers were found for this candidate phase",
+                )
+            )
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Bu durum literatürde hiç çalışma olmadığı anlamına gelmez; yalnızca bu sorguda uygun bibliyografik sonuç bulunamadı.",
+                    "This does not mean that no literature exists; it only means that this query did not return suitable bibliographic results.",
+                )
+            )
+        if provider_error:
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Teknik sağlayıcı notu: {detail}",
+                    "Technical provider note: {detail}",
+                    detail=provider_error,
+                )
+            )
+
+    st.markdown(f"**{_ui_text(lang, 'Arama Yorumu', 'Search Interpretation')}**")
+    for line in _xrd_search_interpretation_lines(candidate_summary, lang=lang):
+        st.caption(line)
 
 
 def _comparison_display_label(
@@ -738,8 +906,25 @@ def build_literature_sections(record: Mapping[str, Any] | None) -> dict[str, Any
         "result_source": _clean_text(summary.get("library_result_source") or context.get("candidate_result_source_snapshot")),
         "query_text": _clean_text(context.get("query_text")),
         "query_rationale": _clean_text(context.get("query_rationale")),
+        "query_display_title": _clean_text(context.get("query_display_title"))
+        or _clean_text(
+            context.get("candidate_display_name")
+            or context.get("candidate_name")
+            or summary.get("top_candidate_display_name_unicode")
+            or summary.get("top_candidate_name")
+        ),
+        "query_display_mode": _clean_text(context.get("query_display_mode")) or "XRD / phase identification",
+        "query_display_terms": _query_terms(context.get("query_display_terms")),
         "real_literature_available": bool(context.get("real_literature_available")),
         "fixture_only": flags["fixture_only"],
+        "provider_query_status": _clean_text(context.get("provider_query_status")),
+        "provider_error_message": _clean_text(context.get("provider_error_message")),
+        "no_results_reason": _clean_text(context.get("no_results_reason")),
+        "fixture_fallback_used": bool(context.get("fixture_fallback_used")),
+        "fixture_fallback_allowed": bool(context.get("fixture_fallback_allowed")),
+        "source_count": context.get("source_count") if context.get("source_count") not in (None, "") else 0,
+        "citation_count": context.get("citation_count") if context.get("citation_count") not in (None, "") else 0,
+        "candidate_id": _clean_text(context.get("candidate_id") or summary.get("top_candidate_id")),
     }
 
     return {
@@ -837,8 +1022,8 @@ def _render_xrd_candidate_summary(candidate_summary: Mapping[str, Any], *, lang:
                 lang,
                 "Kapsama: {coverage} | Ağırlıklı örtüşme: {weighted} | Sağlayıcı/kaynak: {provider} / {result_source}",
                 "Coverage: {coverage} | Weighted overlap: {weighted} | Provider/result source: {provider} / {result_source}",
-                coverage=str(candidate_summary.get("coverage") if candidate_summary.get("coverage") not in (None, "") else _ui_text(lang, "kayıt yok", "not recorded")),
-                weighted=str(candidate_summary.get("weighted_overlap") if candidate_summary.get("weighted_overlap") not in (None, "") else _ui_text(lang, "kayıt yok", "not recorded")),
+                coverage=_to_float_text(candidate_summary.get("coverage")) or _ui_text(lang, "kayıt yok", "not recorded"),
+                weighted=_to_float_text(candidate_summary.get("weighted_overlap")) or _ui_text(lang, "kayıt yok", "not recorded"),
                 provider=_clean_text(candidate_summary.get("provider")) or _ui_text(lang, "kayıt yok", "not recorded"),
                 result_source=_clean_text(candidate_summary.get("result_source")) or _ui_text(lang, "kayıt yok", "not recorded"),
             )
@@ -884,24 +1069,29 @@ def render_literature_sections(record: Mapping[str, Any] | None, *, lang: str) -
             st.warning(
                 _ui_text(
                     lang,
-                    "Demo literature fixture output — gerçek bibliyografik kaynak değildir",
-                    "Demo literature fixture output — not a real bibliographic source",
+                    "Demo/fixture literatür çıktısı gerçek bibliyografik kaynak değildir",
+                    "Demo/fixture literature output is not a real bibliographic source",
                 )
             )
         _render_xrd_candidate_summary(sections.get("candidate_summary") or {}, lang=lang)
-        st.markdown(f"**{_ui_text(lang, 'En İyi Aday İçin Literatür Taraması', 'Literature Check For Top-Ranked Candidate')}**")
-        if _clean_text((sections.get("candidate_summary") or {}).get("query_text")):
-            st.caption(
-                _ui_text(
-                    lang,
-                    "Sorgu: {query}",
-                    "Query: {query}",
-                    query=_clean_text((sections.get("candidate_summary") or {}).get("query_text")),
-                )
-            )
-        if _clean_text((sections.get("candidate_summary") or {}).get("query_rationale")):
-            st.caption(_clean_text((sections.get("candidate_summary") or {}).get("query_rationale")))
-        if _clean_text((sections.get("candidate_summary") or {}).get("accepted_match_status")).lower() == "no_match":
+        _render_xrd_search_summary(sections.get("candidate_summary") or {}, lang=lang)
+        candidate_summary = sections.get("candidate_summary") or {}
+        no_real_cards = (
+            not sections.get("paper_cards")
+            and not candidate_summary.get("real_literature_available")
+            and not candidate_summary.get("fixture_fallback_used")
+            and int(candidate_summary.get("source_count") or 0) == 0
+            and int(candidate_summary.get("citation_count") or 0) == 0
+            and _clean_text(candidate_summary.get("no_results_reason")).lower() in {
+                "no_real_results",
+                "provider_unavailable",
+                "not_configured",
+                "query_too_narrow",
+            }
+        )
+        if no_real_cards:
+            _render_xrd_no_results_status(candidate_summary, lang=lang)
+        elif _clean_text(candidate_summary.get("accepted_match_status")).lower() == "no_match":
             st.caption(
                 _ui_text(
                     lang,
@@ -909,7 +1099,7 @@ def render_literature_sections(record: Mapping[str, Any] | None, *, lang: str) -
                     "Even if related XRD papers are found, they do not validate a phase call for the current sample; the result remains no_match.",
                 )
             )
-        elif sections["fixture_detected"] and not (sections.get("candidate_summary") or {}).get("real_literature_available"):
+        elif sections["fixture_detected"] and not candidate_summary.get("real_literature_available"):
             st.caption(
                 _ui_text(
                     lang,
@@ -917,7 +1107,7 @@ def render_literature_sections(record: Mapping[str, Any] | None, *, lang: str) -
                     "No real bibliographic papers were found; any fixture/demo output is not shown as authoritative paper cards.",
                 )
             )
-        elif not (sections.get("candidate_summary") or {}).get("real_literature_available") and not sections["fixture_detected"]:
+        elif not candidate_summary.get("real_literature_available") and not sections["fixture_detected"]:
             st.caption(
                 _ui_text(
                     lang,
@@ -927,9 +1117,10 @@ def render_literature_sections(record: Mapping[str, Any] | None, *, lang: str) -
             )
 
         if sections.get("paper_cards"):
+            st.markdown(f"**{_ui_text(lang, 'En İyi Aday İçin Literatür Taraması', 'Literature Check For Top-Ranked Candidate')}**")
             for row in sections["paper_cards"]:
                 _render_xrd_paper_card(row, lang=lang)
-        else:
+        elif not no_real_cards:
             st.caption(
                 _ui_text(
                     lang,

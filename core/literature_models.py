@@ -265,6 +265,13 @@ class LiteratureContext:
     real_literature_available: bool = False
     fixture_fallback_used: bool = False
     query_rationale: str = ""
+    provider_query_status: str = ""
+    provider_error_message: str = ""
+    no_results_reason: str = ""
+    fixture_fallback_allowed: bool = False
+    query_display_title: str = ""
+    query_display_mode: str = ""
+    query_display_terms: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -312,6 +319,13 @@ class LiteratureContext:
         payload["real_literature_available"] = bool(payload.get("real_literature_available"))
         payload["fixture_fallback_used"] = bool(payload.get("fixture_fallback_used"))
         payload["query_rationale"] = _clean_text(payload.get("query_rationale"))
+        payload["provider_query_status"] = _clean_text(payload.get("provider_query_status")).lower()
+        payload["provider_error_message"] = _clean_text(payload.get("provider_error_message"))
+        payload["no_results_reason"] = _clean_text(payload.get("no_results_reason")).lower()
+        payload["fixture_fallback_allowed"] = bool(payload.get("fixture_fallback_allowed"))
+        payload["query_display_title"] = _clean_text(payload.get("query_display_title"))
+        payload["query_display_mode"] = _clean_text(payload.get("query_display_mode"))
+        payload["query_display_terms"] = _to_str_list(payload.get("query_display_terms"))
         return payload
 
 
@@ -351,6 +365,13 @@ def normalize_literature_context(value: Any) -> dict[str, Any]:
         real_literature_available=source.get("real_literature_available", False),
         fixture_fallback_used=source.get("fixture_fallback_used", False),
         query_rationale=source.get("query_rationale", ""),
+        provider_query_status=source.get("provider_query_status", ""),
+        provider_error_message=source.get("provider_error_message", ""),
+        no_results_reason=source.get("no_results_reason", ""),
+        fixture_fallback_allowed=source.get("fixture_fallback_allowed", False),
+        query_display_title=source.get("query_display_title", ""),
+        query_display_mode=source.get("query_display_mode", ""),
+        query_display_terms=source.get("query_display_terms", []),
     ).to_dict()
 
 

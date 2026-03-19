@@ -2191,10 +2191,46 @@ def _literature_appendix_sections(record: Mapping[str, Any]) -> list[tuple[str, 
 
     context = dict(record.get("literature_context") or {})
     if context:
+        context_payload = _table_payload(context)
+        candidate_label = (
+            normalize_report_text(context.get("candidate_display_name") or "")
+            or normalize_report_text(context.get("candidate_name") or "")
+            or normalize_report_text((record.get("summary") or {}).get("top_candidate_display_name_unicode") or "")
+            or normalize_report_text((record.get("summary") or {}).get("top_candidate_name") or "")
+        )
+        if candidate_label:
+            context_payload["Candidate Label"] = candidate_label
+        reason = normalize_report_text(context.get("no_results_reason") or "").lower()
+        query_status = normalize_report_text(context.get("provider_query_status") or "").lower()
+        real_literature_available = bool(context.get("real_literature_available"))
+        source_count = int(context.get("source_count") or 0)
+        citation_count = int(context.get("citation_count") or 0)
+        if (
+            str(record.get("analysis_type") or "").upper() == "XRD"
+            and not real_literature_available
+            and source_count == 0
+            and citation_count == 0
+        ):
+            if reason == "provider_unavailable" or query_status == "provider_unavailable":
+                context_payload["Real Literature Search Outcome"] = (
+                    "The configured real provider could not return usable bibliographic results for this candidate in the current run."
+                )
+            elif reason == "not_configured" or query_status == "not_configured":
+                context_payload["Real Literature Search Outcome"] = (
+                    "A live real-provider client was not configured for this environment, so no bibliographic papers were retrieved for the candidate-centered query."
+                )
+            else:
+                context_payload["Real Literature Search Outcome"] = (
+                    "A real provider query completed but did not return suitable bibliographic results for the candidate-centered XRD search. "
+                    "This does not imply that the phase is absent from the literature."
+                )
+            context_payload["Authoritative Note"] = (
+                "XRD accepted match status remains authoritative; literature absence does not validate or invalidate the phase call."
+            )
         title = "Literature Comparison Context"
         if fixture_state["fixture_only"]:
             title = "Development / Demo Literature Output"
-        sections.append((title, _table_payload(context)))
+        sections.append((title, context_payload))
 
     comparisons_payload = {}
     for item in record.get("literature_comparisons") or []:

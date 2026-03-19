@@ -21,7 +21,7 @@ from core.literature_models import (
 )
 from core.literature_provider import FixtureLiteratureProvider, LiteratureProvider
 from core.literature_provider import citation_identity_key, merge_literature_candidates
-from core.xrd_literature_query_builder import build_xrd_literature_query
+from core.xrd_literature_query_builder import build_xrd_literature_query, build_xrd_query_presentation
 
 
 HINT_TO_LABEL = {
@@ -287,6 +287,14 @@ def _provider_result_source(provider: LiteratureProvider, *, provider_scope: lis
         return "multi_provider_search"
     token = _clean_text(getattr(provider, "provider_result_source", ""))
     return token or "metadata_abstract_oa_only"
+
+
+def _provider_query_status(provider: LiteratureProvider) -> str:
+    return _clean_text(getattr(provider, "last_query_status", "")).lower()
+
+
+def _provider_error_message(provider: LiteratureProvider) -> str:
+    return _clean_text(getattr(provider, "last_error_message", ""))
 
 
 def _compare_generic_result_to_literature(
@@ -616,6 +624,7 @@ def _compare_xrd_candidate_to_literature(
 ) -> dict[str, Any]:
     comparison_run_id = f"litcmp_{uuid.uuid4().hex[:12]}"
     query_payload = build_xrd_literature_query(record)
+    query_presentation = build_xrd_query_presentation(query_payload)
     claims = _xrd_candidate_claims(record, query_payload, max_claims=max_claims)
     summary = dict(record.get("summary") or {})
     normalized_user_documents = _normalize_user_document_sources(user_documents)
@@ -655,6 +664,8 @@ def _compare_xrd_candidate_to_literature(
         for request_id in _provider_request_ids(provider):
             if request_id and request_id not in provider_request_ids:
                 provider_request_ids.append(request_id)
+    provider_query_status = _provider_query_status(provider)
+    provider_error_message = _provider_error_message(provider)
 
     citations_by_identity: dict[str, dict[str, Any]] = {}
     comparisons_with_rank: list[tuple[int, dict[str, Any]]] = []
@@ -770,7 +781,23 @@ def _compare_xrd_candidate_to_literature(
             _is_fixture_source(source) for source in search_results.values()
         ),
         query_rationale=_clean_text(query_payload.get("query_rationale")),
+        provider_query_status=provider_query_status,
+        no_results_reason=(
+            "provider_unavailable"
+            if provider_query_status == "provider_unavailable"
+            else "not_configured"
+            if provider_query_status == "not_configured"
+            else "no_real_results"
+            if not search_results and provider_query_status in {"no_results", "success", ""}
+            else ""
+        ),
+        fixture_fallback_allowed=bool(search_filters.get("allow_fixture_fallback")),
+        query_display_title=_clean_text(query_presentation.get("display_title")),
+        query_display_mode=_clean_text(query_presentation.get("display_mode")),
+        query_display_terms=_as_list(query_presentation.get("display_terms")),
     ).to_dict()
+    if provider_error_message:
+        context["provider_error_message"] = provider_error_message
 
     citations = sorted(citations_by_identity.values(), key=lambda item: item["citation_id"])
     return {

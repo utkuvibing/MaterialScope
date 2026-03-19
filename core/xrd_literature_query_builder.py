@@ -68,6 +68,13 @@ def _query_text(candidate_label: str, formula: str) -> str:
     return "XRD phase identification diffraction pattern"
 
 
+def _extra_terms(candidate_label: str, formula: str) -> list[str]:
+    terms = ["powder diffraction", "crystal structure", "phase identification"]
+    if not candidate_label and not formula:
+        terms = ["diffraction pattern", "phase identification"]
+    return terms
+
+
 def _query_rationale(
     *,
     candidate_label: str,
@@ -91,6 +98,27 @@ def _query_rationale(
     elif shared_peaks is not None:
         rationale += f" The current result reports about {shared_peaks} shared peaks for the top-ranked candidate."
     return rationale
+
+
+def build_xrd_query_presentation(query_payload: Mapping[str, Any]) -> dict[str, Any]:
+    candidate_label = (
+        _clean_text(query_payload.get("candidate_display_name"))
+        or _clean_text(query_payload.get("candidate_name"))
+        or _clean_text(query_payload.get("candidate_formula"))
+        or "Top-ranked candidate"
+    )
+    extra_terms = [term for term in query_payload.get("query_display_terms") or [] if _clean_text(term)]
+    if not extra_terms:
+        extra_terms = _extra_terms(
+            _clean_text(query_payload.get("candidate_display_name") or query_payload.get("candidate_name")),
+            _clean_text(query_payload.get("candidate_formula")),
+        )
+    return {
+        "display_title": candidate_label,
+        "display_mode": _clean_text(query_payload.get("query_display_mode")) or "XRD / phase identification",
+        "display_terms": extra_terms,
+        "raw_query": _clean_text(query_payload.get("query_text")),
+    }
 
 
 def build_xrd_literature_query(record: Mapping[str, Any]) -> dict[str, Any]:
@@ -127,6 +155,9 @@ def build_xrd_literature_query(record: Mapping[str, Any]) -> dict[str, Any]:
         "candidate_formula": formula,
         "candidate_id": _clean_text(summary.get("top_candidate_id")),
         "candidate_display_name": _clean_text(summary.get("top_candidate_display_name_unicode") or summary.get("top_candidate_display_name") or candidate_label),
+        "query_display_title": _clean_text(summary.get("top_candidate_display_name_unicode") or summary.get("top_candidate_display_name") or candidate_label or formula),
+        "query_display_mode": "XRD / phase identification",
+        "query_display_terms": _extra_terms(candidate_label, formula),
         "query_rationale": _query_rationale(
             candidate_label=candidate_label,
             formula=formula,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.xrd_literature_query_builder import build_xrd_literature_query
+from core.xrd_literature_query_builder import build_xrd_literature_query, build_xrd_query_presentation
 
 
 def _record(summary: dict) -> dict:
@@ -42,6 +42,9 @@ def test_query_builder_prefers_unicode_display_name():
 
     assert "MgB₂" in payload["query_text"]
     assert payload["candidate_display_name"] == "MgB₂"
+    assert payload["query_display_title"] == "MgB₂"
+    assert payload["query_display_mode"] == "XRD / phase identification"
+    assert payload["query_display_terms"] == ["powder diffraction", "crystal structure", "phase identification"]
     assert payload["match_status_snapshot"] == "matched"
     assert payload["evidence_snapshot"]["top_candidate_score"] == 0.81
 
@@ -70,3 +73,21 @@ def test_query_builder_degrades_to_generic_xrd_terms_when_candidate_is_missing()
     assert payload["query_text"] == "XRD phase identification diffraction pattern"
     assert payload["match_status_snapshot"] == "no_match"
     assert "no_match" in payload["query_rationale"]
+
+
+def test_query_presentation_prefers_human_candidate_label():
+    presentation = build_xrd_query_presentation(
+        {
+            "candidate_display_name": "MgB₂",
+            "candidate_name": "cod_1000026",
+            "candidate_formula": "MgB2",
+            "query_text": "\"MgB₂\" XRD powder diffraction phase identification crystal structure MgB2",
+            "query_display_mode": "XRD / phase identification",
+            "query_display_terms": ["powder diffraction", "crystal structure", "phase identification"],
+        }
+    )
+
+    assert presentation["display_title"] == "MgB₂"
+    assert presentation["display_mode"] == "XRD / phase identification"
+    assert presentation["display_terms"] == ["powder diffraction", "crystal structure", "phase identification"]
+    assert presentation["raw_query"].startswith("\"MgB₂\" XRD")

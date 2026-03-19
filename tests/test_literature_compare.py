@@ -448,6 +448,51 @@ def test_xrd_no_match_remains_non_validating_under_literature():
     assert "no_match screening outcome" in comparison["comparison_note"]
 
 
+def test_xrd_zero_hit_real_provider_persists_no_results_traceability():
+    provider = OpenAlexLikeLiteratureProvider(
+        search_client=lambda query, filters: {
+            "request_id": "openalex_req_zero",
+            "result_source": "openalex_api",
+            "query_status": "no_results",
+            "results": [],
+        }
+    )
+
+    package = compare_result_to_literature(_base_record(), provider=provider, provider_scope=["openalex_like_provider"])
+
+    context = package["literature_context"]
+    assert context["provider_query_status"] == "no_results"
+    assert context["no_results_reason"] == "no_real_results"
+    assert context["real_literature_available"] is False
+    assert context["fixture_fallback_allowed"] is False
+    assert context["query_display_title"] == "Phase Alpha"
+    assert context["query_display_terms"] == ["powder diffraction", "crystal structure", "phase identification"]
+
+
+def test_xrd_not_configured_provider_persists_traceability():
+    provider = OpenAlexLikeLiteratureProvider(search_client=None)
+
+    package = compare_result_to_literature(_base_record(), provider=provider, provider_scope=["openalex_like_provider"])
+
+    context = package["literature_context"]
+    assert context["provider_query_status"] == "not_configured"
+    assert context["no_results_reason"] == "not_configured"
+    assert context["real_literature_available"] is False
+
+
+def test_xrd_provider_unavailable_persists_traceability():
+    def _raising_client(query, filters):
+        raise RuntimeError("temporary outage")
+
+    provider = OpenAlexLikeLiteratureProvider(search_client=_raising_client)
+    package = compare_result_to_literature(_base_record(), provider=provider, provider_scope=["openalex_like_provider"])
+
+    context = package["literature_context"]
+    assert context["provider_query_status"] == "provider_unavailable"
+    assert context["no_results_reason"] == "provider_unavailable"
+    assert context["provider_error_message"] == "temporary outage"
+
+
 def test_multi_provider_aggregation_dedupes_by_doi_and_tracks_scope():
     fixture_like = StubProvider(
         [
@@ -939,3 +984,60 @@ def test_docx_report_excludes_fixture_xrd_rows_when_real_and_fixture_results_mix
     assert "10.1000/real-alpha" in xml
     assert "Fixture-only paper" not in xml
     assert "10.1000/fixture-alpha" not in xml
+
+
+def test_docx_report_appendix_notes_real_provider_zero_hit_xrd_run():
+    record = attach_literature_package(
+        _base_record(),
+        {
+            "literature_context": {
+                "mode": "metadata_abstract_oa_only",
+                "comparison_run_id": "litcmp_zero_001",
+                "provider_scope": ["openalex_like_provider"],
+                "provider_request_ids": ["openalex_req_zero"],
+                "provider_result_source": "openalex_api",
+                "query_text": "\"MgB₂\" XRD powder diffraction phase identification crystal structure MgB2",
+                "query_display_title": "MgB₂",
+                "query_display_mode": "XRD / phase identification",
+                "query_display_terms": ["powder diffraction", "crystal structure", "phase identification"],
+                "candidate_name": "MgB2",
+                "candidate_display_name": "MgB₂",
+                "match_status_snapshot": "no_match",
+                "confidence_band_snapshot": "no_match",
+                "source_count": 0,
+                "citation_count": 0,
+                "real_literature_available": False,
+                "fixture_fallback_used": False,
+                "fixture_fallback_allowed": False,
+                "provider_query_status": "no_results",
+                "no_results_reason": "no_real_results",
+            },
+            "literature_claims": [],
+            "literature_comparisons": [],
+            "citations": [],
+        },
+    )
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": [18.2, 27.5, 36.1], "signal": [130.0, 290.0, 175.0]}),
+        metadata={
+            "sample_name": "Phase Alpha Sample",
+            "display_name": "Synthetic XRD Pattern",
+            "instrument": "XRDBench",
+            "xrd_axis_role": "two_theta",
+            "xrd_axis_unit": "degree_2theta",
+        },
+        data_type="XRD",
+        units={"temperature": "degree_2theta", "signal": "counts"},
+        original_columns={"temperature": "two_theta", "signal": "intensity"},
+        file_path="",
+    )
+
+    docx_bytes = generate_docx_report(results={record["id"]: record}, datasets={"xrd_demo": dataset})
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "Literature Comparison Context" in xml
+    assert "Candidate Label" in xml
+    assert "MgB₂" in xml
+    assert "Real Literature Search Outcome" in xml
+    assert "did not return suitable bibliographic results" in xml
