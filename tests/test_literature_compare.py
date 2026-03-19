@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import uuid
 import zipfile
 
 import pandas as pd
@@ -10,20 +11,47 @@ import pytest
 from core.data_io import ThermalDataset
 from core.literature_claims import extract_literature_claims
 from core.literature_compare import attach_literature_package, compare_result_to_literature
-from core.literature_provider import FixtureLiteratureProvider, default_literature_provider_registry, resolve_literature_provider
+from core.literature_provider import (
+    FixtureLiteratureProvider,
+    MetadataAPILiteratureProvider,
+    MultiLiteratureProviderAggregator,
+    default_literature_provider_registry,
+    resolve_literature_provider,
+    resolve_literature_providers,
+)
 from core.report_generator import generate_docx_report, generate_pdf_report
 from core.result_serialization import flatten_result_records, make_result_record, split_valid_results
 
 
 class StubProvider:
     provider_id = "stub_provider"
+    provider_result_source = "stub_search"
 
     def __init__(self, sources: list[dict]) -> None:
         self.sources = sources
+        self.last_request_id = ""
 
     def search(self, query: str, filters: dict | None = None) -> list[dict]:
-        del query, filters
-        return list(self.sources)
+        del filters
+        self.last_request_id = f"litreq_{self.provider_id}_{uuid.uuid4().hex[:8]}"
+        rows: list[dict] = []
+        for source in self.sources:
+            provenance = dict(source.get("provenance") or {})
+            rows.append(
+                {
+                    **dict(source),
+                    "provenance": {
+                        **provenance,
+                        "provider_id": self.provider_id,
+                        "request_id": self.last_request_id,
+                        "result_source": self.provider_result_source,
+                        "query": query,
+                        "provider_scope": [self.provider_id],
+                        "provider_request_ids": [self.last_request_id],
+                    },
+                }
+            )
+        return rows
 
     def fetch_accessible_text(self, candidate: dict) -> dict | None:
         if str(candidate.get("access_class") or "").lower() == "restricted_external":
@@ -180,6 +208,8 @@ def test_compare_result_to_literature_limits_max_claims():
 
     assert [claim["claim_id"] for claim in package["literature_claims"]] == ["C1", "C2"]
     assert len(package["literature_comparisons"]) == 2
+    assert package["literature_context"]["source_count"] >= 1
+    assert package["literature_context"]["provider_request_ids"]
 
 
 @pytest.mark.parametrize(
@@ -262,6 +292,7 @@ def test_user_provided_document_is_compared_and_cited():
     assert package["citations"][0]["access_class"] == "user_provided_document"
     assert package["citations"][0]["title"] == "Lab note alpha"
     assert package["citations"][0]["provenance"]["result_source"] == "user_provided_document"
+    assert package["citations"][0]["source_license_note"] == "user_provided_document"
 
 
 def test_provider_registry_resolves_fixture_by_default():
@@ -271,6 +302,21 @@ def test_provider_registry_resolves_fixture_by_default():
 
     assert isinstance(provider, FixtureLiteratureProvider)
     assert provider_scope == ["fixture_provider"]
+
+
+def test_provider_registry_resolves_multiple_requested_providers():
+    registry = {
+        "stub_provider": lambda: StubProvider([]),
+        "metadata_api_provider": lambda: MetadataAPILiteratureProvider(search_client=lambda query, filters: []),
+    }
+
+    providers, provider_scope = resolve_literature_providers(
+        ["stub_provider", "metadata_api_provider"],
+        registry=registry,
+    )
+
+    assert [provider.provider_id for provider in providers] == ["stub_provider", "metadata_api_provider"]
+    assert provider_scope == ["stub_provider", "metadata_api_provider"]
 
 
 def test_provider_registry_resolves_requested_provider_from_registry():
@@ -283,6 +329,131 @@ def test_provider_registry_resolves_requested_provider_from_registry():
 
     assert isinstance(provider, StubProvider)
     assert provider_scope == ["stub_provider"]
+
+
+def test_metadata_provider_can_return_metadata_only_candidate():
+    provider = MetadataAPILiteratureProvider(
+        search_client=lambda query, filters: {
+            "request_id": "meta_req_001",
+            "result_source": "open_metadata_api",
+            "results": [
+                _source(
+                    source_id="metadata_alpha",
+                    access_class="metadata_only",
+                    text="Abstract-level metadata supports the Phase Alpha qualitative interpretation.",
+                    hint="supports",
+                )
+            ],
+        }
+    )
+
+    package = compare_result_to_literature(_base_record(), provider=provider, provider_scope=["metadata_api_provider"])
+
+    assert package["literature_context"]["provider_request_ids"] == ["meta_req_001"]
+    assert package["literature_context"]["provider_result_source"] == "open_metadata_api"
+    assert package["literature_context"]["metadata_only_evidence"] is True
+    assert package["citations"][0]["provenance"]["provider_id"] == "metadata_api_provider"
+
+
+def test_multi_provider_aggregation_dedupes_by_doi_and_tracks_scope():
+    fixture_like = StubProvider(
+        [
+            _source(
+                source_id="alpha_a",
+                access_class="abstract_only",
+                text="This abstract supports the Phase Alpha qualitative XRD interpretation.",
+                hint="supports",
+            )
+        ]
+    )
+    metadata_provider = MetadataAPILiteratureProvider(
+        search_client=lambda query, filters: {
+            "request_id": "meta_req_002",
+            "result_source": "open_metadata_api",
+            "results": [
+                _source(
+                    source_id="alpha_b",
+                    access_class="open_access_full_text",
+                    text="This open-access article supports the Phase Alpha qualitative XRD interpretation.",
+                    hint="supports",
+                )
+            ],
+        }
+    )
+
+    duplicate = _source(
+        source_id="alpha_dup",
+        access_class="abstract_only",
+        text="This abstract supports the Phase Alpha qualitative XRD interpretation.",
+        hint="supports",
+    )
+    duplicate["doi"] = "10.1000/shared-alpha"
+    duplicate["url"] = "https://example.test/shared-alpha-a"
+    fixture_like.sources = [duplicate]
+
+    other_duplicate = _source(
+        source_id="alpha_dup_other",
+        access_class="open_access_full_text",
+        text="This open-access article supports the Phase Alpha qualitative XRD interpretation.",
+        hint="supports",
+    )
+    other_duplicate["doi"] = "10.1000/shared-alpha"
+    other_duplicate["url"] = "https://example.test/shared-alpha-b"
+    metadata_provider = MetadataAPILiteratureProvider(
+        search_client=lambda query, filters: {
+            "request_id": "meta_req_002",
+            "result_source": "open_metadata_api",
+            "results": [other_duplicate],
+        }
+    )
+
+    package = compare_result_to_literature(
+        _base_record(),
+        provider=MultiLiteratureProviderAggregator([fixture_like, metadata_provider]),
+        provider_scope=["stub_provider", "metadata_api_provider"],
+    )
+
+    assert package["literature_context"]["provider_scope"] == ["stub_provider", "metadata_api_provider"]
+    assert package["literature_context"]["provider_result_source"] == "multi_provider_search"
+    assert set(package["literature_context"]["provider_request_ids"]) == {"meta_req_002"} | {
+        request_id for request_id in package["literature_context"]["provider_request_ids"] if request_id.startswith("litreq_stub_provider_")
+    }
+    assert package["literature_context"]["citation_count"] == 1
+    assert package["literature_context"]["source_count"] == 1
+    assert len(package["citations"]) == 1
+    assert set(package["citations"][0]["provenance"]["provider_scope"]) == {"stub_provider", "metadata_api_provider"}
+
+
+def test_literature_context_traceability_fields_persist_after_normalization():
+    package = compare_result_to_literature(
+        _base_record(),
+        provider=StubProvider(
+            [
+                _source(
+                    source_id="support_a",
+                    access_class="open_access_full_text",
+                    text="This source supports the Phase Alpha XRD interpretation.",
+                    hint="supports",
+                )
+            ]
+        ),
+        provider_scope=["stub_provider"],
+    )
+    record = attach_literature_package(_base_record(), package)
+
+    valid, issues = split_valid_results({record["id"]: record})
+    assert issues == []
+
+    context = valid[record["id"]]["literature_context"]
+    assert context["result_id"] == "xrd_demo"
+    assert context["analysis_type"] == "XRD"
+    assert context["provider_result_source"] == "stub_search"
+    assert context["provider_request_ids"]
+    assert context["source_count"] == 1
+    assert context["accessible_source_count"] == 1
+    assert context["restricted_source_count"] == 0
+    assert context["citation_count"] == 1
+    assert context["generated_at_utc"]
 
 
 def test_long_accessible_text_is_not_persisted_in_normalized_result_records():
@@ -309,6 +480,7 @@ def test_long_accessible_text_is_not_persisted_in_normalized_result_records():
     assert long_text not in json.dumps(persisted)
     assert all("oa_full_text" not in citation for citation in persisted["citations"])
     assert all("abstract_text" not in citation for citation in persisted["citations"])
+    assert all("source_license_note" in citation for citation in persisted["citations"])
 
 
 def test_result_serialization_includes_literature_payload_sections():
@@ -323,6 +495,8 @@ def test_result_serialization_includes_literature_payload_sections():
     flat_rows = flatten_result_records(valid)
 
     assert valid[record["id"]]["literature_context"]["mode"] == "metadata_abstract_oa_only"
+    assert any(row["section"] == "literature_context" and row["field"] == "provider_request_ids" for row in flat_rows)
+    assert any(row["section"] == "literature_context" and row["field"] == "provider_result_source" for row in flat_rows)
     assert any(row["section"] == "literature_context" and row["field"] == "comparison_run_id" for row in flat_rows)
     assert any(row["section"] == "literature_claims" and row["field"] == "claim_id" for row in flat_rows)
     assert any(row["section"] == "literature_comparisons" and row["field"] == "support_label" for row in flat_rows)
@@ -340,6 +514,12 @@ def test_docx_and_pdf_reports_render_literature_sections():
                 "mode": "metadata_abstract_oa_only",
                 "comparison_run_id": "litcmp_demo_001",
                 "provider_scope": ["fixture_provider"],
+                "provider_request_ids": ["litreq_fixture_provider_demo"],
+                "provider_result_source": "fixture_search",
+                "source_count": 2,
+                "citation_count": 2,
+                "accessible_source_count": 2,
+                "restricted_source_count": 0,
                 "query_count": 2,
                 "restricted_content_used": False,
             },
@@ -367,6 +547,13 @@ def test_docx_and_pdf_reports_render_literature_sections():
                     "url": "https://example.test/support",
                     "access_class": "open_access_full_text",
                     "citation_text": "A. Author (2024). Supporting paper. Fixture Journal. DOI: 10.1000/support.",
+                    "source_license_note": "CC-BY-4.0",
+                    "provenance": {
+                        "provider_id": "fixture_provider",
+                        "result_source": "fixture_search",
+                        "provider_scope": ["fixture_provider"],
+                        "provider_request_ids": ["litreq_fixture_provider_demo"],
+                    },
                 },
                 {
                     "citation_id": "ref2",
@@ -378,6 +565,13 @@ def test_docx_and_pdf_reports_render_literature_sections():
                     "url": "https://example.test/alternative",
                     "access_class": "abstract_only",
                     "citation_text": "B. Author (2025). Alternative paper. Fixture Journal. DOI: 10.1000/alternative.",
+                    "source_license_note": "publisher_abstract_only",
+                    "provenance": {
+                        "provider_id": "fixture_provider",
+                        "result_source": "fixture_search",
+                        "provider_scope": ["fixture_provider"],
+                        "provider_request_ids": ["litreq_fixture_provider_demo"],
+                    },
                 },
             ],
         },
@@ -406,6 +600,9 @@ def test_docx_and_pdf_reports_render_literature_sections():
     assert "Contradictory or Alternative References" in xml
     assert "Recommended Follow-Up Literature Checks" in xml
     assert "litcmp_demo_001" in xml
+    assert "litreq_fixture_provider_demo" in xml
+    assert "CC-BY-4.0" in xml
+    assert "fixture_provider" in xml
 
     pdf_bytes = generate_pdf_report(results={record["id"]: record}, datasets={"xrd_demo": dataset})
     extracted = "\n".join(page.extract_text() or "" for page in pypdf.PdfReader(io.BytesIO(pdf_bytes)).pages)

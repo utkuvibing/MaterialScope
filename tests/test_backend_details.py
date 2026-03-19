@@ -203,21 +203,66 @@ def test_result_literature_compare_endpoint_persists_payload():
     response = client.post(
         f"/workspace/{project_id}/results/{record['id']}/literature/compare",
         headers=_headers(),
-        json={"persist": True},
+        json={
+            "persist": True,
+            "user_documents": [
+                {
+                    "document_id": "user_doc_alpha",
+                    "title": "User doc alpha",
+                    "text": "This user document supports the Phase Alpha qualitative interpretation.",
+                    "authors": ["U. Analyst"],
+                }
+            ],
+        },
     )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["result_id"] == record["id"]
     assert payload["literature_context"]["mode"] == "metadata_abstract_oa_only"
+    assert payload["literature_context"]["provider_request_ids"]
+    assert payload["literature_context"]["citation_count"] >= 1
     assert payload["literature_claims"]
     assert "support_label" in payload["literature_comparisons"][0]
     assert payload["detail"]["project_id"] == project_id
     assert payload["detail"]["result"]["id"] == record["id"]
     assert payload["detail"]["literature_context"]["mode"] == "metadata_abstract_oa_only"
+    assert payload["detail"]["citations"][0]["source_license_note"]
 
     detail = client.get(f"/workspace/{project_id}/results/{record['id']}", headers=_headers())
     assert detail.status_code == 200
     detail_payload = detail.json()
     assert detail_payload["literature_context"]["mode"] == "metadata_abstract_oa_only"
     assert detail_payload["literature_claims"]
+
+
+def test_result_literature_compare_endpoint_validates_typed_user_documents():
+    store = ProjectStore()
+    record = make_result_record(
+        result_id="xrd_demo",
+        analysis_type="XRD",
+        status="stable",
+        dataset_key="xrd_demo",
+        metadata={"sample_name": "Phase Alpha Sample"},
+        summary={"top_candidate_name": "Phase Alpha", "match_status": "matched"},
+        rows=[{"rank": 1, "candidate_name": "Phase Alpha", "normalized_score": 0.82}],
+    )
+    project_id = store.put(normalize_workspace_state({"results": {record["id"]: record}}))
+    client = TestClient(create_app(api_token="details-token", store=store))
+
+    response = client.post(
+        f"/workspace/{project_id}/results/{record['id']}/literature/compare",
+        headers=_headers(),
+        json={
+            "persist": False,
+            "user_documents": [
+                {
+                    "document_id": "bad_user_doc",
+                    "title": "Bad user doc",
+                    "text": "",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 422

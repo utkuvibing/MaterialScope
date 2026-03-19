@@ -168,6 +168,7 @@ class CitationEntry:
     url: str = ""
     access_class: str = "metadata_only"
     citation_text: str = ""
+    source_license_note: str = ""
     provenance: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -180,6 +181,7 @@ class CitationEntry:
         payload["url"] = _clean_text(payload.get("url"))
         payload["access_class"] = _normalize_access_class(payload.get("access_class"))
         payload["citation_text"] = _clean_text(payload.get("citation_text"))
+        payload["source_license_note"] = _clean_text(payload.get("source_license_note"))
         payload["provenance"] = _copy_mapping(payload.get("provenance"))
         return payload
 
@@ -189,19 +191,40 @@ class LiteratureContext:
     mode: str = "metadata_abstract_oa_only"
     comparison_run_id: str = ""
     provider_scope: list[str] = field(default_factory=list)
+    result_id: str = ""
+    analysis_type: str = ""
+    provider_request_ids: list[str] = field(default_factory=list)
+    provider_result_source: str = ""
     query_count: int = 0
+    source_count: int = 0
+    citation_count: int = 0
+    accessible_source_count: int = 0
+    restricted_source_count: int = 0
+    metadata_only_evidence: bool = False
     restricted_content_used: bool = False
+    generated_at_utc: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         payload["mode"] = _clean_text(payload.get("mode")) or "metadata_abstract_oa_only"
         payload["comparison_run_id"] = _clean_text(payload.get("comparison_run_id"))
         payload["provider_scope"] = _to_str_list(payload.get("provider_scope"))
+        payload["result_id"] = _clean_text(payload.get("result_id"))
+        payload["analysis_type"] = _clean_text(payload.get("analysis_type")).upper()
+        payload["provider_request_ids"] = _to_str_list(payload.get("provider_request_ids"))
+        payload["provider_result_source"] = _clean_text(payload.get("provider_result_source"))
         try:
             payload["query_count"] = int(payload.get("query_count") or 0)
         except (TypeError, ValueError):
             payload["query_count"] = 0
+        for key in ("source_count", "citation_count", "accessible_source_count", "restricted_source_count"):
+            try:
+                payload[key] = int(payload.get(key) or 0)
+            except (TypeError, ValueError):
+                payload[key] = 0
+        payload["metadata_only_evidence"] = bool(payload.get("metadata_only_evidence"))
         payload["restricted_content_used"] = bool(payload.get("restricted_content_used"))
+        payload["generated_at_utc"] = _clean_text(payload.get("generated_at_utc"))
         return payload
 
 
@@ -213,8 +236,18 @@ def normalize_literature_context(value: Any) -> dict[str, Any]:
         mode=source.get("mode", "metadata_abstract_oa_only"),
         comparison_run_id=source.get("comparison_run_id", ""),
         provider_scope=source.get("provider_scope", []),
+        result_id=source.get("result_id", ""),
+        analysis_type=source.get("analysis_type", ""),
+        provider_request_ids=source.get("provider_request_ids", []),
+        provider_result_source=source.get("provider_result_source", ""),
         query_count=source.get("query_count", 0),
+        source_count=source.get("source_count", 0),
+        citation_count=source.get("citation_count", 0),
+        accessible_source_count=source.get("accessible_source_count", 0),
+        restricted_source_count=source.get("restricted_source_count", 0),
+        metadata_only_evidence=source.get("metadata_only_evidence", False),
         restricted_content_used=source.get("restricted_content_used", False),
+        generated_at_utc=source.get("generated_at_utc", ""),
     ).to_dict()
 
 
@@ -297,6 +330,7 @@ def normalize_citations(value: Any) -> list[dict[str, Any]]:
                 url=source.get("url") or "",
                 access_class=source.get("access_class") or "metadata_only",
                 citation_text=source.get("citation_text") or "",
+                source_license_note=source.get("source_license_note") or "",
                 provenance=_copy_mapping(source.get("provenance")),
             ).to_dict()
         )

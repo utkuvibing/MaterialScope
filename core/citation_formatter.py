@@ -63,6 +63,7 @@ def build_citation_entry(source: Mapping[str, Any], *, citation_id: str) -> dict
         url=normalized_source["url"],
         access_class=normalized_source["access_class"],
         citation_text=normalized_source.get("citation_text") or format_citation_text(normalized_source),
+        source_license_note=normalized_source.get("source_license_note") or "",
         provenance=normalized_source["provenance"],
     )
     return citation.to_dict()

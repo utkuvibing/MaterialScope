@@ -1907,6 +1907,39 @@ def _citation_report_line(citation: Mapping[str, Any]) -> str:
     return normalize_report_text(f"{citation_text} Access class: {access_class}.")
 
 
+def _citation_appendix_line(citation: Mapping[str, Any]) -> str:
+    citation_text = normalize_report_text(citation.get("citation_text") or citation.get("title") or "Citation not recorded")
+    access_class = normalize_report_text(citation.get("access_class") or "metadata_only")
+    license_note = normalize_report_text(citation.get("source_license_note") or "not recorded")
+    provenance = dict(citation.get("provenance") or {})
+    provider_id = normalize_report_text(provenance.get("provider_id") or "")
+    result_source = normalize_report_text(provenance.get("result_source") or "")
+    provider_scope = ", ".join(
+        normalize_report_text(item)
+        for item in (provenance.get("provider_scope") or [])
+        if normalize_report_text(item)
+    )
+    request_ids = ", ".join(
+        normalize_report_text(item)
+        for item in ((provenance.get("provider_request_ids") or []) or [provenance.get("request_id")])
+        if normalize_report_text(item)
+    )
+    segments = [
+        citation_text,
+        f"Access class: {access_class}.",
+        f"License note: {license_note}.",
+    ]
+    if provider_id:
+        segments.append(f"Provider: {provider_id}.")
+    if result_source:
+        segments.append(f"Result source: {result_source}.")
+    if provider_scope:
+        segments.append(f"Provider scope: {provider_scope}.")
+    if request_ids:
+        segments.append(f"Provider request IDs: {request_ids}.")
+    return normalize_report_text(" ".join(segments))
+
+
 def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict[str, Any]]]:
     comparisons = [dict(item) for item in (record.get("literature_comparisons") or []) if isinstance(item, Mapping)]
     context = dict(record.get("literature_context") or {})
@@ -2017,7 +2050,7 @@ def _literature_appendix_sections(record: Mapping[str, Any]) -> list[tuple[str, 
 
     citations_payload = {}
     for citation_id, citation in _citation_lookup(record).items():
-        citations_payload[citation_id] = _citation_report_line(citation)
+        citations_payload[citation_id] = _citation_appendix_line(citation)
     if citations_payload:
         sections.append(("Literature Citations", citations_payload))
     return sections

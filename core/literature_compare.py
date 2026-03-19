@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from core.citation_formatter import build_citation_entry
@@ -17,6 +18,7 @@ from core.literature_models import (
     normalize_literature_sources,
 )
 from core.literature_provider import FixtureLiteratureProvider, LiteratureProvider
+from core.literature_provider import citation_identity_key, merge_literature_candidates
 
 
 HINT_TO_LABEL = {
@@ -158,7 +160,7 @@ def _normalize_user_document_sources(user_documents: list[dict[str, Any]] | None
                         "available_fields": ["metadata", "user_provided_document"],
                         "abstract_text": "",
                         "oa_full_text": accessible_text,
-                        "source_license_note": "user_provided_document",
+                        "source_license_note": _first_non_empty(item, "source_license_note") or "user_provided_document",
                         "citation_text": _first_non_empty(item, "citation_text"),
                         "provenance": _user_document_provenance(item, index=index),
                     }
@@ -267,6 +269,34 @@ def _evaluate_source(claim: Mapping[str, Any], source: Mapping[str, Any], access
     }
 
 
+def _search_result_identity(source: Mapping[str, Any]) -> str:
+    identity = citation_identity_key(source)
+    if identity.startswith("provider_source:"):
+        provider_id = _clean_text((source.get("provenance") or {}).get("provider_id")).lower()
+        source_id = _clean_text(source.get("source_id")).lower()
+        return f"provider_source:{provider_id}|{source_id}"
+    return identity
+
+
+def _provider_request_ids(provider: LiteratureProvider) -> list[str]:
+    request_ids = [
+        _clean_text(item)
+        for item in getattr(provider, "last_request_ids", [])
+        if _clean_text(item)
+    ]
+    if request_ids:
+        return request_ids
+    request_id = _clean_text(getattr(provider, "last_request_id", ""))
+    return [request_id] if request_id else []
+
+
+def _provider_result_source(provider: LiteratureProvider, *, provider_scope: list[str]) -> str:
+    if len(provider_scope) > 1:
+        return "multi_provider_search"
+    token = _clean_text(getattr(provider, "provider_result_source", ""))
+    return token or "metadata_abstract_oa_only"
+
+
 def compare_result_to_literature(
     record: Mapping[str, Any],
     *,
@@ -282,33 +312,67 @@ def compare_result_to_literature(
     scope = provider_scope or [getattr(active_provider, "provider_id", "fixture_provider")]
     normalized_user_documents = _normalize_user_document_sources(user_documents)
 
-    all_queries: list[str] = []
+    query_count = 0
     comparisons: list[dict[str, Any]] = []
-    citations_by_source_id: dict[str, dict[str, Any]] = {}
+    citations_by_identity: dict[str, dict[str, Any]] = {}
     restricted_content_used = False
+    provider_request_ids: list[str] = []
+    all_sources_seen: dict[str, dict[str, Any]] = {
+        _search_result_identity(source): copy.deepcopy(source)
+        for source in normalized_user_documents
+        if _search_result_identity(source)
+    }
+    provider_result_sources = {
+        _clean_text((source.get("provenance") or {}).get("result_source"))
+        for source in normalized_user_documents
+        if _clean_text((source.get("provenance") or {}).get("result_source"))
+    }
+    accessible_source_ids: set[str] = set()
+    restricted_source_ids: set[str] = set()
+    used_access_fields: set[str] = set()
 
     for claim in claims:
         search_results: dict[str, dict[str, Any]] = {
-            str(source.get("source_id") or ""): copy.deepcopy(source)
+            _search_result_identity(source): copy.deepcopy(source)
             for source in normalized_user_documents
-            if str(source.get("source_id") or "")
+            if _search_result_identity(source)
         }
         claim_filters = _search_filters_for_claim(claim, filters)
         for query in build_claim_queries(claim):
-            all_queries.append(query)
             for candidate in active_provider.search(query, filters=claim_filters):
-                source_id = str(candidate.get("source_id") or "")
-                if source_id and source_id not in search_results:
-                    search_results[source_id] = copy.deepcopy(candidate)
+                source_key = _search_result_identity(candidate)
+                if not source_key:
+                    continue
+                if source_key in search_results:
+                    search_results[source_key] = merge_literature_candidates(search_results[source_key], candidate)
+                else:
+                    search_results[source_key] = copy.deepcopy(candidate)
+                if source_key in all_sources_seen:
+                    all_sources_seen[source_key] = merge_literature_candidates(all_sources_seen[source_key], candidate)
+                else:
+                    all_sources_seen[source_key] = copy.deepcopy(candidate)
+                result_source = _clean_text((candidate.get("provenance") or {}).get("result_source"))
+                if result_source:
+                    provider_result_sources.add(result_source)
+            request_ids_for_query = _provider_request_ids(active_provider)
+            query_count += max(1, len(request_ids_for_query))
+            for request_id in request_ids_for_query:
+                if request_id and request_id not in provider_request_ids:
+                    provider_request_ids.append(request_id)
 
         evaluations: list[dict[str, Any]] = []
         for source in search_results.values():
+            source_key = _search_result_identity(source)
             accessible = _fetch_accessible_text(source, provider=active_provider)
             if accessible is None:
                 if str(source.get("access_class") or "").lower() == "restricted_external":
-                    restricted_content_used = restricted_content_used or False
+                    restricted_source_ids.add(source_key)
                 continue
-            evaluations.append(_evaluate_source(claim, source, accessible))
+            accessible_source_ids.add(source_key)
+            used_access_fields.add(_clean_text(accessible.get("field")).lower())
+            evaluation = _evaluate_source(claim, source, accessible)
+            evaluation["source_identity"] = source_key
+            evaluations.append(evaluation)
 
         if evaluations:
             evaluations.sort(key=lambda item: (-item["score"], str(item.get("source_id") or "")))
@@ -325,20 +389,24 @@ def compare_result_to_literature(
             evidence_used: list[str] = []
             access_field = best["access_field"]
             for source_eval in citation_sources:
-                source = search_results.get(str(source_eval["source_id"]))
+                source = search_results.get(str(source_eval["source_identity"] or ""))
                 if source is None:
                     continue
-                source_id = str(source.get("source_id") or "")
-                if source_id not in citations_by_source_id:
-                    citation_id = f"ref{len(citations_by_source_id) + 1}"
-                    citations_by_source_id[source_id] = build_citation_entry(source, citation_id=citation_id)
-                citation_ids.append(citations_by_source_id[source_id]["citation_id"])
+                citation_key = citation_identity_key(source)
+                if citation_key not in citations_by_identity:
+                    citation_id = f"ref{len(citations_by_identity) + 1}"
+                    citations_by_identity[citation_key] = build_citation_entry(source, citation_id=citation_id)
+                citation_ids.append(citations_by_identity[citation_key]["citation_id"])
                 evidence_used.append(source_eval["evidence"])
 
             comparisons.append(
                 LiteratureComparison(
                     claim_id=str(claim.get("claim_id") or ""),
-                    retrieved_sources=sorted(search_results),
+                    retrieved_sources=sorted(
+                        _clean_text(item.get("source_id"))
+                        for item in search_results.values()
+                        if _clean_text(item.get("source_id"))
+                    ),
                     support_label=label,
                     rationale=_rationale_for_label(label, access_field=access_field),
                     evidence_used=evidence_used,
@@ -351,7 +419,11 @@ def compare_result_to_literature(
             comparisons.append(
                 LiteratureComparison(
                     claim_id=str(claim.get("claim_id") or ""),
-                    retrieved_sources=sorted(search_results),
+                    retrieved_sources=sorted(
+                        _clean_text(item.get("source_id"))
+                        for item in search_results.values()
+                        if _clean_text(item.get("source_id"))
+                    ),
                     support_label="related_but_inconclusive",
                     rationale=(
                         "Insufficient literature evidence was available from metadata, abstracts, open-access text, "
@@ -368,11 +440,25 @@ def compare_result_to_literature(
         mode="metadata_abstract_oa_only",
         comparison_run_id=comparison_run_id,
         provider_scope=scope,
-        query_count=len(all_queries),
+        result_id=_clean_text(record.get("id")),
+        analysis_type=_clean_text(record.get("analysis_type")).upper(),
+        provider_request_ids=provider_request_ids,
+        provider_result_source=(
+            "multi_provider_search"
+            if len(scope) > 1
+            else (sorted(provider_result_sources)[0] if len(provider_result_sources) == 1 else _provider_result_source(active_provider, provider_scope=scope))
+        ),
+        query_count=query_count,
+        source_count=len(all_sources_seen),
+        citation_count=len(citations_by_identity),
+        accessible_source_count=len(accessible_source_ids),
+        restricted_source_count=len(restricted_source_ids),
+        metadata_only_evidence=bool(accessible_source_ids) and not (used_access_fields & {"oa_full_text", "user_provided_document"}),
         restricted_content_used=restricted_content_used,
+        generated_at_utc=datetime.now(timezone.utc).isoformat(),
     ).to_dict()
 
-    citations = sorted(citations_by_source_id.values(), key=lambda item: item["citation_id"])
+    citations = sorted(citations_by_identity.values(), key=lambda item: item["citation_id"])
     return {
         "literature_context": normalize_literature_context(context),
         "literature_claims": claims,

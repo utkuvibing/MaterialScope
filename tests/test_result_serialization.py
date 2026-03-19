@@ -200,6 +200,32 @@ def test_flatten_result_records_emits_scientific_context_section():
     assert any(row["section"] == "report_payload" and row["field"] == "appendix_note" for row in flat_rows)
 
 
+def test_split_valid_results_backfills_extended_literature_context_fields():
+    record = _base_record()
+    record["literature_context"] = {
+        "mode": "metadata_abstract_oa_only",
+        "comparison_run_id": "litcmp_demo_001",
+        "provider_scope": ["fixture_provider"],
+        "query_count": 2,
+        "restricted_content_used": False,
+    }
+
+    valid, issues = split_valid_results({"demo_result": record})
+
+    assert issues == []
+    context = valid["demo_result"]["literature_context"]
+    assert context["comparison_run_id"] == "litcmp_demo_001"
+    assert context["provider_scope"] == ["fixture_provider"]
+    assert context["provider_request_ids"] == []
+    assert context["provider_result_source"] == ""
+    assert context["source_count"] == 0
+    assert context["citation_count"] == 0
+    assert context["accessible_source_count"] == 0
+    assert context["restricted_source_count"] == 0
+    assert context["metadata_only_evidence"] is False
+    assert context["generated_at_utc"] == ""
+
+
 def test_serialize_ftir_result_persists_no_match_caution_and_evidence():
     dataset = _spectral_dataset("FTIR")
     processing = ensure_processing_payload(analysis_type="FTIR", workflow_template="ftir.general")
