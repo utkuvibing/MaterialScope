@@ -274,6 +274,7 @@ class LiteratureContext:
     query_display_terms: list[str] = field(default_factory=list)
     low_specificity_retrieval: bool = False
     surfaced_comparison_count: int = 0
+    evidence_specificity_summary: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -333,6 +334,7 @@ class LiteratureContext:
             payload["surfaced_comparison_count"] = int(payload.get("surfaced_comparison_count") or 0)
         except (TypeError, ValueError):
             payload["surfaced_comparison_count"] = 0
+        payload["evidence_specificity_summary"] = _clean_text(payload.get("evidence_specificity_summary")).lower()
         return payload
 
 
@@ -381,6 +383,7 @@ def normalize_literature_context(value: Any) -> dict[str, Any]:
         query_display_terms=source.get("query_display_terms", []),
         low_specificity_retrieval=source.get("low_specificity_retrieval", False),
         surfaced_comparison_count=source.get("surfaced_comparison_count", 0),
+        evidence_specificity_summary=source.get("evidence_specificity_summary", ""),
     ).to_dict()
 
 

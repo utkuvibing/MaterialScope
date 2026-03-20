@@ -581,6 +581,56 @@ def test_render_literature_sections_shows_low_specificity_thermal_note_without_n
     assert sum(1 for item in markdowns if item == "**Literature Comparison**") == 1
 
 
+def test_render_literature_sections_shows_abstract_backed_evidence_basis_note(monkeypatch):
+    captions: list[str] = []
+    markdowns: list[str] = []
+
+    fake_st = SimpleNamespace(
+        caption=lambda text: captions.append(str(text)),
+        markdown=lambda text: markdowns.append(str(text)),
+        warning=lambda text: captions.append(str(text)),
+        container=lambda: nullcontext(),
+    )
+    monkeypatch.setattr(literature_compare_panel, "st", fake_st)
+
+    literature_compare_panel.render_literature_sections(
+        {
+            "analysis_type": "TGA",
+            "summary": {"sample_name": ""},
+            "literature_context": {
+                "query_text": "calcium carbonate thermogravimetric analysis decarbonation",
+                "query_display_title": "CaCO3 decomposition",
+                "query_display_mode": "TGA / decomposition profile",
+                "query_display_terms": ["decomposition", "mass loss", "residue"],
+                "real_literature_available": True,
+                "metadata_only_evidence": True,
+                "evidence_specificity_summary": "abstract_backed",
+                "source_count": 2,
+                "citation_count": 1,
+                "accessible_source_count": 1,
+            },
+            "literature_claims": [{"claim_id": "C1", "claim_text": "The TGA result indicates a decomposition profile."}],
+            "literature_comparisons": [
+                {
+                    "claim_id": "C1",
+                    "claim_text": "The TGA result indicates a decomposition profile.",
+                    "paper_title": "Calcite thermal decomposition by thermogravimetric analysis",
+                    "provider_id": "openalex_like_provider",
+                    "access_class": "abstract_only",
+                    "support_label": "partially_supports",
+                    "confidence": "moderate",
+                    "rationale": "Abstract-backed direct decomposition reference.",
+                    "citation_ids": ["ref1"],
+                }
+            ],
+            "citations": [{"citation_id": "ref1", "title": "Calcite thermal decomposition by thermogravimetric analysis", "access_class": "abstract_only"}],
+        },
+        lang="en",
+    )
+
+    assert any("accessible abstract-level evidence" in item for item in captions)
+
+
 def test_render_literature_sections_keeps_turkish_zero_hit_copy_fully_turkish(monkeypatch):
     captions: list[str] = []
     markdowns: list[str] = []

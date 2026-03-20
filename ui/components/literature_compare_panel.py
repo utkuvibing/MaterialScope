@@ -734,9 +734,36 @@ def _follow_up_check_text(lang: str, key: str) -> str:
             "Gerçek literatür bulundu, ancak elde tutulan kayıt kümesi düşük özgüllüklü ve çoğunlukla metadata/özet düzeyinde; doğrudan doğrulama hâlâ mevcut değildir.",
             "Real literature results were found, but the retained set is low-specificity and mostly metadata/abstract-level; direct validation remains unavailable.",
         ),
+        "abstract_backed": (
+            "En az bir elde tutulan kaynak erişilebilir özet düzeyinde kanıt içeriyor; yorum hâlâ doğrulayıcı değildir, ancak yalnızca metadata toplamaya göre daha iyi temellenmiştir.",
+            "At least one retained source includes accessible abstract-level evidence; interpretation remains non-validating but is better grounded than metadata-only retrieval.",
+        ),
+        "oa_backed": (
+            "Elde tutulan kaynak kümesinde açık erişimli veya kullanıcı tarafından sağlanan erişilebilir metin bulunuyor; yorum yine de temkinli ve doğrulayıcı olmayan çerçevede kalır.",
+            "The retained source set includes open-access or user-provided accessible text; interpretation still remains cautious and non-validating.",
+        ),
     }
     tr, en = messages[key]
     return _ui_text(lang, tr, en)
+
+
+def _evidence_specificity_note(lang: str, summary_key: str) -> str:
+    messages = {
+        "abstract_backed": (
+            "En az bir elde tutulan kaynak erişilebilir özet düzeyinde kanıt içeriyor; yorum hâlâ doğrulayıcı değildir, ancak yalnızca metadata toplamaya göre daha iyi temellenmiştir.",
+            "At least one retained source includes accessible abstract-level evidence; interpretation remains non-validating but is better grounded than metadata-only retrieval.",
+        ),
+        "mixed_metadata_and_abstract": (
+            "Elde tutulan kaynak kümesi metadata ve erişilebilir özet kanıtını birlikte içeriyor; yorum temkinli kalır, ancak tamamen metadata tabanlı değildir.",
+            "The retained source set mixes metadata-only and accessible abstract evidence; interpretation remains cautious, but it is not purely metadata-based.",
+        ),
+        "oa_backed": (
+            "En az bir elde tutulan kaynak erişilebilir açık metin içeriyor; yorum yine de doğrulama yerine bağlamsal destek olarak ele alınmalıdır.",
+            "At least one retained source includes accessible open text; the interpretation should still be treated as contextual support rather than validation.",
+        ),
+    }
+    tr, en = messages.get(summary_key, ("", ""))
+    return _ui_text(lang, tr, en) if tr or en else ""
 
 
 def _backend_base_url(base_url: str | None = None) -> str:
@@ -1073,6 +1100,11 @@ def build_literature_sections(record: Mapping[str, Any] | None) -> dict[str, Any
         follow_up_checks.append("metadata_only")
     if context.get("low_specificity_retrieval"):
         follow_up_checks.append("low_specificity_retrieval")
+    evidence_specificity = _clean_text(context.get("evidence_specificity_summary")).lower()
+    if evidence_specificity in {"abstract_backed", "mixed_metadata_and_abstract"}:
+        follow_up_checks.append("abstract_backed")
+    elif evidence_specificity == "oa_backed":
+        follow_up_checks.append("oa_backed")
     if context.get("restricted_content_used") is False:
         follow_up_checks.append("restricted_excluded")
     if flags["fixture_detected"]:
@@ -1366,6 +1398,10 @@ def render_literature_sections(record: Mapping[str, Any] | None, *, lang: str) -
                     "Real literature results were found, but the retained set is low-specificity and metadata/abstract-heavy; direct validation is still unavailable.",
                 )
             )
+        evidence_specificity = _clean_text(sections["context"].get("evidence_specificity_summary")).lower()
+        evidence_note = _evidence_specificity_note(lang, evidence_specificity)
+        if evidence_note:
+            st.caption(evidence_note)
 
     if sections["fixture_detected"]:
         st.warning(

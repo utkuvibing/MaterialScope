@@ -2191,6 +2191,19 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
             thermal_context["Retrieval Note"] = (
                 "Real literature results were found, but the retained set is low-specificity and mostly metadata/abstract-level; direct validation remains unavailable."
             )
+        evidence_specificity = normalize_report_text(context.get("evidence_specificity_summary") or "").lower()
+        if evidence_specificity == "abstract_backed":
+            thermal_context["Evidence Basis"] = (
+                "At least one retained source includes accessible abstract-level evidence; interpretation remains non-validating but is better grounded than metadata-only retrieval."
+            )
+        elif evidence_specificity == "mixed_metadata_and_abstract":
+            thermal_context["Evidence Basis"] = (
+                "The retained source set mixes metadata-only and accessible abstract evidence; interpretation remains cautious, but it is not purely metadata-based."
+            )
+        elif evidence_specificity == "oa_backed":
+            thermal_context["Evidence Basis"] = (
+                "At least one retained source includes accessible open text; the interpretation remains cautious and non-validating."
+            )
         sections.append(("Thermal Literature Search Summary", thermal_context))
 
     for item in comparisons:
@@ -2269,6 +2282,15 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
     if context.get("low_specificity_retrieval"):
         follow_up_checks["Check 3b"] = (
             "The retained real-literature set is low-specificity and may reflect neighboring materials/process papers rather than direct thermal validation."
+        )
+    evidence_specificity = normalize_report_text(context.get("evidence_specificity_summary") or "").lower()
+    if evidence_specificity in {"abstract_backed", "mixed_metadata_and_abstract"}:
+        follow_up_checks["Check 3c"] = (
+            "At least one retained source includes accessible abstract-level evidence; interpretation is better grounded than metadata-only retrieval but remains non-validating."
+        )
+    elif evidence_specificity == "oa_backed":
+        follow_up_checks["Check 3c"] = (
+            "At least one retained source includes accessible open text; interpretation remains cautious and does not override the current result."
         )
     if context.get("restricted_content_used") is False:
         follow_up_checks["Check 4"] = (
