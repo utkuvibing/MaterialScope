@@ -16,6 +16,7 @@ from core.literature_provider import (
     MetadataAPILiteratureProvider,
     MultiLiteratureProviderAggregator,
     OpenAlexLikeLiteratureProvider,
+    build_openalex_like_client_from_env,
     default_literature_provider_registry,
     resolve_literature_provider,
     resolve_literature_providers,
@@ -109,6 +110,72 @@ def _base_record() -> dict:
                 "overall_confidence": "moderate",
                 "items": ["Interpretation remains qualitative and cautionary."],
             },
+        },
+        validation={"status": "pass", "warnings": [], "issues": []},
+    )
+
+
+def _thermal_record(analysis_type: str) -> dict:
+    normalized = analysis_type.upper()
+    if normalized == "DSC":
+        return make_result_record(
+            result_id="dsc_demo",
+            analysis_type="DSC",
+            status="stable",
+            dataset_key="dsc_demo",
+            metadata={"sample_name": "Polymer A", "display_name": "Polymer A DSC"},
+            summary={"sample_name": "Polymer A", "peak_count": 1, "glass_transition_count": 1, "tg_midpoint": 118.4},
+            rows=[{"peak_type": "endo", "peak_temperature": 121.2, "onset_temperature": 113.0, "endset_temperature": 126.0}],
+            scientific_context={
+                "scientific_claims": [
+                    {
+                        "id": "C1",
+                        "strength": "comparative",
+                        "claim": "The DSC result indicates a glass-transition-related thermal feature that remains qualitative and requires cautious interpretation.",
+                    }
+                ],
+                "uncertainty_assessment": {"overall_confidence": "moderate", "items": ["Interpretation remains qualitative."]},
+            },
+            validation={"status": "pass", "warnings": [], "issues": []},
+        )
+    if normalized == "DTA":
+        return make_result_record(
+            result_id="dta_demo",
+            analysis_type="DTA",
+            status="stable",
+            dataset_key="dta_demo",
+            metadata={"sample_name": "Ore B", "display_name": "Ore B DTA"},
+            summary={"sample_name": "Ore B", "peak_count": 1},
+            rows=[{"peak_type": "exo", "peak_temperature": 642.8, "onset_temperature": 620.0, "endset_temperature": 661.0}],
+            scientific_context={
+                "scientific_claims": [
+                    {
+                        "id": "C1",
+                        "strength": "descriptive",
+                        "claim": "The DTA result indicates a leading exothermic event that remains a qualitative thermal interpretation.",
+                    }
+                ],
+                "uncertainty_assessment": {"overall_confidence": "moderate", "items": ["Interpretation remains qualitative."]},
+            },
+            validation={"status": "pass", "warnings": [], "issues": []},
+        )
+    return make_result_record(
+        result_id="tga_demo",
+        analysis_type="TGA",
+        status="stable",
+        dataset_key="tga_demo",
+        metadata={"sample_name": "Composite C", "display_name": "Composite C TGA"},
+        summary={"sample_name": "Composite C", "step_count": 1, "total_mass_loss_percent": 32.4, "residue_percent": 67.6},
+        rows=[{"midpoint_temperature": 411.0, "mass_loss_percent": 32.4, "onset_temperature": 380.0, "endset_temperature": 438.0}],
+        scientific_context={
+            "scientific_claims": [
+                {
+                    "id": "C1",
+                    "strength": "descriptive",
+                    "claim": "The TGA result indicates a decomposition profile with a dominant mass-loss step and residual mass that remain qualitative.",
+                }
+            ],
+            "uncertainty_assessment": {"overall_confidence": "moderate", "items": ["Interpretation remains qualitative."]},
         },
         validation={"status": "pass", "warnings": [], "issues": []},
     )
@@ -221,6 +288,61 @@ def test_compare_result_to_literature_limits_max_claims():
     assert len(package["literature_comparisons"]) == 2
     assert package["literature_context"]["source_count"] >= 1
     assert package["literature_context"]["provider_request_ids"]
+
+
+@pytest.mark.parametrize("analysis_type", ["DSC", "DTA", "TGA"])
+def test_thermal_compare_uses_traceable_live_query_context(analysis_type: str):
+    record = _thermal_record(analysis_type)
+    provider = OpenAlexLikeLiteratureProvider(
+        search_client=lambda query, filters: {
+            "request_id": f"openalex_req_{analysis_type.lower()}",
+            "result_source": "openalex_api",
+            "query_status": "success",
+            "results": [
+                {
+                    "id": f"https://openalex.org/W_{analysis_type.lower()}",
+                    "display_name": f"{analysis_type} interpretation study",
+                    "publication_year": 2024,
+                    "doi": f"https://doi.org/10.1000/{analysis_type.lower()}-study",
+                    "authorships": [{"author": {"display_name": "A. Author"}}],
+                    "primary_location": {"source": {"display_name": "Journal of Thermal Analysis"}},
+                }
+            ],
+        }
+    )
+
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["openalex_like_provider"], max_claims=2)
+
+    context = package["literature_context"]
+    comparison = package["literature_comparisons"][0]
+    assert context["analysis_type"] == analysis_type
+    assert context["provider_request_ids"] == [f"openalex_req_{analysis_type.lower()}"]
+    assert context["provider_query_status"] == "success"
+    assert context["query_text"]
+    assert context["query_display_mode"]
+    assert context["query_rationale"]
+    assert comparison["validation_posture"] in {"related_support", "contextual_only", "non_validating"}
+    assert comparison["support_label"] in {"partially_supports", "related_but_inconclusive", "contradicts"}
+    assert comparison["support_label"] != "supports"
+
+
+def test_tga_compare_no_results_persists_traceability():
+    record = _thermal_record("TGA")
+    provider = OpenAlexLikeLiteratureProvider(
+        search_client=lambda query, filters: {
+            "request_id": "openalex_req_tga_none",
+            "result_source": "openalex_api",
+            "query_status": "not_configured",
+            "results": [],
+        }
+    )
+
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["openalex_like_provider"])
+
+    context = package["literature_context"]
+    assert context["provider_query_status"] == "not_configured"
+    assert context["no_results_reason"] == "not_configured"
+    assert context["real_literature_available"] is False
 
 
 @pytest.mark.parametrize(
@@ -348,6 +470,68 @@ def test_provider_registry_resolves_requested_provider_from_registry():
     assert provider_scope == ["stub_provider"]
 
 
+def test_build_openalex_like_client_from_env_requires_explicit_config(monkeypatch):
+    monkeypatch.delenv("MATERIALSCOPE_OPENALEX_EMAIL", raising=False)
+    monkeypatch.delenv("THERMOANALYZER_OPENALEX_EMAIL", raising=False)
+    monkeypatch.delenv("MATERIALSCOPE_OPENALEX_API_KEY", raising=False)
+    monkeypatch.delenv("THERMOANALYZER_OPENALEX_API_KEY", raising=False)
+    monkeypatch.delenv("MATERIALSCOPE_OPENALEX_BASE_URL", raising=False)
+    monkeypatch.delenv("THERMOANALYZER_OPENALEX_BASE_URL", raising=False)
+
+    assert build_openalex_like_client_from_env() is None
+
+
+def test_default_registry_builds_env_backed_openalex_provider(monkeypatch):
+    monkeypatch.setenv("MATERIALSCOPE_OPENALEX_EMAIL", "research@example.test")
+
+    provider, provider_scope = resolve_literature_provider(
+        ["openalex_like_provider"],
+        registry=default_literature_provider_registry(),
+    )
+
+    assert isinstance(provider, OpenAlexLikeLiteratureProvider)
+    assert provider_scope == ["openalex_like_provider"]
+    assert getattr(provider, "_search_client", None) is not None
+
+
+def test_openalex_like_provider_normalizes_raw_openalex_style_rows():
+    provider = OpenAlexLikeLiteratureProvider(
+        search_client=lambda query, filters: {
+            "request_id": "openalex_req_raw",
+            "result_source": "openalex_api",
+            "results": [
+                {
+                    "id": "https://openalex.org/W1234567890",
+                    "display_name": "MgB2 XRD structure study",
+                    "publication_year": 2024,
+                    "doi": "https://doi.org/10.1000/raw-openalex",
+                    "authorships": [
+                        {"author": {"display_name": "A. Author"}},
+                        {"author": {"display_name": "B. Author"}},
+                    ],
+                    "primary_location": {
+                        "source": {"display_name": "Journal of XRD"},
+                        "landing_page_url": "https://example.test/landing",
+                    },
+                    "best_oa_location": {"landing_page_url": "https://example.test/oa"},
+                }
+            ],
+        }
+    )
+
+    results = provider.search("MgB2 XRD", filters={"top_k": 3})
+
+    assert results[0]["source_id"] == "https://openalex.org/W1234567890"
+    assert results[0]["title"] == "MgB2 XRD structure study"
+    assert results[0]["authors"] == ["A. Author", "B. Author"]
+    assert results[0]["journal"] == "Journal of XRD"
+    assert results[0]["doi"] == "10.1000/raw-openalex"
+    assert results[0]["url"] == "https://example.test/oa"
+    assert results[0]["access_class"] == "metadata_only"
+    assert results[0]["provenance"]["provider_id"] == "openalex_like_provider"
+    assert results[0]["provenance"]["request_id"] == "openalex_req_raw"
+
+
 def test_openalex_like_provider_normalizes_metadata_results():
     provider = OpenAlexLikeLiteratureProvider(
         search_client=lambda query, filters: {
@@ -445,7 +629,8 @@ def test_xrd_no_match_remains_non_validating_under_literature():
     comparison = package["literature_comparisons"][0]
     assert comparison["validation_posture"] == "contextual_only"
     assert comparison["support_label"] == "related_but_inconclusive"
-    assert "no_match screening outcome" in comparison["comparison_note"]
+    assert "candidate-level context" in comparison["comparison_note"]
+    assert "Phase Alpha" in comparison["comparison_note"]
 
 
 def test_xrd_zero_hit_real_provider_persists_no_results_traceability():
@@ -491,6 +676,50 @@ def test_xrd_provider_unavailable_persists_traceability():
     assert context["provider_query_status"] == "provider_unavailable"
     assert context["no_results_reason"] == "provider_unavailable"
     assert context["provider_error_message"] == "temporary outage"
+
+
+def test_xrd_request_failed_persists_traceability():
+    provider = OpenAlexLikeLiteratureProvider(
+        search_client=lambda query, filters: {
+            "request_id": "openalex_req_failed",
+            "result_source": "openalex_api",
+            "query_status": "request_failed",
+            "error": "upstream returned malformed payload",
+            "results": [],
+        }
+    )
+
+    package = compare_result_to_literature(_base_record(), provider=provider, provider_scope=["openalex_like_provider"])
+
+    context = package["literature_context"]
+    assert context["provider_query_status"] == "request_failed"
+    assert context["no_results_reason"] == "request_failed"
+    assert context["provider_error_message"] == "upstream returned malformed payload"
+
+
+def test_xrd_query_too_narrow_persists_traceability():
+    record = _base_record()
+    record["summary"]["top_candidate_name"] = ""
+    record["summary"]["top_candidate_display_name_unicode"] = ""
+    record["summary"]["top_candidate_formula"] = ""
+    record["summary"]["top_candidate_id"] = ""
+
+    provider = OpenAlexLikeLiteratureProvider(
+        search_client=lambda query, filters: {
+            "request_id": "openalex_req_narrow",
+            "result_source": "openalex_api",
+            "query_status": "no_results",
+            "results": [],
+        }
+    )
+
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["openalex_like_provider"])
+
+    context = package["literature_context"]
+    assert context["query_text"] == "XRD phase identification diffraction pattern"
+    assert context["provider_query_status"] == "no_results"
+    assert context["no_results_reason"] == "query_too_narrow"
+    assert context["real_literature_available"] is False
 
 
 def test_multi_provider_aggregation_dedupes_by_doi_and_tracks_scope():
@@ -1041,3 +1270,169 @@ def test_docx_report_appendix_notes_real_provider_zero_hit_xrd_run():
     assert "MgB₂" in xml
     assert "Real Literature Search Outcome" in xml
     assert "did not return suitable bibliographic results" in xml
+
+
+def test_docx_report_appendix_notes_not_configured_real_provider_xrd_run():
+    record = attach_literature_package(
+        _base_record(),
+        {
+            "literature_context": {
+                "mode": "metadata_abstract_oa_only",
+                "comparison_run_id": "litcmp_not_configured_001",
+                "provider_scope": ["openalex_like_provider"],
+                "provider_request_ids": ["openalex_req_missing"],
+                "provider_result_source": "openalex_api",
+                "query_text": "\"Phase Alpha\" XRD powder diffraction phase identification crystal structure",
+                "query_display_title": "Phase Alpha",
+                "query_display_mode": "XRD / phase identification",
+                "candidate_name": "Phase Alpha",
+                "candidate_display_name": "Phase Alpha",
+                "match_status_snapshot": "matched",
+                "confidence_band_snapshot": "medium",
+                "source_count": 0,
+                "citation_count": 0,
+                "real_literature_available": False,
+                "fixture_fallback_used": False,
+                "fixture_fallback_allowed": False,
+                "provider_query_status": "not_configured",
+                "no_results_reason": "not_configured",
+            },
+            "literature_claims": [],
+            "literature_comparisons": [],
+            "citations": [],
+        },
+    )
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": [18.2, 27.5, 36.1], "signal": [130.0, 290.0, 175.0]}),
+        metadata={
+            "sample_name": "Phase Alpha Sample",
+            "display_name": "Synthetic XRD Pattern",
+            "instrument": "XRDBench",
+            "xrd_axis_role": "two_theta",
+            "xrd_axis_unit": "degree_2theta",
+        },
+        data_type="XRD",
+        units={"temperature": "degree_2theta", "signal": "counts"},
+        original_columns={"temperature": "two_theta", "signal": "intensity"},
+        file_path="",
+    )
+
+    docx_bytes = generate_docx_report(results={record["id"]: record}, datasets={"xrd_demo": dataset})
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "Real Literature Search Outcome" in xml
+    assert "was not configured for this environment" in xml
+    assert "XRD accepted match status remains authoritative" in xml
+
+
+def test_docx_report_appendix_notes_request_failed_real_provider_xrd_run():
+    record = attach_literature_package(
+        _base_record(),
+        {
+            "literature_context": {
+                "mode": "metadata_abstract_oa_only",
+                "comparison_run_id": "litcmp_request_failed_001",
+                "provider_scope": ["openalex_like_provider"],
+                "provider_request_ids": ["openalex_req_failed"],
+                "provider_result_source": "openalex_api",
+                "query_text": "\"Phase Alpha\" XRD powder diffraction phase identification crystal structure",
+                "query_display_title": "Phase Alpha",
+                "query_display_mode": "XRD / phase identification",
+                "candidate_name": "Phase Alpha",
+                "candidate_display_name": "Phase Alpha",
+                "match_status_snapshot": "matched",
+                "confidence_band_snapshot": "medium",
+                "source_count": 0,
+                "citation_count": 0,
+                "real_literature_available": False,
+                "fixture_fallback_used": False,
+                "fixture_fallback_allowed": False,
+                "provider_query_status": "request_failed",
+                "provider_error_message": "upstream returned malformed payload",
+                "no_results_reason": "request_failed",
+            },
+            "literature_claims": [],
+            "literature_comparisons": [],
+            "citations": [],
+        },
+    )
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": [18.2, 27.5, 36.1], "signal": [130.0, 290.0, 175.0]}),
+        metadata={
+            "sample_name": "Phase Alpha Sample",
+            "display_name": "Synthetic XRD Pattern",
+            "instrument": "XRDBench",
+            "xrd_axis_role": "two_theta",
+            "xrd_axis_unit": "degree_2theta",
+        },
+        data_type="XRD",
+        units={"temperature": "degree_2theta", "signal": "counts"},
+        original_columns={"temperature": "two_theta", "signal": "intensity"},
+        file_path="",
+    )
+
+    docx_bytes = generate_docx_report(results={record["id"]: record}, datasets={"xrd_demo": dataset})
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "Real Literature Search Outcome" in xml
+    assert "did not return a usable bibliographic response" in xml
+    assert "upstream returned malformed payload" in xml
+
+
+def test_docx_report_thermal_literature_sections_use_thermal_wording():
+    record = attach_literature_package(
+        _thermal_record("TGA"),
+        {
+            "literature_context": {
+                "mode": "metadata_abstract_oa_only",
+                "comparison_run_id": "litcmp_tga_001",
+                "provider_scope": ["openalex_like_provider"],
+                "provider_request_ids": ["openalex_req_tga"],
+                "provider_result_source": "openalex_api",
+                "query_text": "\"Composite C\" TGA decomposition mass loss residue 411 C",
+                "query_display_title": "Composite C TGA decomposition profile",
+                "query_display_mode": "TGA / decomposition profile",
+                "query_rationale": "The TGA literature search is centered on the decomposition profile with a leading step near 411 C.",
+                "real_literature_available": True,
+            },
+            "literature_claims": [{"claim_id": "C1", "claim_text": "The TGA result indicates a decomposition profile with a dominant mass-loss step that remains qualitative."}],
+            "literature_comparisons": [
+                {
+                    "claim_id": "C1",
+                    "claim_text": "The TGA result indicates a decomposition profile with a dominant mass-loss step that remains qualitative.",
+                    "support_label": "partially_supports",
+                    "confidence": "moderate",
+                    "rationale": "This paper discusses TGA decomposition behavior relevant to Composite C. It remains contextual support rather than validation.",
+                    "validation_posture": "related_support",
+                    "paper_title": "Composite C decomposition study",
+                    "paper_year": 2024,
+                    "paper_journal": "Journal of Thermal Analysis",
+                    "provider_id": "openalex_like_provider",
+                    "access_class": "abstract_only",
+                    "citation_ids": ["ref1"],
+                }
+            ],
+            "citations": [{"citation_id": "ref1", "title": "Composite C decomposition study", "access_class": "abstract_only"}],
+        },
+    )
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": [350.0, 411.0, 470.0], "signal": [100.0, 82.0, 67.6]}),
+        metadata={"sample_name": "Composite C", "display_name": "Composite C TGA"},
+        data_type="TGA",
+        units={"temperature": "degC", "signal": "%"},
+        original_columns={"temperature": "temperature", "signal": "signal"},
+        file_path="",
+    )
+
+    docx_bytes = generate_docx_report(results={record["id"]: record}, datasets={record["dataset_key"]: dataset})
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "Thermal Literature Search Summary" in xml
+    assert "Relevant References" in xml
+    assert "Alternative or Non-Validating References" in xml
+    assert "does not validate or override the current result" in xml
+    assert "XRD screening" not in xml
+    assert "top-ranked candidate" not in xml

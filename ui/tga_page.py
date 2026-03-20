@@ -27,6 +27,7 @@ from core.tga_processor import TGAProcessor, TGAResult, resolve_tga_unit_interpr
 from core.validation import validate_thermal_dataset
 from ui.components.chrome import render_page_header
 from ui.components.history_tracker import _log_event
+from ui.components.literature_compare_panel import render_literature_compare_panel
 from ui.components.plot_builder import (
     PLOTLY_CONFIG,
     THERMAL_COLORS,
@@ -831,9 +832,12 @@ def render():
 
         st.divider()
 
+        result_id = f"tga_{selected_key}"
+        saved_record = st.session_state.get("results", {}).get(result_id)
         if st.button(tx("Sonuçları Oturuma Kaydet", "Save Results to Session"), key="tga_save_results"):
             try:
                 _store_tga_result(selected_key, dataset, temperature, mass_signal, result)
+                saved_record = st.session_state.get("results", {}).get(result_id)
                 _log_event(tx("Sonuçlar Kaydedildi", "Results Saved"), tx("Kararlı TGA sonucu kaydedildi", "Stable TGA result saved"), t("tga.title"), dataset_key=selected_key, result_id=f"tga_{selected_key}")
                 st.success(
                     tx(
@@ -857,4 +861,26 @@ def render():
                         error=f"{exc} (Error ID: {error_id})",
                     )
                 )
+
+        st.divider()
+        if saved_record:
+            st.caption(tx("Kaydedilmiş sonuç kimliği: {result_id}", "Saved result ID: {result_id}", result_id=result_id))
+        saved_record, literature_action = render_literature_compare_panel(
+            record=saved_record,
+            result_id=result_id if saved_record else None,
+            lang=st.session_state.get("lang", "tr"),
+            key_prefix=f"tga_literature_compare_{selected_key}",
+        )
+        if literature_action and literature_action.get("status") == "success":
+            _log_event(
+                tx("Literatür Karşılaştırması", "Literature Compare"),
+                tx(
+                    "{result_id} için literatür karşılaştırması güncellendi.",
+                    "Literature comparison was refreshed for {result_id}.",
+                    result_id=result_id,
+                ),
+                t("tga.title"),
+                dataset_key=selected_key,
+                result_id=result_id,
+            )
 

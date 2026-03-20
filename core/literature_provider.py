@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Protocol
+
+import httpx
 
 from core.citation_formatter import format_citation_text
 from core.literature_models import normalize_literature_sources
@@ -152,6 +155,200 @@ class MetadataSearchClient(Protocol):
         ...
 
 
+class OpenAlexLikeClient(Protocol):
+    """Production-shaped client contract for OpenAlex-like metadata providers."""
+
+    def search_metadata(self, query: str, filters: Mapping[str, Any]) -> Any:
+        ...
+
+
+def _invoke_search_client(
+    search_client: MetadataSearchClient | OpenAlexLikeClient | Any,
+    query: str,
+    filters: dict[str, Any],
+) -> Any:
+    if callable(search_client):
+        return search_client(query, filters)
+    search_metadata = getattr(search_client, "search_metadata", None)
+    if callable(search_metadata):
+        return search_metadata(query, filters)
+    raise TypeError("Injected literature search client must be callable or expose search_metadata(query, filters).")
+
+
+def _clean_doi(value: Any) -> str:
+    token = _clean_text(value)
+    if not token:
+        return ""
+    lowered = token.lower()
+    for prefix in ("https://doi.org/", "http://doi.org/", "doi:"):
+        if lowered.startswith(prefix):
+            return token[len(prefix) :].strip()
+    return token
+
+
+def _nested_get(mapping: Mapping[str, Any] | None, *path: str) -> Any:
+    current: Any = mapping or {}
+    for key in path:
+        if not isinstance(current, Mapping):
+            return None
+        current = current.get(key)
+    return current
+
+
+def _first_non_empty(*values: Any) -> str:
+    for value in values:
+        cleaned = _clean_text(value)
+        if cleaned:
+            return cleaned
+    return ""
+
+
+def _provider_env(*suffixes: str) -> str:
+    for suffix in suffixes:
+        for prefix in ("MATERIALSCOPE_OPENALEX_", "THERMOANALYZER_OPENALEX_"):
+            value = _clean_text(os.getenv(f"{prefix}{suffix}"))
+            if value:
+                return value
+    return ""
+
+
+def _provider_env_explicit(*suffixes: str) -> tuple[str, bool]:
+    for suffix in suffixes:
+        for prefix in ("MATERIALSCOPE_OPENALEX_", "THERMOANALYZER_OPENALEX_"):
+            env_name = f"{prefix}{suffix}"
+            raw = os.getenv(env_name)
+            if raw is None:
+                continue
+            cleaned = _clean_text(raw)
+            if cleaned:
+                return cleaned, True
+    return "", False
+
+
+class OpenAlexHTTPClient:
+    """Small legal-safe adapter for OpenAlex-like metadata APIs.
+
+    The client retrieves bibliographic metadata only. It does not scrape pages,
+    automate browsers, or fetch closed/paywalled full text.
+    """
+
+    def __init__(
+        self,
+        *,
+        email: str = "",
+        api_key: str = "",
+        base_url: str = "https://api.openalex.org",
+        timeout: float = 10.0,
+        http_client: httpx.Client | None = None,
+    ) -> None:
+        self.email = _clean_text(email)
+        self.api_key = _clean_text(api_key)
+        self.base_url = (_clean_text(base_url) or "https://api.openalex.org").rstrip("/")
+        self.timeout = float(timeout)
+        self._http_client = http_client
+
+    def _request_params(self, query: str, filters: Mapping[str, Any]) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "search": _clean_text(query),
+            "per-page": max(1, min(int(filters.get("top_k") or 5), 25)),
+        }
+        if self.email:
+            params["mailto"] = self.email
+        if self.api_key:
+            params["api_key"] = self.api_key
+        return params
+
+    def _query_status_for_response(self, response: httpx.Response, detail: str) -> str:
+        if response.status_code >= 500 or response.status_code == 429:
+            return "provider_unavailable"
+        lowered = detail.lower()
+        if "too narrow" in lowered or "too broad" in lowered or "query" in lowered and "invalid" in lowered:
+            return "query_too_narrow"
+        return "request_failed"
+
+    def search_metadata(self, query: str, filters: Mapping[str, Any]) -> dict[str, Any]:
+        params = self._request_params(query, filters)
+        request_id = f"litreq_openalex_like_provider_{uuid.uuid4().hex[:12]}"
+        result_source = "openalex_api"
+        owns_client = self._http_client is None
+        client = self._http_client or httpx.Client(
+            timeout=self.timeout,
+            headers={"User-Agent": "MaterialScope/1.0 (legal-safe metadata-only literature lookup)"},
+        )
+        try:
+            response = client.get(f"{self.base_url}/works", params=params)
+            response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            return {
+                "request_id": request_id,
+                "result_source": result_source,
+                "query_status": "provider_unavailable",
+                "error": _clean_text(exc) or "request timed out",
+                "results": [],
+            }
+        except httpx.RequestError as exc:
+            return {
+                "request_id": request_id,
+                "result_source": result_source,
+                "query_status": "provider_unavailable",
+                "error": _clean_text(exc) or exc.__class__.__name__,
+                "results": [],
+            }
+        except httpx.HTTPStatusError as exc:
+            detail = _clean_text(exc.response.text) or f"HTTP {exc.response.status_code}"
+            return {
+                "request_id": request_id,
+                "result_source": result_source,
+                "query_status": self._query_status_for_response(exc.response, detail),
+                "error": detail,
+                "results": [],
+            }
+        finally:
+            if owns_client:
+                client.close()
+
+        try:
+            payload = response.json() if response.content else {}
+        except ValueError:
+            return {
+                "request_id": request_id,
+                "result_source": result_source,
+                "query_status": "request_failed",
+                "error": "Provider response was not valid JSON.",
+                "results": [],
+            }
+        meta = dict(payload.get("meta") or {}) if isinstance(payload, Mapping) else {}
+        rows = payload.get("results") if isinstance(payload, Mapping) else []
+        if not isinstance(rows, list):
+            return {
+                "request_id": request_id,
+                "result_source": result_source,
+                "query_status": "request_failed",
+                "error": "Provider response did not contain a list of results.",
+                "results": [],
+            }
+        return {
+            "request_id": _first_non_empty(meta.get("request_id"), payload.get("request_id"), request_id),
+            "result_source": result_source,
+            "query_status": "success" if rows else "no_results",
+            "results": rows,
+        }
+
+
+def build_openalex_like_client_from_env() -> OpenAlexHTTPClient | None:
+    email = _provider_env("EMAIL")
+    api_key = _provider_env("API_KEY")
+    base_url, base_url_explicit = _provider_env_explicit("BASE_URL")
+    configured = bool(email or api_key or base_url_explicit)
+    if not configured:
+        return None
+    return OpenAlexHTTPClient(
+        email=email,
+        api_key=api_key,
+        base_url=base_url or "https://api.openalex.org",
+    )
+
+
 class FixtureLiteratureProvider:
     """Synthetic provider used for MVP development and test coverage."""
 
@@ -285,7 +482,7 @@ class MetadataAPILiteratureProvider:
     def __init__(
         self,
         *,
-        search_client: MetadataSearchClient | None = None,
+        search_client: MetadataSearchClient | OpenAlexLikeClient | None = None,
     ) -> None:
         self._search_client = search_client
         self.last_request_id = ""
@@ -309,7 +506,7 @@ class MetadataAPILiteratureProvider:
             return []
 
         try:
-            raw_response = self._search_client(query, dict(filters or {}))
+            raw_response = _invoke_search_client(self._search_client, query, dict(filters or {}))
         except Exception as exc:
             self.last_query_status = "provider_unavailable"
             self.last_error_message = _clean_text(exc) or exc.__class__.__name__
@@ -334,6 +531,16 @@ class MetadataAPILiteratureProvider:
         if not rows and query_status == "success":
             query_status = "no_results"
         self.last_query_status = query_status
+        return self._normalize_rows(rows, query=query, request_id=request_id, result_source=result_source)
+
+    def _normalize_rows(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        query: str,
+        request_id: str,
+        result_source: str,
+    ) -> list[dict[str, Any]]:
         normalized: list[dict[str, Any]] = []
         for item in normalize_literature_sources(rows):
             provenance = dict(item.get("provenance") or {})
@@ -388,6 +595,115 @@ class OpenAlexLikeLiteratureProvider(MetadataAPILiteratureProvider):
     provider_id = "openalex_like_provider"
     provider_result_source = "openalex_like_search"
 
+    def __init__(
+        self,
+        *,
+        client: OpenAlexLikeClient | MetadataSearchClient | None = None,
+        search_client: OpenAlexLikeClient | MetadataSearchClient | None = None,
+    ) -> None:
+        super().__init__(search_client=client if client is not None else search_client)
+
+    @classmethod
+    def from_env(cls) -> OpenAlexLikeLiteratureProvider:
+        return cls(client=build_openalex_like_client_from_env())
+
+    def _normalize_rows(
+        self,
+        rows: list[dict[str, Any]],
+        *,
+        query: str,
+        request_id: str,
+        result_source: str,
+    ) -> list[dict[str, Any]]:
+        normalized_rows: list[dict[str, Any]] = []
+        for raw_row in rows:
+            item = self._normalize_openalex_like_row(raw_row)
+            if not item:
+                continue
+            provenance = dict(item.get("provenance") or {})
+            normalized_rows.append(
+                {
+                    **item,
+                    "citation_text": item.get("citation_text") or format_citation_text(item),
+                    "provenance": {
+                        **provenance,
+                        "provider_id": self.provider_id,
+                        "request_id": request_id,
+                        "result_source": result_source,
+                        "query": query,
+                        "provider_scope": [self.provider_id],
+                        "provider_request_ids": [request_id],
+                    },
+                }
+            )
+        return normalized_rows
+
+    def _normalize_openalex_like_row(self, row: Mapping[str, Any]) -> dict[str, Any]:
+        source = dict(row)
+        title = _first_non_empty(source.get("title"), source.get("display_name"))
+        if not title:
+            return {}
+
+        provenance = dict(source.get("provenance") or {}) if isinstance(source.get("provenance"), Mapping) else {}
+        authors = _as_str_list(source.get("authors"))
+        if not authors:
+            authorships = source.get("authorships") or []
+            if isinstance(authorships, list):
+                for item in authorships:
+                    if not isinstance(item, Mapping):
+                        continue
+                    author_name = _first_non_empty(
+                        item.get("author_display_name"),
+                        _nested_get(item, "author", "display_name"),
+                    )
+                    if author_name:
+                        authors.append(author_name)
+
+        abstract_text = _clean_text(source.get("abstract_text"))
+        oa_full_text = _clean_text(source.get("oa_full_text"))
+        access_class = _clean_text(source.get("access_class")).lower()
+        if access_class not in ACCESS_CLASS_PRIORITY:
+            access_class = "open_access_full_text" if oa_full_text else "abstract_only" if abstract_text else "metadata_only"
+
+        available_fields = _as_str_list(source.get("available_fields"))
+        if not available_fields:
+            available_fields = ["metadata"]
+            if abstract_text:
+                available_fields.append("abstract")
+            if oa_full_text:
+                available_fields.append("oa_full_text")
+
+        normalized = normalize_literature_sources(
+            [
+                {
+                    "source_id": _first_non_empty(source.get("source_id"), source.get("id"), _nested_get(source, "ids", "openalex")),
+                    "title": title,
+                    "authors": authors,
+                    "journal": _first_non_empty(
+                        source.get("journal"),
+                        _nested_get(source, "primary_location", "source", "display_name"),
+                        _nested_get(source, "host_venue", "display_name"),
+                    ),
+                    "year": source.get("year") if source.get("year") not in (None, "") else source.get("publication_year"),
+                    "doi": _clean_doi(source.get("doi") or _nested_get(source, "ids", "doi")),
+                    "url": _first_non_empty(
+                        source.get("url"),
+                        _nested_get(source, "best_oa_location", "landing_page_url"),
+                        _nested_get(source, "primary_location", "landing_page_url"),
+                        source.get("id"),
+                    ),
+                    "access_class": access_class,
+                    "available_fields": available_fields,
+                    "abstract_text": abstract_text,
+                    "oa_full_text": oa_full_text,
+                    "source_license_note": _first_non_empty(source.get("source_license_note"), "provider_metadata"),
+                    "citation_text": _clean_text(source.get("citation_text")),
+                    "provenance": provenance,
+                }
+            ]
+        )
+        return normalized[0] if normalized else {}
+
 
 class MultiLiteratureProviderAggregator:
     provider_id = "multi_provider_aggregator"
@@ -428,6 +744,12 @@ class MultiLiteratureProviderAggregator:
             self.last_query_status = "not_configured"
         elif "provider_unavailable" in statuses:
             self.last_query_status = "provider_unavailable"
+        elif "request_failed" in statuses:
+            self.last_query_status = "request_failed"
+        elif "query_too_narrow" in statuses and all(
+            status in {"query_too_narrow", "no_results", "success"} for status in statuses
+        ):
+            self.last_query_status = "query_too_narrow"
         elif statuses:
             self.last_query_status = "no_results"
         else:
@@ -452,7 +774,7 @@ def default_literature_provider_registry() -> dict[str, Callable[[], LiteratureP
     return {
         "fixture_provider": FixtureLiteratureProvider,
         "metadata_api_provider": MetadataAPILiteratureProvider,
-        "openalex_like_provider": OpenAlexLikeLiteratureProvider,
+        "openalex_like_provider": OpenAlexLikeLiteratureProvider.from_env,
     }
 
 

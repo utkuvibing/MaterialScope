@@ -289,6 +289,18 @@ def _xrd_search_mode_text(lang: str, value: str) -> str:
     return _ui_text(lang, tr, en)
 
 
+def _thermal_search_mode_text(lang: str, value: str) -> str:
+    token = _clean_text(value).lower()
+    labels = {
+        "dsc / thermal interpretation": ("DSC / termal yorum", "DSC / thermal interpretation"),
+        "dta / thermal events": ("DTA / termal olaylar", "DTA / thermal events"),
+        "tga / decomposition profile": ("TGA / bozunma profili", "TGA / decomposition profile"),
+        "thermal / interpretation": ("Termal / yorum", "Thermal / interpretation"),
+    }
+    tr, en = labels.get(token, (value or "Termal / yorum", value or "Thermal / interpretation"))
+    return _ui_text(lang, tr, en)
+
+
 def _to_float_text(value: Any, *, digits: int = 3) -> str:
     try:
         if value in (None, ""):
@@ -303,6 +315,9 @@ def _query_terms(value: Any) -> list[str]:
 
 
 def _xrd_comparison_note_text(row: Mapping[str, Any], *, lang: str) -> str:
+    stored_note = _clean_text(row.get("comparison_note"))
+    if stored_note and _clean_text(lang).lower() != "tr":
+        return stored_note
     candidate = _clean_text(row.get("candidate_name")) or _ui_text(lang, "aday faz", "the candidate phase")
     match_status = _clean_text(row.get("match_status_snapshot")).lower()
     confidence_band = _clean_text(row.get("confidence_band_snapshot")).lower()
@@ -311,33 +326,36 @@ def _xrd_comparison_note_text(row: Mapping[str, Any], *, lang: str) -> str:
     if match_status == "no_match":
         return _ui_text(
             lang,
-            "{candidate} için XRD karakterizasyonu tartışılır; mevcut örnek için faz doğrulaması sağlamaz ve sonuç no_match olarak kalır.",
-            "This paper discusses XRD characterization of {candidate}; it does not validate a phase call for the current sample, and the result remains no_match.",
+            "Bu makale {candidate} için XRD karakterizasyonunu tartışır; mevcut sonuç no_match olarak kalır ve kaynak faz doğrulaması yerine yalnızca aday düzeyinde bağlam sağlar.",
+            "This paper discusses XRD characterization of {candidate}; the result remains no_match and the source provides candidate-level context rather than phase validation.",
             candidate=candidate,
         )
     if posture == "alternative_interpretation":
         return _ui_text(
             lang,
-            "Kaynak aday fazla ilişkilidir ancak mevcut desen için doğrulayıcı destek sağlamaz; alternatif bir yorum olasılığına işaret edebilir.",
-            "This source is related to the candidate context, but it does not provide validating support for the current pattern and may indicate an alternative interpretation.",
+            "{candidate} için ilgili bir XRD bağlamı sunar; ancak mevcut desen için doğrulayıcı destek sağlamaz ve alternatif bir yoruma işaret edebilir.",
+            "This paper discusses XRD characterization of {candidate}, but it does not provide validating support for the current pattern and may indicate an alternative interpretation.",
+            candidate=candidate,
         )
     if posture == "related_support" and confidence_band not in {"low", "no_match", "not_run"}:
         return _ui_text(
             lang,
-            "{candidate} için literatürde benzer XRD tartışmaları bulundu; yine de mevcut sonuç yalnızca nitel faz taraması bağlamında yorumlanmalıdır.",
-            "This paper is relevant to {candidate}, but the present result should still be interpreted within qualitative phase-screening limits.",
+            "{candidate} için literatürde ilgili XRD tartışmaları bulundu; yine de mevcut sonuç nitel ve temkinli kalır, bu yüzden kaynak bağlam sağlar ama faz doğrulaması yapmaz.",
+            "This paper is relevant to {candidate}, but the present result remains qualitative and cautionary, so the source adds context without confirming the phase.",
             candidate=candidate,
         )
     if posture == "contextual_only":
         return _ui_text(
             lang,
-            "Bu kaynak yalnızca aday faz bağlamı sunar; mevcut örnek için faz doğrulaması sağlamaz.",
-            "This source provides candidate-phase context only and does not validate the current sample as that phase.",
+            "Bu kaynak {candidate} için yalnızca aday faz bağlamı sunar; mevcut örnek için faz doğrulaması sağlamaz.",
+            "This source provides candidate-phase context for {candidate} only and does not validate the current sample as that phase.",
+            candidate=candidate,
         )
     return _ui_text(
         lang,
-        "Kaynak en iyi adayla ilişkilidir, ancak mevcut XRD kanıtı sınırlıdır ve faz doğrulaması sağlamaz.",
-        "This source is relevant to the top-ranked candidate, but the current XRD evidence remains limited and non-validating.",
+        "{candidate} ile ilişkilidir, ancak mevcut XRD kanıtı sınırlı ve doğrulayıcı değildir; kaynak yalnızca bağlamsal olarak değerlendirilmelidir.",
+        "This source is relevant to {candidate}, but the current XRD evidence remains limited and non-validating, so it should be treated as contextual only.",
+        candidate=candidate,
     )
 
 
@@ -434,6 +452,21 @@ def _render_xrd_no_results_status(candidate_summary: Mapping[str, Any], *, lang:
                     "The provider was unavailable or did not return a usable response, so no real papers could be shown.",
                 )
             )
+        elif reason == "request_failed" or status == "request_failed":
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Gerçek literatür isteği başarısız oldu",
+                    "The real literature request failed",
+                )
+            )
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Sağlayıcıya istek gönderildi ancak kullanılabilir bibliyografik yanıt alınamadı; bu nedenle gösterilebilir gerçek yayın alınamadı.",
+                    "A request reached the provider, but it did not return a usable bibliographic response, so no real papers could be shown.",
+                )
+            )
         elif reason == "not_configured" or status == "not_configured":
             st.caption(
                 _ui_text(
@@ -447,6 +480,21 @@ def _render_xrd_no_results_status(candidate_summary: Mapping[str, Any], *, lang:
                     lang,
                     "Bu ortamda gerçek OpenAlex-benzeri sağlayıcı istemcisi bağlı değil; bu nedenle gösterilebilir gerçek yayın alınamadı.",
                     "No live OpenAlex-like provider client is configured in this environment, so no real papers could be shown.",
+                )
+            )
+        elif reason == "query_too_narrow" or status == "query_too_narrow":
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Gerçek literatür sorgusu çok dar kaldı",
+                    "The real literature query was too narrow",
+                )
+            )
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Aday-merkezli sorgu bu çalıştırmada yeterince ayırt edici değildi; daha açık aday adı veya formül ile tekrar denenmesi gerekebilir.",
+                    "The candidate-centered query was not specific enough in this run; it may need a clearer candidate name or formula before real papers can be retrieved.",
                 )
             )
         else:
@@ -484,6 +532,135 @@ def _render_xrd_no_results_status(candidate_summary: Mapping[str, Any], *, lang:
     st.markdown(f"**{_ui_text(lang, 'Arama Yorumu', 'Search Interpretation')}**")
     for line in _xrd_search_interpretation_lines(candidate_summary, lang=lang):
         st.caption(line)
+
+
+def _thermal_subject_label(context: Mapping[str, Any], summary: Mapping[str, Any], *, lang: str) -> str:
+    return (
+        _clean_text(context.get("query_display_title"))
+        or _clean_text(context.get("candidate_display_name"))
+        or _clean_text(context.get("candidate_name"))
+        or _clean_text(summary.get("sample_name"))
+        or _ui_text(lang, "kayıt yok", "not recorded")
+    )
+
+
+def _render_thermal_search_summary(context: Mapping[str, Any], summary: Mapping[str, Any], *, lang: str) -> None:
+    title = _thermal_subject_label(context, summary, lang=lang)
+    mode = _thermal_search_mode_text(lang, _clean_text(context.get("query_display_mode")) or "Thermal / interpretation")
+    extra_terms = ", ".join(_query_terms(context.get("query_display_terms")))
+    raw_query = _clean_text(context.get("query_text"))
+    rationale = _clean_text(context.get("query_rationale"))
+
+    st.markdown(f"**{_ui_text(lang, 'Termal Literatür Arama Özeti', 'Thermal Literature Search Summary')}**")
+    with _streamlit_block():
+        st.caption(
+            _ui_text(
+                lang,
+                "Odak: {title}",
+                "Focus: {title}",
+                title=title,
+            )
+        )
+        st.caption(
+            _ui_text(
+                lang,
+                "Arama modu: {mode}",
+                "Search mode: {mode}",
+                mode=mode,
+            )
+        )
+        if extra_terms:
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Ek terimler: {terms}",
+                    "Extra terms: {terms}",
+                    terms=extra_terms,
+                )
+            )
+        if rationale:
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Arama gerekçesi: {rationale}",
+                    "Query rationale: {rationale}",
+                    rationale=rationale,
+                )
+            )
+        if raw_query:
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Teknik sorgu: {query}",
+                    "Technical query: {query}",
+                    query=raw_query,
+                )
+            )
+
+
+def _render_thermal_no_results_status(context: Mapping[str, Any], summary: Mapping[str, Any], *, lang: str) -> None:
+    reason = _clean_text(context.get("no_results_reason")).lower()
+    status = _clean_text(context.get("provider_query_status")).lower()
+    provider_error = _clean_text(context.get("provider_error_message"))
+    analysis_type = _clean_text((summary or {}).get("analysis_type") or context.get("analysis_type") or "thermal").upper() or "THERMAL"
+
+    st.markdown(f"**{_ui_text(lang, 'Gerçek Literatür Arama Durumu', 'Real Literature Search Status')}**")
+    with _streamlit_block():
+        if reason == "provider_unavailable" or status == "provider_unavailable":
+            st.caption(_ui_text(lang, "Gerçek literatür araması tamamlanamadı", "The real literature search could not be completed"))
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Sağlayıcı geçici olarak kullanılamıyor veya yanıt üretmedi; bu nedenle gösterilebilir gerçek yayın alınamadı.",
+                    "The provider was unavailable or did not return a usable response, so no real papers could be shown.",
+                )
+            )
+        elif reason == "request_failed" or status == "request_failed":
+            st.caption(_ui_text(lang, "Gerçek literatür isteği başarısız oldu", "The real literature request failed"))
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Sağlayıcıya istek gönderildi ancak kullanılabilir bibliyografik yanıt alınamadı; bu nedenle gösterilebilir gerçek yayın alınamadı.",
+                    "A request reached the provider, but it did not return a usable bibliographic response, so no real papers could be shown.",
+                )
+            )
+        elif reason == "not_configured" or status == "not_configured":
+            st.caption(_ui_text(lang, "Gerçek literatür araması yapılandırılmadı", "Real literature search is not configured"))
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Bu ortamda gerçek OpenAlex-benzeri sağlayıcı istemcisi bağlı değil; bu nedenle gösterilebilir gerçek yayın alınamadı.",
+                    "No live OpenAlex-like provider client is configured in this environment, so no real papers could be shown.",
+                )
+            )
+        elif reason == "query_too_narrow" or status == "query_too_narrow":
+            st.caption(_ui_text(lang, "Gerçek literatür sorgusu çok dar kaldı", "The real literature query was too narrow"))
+            st.caption(
+                _ui_text(
+                    lang,
+                    "{analysis} sorgusu bu çalıştırmada yeterince ayırt edici değildi; daha açık numune veya olay tanımı ile tekrar denenmesi gerekebilir.",
+                    "The {analysis} query was not specific enough in this run; it may need a clearer sample or event description before real papers can be retrieved.",
+                    analysis=analysis_type,
+                )
+            )
+        else:
+            st.caption(_ui_text(lang, "Gerçek literatür araması tamamlandı", "The real literature search completed"))
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Bu termal yorum için gösterilebilir gerçek yayın bulunamadı.",
+                    "No displayable real papers were found for this thermal interpretation.",
+                )
+            )
+        if provider_error:
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Teknik sağlayıcı notu: {detail}",
+                    "Technical provider note: {detail}",
+                    detail=provider_error,
+                )
+            )
 
 
 def _comparison_display_label(
@@ -616,7 +793,10 @@ def _default_compare_request(
     current_record: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload = copy.deepcopy(DEFAULT_LITERATURE_COMPARE_REQUEST)
-    if _clean_text((current_record or {}).get("analysis_type")).upper() != "XRD":
+    analysis_type = _clean_text((current_record or {}).get("analysis_type")).upper()
+    if analysis_type in {"XRD", "DSC", "DTA", "TGA"}:
+        payload["filters"]["analysis_type"] = analysis_type or "XRD"
+    else:
         payload = {
             "provider_ids": ["fixture_provider"],
             "persist": True,
@@ -1085,6 +1265,7 @@ def render_literature_sections(record: Mapping[str, Any] | None, *, lang: str) -
             and _clean_text(candidate_summary.get("no_results_reason")).lower() in {
                 "no_real_results",
                 "provider_unavailable",
+                "request_failed",
                 "not_configured",
                 "query_too_narrow",
             }
@@ -1141,6 +1322,26 @@ def render_literature_sections(record: Mapping[str, Any] | None, *, lang: str) -
                 )
             )
         return
+
+    analysis_type = _clean_text((record or {}).get("analysis_type")).upper()
+    if analysis_type in {"DSC", "DTA", "TGA"} and sections["context"].get("query_text"):
+        _render_thermal_search_summary(sections["context"], sections["summary"], lang=lang)
+        if (
+            not sections["comparisons"]
+            and not sections["supporting_references"]
+            and not sections["alternative_references"]
+            and not sections["context"].get("real_literature_available")
+            and int(sections["context"].get("source_count") or 0) == 0
+            and int(sections["context"].get("citation_count") or 0) == 0
+            and _clean_text(sections["context"].get("no_results_reason")).lower() in {
+                "no_real_results",
+                "provider_unavailable",
+                "request_failed",
+                "not_configured",
+                "query_too_narrow",
+            }
+        ):
+            _render_thermal_no_results_status(sections["context"], {**sections["summary"], "analysis_type": analysis_type}, lang=lang)
 
     if sections["fixture_detected"]:
         st.warning(
@@ -1202,7 +1403,11 @@ def render_literature_sections(record: Mapping[str, Any] | None, *, lang: str) -
                 )
             )
 
-    st.markdown(f"**{_ui_text(lang, 'Destekleyen Kaynaklar', 'Supporting References')}**")
+    st.markdown(
+        f"**{_ui_text(lang, 'İlgili Kaynaklar', 'Relevant References')}**"
+        if analysis_type in {"DSC", "DTA", "TGA"}
+        else f"**{_ui_text(lang, 'Destekleyen Kaynaklar', 'Supporting References')}**"
+    )
     if sections["supporting_references"]:
         for citation in sections["supporting_references"]:
             _render_citation_item(citation, lang=lang, provider_scope=sections["provider_scope"])
@@ -1215,7 +1420,11 @@ def render_literature_sections(record: Mapping[str, Any] | None, *, lang: str) -
             )
         )
 
-    st.markdown(f"**{_ui_text(lang, 'Çelişen veya Alternatif Kaynaklar', 'Contradictory or Alternative References')}**")
+    st.markdown(
+        f"**{_ui_text(lang, 'Alternatif veya Doğrulayıcı Olmayan Kaynaklar', 'Alternative or Non-Validating References')}**"
+        if analysis_type in {"DSC", "DTA", "TGA"}
+        else f"**{_ui_text(lang, 'Çelişen veya Alternatif Kaynaklar', 'Contradictory or Alternative References')}**"
+    )
     if sections["alternative_references"]:
         for citation in sections["alternative_references"]:
             _render_citation_item(citation, lang=lang, provider_scope=sections["provider_scope"])

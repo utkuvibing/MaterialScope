@@ -122,6 +122,58 @@ def _seed_xrd_result_store() -> tuple[ProjectStore, str, str]:
     return store, project_id, record["id"]
 
 
+def _seed_thermal_result_store(analysis_type: str) -> tuple[ProjectStore, str, str]:
+    normalized = analysis_type.upper()
+    if normalized == "DSC":
+        record = make_result_record(
+            result_id="dsc_demo",
+            analysis_type="DSC",
+            status="stable",
+            dataset_key="dsc_demo",
+            metadata={"sample_name": "Polymer A"},
+            summary={"sample_name": "Polymer A", "peak_count": 1, "glass_transition_count": 1, "tg_midpoint": 118.4},
+            rows=[{"peak_type": "endo", "peak_temperature": 121.2}],
+            scientific_context={
+                "scientific_claims": [{"id": "C1", "claim": "The DSC result indicates a glass-transition-related thermal feature that remains qualitative."}],
+                "uncertainty_assessment": {"overall_confidence": "moderate", "items": ["Interpretation remains qualitative."]},
+            },
+            validation={"status": "pass", "warnings": [], "issues": []},
+        )
+    elif normalized == "DTA":
+        record = make_result_record(
+            result_id="dta_demo",
+            analysis_type="DTA",
+            status="stable",
+            dataset_key="dta_demo",
+            metadata={"sample_name": "Ore B"},
+            summary={"sample_name": "Ore B", "peak_count": 1},
+            rows=[{"peak_type": "exo", "peak_temperature": 642.8}],
+            scientific_context={
+                "scientific_claims": [{"id": "C1", "claim": "The DTA result indicates a leading exothermic event that remains qualitative."}],
+                "uncertainty_assessment": {"overall_confidence": "moderate", "items": ["Interpretation remains qualitative."]},
+            },
+            validation={"status": "pass", "warnings": [], "issues": []},
+        )
+    else:
+        record = make_result_record(
+            result_id="tga_demo",
+            analysis_type="TGA",
+            status="stable",
+            dataset_key="tga_demo",
+            metadata={"sample_name": "Composite C"},
+            summary={"sample_name": "Composite C", "step_count": 1, "total_mass_loss_percent": 32.4, "residue_percent": 67.6},
+            rows=[{"midpoint_temperature": 411.0, "mass_loss_percent": 32.4}],
+            scientific_context={
+                "scientific_claims": [{"id": "C1", "claim": "The TGA result indicates a decomposition profile with a dominant mass-loss step that remains qualitative."}],
+                "uncertainty_assessment": {"overall_confidence": "moderate", "items": ["Interpretation remains qualitative."]},
+            },
+            validation={"status": "pass", "warnings": [], "issues": []},
+        )
+    store = ProjectStore()
+    project_id = store.put(normalize_workspace_state({"results": {record["id"]: record}}))
+    return store, project_id, record["id"]
+
+
 def _headers() -> dict[str, str]:
     return {"X-TA-Token": "details-token"}
 
@@ -345,6 +397,25 @@ def test_result_literature_compare_endpoint_persists_safe_context_when_no_real_r
     assert payload["literature_context"]["provider_scope"] == ["openalex_like_provider"]
     assert payload["literature_context"]["query_text"]
     assert payload["literature_context"]["real_literature_available"] is False
+    assert payload["literature_context"]["provider_query_status"] == "not_configured"
+    assert payload["literature_context"]["no_results_reason"] == "not_configured"
+
+
+def test_result_literature_compare_endpoint_defaults_live_provider_for_thermal_results():
+    store, project_id, result_id = _seed_thermal_result_store("DSC")
+    client = TestClient(create_app(api_token="details-token", store=store))
+
+    response = client.post(
+        f"/workspace/{project_id}/results/{result_id}/literature/compare",
+        headers=_headers(),
+        json={"persist": True},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["literature_context"]["provider_scope"] == ["openalex_like_provider"]
+    assert payload["literature_context"]["analysis_type"] == "DSC"
+    assert payload["literature_context"]["query_text"]
 
 
 def test_result_literature_compare_endpoint_validates_typed_user_documents():

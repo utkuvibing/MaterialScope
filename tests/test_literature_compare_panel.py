@@ -185,6 +185,16 @@ def test_default_compare_request_uses_real_xrd_provider():
     assert payload["filters"]["allow_fixture_fallback"] is False
 
 
+def test_default_compare_request_uses_real_provider_for_thermal_modalities():
+    for analysis_type in ("DSC", "DTA", "TGA"):
+        payload = literature_compare_panel._default_compare_request(current_record={"analysis_type": analysis_type})
+
+        assert payload["provider_ids"] == ["openalex_like_provider"]
+        assert payload["max_claims"] == 2
+        assert payload["filters"]["analysis_type"] == analysis_type
+        assert payload["filters"]["allow_fixture_fallback"] is False
+
+
 def test_render_literature_sections_renders_xrd_candidate_summary_before_paper_cards(monkeypatch):
     captions: list[str] = []
     markdowns: list[str] = []
@@ -228,7 +238,7 @@ def test_render_literature_sections_renders_xrd_candidate_summary_before_paper_c
                     "paper_url": "https://example.test/real-alpha",
                     "provider_id": "openalex_like_provider",
                     "access_class": "abstract_only",
-                    "comparison_note": "This paper discusses XRD characterization of Phase Alpha. The current result remains a no_match screening outcome and the paper does not validate a phase call for the present sample.",
+                    "comparison_note": "This paper discusses XRD characterization of Phase Alpha. The result remains no_match and the source provides candidate-level context rather than phase validation.",
                     "validation_posture": "contextual_only",
                     "support_label": "related_but_inconclusive",
                     "confidence": "low",
@@ -244,7 +254,7 @@ def test_render_literature_sections_renders_xrd_candidate_summary_before_paper_c
     assert markdowns[0] == "**XRD Candidate Evidence Summary**"
     assert any("Literature Check For Top-Ranked Candidate" in item for item in markdowns)
     assert any("Phase Alpha XRD characterization" in item for item in markdowns)
-    assert any("do not validate a phase call" in item for item in captions)
+    assert any("candidate-level context rather than phase validation" in item for item in markdowns)
 
 
 def test_render_literature_sections_localizes_xrd_note_in_turkish(monkeypatch):
@@ -301,7 +311,7 @@ def test_render_literature_sections_localizes_xrd_note_in_turkish(monkeypatch):
         lang="tr",
     )
 
-    assert any("literatürde benzer XRD tartışmaları bulundu" in item for item in markdowns)
+    assert any("faz doğrulaması yapmaz" in item for item in markdowns)
     assert not any("Secondary metadata: claim" in item for item in captions)
 
 
@@ -360,6 +370,100 @@ def test_render_literature_sections_renders_xrd_zero_hit_real_search_block(monke
     assert not any("Candidate phase: cod_1000026" in item for item in captions)
     assert not any(item == "**Literature Check For Top-Ranked Candidate**" for item in markdowns)
     assert not any(item == "\"MgB₂\" XRD powder diffraction phase identification crystal structure MgB2" for item in markdowns)
+
+
+def test_render_literature_sections_renders_xrd_request_failed_block(monkeypatch):
+    captions: list[str] = []
+    markdowns: list[str] = []
+
+    fake_st = SimpleNamespace(
+        caption=lambda text: captions.append(str(text)),
+        markdown=lambda text: markdowns.append(str(text)),
+        warning=lambda text: captions.append(str(text)),
+        container=lambda: nullcontext(),
+    )
+    monkeypatch.setattr(literature_compare_panel, "st", fake_st)
+
+    literature_compare_panel.render_literature_sections(
+        {
+            "analysis_type": "XRD",
+            "summary": {
+                "match_status": "matched",
+                "confidence_band": "medium",
+                "top_candidate_name": "Phase Alpha",
+            },
+            "literature_context": {
+                "query_text": "\"Phase Alpha\" XRD powder diffraction phase identification crystal structure",
+                "query_display_title": "Phase Alpha",
+                "query_display_mode": "XRD / phase identification",
+                "query_display_terms": ["powder diffraction", "crystal structure", "phase identification"],
+                "candidate_name": "Phase Alpha",
+                "candidate_display_name": "Phase Alpha",
+                "match_status_snapshot": "matched",
+                "confidence_band_snapshot": "medium",
+                "real_literature_available": False,
+                "fixture_fallback_used": False,
+                "fixture_fallback_allowed": False,
+                "provider_query_status": "request_failed",
+                "no_results_reason": "request_failed",
+                "provider_error_message": "upstream returned malformed payload",
+                "source_count": 0,
+                "citation_count": 0,
+            },
+            "literature_claims": [],
+            "literature_comparisons": [],
+            "citations": [],
+        },
+        lang="en",
+    )
+
+    assert any("**Real Literature Search Status**" == item for item in markdowns)
+    assert any("The real literature request failed" in item for item in captions)
+    assert any("usable bibliographic response" in item for item in captions)
+    assert any("Technical provider note: upstream returned malformed payload" in item for item in captions)
+
+
+def test_render_literature_sections_renders_thermal_search_summary_without_xrd_copy(monkeypatch):
+    captions: list[str] = []
+    markdowns: list[str] = []
+
+    fake_st = SimpleNamespace(
+        caption=lambda text: captions.append(str(text)),
+        markdown=lambda text: markdowns.append(str(text)),
+        warning=lambda text: captions.append(str(text)),
+        container=lambda: nullcontext(),
+    )
+    monkeypatch.setattr(literature_compare_panel, "st", fake_st)
+
+    literature_compare_panel.render_literature_sections(
+        {
+            "analysis_type": "TGA",
+            "summary": {
+                "sample_name": "Composite C",
+            },
+            "literature_context": {
+                "query_text": "\"Composite C\" TGA decomposition mass loss residue 411 C",
+                "query_display_title": "Composite C TGA decomposition profile",
+                "query_display_mode": "TGA / decomposition profile",
+                "query_display_terms": ["decomposition", "mass loss", "residue"],
+                "query_rationale": "The TGA literature search is centered on the decomposition profile with a leading step near 411 C.",
+                "real_literature_available": False,
+                "provider_query_status": "not_configured",
+                "no_results_reason": "not_configured",
+                "source_count": 0,
+                "citation_count": 0,
+            },
+            "literature_claims": [],
+            "literature_comparisons": [],
+            "citations": [],
+        },
+        lang="en",
+    )
+
+    assert any("**Thermal Literature Search Summary**" == item for item in markdowns)
+    assert any("Search mode: TGA / decomposition profile" in item for item in captions)
+    assert not any("XRD Candidate Evidence Summary" in item for item in markdowns)
+    assert not any("top-ranked candidate" in item.lower() for item in captions)
 
 
 def test_render_literature_sections_keeps_turkish_zero_hit_copy_fully_turkish(monkeypatch):
@@ -662,3 +766,13 @@ def test_xrd_page_results_summary_uses_literature_compare_panel():
     source = Path("C:/MaterialScope/ui/xrd_page.py").read_text(encoding="utf-8")
 
     assert "render_literature_compare_panel(" in source
+
+
+def test_thermal_pages_results_summary_use_literature_compare_panel():
+    for path in (
+        "C:/MaterialScope/ui/dsc_page.py",
+        "C:/MaterialScope/ui/dta_page.py",
+        "C:/MaterialScope/ui/tga_page.py",
+    ):
+        source = Path(path).read_text(encoding="utf-8")
+        assert "render_literature_compare_panel(" in source

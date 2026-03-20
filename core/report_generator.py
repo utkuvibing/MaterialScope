@@ -2018,6 +2018,7 @@ def _citation_appendix_line(citation: Mapping[str, Any]) -> str:
 def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict[str, Any]]]:
     comparisons = [dict(item) for item in (record.get("literature_comparisons") or []) if isinstance(item, Mapping)]
     context = dict(record.get("literature_context") or {})
+    analysis_type = str(record.get("analysis_type") or "").upper()
     all_citations_by_id = _citation_lookup(record)
     fixture_state = _literature_fixture_state(record)
     if fixture_state["fixture_only"]:
@@ -2035,7 +2036,7 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
     if not comparisons and not citations_by_id:
         return []
 
-    if str(record.get("analysis_type") or "").upper() == "XRD" and (
+    if analysis_type == "XRD" and (
         normalize_report_text(context.get("query_text") or "")
         or any(normalize_report_text(item.get("paper_title") or "") for item in reportable_xrd_comparisons)
     ):
@@ -2066,8 +2067,10 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
             year = normalize_report_text(item.get("paper_year") or "n.d.")
             link = normalize_report_text(item.get("paper_doi") or item.get("paper_url") or "")
             posture = normalize_report_text(item.get("validation_posture") or "non_validating")
+            provider = normalize_report_text(item.get("provider_id") or "not_recorded")
+            access_class = normalize_report_text(item.get("access_class") or "metadata_only")
             note = normalize_report_text(item.get("comparison_note") or item.get("rationale") or "No comparison note recorded.")
-            line = f"{year}. {journal}. posture={posture}. {note}"
+            line = f"{year}. {journal}. provider={provider}; access={access_class}; posture={posture}. {note}"
             if link:
                 line = f"{line} Link: {link}."
             if posture == "related_support":
@@ -2098,6 +2101,17 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
     comparison_payload: dict[str, Any] = {}
     supporting_ids: list[str] = []
     alternative_ids: list[str] = []
+
+    if analysis_type in {"DSC", "DTA", "TGA"} and normalize_report_text(context.get("query_text") or ""):
+        thermal_context = {
+            "Search Focus": normalize_report_text(context.get("query_display_title") or context.get("candidate_display_name") or context.get("candidate_name") or "Not recorded"),
+            "Search Mode": normalize_report_text(context.get("query_display_mode") or "Thermal / interpretation"),
+            "Query Text": normalize_report_text(context.get("query_text") or "Not recorded"),
+            "Authoritative Note": "Literature provides context around the recorded thermal interpretation and does not validate or override the current result.",
+        }
+        if normalize_report_text(context.get("query_rationale") or ""):
+            thermal_context["Query Rationale"] = normalize_report_text(context.get("query_rationale"))
+        sections.append(("Thermal Literature Search Summary", thermal_context))
 
     for item in comparisons:
         claim_id = normalize_report_text(item.get("claim_id") or f"C{len(comparison_payload) + 1}")
@@ -2133,7 +2147,11 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
             "No supporting accessible references were retained for this run; evidence is limited and remains non-definitive."
         )
     if supporting_payload:
-        sections.append(("Supporting References", supporting_payload))
+        sections.append(
+            ("Relevant References", supporting_payload)
+            if analysis_type in {"DSC", "DTA", "TGA"}
+            else ("Supporting References", supporting_payload)
+        )
 
     alternative_payload = {
         citation_id: _citation_report_line(citations_by_id[citation_id])
@@ -2145,7 +2163,11 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
             "No contradictory accessible references were retained, but the current comparison still remains qualitative and cautionary."
         )
     if alternative_payload:
-        sections.append(("Contradictory or Alternative References", alternative_payload))
+        sections.append(
+            ("Alternative or Non-Validating References", alternative_payload)
+            if analysis_type in {"DSC", "DTA", "TGA"}
+            else ("Contradictory or Alternative References", alternative_payload)
+        )
 
     follow_up_checks: dict[str, Any] = {}
     if any(not (item.get("citation_ids") or []) for item in comparisons):
@@ -2215,9 +2237,17 @@ def _literature_appendix_sections(record: Mapping[str, Any]) -> list[tuple[str, 
                 context_payload["Real Literature Search Outcome"] = (
                     "The configured real provider could not return usable bibliographic results for this candidate in the current run."
                 )
+            elif reason == "request_failed" or query_status == "request_failed":
+                context_payload["Real Literature Search Outcome"] = (
+                    "A request reached the configured real provider, but it did not return a usable bibliographic response for this candidate-centered query."
+                )
             elif reason == "not_configured" or query_status == "not_configured":
                 context_payload["Real Literature Search Outcome"] = (
                     "A live real-provider client was not configured for this environment, so no bibliographic papers were retrieved for the candidate-centered query."
+                )
+            elif reason == "query_too_narrow" or query_status == "query_too_narrow":
+                context_payload["Real Literature Search Outcome"] = (
+                    "The candidate-centered XRD query was too narrow to retrieve usable bibliographic metadata in this run; a clearer candidate label or formula may be required."
                 )
             else:
                 context_payload["Real Literature Search Outcome"] = (

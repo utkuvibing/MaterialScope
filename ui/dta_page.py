@@ -24,6 +24,7 @@ from core.processing_schema import (
 )
 from core.result_serialization import serialize_dta_result
 from core.validation import validate_thermal_dataset
+from ui.components.literature_compare_panel import render_literature_compare_panel
 from ui.components.plot_builder import create_dta_plot, create_thermal_plot, fig_to_bytes, PLOTLY_CONFIG
 from ui.components.history_tracker import _log_event
 from ui.components.preset_manager import render_processing_preset_panel, seed_pending_workflow_template
@@ -789,7 +790,32 @@ def render():
 
         st.divider()
 
+        result_id = f"dta_{selected_key}"
+        saved_record = st.session_state.get("results", {}).get(result_id)
         if st.button(tx("Sonuçları Oturuma Kaydet", "Save Results to Session"), key="dta_save_results"):
             _store_dta_result(selected_key, dataset, temperature, signal, state)
+            saved_record = st.session_state.get("results", {}).get(result_id)
             st.success(tx("DTA sonuçları kararlı kayıt olarak kaydedildi. İndirmek için Rapor Merkezi'ne gidin.", "DTA results were saved as stable records. Go to Report Center to download."))
+
+        st.divider()
+        if saved_record:
+            st.caption(tx("Kaydedilmiş sonuç kimliği: {result_id}", "Saved result ID: {result_id}", result_id=result_id))
+        saved_record, literature_action = render_literature_compare_panel(
+            record=saved_record,
+            result_id=result_id if saved_record else None,
+            lang=st.session_state.get("lang", "tr"),
+            key_prefix=f"dta_literature_compare_{selected_key}",
+        )
+        if literature_action and literature_action.get("status") == "success":
+            _log_event(
+                tx("Literatür Karşılaştırması", "Literature Compare"),
+                tx(
+                    "{result_id} için literatür karşılaştırması güncellendi.",
+                    "Literature comparison was refreshed for {result_id}.",
+                    result_id=result_id,
+                ),
+                tx("DTA Analizi", "DTA Analysis"),
+                dataset_key=selected_key,
+                result_id=result_id,
+            )
 

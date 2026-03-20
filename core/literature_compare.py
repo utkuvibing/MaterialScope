@@ -21,6 +21,12 @@ from core.literature_models import (
 )
 from core.literature_provider import FixtureLiteratureProvider, LiteratureProvider
 from core.literature_provider import citation_identity_key, merge_literature_candidates
+from core.thermal_literature_query_builder import (
+    build_dsc_literature_query,
+    build_dta_literature_query,
+    build_thermal_query_presentation,
+    build_tga_literature_query,
+)
 from core.xrd_literature_query_builder import build_xrd_literature_query, build_xrd_query_presentation
 
 
@@ -297,6 +303,189 @@ def _provider_error_message(provider: LiteratureProvider) -> str:
     return _clean_text(getattr(provider, "last_error_message", ""))
 
 
+def _thermal_query_payload(record: Mapping[str, Any]) -> dict[str, Any]:
+    analysis_type = _clean_text(record.get("analysis_type")).upper()
+    if analysis_type == "DSC":
+        return build_dsc_literature_query(record)
+    if analysis_type == "DTA":
+        return build_dta_literature_query(record)
+    if analysis_type == "TGA":
+        return build_tga_literature_query(record)
+    raise ValueError(f"Unsupported thermal analysis_type: {analysis_type}")
+
+
+def _thermal_search_queries(query_payload: Mapping[str, Any]) -> list[str]:
+    queries: list[str] = []
+    for value in [_clean_text(query_payload.get("query_text"))] + [_clean_text(item) for item in _as_list(query_payload.get("fallback_queries"))]:
+        if value and value not in queries:
+            queries.append(value)
+        if len(queries) >= 2:
+            break
+    return queries
+
+
+def _thermal_subject_tokens(query_payload: Mapping[str, Any], record: Mapping[str, Any]) -> set[str]:
+    tokens: set[str] = set()
+    summary = dict(record.get("summary") or {})
+    metadata = dict(record.get("metadata") or {})
+    values = [
+        query_payload.get("query_display_title"),
+        summary.get("sample_name"),
+        metadata.get("sample_name"),
+        metadata.get("display_name"),
+    ]
+    evidence_snapshot = dict(query_payload.get("evidence_snapshot") or {})
+    for key in ("peak_type", "event_direction", "sample_name"):
+        values.append(evidence_snapshot.get(key))
+    for value in values:
+        cleaned = _clean_text(value)
+        if not cleaned:
+            continue
+        tokens.add(cleaned.lower())
+        tokens.update(_tokenize(cleaned))
+    return {token for token in tokens if token}
+
+
+def _thermal_source_text(source: Mapping[str, Any], accessible: Mapping[str, Any] | None) -> str:
+    parts = [
+        _clean_text(source.get("title")),
+        _clean_text(source.get("journal")),
+        _clean_text(source.get("abstract_text")),
+        _clean_text(source.get("oa_full_text")),
+        _clean_text((source.get("provenance") or {}).get("comparison_hint")),
+    ]
+    if accessible is not None:
+        parts.append(_clean_text(accessible.get("text")))
+    return " ".join(part for part in parts if part).strip()
+
+
+def _thermal_subject_overlap(source_text: str, subject_tokens: set[str]) -> int:
+    lowered = source_text.lower()
+    return sum(1 for token in subject_tokens if token and token in lowered)
+
+
+def _thermal_query_is_too_narrow(query_payload: Mapping[str, Any]) -> bool:
+    return not any(_clean_text(item) for item in _as_list(query_payload.get("query_display_terms")))
+
+
+def _thermal_validation_posture(
+    *,
+    analysis_type: str,
+    access_class: str,
+    overlap: int,
+    source_text: str,
+    hint: str,
+) -> str:
+    lowered = source_text.lower()
+    if hint in {"contradicts", "contradict"} or any(phrase in lowered for phrase in CONTRADICT_PHRASES):
+        return "alternative_interpretation"
+    if overlap >= 2 and access_class in {"open_access_full_text", "user_provided_document", "abstract_only"}:
+        return "related_support"
+    if analysis_type in {"DSC", "DTA", "TGA"} and overlap >= 1:
+        return "contextual_only"
+    return "non_validating"
+
+
+def _thermal_support_label_for_posture(posture: str) -> str:
+    if posture == "related_support":
+        return "partially_supports"
+    if posture == "alternative_interpretation":
+        return "contradicts"
+    return "related_but_inconclusive"
+
+
+def _thermal_comparison_confidence(posture: str, access_class: str, overlap: int) -> str:
+    if posture == "related_support" and access_class in {"open_access_full_text", "user_provided_document"} and overlap >= 2:
+        return "moderate"
+    if posture == "alternative_interpretation" and overlap >= 1:
+        return "moderate"
+    return "low"
+
+
+def _thermal_subject_label(query_payload: Mapping[str, Any], record: Mapping[str, Any]) -> str:
+    summary = dict(record.get("summary") or {})
+    metadata = dict(record.get("metadata") or {})
+    return (
+        _clean_text(query_payload.get("query_display_title"))
+        or _clean_text(summary.get("sample_name"))
+        or _clean_text(metadata.get("sample_name"))
+        or _clean_text(metadata.get("display_name"))
+        or "the thermal result"
+    )
+
+
+def _thermal_comparison_note(
+    *,
+    analysis_type: str,
+    subject: str,
+    posture: str,
+    query_payload: Mapping[str, Any],
+) -> str:
+    evidence_snapshot = dict(query_payload.get("evidence_snapshot") or {})
+    if analysis_type == "DSC":
+        tg_midpoint = _clean_float(evidence_snapshot.get("tg_midpoint"))
+        event_label = _clean_text(evidence_snapshot.get("peak_type")) or "thermal event"
+        if posture == "alternative_interpretation":
+            return (
+                f"This paper discusses DSC behavior relevant to {subject}. It may indicate an alternative interpretation for the recorded calorimetric event rather than confirming the present result."
+            )
+        if posture == "related_support":
+            if tg_midpoint is not None:
+                return (
+                    f"This paper discusses DSC glass-transition or event behavior relevant to {subject}. It is directionally consistent with a transition near {tg_midpoint:.0f} C, but it remains contextual support rather than confirmation."
+                )
+            return (
+                f"This paper discusses DSC {event_label} behavior relevant to {subject}. It adds contextual support for the recorded event, but it does not validate the current result."
+            )
+        if posture == "contextual_only":
+            return (
+                f"This paper discusses DSC behavior relevant to {subject}. It provides thermal-event context only and should not be treated as confirmation of the current interpretation."
+            )
+        return (
+            f"This paper is related to the DSC interpretation for {subject}, but the current evidence remains limited and non-validating."
+        )
+    if analysis_type == "DTA":
+        direction = _clean_text(evidence_snapshot.get("event_direction")) or "thermal event"
+        if posture == "alternative_interpretation":
+            return (
+                f"This paper discusses DTA behavior relevant to {subject}. It may point toward an alternative reading of the recorded {direction} event rather than confirming the present interpretation."
+            )
+        if posture == "related_support":
+            return (
+                f"This paper discusses DTA behavior relevant to {subject}. It is directionally consistent with the recorded {direction} event, but it remains qualitative context rather than validation."
+            )
+        if posture == "contextual_only":
+            return (
+                f"This paper discusses DTA behavior relevant to {subject}. It adds qualitative thermal-event context only and does not validate the current result."
+            )
+        return (
+            f"This paper is related to the DTA interpretation for {subject}, but the current evidence remains limited and non-validating."
+        )
+    total_mass_loss = _clean_float(evidence_snapshot.get("total_mass_loss_percent"))
+    residue = _clean_float(evidence_snapshot.get("residue_percent"))
+    if posture == "alternative_interpretation":
+        return (
+            f"This paper discusses TGA decomposition behavior relevant to {subject}. It may indicate an alternative interpretation for the recorded mass-loss profile rather than confirming the current result."
+        )
+    if posture == "related_support":
+        detail = []
+        if total_mass_loss is not None:
+            detail.append(f"total mass loss around {total_mass_loss:.1f}%")
+        if residue is not None:
+            detail.append(f"residue around {residue:.1f}%")
+        suffix = f" ({', '.join(detail)})" if detail else ""
+        return (
+            f"This paper discusses TGA decomposition behavior relevant to {subject}. It is directionally consistent with the recorded mass-loss profile{suffix}, but it remains contextual support rather than validation."
+        )
+    if posture == "contextual_only":
+        return (
+            f"This paper discusses TGA decomposition behavior relevant to {subject}. It provides decomposition-profile context only and does not validate the current result."
+        )
+    return (
+        f"This paper is related to the TGA interpretation for {subject}, but the current evidence remains limited and non-validating."
+    )
+
+
 def _compare_generic_result_to_literature(
     record: Mapping[str, Any],
     *,
@@ -466,6 +655,207 @@ def _compare_generic_result_to_literature(
     }
 
 
+def _compare_thermal_result_to_literature(
+    record: Mapping[str, Any],
+    *,
+    provider: LiteratureProvider,
+    provider_scope: list[str],
+    max_claims: int,
+    filters: Mapping[str, Any] | None,
+    user_documents: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    comparison_run_id = f"litcmp_{uuid.uuid4().hex[:12]}"
+    analysis_type = _clean_text(record.get("analysis_type")).upper()
+    query_payload = _thermal_query_payload(record)
+    query_presentation = build_thermal_query_presentation(query_payload)
+    claims = extract_literature_claims(record, max_claims=max(1, int(max_claims or 1)))
+    normalized_user_documents = _normalize_user_document_sources(user_documents)
+
+    search_results: dict[str, dict[str, Any]] = {
+        _search_result_identity(source): copy.deepcopy(source)
+        for source in normalized_user_documents
+        if _search_result_identity(source)
+    }
+    provider_request_ids: list[str] = []
+    provider_result_sources = {
+        _clean_text((source.get("provenance") or {}).get("result_source"))
+        for source in normalized_user_documents
+        if _clean_text((source.get("provenance") or {}).get("result_source"))
+    }
+    search_filters = copy.deepcopy(dict(filters or {}))
+    modalities = [_clean_text(item).upper() for item in _as_list(search_filters.get("modalities")) if _clean_text(item)]
+    if analysis_type not in modalities:
+        modalities.insert(0, analysis_type)
+    search_filters["modalities"] = modalities
+    search_filters["analysis_type"] = analysis_type
+    search_filters.setdefault("top_k", 5)
+
+    executed_queries: list[str] = []
+    for query_text in _thermal_search_queries(query_payload):
+        executed_queries.append(query_text)
+        for candidate in provider.search(query_text, filters=search_filters):
+            source_key = _search_result_identity(candidate)
+            if not source_key:
+                continue
+            if source_key in search_results:
+                search_results[source_key] = merge_literature_candidates(search_results[source_key], candidate)
+            else:
+                search_results[source_key] = copy.deepcopy(candidate)
+            result_source = _clean_text((candidate.get("provenance") or {}).get("result_source"))
+            if result_source:
+                provider_result_sources.add(result_source)
+        for request_id in _provider_request_ids(provider):
+            if request_id and request_id not in provider_request_ids:
+                provider_request_ids.append(request_id)
+        if len(search_results) > len(normalized_user_documents):
+            break
+    provider_query_status = _provider_query_status(provider)
+    provider_error_message = _provider_error_message(provider)
+
+    citations_by_identity: dict[str, dict[str, Any]] = {}
+    comparisons_with_rank: list[tuple[int, dict[str, Any]]] = []
+    accessible_source_ids: set[str] = set()
+    restricted_source_ids: set[str] = set()
+    used_access_fields: set[str] = set()
+    subject_tokens = _thermal_subject_tokens(query_payload, record)
+    subject_label = _thermal_subject_label(query_payload, record)
+    real_literature_available = False
+
+    for source in search_results.values():
+        source_identity = _search_result_identity(source)
+        access_class = _clean_text(source.get("access_class")).lower() or "metadata_only"
+        accessible = _fetch_accessible_text(source, provider=provider)
+        if accessible is None:
+            if access_class == "restricted_external":
+                restricted_source_ids.add(source_identity)
+            evidence_used: list[str] = []
+        else:
+            accessible_source_ids.add(source_identity)
+            field = _clean_text(accessible.get("field")).lower() or "abstract_text"
+            used_access_fields.add(field)
+            evidence_used = [_brief_evidence(_clean_text(accessible.get("text")))] if _clean_text(accessible.get("text")) else []
+
+        source_text = _thermal_source_text(source, accessible)
+        overlap = _thermal_subject_overlap(source_text, subject_tokens)
+        hint = _clean_text((source.get("provenance") or {}).get("comparison_hint")).lower()
+        posture = _thermal_validation_posture(
+            analysis_type=analysis_type,
+            access_class=access_class,
+            overlap=overlap,
+            source_text=source_text,
+            hint=hint,
+        )
+        note = _thermal_comparison_note(
+            analysis_type=analysis_type,
+            subject=subject_label,
+            posture=posture,
+            query_payload=query_payload,
+        )
+        citation_key = citation_identity_key(source)
+        if citation_key not in citations_by_identity:
+            citations_by_identity[citation_key] = build_citation_entry(source, citation_id=f"ref{len(citations_by_identity) + 1}")
+        citation = citations_by_identity[citation_key]
+        provider_id = _clean_text((source.get("provenance") or {}).get("provider_id"))
+        if provider_id in REAL_BIBLIOGRAPHIC_PROVIDERS:
+            real_literature_available = True
+
+        claim = claims[0] if claims else {}
+        comparison = LiteratureComparison(
+            claim_id=str(claim.get("claim_id") or "C1"),
+            claim_text=str(claim.get("claim_text") or ""),
+            candidate_name=subject_label,
+            paper_title=_clean_text(source.get("title")),
+            paper_year=source.get("year"),
+            paper_journal=_clean_text(source.get("journal")),
+            paper_doi=_clean_text(source.get("doi")),
+            paper_url=_clean_text(source.get("url")),
+            provider_id=provider_id,
+            access_class=access_class,
+            comparison_note=note,
+            validation_posture=posture,
+            query_text=executed_queries[0] if executed_queries else _clean_text(query_payload.get("query_text")),
+            retrieved_sources=[_clean_text(source.get("source_id"))] if _clean_text(source.get("source_id")) else [],
+            support_label=_thermal_support_label_for_posture(posture),
+            rationale=note,
+            evidence_used=evidence_used,
+            citation_ids=[citation["citation_id"]],
+            confidence=_thermal_comparison_confidence(posture, access_class, overlap),
+            sources_considered=len(search_results),
+        ).to_dict()
+        score = overlap + (6 if posture == "related_support" else 4 if posture == "alternative_interpretation" else 2 if posture == "contextual_only" else 1)
+        comparisons_with_rank.append((score, comparison))
+
+    comparisons_with_rank.sort(key=lambda item: (-item[0], -(item[1].get("paper_year") or 0), str(item[1].get("paper_title") or "")))
+    comparisons = [item for _score, item in comparisons_with_rank]
+    evidence_snapshot = dict(query_payload.get("evidence_snapshot") or {})
+    context = LiteratureContext(
+        mode="metadata_abstract_oa_only",
+        comparison_run_id=comparison_run_id,
+        provider_scope=provider_scope,
+        result_id=_clean_text(record.get("id")),
+        analysis_type=analysis_type,
+        provider_request_ids=provider_request_ids,
+        provider_result_source=(
+            "multi_provider_search"
+            if len(provider_scope) > 1
+            else (sorted(provider_result_sources)[0] if len(provider_result_sources) == 1 else _provider_result_source(provider, provider_scope=provider_scope))
+        ),
+        query_count=len(executed_queries),
+        source_count=len(search_results),
+        citation_count=len(citations_by_identity),
+        accessible_source_count=len(accessible_source_ids),
+        restricted_source_count=len(restricted_source_ids),
+        metadata_only_evidence=bool(search_results) and not (used_access_fields & {"oa_full_text", "user_provided_document"}),
+        restricted_content_used=False,
+        generated_at_utc=datetime.now(timezone.utc).isoformat(),
+        query_text=executed_queries[0] if executed_queries else _clean_text(query_payload.get("query_text")),
+        candidate_name=subject_label,
+        candidate_display_name=subject_label,
+        real_literature_available=real_literature_available,
+        fixture_fallback_used=bool(search_filters.get("allow_fixture_fallback")) and not real_literature_available and any(
+            _is_fixture_source(source) for source in search_results.values()
+        ),
+        query_rationale=_clean_text(query_payload.get("query_rationale")),
+        provider_query_status=provider_query_status,
+        no_results_reason=(
+            "provider_unavailable"
+            if provider_query_status == "provider_unavailable"
+            else "request_failed"
+            if provider_query_status == "request_failed"
+            else "not_configured"
+            if provider_query_status == "not_configured"
+            else "query_too_narrow"
+            if not search_results and _thermal_query_is_too_narrow(query_payload)
+            else "query_too_narrow"
+            if provider_query_status == "query_too_narrow"
+            else "no_real_results"
+            if not search_results and provider_query_status in {"no_results", "success", ""}
+            else ""
+        ),
+        fixture_fallback_allowed=bool(search_filters.get("allow_fixture_fallback")),
+        query_display_title=_clean_text(query_presentation.get("display_title")),
+        query_display_mode=_clean_text(query_presentation.get("display_mode")),
+        query_display_terms=_as_list(query_presentation.get("display_terms")),
+        shared_peak_count_snapshot=_clean_int(evidence_snapshot.get("peak_count") or evidence_snapshot.get("step_count")),
+        coverage_ratio_snapshot=_clean_float(evidence_snapshot.get("total_mass_loss_percent")),
+        weighted_overlap_score_snapshot=_clean_float(
+            evidence_snapshot.get("tg_midpoint")
+            or evidence_snapshot.get("peak_temperature")
+            or evidence_snapshot.get("midpoint_temperature")
+        ),
+    ).to_dict()
+    if provider_error_message:
+        context["provider_error_message"] = provider_error_message
+
+    citations = sorted(citations_by_identity.values(), key=lambda item: item["citation_id"])
+    return {
+        "literature_context": normalize_literature_context(context),
+        "literature_claims": claims,
+        "literature_comparisons": normalize_literature_comparisons(comparisons),
+        "citations": normalize_citations(citations),
+    }
+
+
 def _xrd_candidate_claims(
     record: Mapping[str, Any],
     query_payload: Mapping[str, Any],
@@ -555,6 +945,13 @@ def _xrd_candidate_overlap(source_text: str, candidate_tokens: set[str]) -> int:
     return sum(1 for token in candidate_tokens if token and token in lowered)
 
 
+def _xrd_query_is_too_narrow(query_payload: Mapping[str, Any]) -> bool:
+    return not any(
+        _clean_text(query_payload.get(key))
+        for key in ("candidate_display_name", "candidate_name", "candidate_formula")
+    )
+
+
 def _xrd_validation_posture(
     *,
     match_status: str,
@@ -591,19 +988,22 @@ def _xrd_comparison_confidence(posture: str, access_class: str, overlap: int) ->
 
 
 def _xrd_comparison_note(*, candidate: str, match_status: str, confidence_band: str, posture: str) -> str:
+    candidate_label = candidate or "the candidate phase"
     if match_status == "no_match":
         return (
-            f"This paper discusses XRD characterization of {candidate}. The current result remains a no_match screening outcome and the paper does not validate a phase call for the present sample."
+            f"This paper discusses XRD characterization of {candidate_label}. The current result remains a no_match screening outcome and stays below the XRD acceptance threshold, so the paper provides candidate-level context rather than validation."
         )
     if posture == "alternative_interpretation":
         return (
-            "This source is related to the candidate context, but it does not provide validating support for the current pattern and may indicate an alternative interpretation."
+            f"This paper discusses XRD characterization of {candidate_label}. The present pattern remains qualitative and non-validating, and this source may point to an alternative interpretation rather than confirming the candidate."
         )
     if posture == "related_support" and confidence_band not in {"low", "no_match"}:
         return (
-            f"This paper discusses XRD characterization of {candidate}. It is relevant to the top-ranked candidate, but the present result should still be interpreted within qualitative phase-screening limits."
+            f"This paper discusses XRD characterization of {candidate_label}. It is relevant to the top-ranked candidate, but the present result remains qualitative and should be treated as contextual support rather than phase confirmation."
         )
-    return "This source is relevant to the top-ranked candidate, but the current XRD evidence remains limited and non-validating."
+    return (
+        f"This paper discusses XRD characterization of {candidate_label}. The current XRD evidence remains limited and non-validating, so the source should be used as contextual literature only."
+    )
 
 
 def _is_fixture_source(source: Mapping[str, Any]) -> bool:
@@ -785,8 +1185,14 @@ def _compare_xrd_candidate_to_literature(
         no_results_reason=(
             "provider_unavailable"
             if provider_query_status == "provider_unavailable"
+            else "request_failed"
+            if provider_query_status == "request_failed"
             else "not_configured"
             if provider_query_status == "not_configured"
+            else "query_too_narrow"
+            if not search_results and _xrd_query_is_too_narrow(query_payload)
+            else "query_too_narrow"
+            if provider_query_status == "query_too_narrow"
             else "no_real_results"
             if not search_results and provider_query_status in {"no_results", "success", ""}
             else ""
@@ -819,8 +1225,18 @@ def compare_result_to_literature(
 ) -> dict[str, Any]:
     active_provider = provider or FixtureLiteratureProvider()
     scope = provider_scope or [getattr(active_provider, "provider_id", "fixture_provider")]
-    if _clean_text(record.get("analysis_type")).upper() == "XRD":
+    analysis_type = _clean_text(record.get("analysis_type")).upper()
+    if analysis_type == "XRD":
         return _compare_xrd_candidate_to_literature(
+            record,
+            provider=active_provider,
+            provider_scope=scope,
+            max_claims=max_claims,
+            filters=filters,
+            user_documents=user_documents,
+        )
+    if analysis_type in {"DSC", "DTA", "TGA"}:
+        return _compare_thermal_result_to_literature(
             record,
             provider=active_provider,
             provider_scope=scope,
