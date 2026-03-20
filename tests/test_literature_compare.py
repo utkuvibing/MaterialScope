@@ -71,6 +71,41 @@ class StubProvider:
         }
 
 
+class QueryAwareStubProvider(StubProvider):
+    def __init__(self, query_map: dict[str, list[dict]]) -> None:
+        super().__init__([])
+        self.provider_id = "query_aware_stub"
+        self.query_map = query_map
+        self.queries_seen: list[str] = []
+        self.last_request_ids: list[str] = []
+
+    def search(self, query: str, filters: dict | None = None) -> list[dict]:
+        del filters
+        self.queries_seen.append(query)
+        request_id = f"litreq_{self.provider_id}_{len(self.queries_seen)}"
+        self.last_request_id = request_id
+        self.last_request_ids.append(request_id)
+        rows: list[dict] = []
+        for source in self.query_map.get(query, []):
+            provenance = dict(source.get("provenance") or {})
+            rows.append(
+                {
+                    **dict(source),
+                    "provenance": {
+                        **provenance,
+                        "provider_id": self.provider_id,
+                        "request_id": request_id,
+                        "result_source": self.provider_result_source,
+                        "query": query,
+                        "provider_scope": [self.provider_id],
+                        "provider_request_ids": [request_id],
+                    },
+                }
+            )
+        self.last_query_status = "success" if rows else "no_results"
+        return rows
+
+
 def _base_record() -> dict:
     return make_result_record(
         result_id="xrd_demo",
@@ -398,6 +433,24 @@ def test_thermal_search_queries_keeps_broader_prioritized_fallbacks():
     assert len(set(queries)) == len(queries)
 
 
+def test_tga_query_builder_generates_precision_first_query_plan_for_caco3():
+    record = _thermal_record("TGA")
+    record["metadata"]["display_name"] = "tga_CaCO3_decomposition.csv"
+    record["metadata"]["sample_name"] = ""
+    record["summary"]["sample_name"] = ""
+    record["summary"]["total_mass_loss_percent"] = 43.9
+    record["rows"][0]["midpoint_temperature"] = 718.0
+
+    payload = build_tga_literature_query(record)
+    queries = _thermal_search_queries(payload)
+
+    assert len(queries) >= 4
+    assert "calcium carbonate thermogravimetric analysis decarbonation" in queries[0].lower()
+    assert any("caco3 calcination tga" in query.lower() for query in queries)
+    assert any("calcite decomposition thermogravimetric analysis" in query.lower() for query in queries)
+    assert any("700 800 c" in query.lower() for query in queries)
+
+
 def test_dsc_and_dta_query_builders_keep_existing_semantics_without_filename_noise():
     dsc_payload = build_dsc_literature_query(_thermal_record("DSC"))
     dta_payload = build_dta_literature_query(_thermal_record("DTA"))
@@ -406,6 +459,108 @@ def test_dsc_and_dta_query_builders_keep_existing_semantics_without_filename_noi
     assert "glass transition" in dsc_payload["query_text"].lower() or "thermal event" in dsc_payload["query_text"].lower()
     assert dta_payload["query_display_mode"] == "DTA / thermal events"
     assert "differential thermal analysis" in dta_payload["query_text"].lower()
+
+
+def test_thermal_compare_executes_multiple_prioritized_queries_when_available():
+    record = _thermal_record("TGA")
+    record["metadata"]["display_name"] = "tga_CaCO3_decomposition.csv"
+    record["metadata"]["sample_name"] = ""
+    record["summary"]["sample_name"] = ""
+    record["summary"]["total_mass_loss_percent"] = 43.9
+    record["rows"][0]["midpoint_temperature"] = 718.0
+    payload = build_tga_literature_query(record)
+    provider = QueryAwareStubProvider(
+        {
+            _thermal_search_queries(payload)[0]: [],
+            _thermal_search_queries(payload)[1]: [
+                _source(
+                    source_id="direct_tga_hit",
+                    access_class="abstract_only",
+                    text="Calcium carbonate thermogravimetric analysis shows decarbonation and mass loss during calcination.",
+                    hint="related",
+                )
+            ],
+        }
+    )
+
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["query_aware_stub"])
+
+    assert package["literature_context"]["query_count"] > 1
+    assert len(provider.queries_seen) > 1
+
+
+def test_tga_ranking_prefers_direct_decomposition_papers_over_generic_neighbors():
+    record = _thermal_record("TGA")
+    record["metadata"]["display_name"] = "CaCO3 decomposition"
+    record["metadata"]["sample_name"] = ""
+    record["summary"]["sample_name"] = ""
+    record["summary"]["total_mass_loss_percent"] = 43.9
+    record["rows"][0]["midpoint_temperature"] = 718.0
+
+    provider = StubProvider(
+        [
+            {
+                **_source(
+                    source_id="generic_cement_neighbor",
+                    access_class="metadata_only",
+                    text="Carbonation and low-clinker cement materials study with calcined clay additives.",
+                    hint="related",
+                ),
+                "title": "Low-clinker cement carbonation study",
+            },
+            {
+                **_source(
+                    source_id="direct_tga_decomposition",
+                    access_class="abstract_only",
+                    text="Calcium carbonate thermogravimetric analysis during decarbonation and calcination shows CO2 release and mass loss.",
+                    hint="related",
+                ),
+                "title": "Calcium carbonate thermogravimetric decarbonation",
+            },
+        ]
+    )
+
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["stub_provider"])
+
+    comparisons = package["literature_comparisons"]
+    assert comparisons
+    assert comparisons[0]["paper_title"] == "Calcium carbonate thermogravimetric decarbonation"
+    assert package["literature_context"]["real_literature_available"] is False
+
+
+def test_weak_metadata_only_neighbors_are_filtered_from_surfaced_thermal_comparisons():
+    record = _thermal_record("TGA")
+    record["metadata"]["display_name"] = "CaCO3 decomposition"
+    record["metadata"]["sample_name"] = ""
+    record["summary"]["sample_name"] = ""
+
+    provider = StubProvider(
+        [
+            {
+                **_source(
+                    source_id="cement_neighbor_a",
+                    access_class="metadata_only",
+                    text="Carbonation in low-clinker cement systems.",
+                    hint="related",
+                ),
+                "title": "Carbonation in low-clinker cement systems",
+            },
+            {
+                **_source(
+                    source_id="cement_neighbor_b",
+                    access_class="metadata_only",
+                    text="Calcined clay and alkali-activated cement durability.",
+                    hint="related",
+                ),
+                "title": "Calcined clay and alkali-activated cement durability",
+            },
+        ]
+    )
+
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["stub_provider"])
+
+    assert package["literature_context"]["low_specificity_retrieval"] is True
+    assert len(package["literature_comparisons"]) <= 1
 
 
 @pytest.mark.parametrize(
@@ -1499,3 +1654,51 @@ def test_docx_report_thermal_literature_sections_use_thermal_wording():
     assert "does not validate or override the current result" in xml
     assert "XRD screening" not in xml
     assert "top-ranked candidate" not in xml
+
+
+def test_docx_report_thermal_low_specificity_retrieval_note_is_rendered():
+    record = attach_literature_package(
+        _thermal_record("TGA"),
+        {
+            "literature_context": {
+                "mode": "metadata_abstract_oa_only",
+                "comparison_run_id": "litcmp_tga_low_specificity",
+                "provider_scope": ["openalex_like_provider"],
+                "provider_request_ids": ["openalex_req_tga_low"],
+                "provider_result_source": "openalex_api",
+                "query_text": "calcium carbonate thermogravimetric analysis decarbonation",
+                "query_display_title": "CaCO3 decomposition",
+                "query_display_mode": "TGA / decomposition profile",
+                "query_rationale": "The TGA literature search is centered on the decomposition profile with a leading step near 718 C.",
+                "real_literature_available": True,
+                "metadata_only_evidence": True,
+                "low_specificity_retrieval": True,
+            },
+            "literature_claims": [{"claim_id": "C1", "claim_text": "The TGA result indicates a decomposition profile."}],
+            "literature_comparisons": [
+                {
+                    "claim_id": "C1",
+                    "claim_text": "The TGA result indicates a decomposition profile.",
+                    "support_label": "related_but_inconclusive",
+                    "confidence": "low",
+                    "rationale": "Weak neighboring materials paper.",
+                    "citation_ids": ["ref1"],
+                }
+            ],
+            "citations": [{"citation_id": "ref1", "title": "Carbonation in low-clinker cement systems", "access_class": "metadata_only"}],
+        },
+    )
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": [650.0, 718.0, 790.0], "signal": [100.0, 82.0, 56.1]}),
+        metadata={"sample_name": "CaCO3 decomposition", "display_name": "CaCO3 decomposition"},
+        data_type="TGA",
+        units={"temperature": "degC", "signal": "%"},
+        original_columns={"temperature": "temperature", "signal": "signal"},
+        file_path="",
+    )
+
+    docx_bytes = generate_docx_report(results={record["id"]: record}, datasets={record["dataset_key"]: dataset})
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+
+    assert "low-specificity and mostly metadata/abstract-level" in xml

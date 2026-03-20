@@ -2111,6 +2111,10 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
         }
         if normalize_report_text(context.get("query_rationale") or ""):
             thermal_context["Query Rationale"] = normalize_report_text(context.get("query_rationale"))
+        if context.get("low_specificity_retrieval"):
+            thermal_context["Retrieval Note"] = (
+                "Real literature results were found, but the retained set is low-specificity and mostly metadata/abstract-level; direct validation remains unavailable."
+            )
         sections.append(("Thermal Literature Search Summary", thermal_context))
 
     for item in comparisons:
@@ -2185,6 +2189,10 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
     if citation_access_classes & {"abstract_only", "metadata_only"}:
         follow_up_checks["Check 3"] = (
             "Some literature reasoning relies on metadata or abstract-level evidence only; broader open-access or user-provided documents could refine the comparison."
+        )
+    if context.get("low_specificity_retrieval"):
+        follow_up_checks["Check 3b"] = (
+            "The retained real-literature set is low-specificity and may reflect neighboring materials/process papers rather than direct thermal validation."
         )
     if context.get("restricted_content_used") is False:
         follow_up_checks["Check 4"] = (

@@ -721,6 +721,10 @@ def _follow_up_check_text(lang: str, key: str) -> str:
             "Fixture/demo kaynakları gerçek bibliyografik kanıt sayılmaz; üretim yorumlarında kullanılmamalıdır.",
             "Fixture/demo sources are not real bibliographic evidence and should not be used for production interpretation.",
         ),
+        "low_specificity_retrieval": (
+            "Gerçek literatür bulundu, ancak elde tutulan kayıt kümesi düşük özgüllüklü ve çoğunlukla metadata/özet düzeyinde; doğrudan doğrulama hâlâ mevcut değildir.",
+            "Real literature results were found, but the retained set is low-specificity and mostly metadata/abstract-level; direct validation remains unavailable.",
+        ),
     }
     tr, en = messages[key]
     return _ui_text(lang, tr, en)
@@ -1058,6 +1062,8 @@ def build_literature_sections(record: Mapping[str, Any] | None) -> dict[str, Any
     }
     if context.get("metadata_only_evidence") or citation_access_classes & {"abstract_only", "metadata_only"}:
         follow_up_checks.append("metadata_only")
+    if context.get("low_specificity_retrieval"):
+        follow_up_checks.append("low_specificity_retrieval")
     if context.get("restricted_content_used") is False:
         follow_up_checks.append("restricted_excluded")
     if flags["fixture_detected"]:
@@ -1342,6 +1348,14 @@ def render_literature_sections(record: Mapping[str, Any] | None, *, lang: str) -
             }
         ):
             _render_thermal_no_results_status(sections["context"], {**sections["summary"], "analysis_type": analysis_type}, lang=lang)
+        elif sections["context"].get("low_specificity_retrieval"):
+            st.caption(
+                _ui_text(
+                    lang,
+                    "Gerçek literatür sonuçları bulundu, ancak elde tutulan küme düşük özgüllüklü ve metadata/özet ağırlıklı; doğrudan doğrulama mevcut değildir.",
+                    "Real literature results were found, but the retained set is low-specificity and metadata/abstract-heavy; direct validation is still unavailable.",
+                )
+            )
 
     if sections["fixture_detected"]:
         st.warning(

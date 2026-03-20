@@ -27,6 +27,7 @@ TECHNICAL_EDGE_TOKENS = {
 CHEMICAL_ALIASES = {
     "caco3": ["calcium carbonate", "calcite"],
 }
+FORMULA_PATTERN = re.compile(r"\b(?:[A-Z][a-z]?\d*){2,}\b")
 
 
 def _clean_text(value: Any) -> str:
@@ -222,6 +223,10 @@ def _subject_expansions(subject: Mapping[str, Any]) -> list[str]:
     return _dedupe(expansions)
 
 
+def _formula_like_tokens(value: str) -> list[str]:
+    return _dedupe(FORMULA_PATTERN.findall(_clean_text(value)))
+
+
 def _tga_process_expansions(*, subject: Mapping[str, Any], midpoint: int | None, total_mass_loss: float | None) -> list[str]:
     tokens = {token.lower() for token in _tokenize(_clean_text(subject.get("cleaned")))}
     expansions: list[str] = []
@@ -377,24 +382,45 @@ def build_tga_literature_query(record: Mapping[str, Any]) -> dict[str, Any]:
     total_mass_loss = _clean_float(summary.get("total_mass_loss_percent"))
     residue = _clean_float(summary.get("residue_percent"))
     subject_aliases = _subject_expansions(subject)
+    subject_formulas = _formula_like_tokens(subject_label)
     process_terms = _tga_process_expansions(subject=subject, midpoint=midpoint, total_mass_loss=total_mass_loss)
+    preferred_entity = subject_aliases[0] if subject_aliases else subject_label
+    temperature_band = ""
+    if midpoint is not None:
+        lower = max(0, (midpoint // 100) * 100)
+        upper = lower + 100
+        temperature_band = f"{lower} {upper} C"
 
-    query_text = " ".join(
-        part
-        for part in [quoted_subject, "TGA decomposition mass loss residue", f"{midpoint} C" if midpoint is not None else ""]
-        if part
-    )
-    fallback_queries = [
-        _generic_subject_query(subject, analysis_type="thermogravimetric analysis", fallback_label="decomposition"),
-        _generic_subject_query(subject, analysis_type="TGA", fallback_label="mass loss residue"),
-        "thermogravimetric analysis decomposition mass loss residue",
-    ]
+    prioritized_queries: list[str] = []
+    if preferred_entity:
+        primary_process = "decarbonation" if "decarbonation" in [term.lower() for term in process_terms] else "decomposition"
+        prioritized_queries.append(
+            " ".join(part for part in [preferred_entity, "thermogravimetric analysis", primary_process] if part)
+        )
+    if subject_formulas:
+        formula = subject_formulas[0]
+        formula_parts = [formula, "calcination", "TGA"]
+        if "CaO" in process_terms:
+            formula_parts.append("CaO")
+        if "CO2 release" in process_terms:
+            formula_parts.append("CO2")
+        prioritized_queries.append(" ".join(formula_parts))
+    if len(subject_aliases) > 1:
+        prioritized_queries.append(" ".join([subject_aliases[1], "decomposition", "thermogravimetric analysis"]))
+    elif preferred_entity:
+        prioritized_queries.append(" ".join([preferred_entity, "decomposition", "thermogravimetric analysis"]))
+    if preferred_entity and temperature_band:
+        prioritized_queries.append(" ".join([preferred_entity, "decomposition mass loss", temperature_band]))
+    elif quoted_subject:
+        prioritized_queries.append(" ".join(part for part in [quoted_subject, "decomposition mass loss residue", f"{midpoint} C" if midpoint is not None else ""] if part))
+    prioritized_queries.append("thermogravimetric analysis decomposition mass loss residue")
+
+    query_text = prioritized_queries[0]
+    fallback_queries = prioritized_queries[1:]
     if subject_label and not subject.get("quote_safe"):
-        fallback_queries.insert(1, f"{subject_label} decomposition mass loss residue")
-    if subject_aliases:
-        fallback_queries.append(" ".join(subject_aliases + ["thermogravimetric analysis", "decomposition"]))
+        fallback_queries.insert(0, f"{subject_label} thermogravimetric analysis decomposition")
     if process_terms:
-        process_query_parts = subject_aliases[:1] or ([subject_label] if subject_label else [])
+        process_query_parts = [preferred_entity] if preferred_entity else ([subject_label] if subject_label else [])
         fallback_queries.append(" ".join(process_query_parts + process_terms + ["thermogravimetric analysis"]))
 
     rationale = "The TGA literature search is centered on the decomposition profile"
@@ -416,6 +442,7 @@ def build_tga_literature_query(record: Mapping[str, Any]) -> dict[str, Any]:
             "raw_subject": _clean_text(subject.get("raw")),
             "filename_like_subject": bool(subject.get("filename_like")),
             "subject_aliases": subject_aliases,
+            "subject_formulas": subject_formulas,
             "workflow_template": _workflow_label(record),
             "step_count": _clean_int(summary.get("step_count")) or len(rows),
             "total_mass_loss_percent": total_mass_loss,
@@ -423,6 +450,7 @@ def build_tga_literature_query(record: Mapping[str, Any]) -> dict[str, Any]:
             "midpoint_temperature": _clean_float(first_step.get("midpoint_temperature")),
             "mass_loss_percent": _clean_float(first_step.get("mass_loss_percent")),
             "process_terms": process_terms,
+            "temperature_band_query": temperature_band,
         },
     )
 

@@ -44,6 +44,20 @@ SUPPORT_PHRASES = ("supports", "consistent with", "agreement", "aligned with")
 PARTIAL_PHRASES = ("partial", "tentative", "limited support", "follow-up verification")
 CONTRADICT_PHRASES = ("contradicts", "inconsistent", "not consistent", "alternative phase", "secondary phase")
 REAL_BIBLIOGRAPHIC_PROVIDERS = {"metadata_api_provider", "openalex_like_provider"}
+THERMAL_GENERIC_NEIGHBOR_TERMS = {
+    "cement",
+    "clinker",
+    "clay",
+    "ceramic",
+    "ceramics",
+    "silicate",
+    "concrete",
+    "mortar",
+    "geopolymer",
+    "carbonation",
+    "calcined clay",
+    "alkali activated",
+}
 
 
 def _clean_text(value: Any) -> str:
@@ -75,6 +89,21 @@ def _as_list(value: Any) -> list[Any]:
     if isinstance(value, (list, tuple, set)):
         return list(value)
     return [value]
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        cleaned = _clean_text(item)
+        if not cleaned:
+            continue
+        key = cleaned.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(cleaned)
+    return output
 
 
 def _tokenize(value: str) -> list[str]:
@@ -324,6 +353,11 @@ def _thermal_search_queries(query_payload: Mapping[str, Any]) -> list[str]:
     return queries
 
 
+def _phrase_overlap_count(text: str, phrases: list[str]) -> int:
+    lowered = text.lower()
+    return sum(1 for phrase in phrases if phrase and phrase.lower() in lowered)
+
+
 def _thermal_subject_tokens(query_payload: Mapping[str, Any], record: Mapping[str, Any]) -> set[str]:
     tokens: set[str] = set()
     summary = dict(record.get("summary") or {})
@@ -337,6 +371,8 @@ def _thermal_subject_tokens(query_payload: Mapping[str, Any], record: Mapping[st
     evidence_snapshot = dict(query_payload.get("evidence_snapshot") or {})
     for key in ("peak_type", "event_direction", "sample_name"):
         values.append(evidence_snapshot.get(key))
+    values.extend(_as_list(evidence_snapshot.get("subject_aliases")))
+    values.extend(_as_list(evidence_snapshot.get("subject_formulas")))
     for value in values:
         cleaned = _clean_text(value)
         if not cleaned:
@@ -364,6 +400,70 @@ def _thermal_subject_overlap(source_text: str, subject_tokens: set[str]) -> int:
     return sum(1 for token in subject_tokens if token and token in lowered)
 
 
+def _thermal_precision_signals(query_payload: Mapping[str, Any], analysis_type: str) -> dict[str, list[str]]:
+    evidence_snapshot = dict(query_payload.get("evidence_snapshot") or {})
+    entity_terms = _dedupe(
+        [_clean_text(query_payload.get("query_display_title"))]
+        + [_clean_text(item) for item in _as_list(evidence_snapshot.get("subject_aliases"))]
+        + [_clean_text(item) for item in _as_list(evidence_snapshot.get("subject_formulas"))]
+        + [_clean_text(evidence_snapshot.get("sample_name"))]
+    )
+    process_terms = _dedupe(
+        [_clean_text(item) for item in _as_list(evidence_snapshot.get("process_terms"))]
+        + ["decomposition"]
+        + (["glass transition", "calorimetry"] if analysis_type == "DSC" else [])
+        + (["differential thermal analysis", "thermal event"] if analysis_type == "DTA" else [])
+        + (["thermogravimetric analysis", "mass loss", "residue", "tga"] if analysis_type == "TGA" else [])
+    )
+    modality_terms = {
+        "DSC": ["dsc", "differential scanning calorimetry", "calorimetry"],
+        "DTA": ["dta", "differential thermal analysis", "thermal event"],
+        "TGA": ["tga", "thermogravimetric", "thermogravimetric analysis", "mass loss", "residue"],
+    }.get(analysis_type, [])
+    temperature_terms = []
+    midpoint = _clean_float(evidence_snapshot.get("midpoint_temperature") or evidence_snapshot.get("peak_temperature") or evidence_snapshot.get("tg_midpoint"))
+    if midpoint is not None:
+        temperature_terms.append(str(int(round(midpoint))))
+    temperature_band = _clean_text(evidence_snapshot.get("temperature_band_query"))
+    if temperature_band:
+        temperature_terms.extend([token for token in temperature_band.split() if token.isdigit()])
+    return {
+        "entity_terms": entity_terms,
+        "process_terms": process_terms,
+        "modality_terms": modality_terms,
+        "temperature_terms": temperature_terms,
+    }
+
+
+def _thermal_relevance_score(
+    *,
+    source_text: str,
+    access_class: str,
+    query_payload: Mapping[str, Any],
+    analysis_type: str,
+    overlap: int,
+) -> tuple[int, bool]:
+    signals = _thermal_precision_signals(query_payload, analysis_type)
+    entity_hits = _phrase_overlap_count(source_text, signals["entity_terms"])
+    process_hits = _phrase_overlap_count(source_text, signals["process_terms"])
+    modality_hits = _phrase_overlap_count(source_text, signals["modality_terms"])
+    temperature_hits = _phrase_overlap_count(source_text, signals["temperature_terms"])
+    generic_neighbor_hits = _phrase_overlap_count(source_text, list(THERMAL_GENERIC_NEIGHBOR_TERMS))
+    score = overlap
+    score += entity_hits * 4
+    score += process_hits * 3
+    score += modality_hits * 3
+    score += temperature_hits * 2
+    if access_class in {"open_access_full_text", "user_provided_document"}:
+        score += 2
+    if generic_neighbor_hits and entity_hits == 0:
+        score -= generic_neighbor_hits * 3
+    elif generic_neighbor_hits and process_hits == 0 and modality_hits == 0:
+        score -= generic_neighbor_hits * 2
+    low_specificity = score < 7 and access_class in {"metadata_only", "abstract_only"} and process_hits == 0
+    return score, low_specificity
+
+
 def _thermal_query_is_too_narrow(query_payload: Mapping[str, Any]) -> bool:
     subject = _clean_text((query_payload.get("evidence_snapshot") or {}).get("sample_name"))
     return not subject and not any(_clean_text(item) for item in _as_list(query_payload.get("query_display_terms")))
@@ -376,13 +476,14 @@ def _thermal_validation_posture(
     overlap: int,
     source_text: str,
     hint: str,
+    precision_score: int,
 ) -> str:
     lowered = source_text.lower()
     if hint in {"contradicts", "contradict"} or any(phrase in lowered for phrase in CONTRADICT_PHRASES):
         return "alternative_interpretation"
-    if overlap >= 2 and access_class in {"open_access_full_text", "user_provided_document", "abstract_only"}:
+    if precision_score >= 10 and access_class in {"open_access_full_text", "user_provided_document", "abstract_only"}:
         return "related_support"
-    if analysis_type in {"DSC", "DTA", "TGA"} and overlap >= 1:
+    if analysis_type in {"DSC", "DTA", "TGA"} and precision_score >= 5:
         return "contextual_only"
     return "non_validating"
 
@@ -708,13 +809,11 @@ def _compare_thermal_result_to_literature(
         for request_id in _provider_request_ids(provider):
             if request_id and request_id not in provider_request_ids:
                 provider_request_ids.append(request_id)
-        if len(search_results) > len(normalized_user_documents):
-            break
     provider_query_status = _provider_query_status(provider)
     provider_error_message = _provider_error_message(provider)
 
     citations_by_identity: dict[str, dict[str, Any]] = {}
-    comparisons_with_rank: list[tuple[int, dict[str, Any]]] = []
+    comparisons_with_rank: list[tuple[int, bool, dict[str, Any]]] = []
     accessible_source_ids: set[str] = set()
     restricted_source_ids: set[str] = set()
     used_access_fields: set[str] = set()
@@ -739,12 +838,20 @@ def _compare_thermal_result_to_literature(
         source_text = _thermal_source_text(source, accessible)
         overlap = _thermal_subject_overlap(source_text, subject_tokens)
         hint = _clean_text((source.get("provenance") or {}).get("comparison_hint")).lower()
+        precision_score, low_specificity = _thermal_relevance_score(
+            source_text=source_text,
+            access_class=access_class,
+            query_payload=query_payload,
+            analysis_type=analysis_type,
+            overlap=overlap,
+        )
         posture = _thermal_validation_posture(
             analysis_type=analysis_type,
             access_class=access_class,
             overlap=overlap,
             source_text=source_text,
             hint=hint,
+            precision_score=precision_score,
         )
         note = _thermal_comparison_note(
             analysis_type=analysis_type,
@@ -783,11 +890,30 @@ def _compare_thermal_result_to_literature(
             confidence=_thermal_comparison_confidence(posture, access_class, overlap),
             sources_considered=len(search_results),
         ).to_dict()
-        score = overlap + (6 if posture == "related_support" else 4 if posture == "alternative_interpretation" else 2 if posture == "contextual_only" else 1)
-        comparisons_with_rank.append((score, comparison))
+        score = precision_score + (6 if posture == "related_support" else 4 if posture == "alternative_interpretation" else 2 if posture == "contextual_only" else 0)
+        comparisons_with_rank.append((score, low_specificity, comparison))
 
-    comparisons_with_rank.sort(key=lambda item: (-item[0], -(item[1].get("paper_year") or 0), str(item[1].get("paper_title") or "")))
-    comparisons = [item for _score, item in comparisons_with_rank]
+    comparisons_with_rank.sort(key=lambda item: (-item[0], item[1], -(item[2].get("paper_year") or 0), str(item[2].get("paper_title") or "")))
+    surfaced_comparisons: list[dict[str, Any]] = []
+    seen_titles: set[str] = set()
+    strong_rows = [item for item in comparisons_with_rank if item[0] >= 10 and not item[1]]
+    candidate_rows = strong_rows if strong_rows else comparisons_with_rank
+    limit = 3 if strong_rows else 1
+    for _score, low_specificity, item in candidate_rows:
+        title_key = _clean_text(item.get("paper_title") or item.get("paper_doi") or item.get("paper_url")).casefold()
+        if title_key and title_key in seen_titles:
+            continue
+        if low_specificity and strong_rows:
+            continue
+        if title_key:
+            seen_titles.add(title_key)
+        surfaced_comparisons.append(item)
+        if len(surfaced_comparisons) >= limit:
+            break
+    if not surfaced_comparisons and comparisons_with_rank:
+        surfaced_comparisons = [comparisons_with_rank[0][2]]
+    comparisons = surfaced_comparisons
+    low_specificity_retrieval = bool(comparisons_with_rank) and not strong_rows and all(item[1] for item in comparisons_with_rank[: min(len(comparisons_with_rank), 3)])
     evidence_snapshot = dict(query_payload.get("evidence_snapshot") or {})
     context = LiteratureContext(
         mode="metadata_abstract_oa_only",
@@ -837,6 +963,8 @@ def _compare_thermal_result_to_literature(
         query_display_title=_clean_text(query_presentation.get("display_title")),
         query_display_mode=_clean_text(query_presentation.get("display_mode")),
         query_display_terms=_as_list(query_presentation.get("display_terms")),
+        low_specificity_retrieval=low_specificity_retrieval,
+        surfaced_comparison_count=len(comparisons),
         shared_peak_count_snapshot=_clean_int(evidence_snapshot.get("peak_count") or evidence_snapshot.get("step_count")),
         coverage_ratio_snapshot=_clean_float(evidence_snapshot.get("total_mass_loss_percent")),
         weighted_overlap_score_snapshot=_clean_float(

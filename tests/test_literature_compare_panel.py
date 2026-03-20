@@ -504,6 +504,56 @@ def test_render_literature_sections_shows_cleaned_thermal_focus_label(monkeypatc
     assert not any(".csv" in item for item in captions)
 
 
+def test_render_literature_sections_shows_low_specificity_thermal_note_without_noise(monkeypatch):
+    captions: list[str] = []
+    markdowns: list[str] = []
+
+    fake_st = SimpleNamespace(
+        caption=lambda text: captions.append(str(text)),
+        markdown=lambda text: markdowns.append(str(text)),
+        warning=lambda text: captions.append(str(text)),
+        container=lambda: nullcontext(),
+    )
+    monkeypatch.setattr(literature_compare_panel, "st", fake_st)
+
+    literature_compare_panel.render_literature_sections(
+        {
+            "analysis_type": "TGA",
+            "summary": {"sample_name": ""},
+            "literature_context": {
+                "query_text": "calcium carbonate thermogravimetric analysis decarbonation",
+                "query_display_title": "CaCO3 decomposition",
+                "query_display_mode": "TGA / decomposition profile",
+                "query_display_terms": ["decomposition", "mass loss", "residue"],
+                "real_literature_available": True,
+                "metadata_only_evidence": True,
+                "low_specificity_retrieval": True,
+                "source_count": 4,
+                "citation_count": 1,
+            },
+            "literature_claims": [{"claim_id": "C1", "claim_text": "The TGA result indicates a decomposition profile."}],
+            "literature_comparisons": [
+                {
+                    "claim_id": "C1",
+                    "claim_text": "The TGA result indicates a decomposition profile.",
+                    "paper_title": "Carbonation in low-clinker cement systems",
+                    "provider_id": "openalex_like_provider",
+                    "access_class": "metadata_only",
+                    "support_label": "related_but_inconclusive",
+                    "confidence": "low",
+                    "rationale": "Weak neighboring materials paper.",
+                    "citation_ids": ["ref1"],
+                }
+            ],
+            "citations": [{"citation_id": "ref1", "title": "Carbonation in low-clinker cement systems", "access_class": "metadata_only"}],
+        },
+        lang="en",
+    )
+
+    assert any("low-specificity and metadata/abstract-heavy" in item for item in captions)
+    assert sum(1 for item in markdowns if item == "**Literature Comparison**") == 1
+
+
 def test_render_literature_sections_keeps_turkish_zero_hit_copy_fully_turkish(monkeypatch):
     captions: list[str] = []
     markdowns: list[str] = []

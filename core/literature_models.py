@@ -272,6 +272,8 @@ class LiteratureContext:
     query_display_title: str = ""
     query_display_mode: str = ""
     query_display_terms: list[str] = field(default_factory=list)
+    low_specificity_retrieval: bool = False
+    surfaced_comparison_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -326,6 +328,11 @@ class LiteratureContext:
         payload["query_display_title"] = _clean_text(payload.get("query_display_title"))
         payload["query_display_mode"] = _clean_text(payload.get("query_display_mode"))
         payload["query_display_terms"] = _to_str_list(payload.get("query_display_terms"))
+        payload["low_specificity_retrieval"] = bool(payload.get("low_specificity_retrieval"))
+        try:
+            payload["surfaced_comparison_count"] = int(payload.get("surfaced_comparison_count") or 0)
+        except (TypeError, ValueError):
+            payload["surfaced_comparison_count"] = 0
         return payload
 
 
@@ -372,6 +379,8 @@ def normalize_literature_context(value: Any) -> dict[str, Any]:
         query_display_title=source.get("query_display_title", ""),
         query_display_mode=source.get("query_display_mode", ""),
         query_display_terms=source.get("query_display_terms", []),
+        low_specificity_retrieval=source.get("low_specificity_retrieval", False),
+        surfaced_comparison_count=source.get("surfaced_comparison_count", 0),
     ).to_dict()
 
 
