@@ -53,6 +53,40 @@ def test_merge_literature_detail_into_record_updates_saved_result_fields():
     assert updated["report_payload"]["literature_fixture_detected"] is False
 
 
+def test_merge_literature_detail_into_record_prefers_empty_final_detail_over_stale_local_payload():
+    record = {
+        "id": "tga_demo",
+        "literature_context": {"comparison_run_id": "old_run"},
+        "literature_claims": [{"claim_id": "C1"}],
+        "literature_comparisons": [{"claim_id": "C1", "support_label": "related_but_inconclusive"}],
+        "citations": [{"citation_id": "ref_old", "title": "Old paper"}],
+    }
+    detail = {
+        "result": {"id": "tga_demo"},
+        "literature_context": {},
+        "literature_claims": [],
+        "literature_comparisons": [],
+        "citations": [],
+    }
+    compare = {
+        "literature_context": {"comparison_run_id": "stale_compare"},
+        "literature_claims": [{"claim_id": "C_stale"}],
+        "literature_comparisons": [{"claim_id": "C_stale", "support_label": "supports"}],
+        "citations": [{"citation_id": "ref_stale", "title": "Stale paper"}],
+    }
+
+    updated = literature_compare_panel.merge_literature_detail_into_record(
+        record,
+        compare_response=compare,
+        detail_payload=detail,
+    )
+
+    assert updated["literature_context"] == {}
+    assert updated["literature_claims"] == []
+    assert updated["literature_comparisons"] == []
+    assert updated["citations"] == []
+
+
 def test_build_literature_sections_handles_absent_payload():
     sections = literature_compare_panel.build_literature_sections({})
 
@@ -663,6 +697,53 @@ def test_build_literature_sections_places_abstract_backed_supportive_thermal_cit
 
     assert [item["citation_id"] for item in sections["supporting_references"]] == ["ref7"]
     assert sections["alternative_references"] == []
+
+
+def test_render_literature_sections_uses_persisted_mixed_thermal_record_for_relevant_references(monkeypatch):
+    captions: list[str] = []
+    markdowns: list[str] = []
+
+    fake_st = SimpleNamespace(
+        caption=lambda text: captions.append(str(text)),
+        markdown=lambda text: markdowns.append(str(text)),
+        warning=lambda text: captions.append(str(text)),
+        container=lambda: nullcontext(),
+    )
+    monkeypatch.setattr(literature_compare_panel, "st", fake_st)
+
+    literature_compare_panel.render_literature_sections(
+        {
+            "analysis_type": "TGA",
+            "summary": {"sample_name": ""},
+            "literature_context": {
+                "analysis_type": "TGA",
+                "query_text": "calcium carbonate thermogravimetric analysis decarbonation",
+                "query_display_title": "CaCO3 decomposition",
+                "real_literature_available": True,
+                "metadata_only_evidence": False,
+                "evidence_specificity_summary": "mixed_metadata_and_abstract",
+            },
+            "literature_claims": [{"claim_id": "C1", "claim_text": "The TGA result indicates a decomposition profile."}],
+            "literature_comparisons": [
+                {
+                    "claim_id": "C1",
+                    "paper_title": "Calcite thermal decomposition by thermogravimetric analysis",
+                    "access_class": "abstract_only",
+                    "validation_posture": "contextual_only",
+                    "support_label": "partially_supports",
+                    "confidence": "moderate",
+                    "rationale": "Abstract-backed direct decomposition reference.",
+                    "citation_ids": ["ref7"],
+                }
+            ],
+            "citations": [{"citation_id": "ref7", "title": "Calcite thermal decomposition by thermogravimetric analysis", "access_class": "abstract_only"}],
+        },
+        lang="en",
+    )
+
+    assert any(item == "**Relevant References**" for item in markdowns)
+    assert any("Calcite thermal decomposition by thermogravimetric analysis" in item for item in markdowns)
+    assert not any("No supporting accessible references were retained" in item for item in captions)
 
 
 def test_build_literature_sections_keeps_weak_metadata_only_neighbor_in_alternative_references():

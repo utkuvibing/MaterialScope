@@ -11,6 +11,7 @@ from typing import Any, Mapping
 import httpx
 import streamlit as st
 
+from core.literature_partitioning import partition_reference_ids, reference_bucket_for_comparison
 from core.project_io import save_project_archive
 from utils.diagnostics import record_exception
 
@@ -739,43 +740,6 @@ def _comparison_display_label(
     return raw_label
 
 
-def _comparison_reference_bucket(
-    row: Mapping[str, Any],
-    *,
-    context: Mapping[str, Any],
-    citations: list[dict[str, Any]],
-) -> str:
-    raw_label = _clean_text(row.get("support_label")).lower() or "related_but_inconclusive"
-    display_label = _clean_text(row.get("display_label_key")).lower()
-    posture = _clean_text(row.get("validation_posture")).lower()
-    confidence = _clean_text(row.get("confidence")).lower()
-    analysis_type = _clean_text(context.get("analysis_type") or "").upper()
-    access_classes = {
-        _clean_text(citation.get("access_class")).lower()
-        for citation in citations
-        if _clean_text(citation.get("access_class"))
-    }
-    if not access_classes and _clean_text(row.get("access_class")):
-        access_classes.add(_clean_text(row.get("access_class")).lower())
-    evidence_specificity = _clean_text(context.get("evidence_specificity_summary")).lower()
-
-    if raw_label == "contradicts" or posture == "alternative_interpretation" or display_label == "alternative_or_weakly_related":
-        return "alternative"
-    if raw_label in {"supports", "partially_supports"} or posture == "related_support":
-        return "supporting"
-    if (
-        analysis_type in {"DSC", "DTA", "TGA"}
-        and confidence in {"moderate", "high"}
-        and display_label in {"contextually_supportive_non_validating", "related_but_non_validating"}
-        and (
-            evidence_specificity in {"abstract_backed", "mixed_metadata_and_abstract", "oa_backed"}
-            or access_classes & {"abstract_only", "open_access_full_text", "user_provided_document"}
-        )
-    ):
-        return "supporting"
-    return "alternative"
-
-
 def _follow_up_check_text(lang: str, key: str) -> str:
     messages = {
         "citation_limited": (
@@ -969,30 +933,33 @@ def merge_literature_detail_into_record(
     if detail.get("result") and detail["result"].get("dataset_key") and not updated.get("dataset_key"):
         updated["dataset_key"] = detail["result"].get("dataset_key")
 
-    updated["literature_context"] = copy.deepcopy(
-        detail.get("literature_context")
-        or compare.get("literature_context")
-        or updated.get("literature_context")
-        or {}
-    )
-    updated["literature_claims"] = copy.deepcopy(
-        detail.get("literature_claims")
-        or compare.get("literature_claims")
-        or updated.get("literature_claims")
-        or []
-    )
-    updated["literature_comparisons"] = copy.deepcopy(
-        detail.get("literature_comparisons")
-        or compare.get("literature_comparisons")
-        or updated.get("literature_comparisons")
-        or []
-    )
-    updated["citations"] = copy.deepcopy(
-        detail.get("citations")
-        or compare.get("citations")
-        or updated.get("citations")
-        or []
-    )
+    if "literature_context" in detail:
+        updated["literature_context"] = copy.deepcopy(detail.get("literature_context") or {})
+    elif "literature_context" in compare:
+        updated["literature_context"] = copy.deepcopy(compare.get("literature_context") or {})
+    else:
+        updated["literature_context"] = copy.deepcopy(updated.get("literature_context") or {})
+
+    if "literature_claims" in detail:
+        updated["literature_claims"] = copy.deepcopy(detail.get("literature_claims") or [])
+    elif "literature_claims" in compare:
+        updated["literature_claims"] = copy.deepcopy(compare.get("literature_claims") or [])
+    else:
+        updated["literature_claims"] = copy.deepcopy(updated.get("literature_claims") or [])
+
+    if "literature_comparisons" in detail:
+        updated["literature_comparisons"] = copy.deepcopy(detail.get("literature_comparisons") or [])
+    elif "literature_comparisons" in compare:
+        updated["literature_comparisons"] = copy.deepcopy(compare.get("literature_comparisons") or [])
+    else:
+        updated["literature_comparisons"] = copy.deepcopy(updated.get("literature_comparisons") or [])
+
+    if "citations" in detail:
+        updated["citations"] = copy.deepcopy(detail.get("citations") or [])
+    elif "citations" in compare:
+        updated["citations"] = copy.deepcopy(compare.get("citations") or [])
+    else:
+        updated["citations"] = copy.deepcopy(updated.get("citations") or [])
     return _apply_report_guardrail_flags(updated)
 
 
@@ -1059,6 +1026,7 @@ def _citation_lookup(record: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
 
 def build_literature_sections(record: Mapping[str, Any] | None) -> dict[str, Any]:
     source = dict(record or {})
+    analysis_type = _clean_text(source.get("analysis_type")).upper()
     comparisons = [dict(item) for item in (source.get("literature_comparisons") or []) if isinstance(item, Mapping)]
     citations_by_id = _citation_lookup(source)
     context = dict(source.get("literature_context") or {})
@@ -1089,8 +1057,6 @@ def build_literature_sections(record: Mapping[str, Any] | None) -> dict[str, Any
             "candidate_summary": {},
         }
 
-    supporting_ids: list[str] = []
-    alternative_ids: list[str] = []
     comparison_rows: list[dict[str, Any]] = []
     for item in comparisons:
         citation_ids = [
@@ -1145,20 +1111,20 @@ def build_literature_sections(record: Mapping[str, Any] | None) -> dict[str, Any
                 "fixture": fixture_row,
             }
         )
-        reference_bucket = _comparison_reference_bucket(
+        reference_bucket = reference_bucket_for_comparison(
             comparison_rows[-1],
             context=context,
             citations=citation_items,
+            analysis_type=analysis_type,
         )
         comparison_rows[-1]["reference_bucket"] = reference_bucket
-        if reference_bucket == "supporting":
-            for citation_id in citation_ids:
-                if citation_id not in supporting_ids:
-                    supporting_ids.append(citation_id)
-        else:
-            for citation_id in citation_ids:
-                if citation_id not in alternative_ids:
-                    alternative_ids.append(citation_id)
+
+    supporting_ids, alternative_ids = partition_reference_ids(
+        comparison_rows,
+        citations_by_id=citations_by_id,
+        context={**context, "analysis_type": analysis_type},
+        analysis_type=analysis_type,
+    )
 
     follow_up_checks: list[str] = []
     if any(not row["citation_ids"] for row in comparison_rows):

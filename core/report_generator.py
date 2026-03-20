@@ -21,6 +21,7 @@ from core.scientific_sections import (
     normalize_scientific_context,
     scientific_context_to_report_sections,
 )
+from core.literature_partitioning import partition_reference_ids
 from core.xrd_display import xrd_candidate_display_name
 from utils.reference_data import find_nearest_reference
 
@@ -2029,42 +2030,6 @@ def _comparison_is_fixture(
     return provider_id == "fixture_provider"
 
 
-def _comparison_reference_bucket(
-    comparison: Mapping[str, Any],
-    *,
-    context: Mapping[str, Any],
-    citations: list[Mapping[str, Any]],
-    analysis_type: str,
-) -> str:
-    raw_label = normalize_report_text(comparison.get("support_label") or "related_but_inconclusive").lower()
-    posture = normalize_report_text(comparison.get("validation_posture") or "").lower()
-    confidence = normalize_report_text(comparison.get("confidence") or "low").lower()
-    access_classes = {
-        normalize_report_text(citation.get("access_class") or "").lower()
-        for citation in citations
-        if normalize_report_text(citation.get("access_class") or "")
-    }
-    if not access_classes and normalize_report_text(comparison.get("access_class") or ""):
-        access_classes.add(normalize_report_text(comparison.get("access_class") or "").lower())
-    evidence_specificity = normalize_report_text(context.get("evidence_specificity_summary") or "").lower()
-
-    if raw_label == "contradicts" or posture == "alternative_interpretation":
-        return "alternative"
-    if raw_label in {"supports", "partially_supports"} or posture == "related_support":
-        return "supporting"
-    if (
-        analysis_type in {"DSC", "DTA", "TGA"}
-        and confidence in {"moderate", "high"}
-        and posture in {"related_support", "contextual_only"}
-        and (
-            evidence_specificity in {"abstract_backed", "mixed_metadata_and_abstract", "oa_backed"}
-            or access_classes & {"abstract_only", "open_access_full_text", "user_provided_document"}
-        )
-    ):
-        return "supporting"
-    return "alternative"
-
-
 def _citation_report_line(citation: Mapping[str, Any]) -> str:
     if _citation_is_fixture(citation):
         title = normalize_report_text(citation.get("title") or "Fixture citation metadata")
@@ -2211,9 +2176,6 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
 
     sections: list[tuple[str, dict[str, Any]]] = []
     comparison_payload: dict[str, Any] = {}
-    supporting_ids: list[str] = []
-    alternative_ids: list[str] = []
-
     if analysis_type in {"DSC", "DTA", "TGA"} and normalize_report_text(context.get("query_text") or ""):
         thermal_context = {
             "Search Focus": normalize_report_text(context.get("query_display_title") or context.get("candidate_display_name") or context.get("candidate_name") or "Not recorded"),
@@ -2254,24 +2216,15 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
         ]
         citation_note = f" Citations: {', '.join(citation_ids)}." if citation_ids else " No accessible citation was retained for this claim."
         comparison_payload[f"{claim_id} ({label}, {confidence})"] = normalize_report_text(f"{rationale}{citation_note}")
-        cited_rows = [dict(citations_by_id[citation_id]) for citation_id in citation_ids if citation_id in citations_by_id]
-        reference_bucket = _comparison_reference_bucket(
-            item,
-            context=context,
-            citations=cited_rows,
-            analysis_type=analysis_type,
-        )
-        if reference_bucket == "supporting":
-            for citation_id in citation_ids:
-                if citation_id not in supporting_ids:
-                    supporting_ids.append(citation_id)
-        else:
-            for citation_id in citation_ids:
-                if citation_id not in alternative_ids:
-                    alternative_ids.append(citation_id)
-
     if comparison_payload:
         sections.append(("Literature Comparison", comparison_payload))
+
+    supporting_ids, alternative_ids = partition_reference_ids(
+        comparisons,
+        citations_by_id=citations_by_id,
+        context={**context, "analysis_type": analysis_type},
+        analysis_type=analysis_type,
+    )
 
     supporting_payload = {
         citation_id: _citation_report_line(citations_by_id[citation_id])
