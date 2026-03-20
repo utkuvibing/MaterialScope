@@ -583,6 +583,44 @@ def _thermal_evidence_specificity_summary(*, source_count: int, accessible_sourc
     return "metadata_only" if source_count else ""
 
 
+def _merge_thermal_surfaced_comparisons(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged_rows: list[dict[str, Any]] = []
+    for row in rows:
+        similarity_key = (
+            _clean_text(row.get("claim_id")).casefold(),
+            _clean_text(row.get("support_label")).casefold(),
+            _clean_text(row.get("validation_posture")).casefold(),
+            _clean_text(row.get("confidence")).casefold(),
+            _clean_text(row.get("access_class")).casefold(),
+            _clean_text(row.get("comparison_note")).casefold(),
+        )
+        existing = next((item for item in merged_rows if item.get("_similarity_key") == similarity_key), None)
+        if existing is None:
+            merged = dict(row)
+            merged["_similarity_key"] = similarity_key
+            merged_rows.append(merged)
+            continue
+        for citation_id in _as_list(row.get("citation_ids")):
+            cleaned = _clean_text(citation_id)
+            if cleaned and cleaned not in existing.get("citation_ids", []):
+                existing.setdefault("citation_ids", []).append(cleaned)
+        for evidence in _as_list(row.get("evidence_used")):
+            cleaned = _clean_text(evidence)
+            if cleaned and cleaned not in existing.get("evidence_used", []):
+                existing.setdefault("evidence_used", []).append(cleaned)
+        for source_id in _as_list(row.get("retrieved_sources")):
+            cleaned = _clean_text(source_id)
+            if cleaned and cleaned not in existing.get("retrieved_sources", []):
+                existing.setdefault("retrieved_sources", []).append(cleaned)
+        existing["sources_considered"] = max(
+            _clean_int(existing.get("sources_considered")) or 0,
+            _clean_int(row.get("sources_considered")) or 0,
+        )
+    for item in merged_rows:
+        item.pop("_similarity_key", None)
+    return merged_rows
+
+
 def _thermal_comparison_confidence(posture: str, access_class: str, overlap: int, *, precision_score: int, access_field: str) -> str:
     evidence_basis = _thermal_evidence_basis(access_field, access_class)
     if posture == "related_support" and evidence_basis == "oa_backed" and overlap >= 2:
@@ -852,7 +890,7 @@ def _compare_generic_result_to_literature(
         citation_count=len(citations_by_identity),
         accessible_source_count=len(accessible_source_ids),
         restricted_source_count=len(restricted_source_ids),
-        metadata_only_evidence=bool(accessible_source_ids) and not (used_access_fields & {"oa_full_text", "user_provided_document"}),
+        metadata_only_evidence=bool(all_sources_seen) and not bool(used_access_fields),
         restricted_content_used=False,
         generated_at_utc=datetime.now(timezone.utc).isoformat(),
     ).to_dict()
@@ -1024,7 +1062,7 @@ def _compare_thermal_result_to_literature(
             break
     if not surfaced_comparisons and comparisons_with_rank:
         surfaced_comparisons = [comparisons_with_rank[0][2]]
-    comparisons = surfaced_comparisons
+    comparisons = _merge_thermal_surfaced_comparisons(surfaced_comparisons)
     low_specificity_retrieval = bool(comparisons_with_rank) and not strong_rows and all(item[1] for item in comparisons_with_rank[: min(len(comparisons_with_rank), 3)])
     evidence_specificity = _thermal_evidence_specificity_summary(
         source_count=len(search_results),
@@ -1049,7 +1087,7 @@ def _compare_thermal_result_to_literature(
         citation_count=len(citations_by_identity),
         accessible_source_count=len(accessible_source_ids),
         restricted_source_count=len(restricted_source_ids),
-        metadata_only_evidence=bool(search_results) and not (used_access_fields & {"oa_full_text", "user_provided_document"}),
+        metadata_only_evidence=evidence_specificity == "metadata_only",
         restricted_content_used=False,
         generated_at_utc=datetime.now(timezone.utc).isoformat(),
         query_text=executed_queries[0] if executed_queries else _clean_text(query_payload.get("query_text")),
@@ -1407,7 +1445,7 @@ def _compare_xrd_candidate_to_literature(
         citation_count=len(citations_by_identity),
         accessible_source_count=len(accessible_source_ids),
         restricted_source_count=len(restricted_source_ids),
-        metadata_only_evidence=bool(search_results) and not (used_access_fields & {"oa_full_text", "user_provided_document"}),
+        metadata_only_evidence=bool(search_results) and not bool(used_access_fields),
         restricted_content_used=False,
         generated_at_utc=datetime.now(timezone.utc).isoformat(),
         query_text=query_text,

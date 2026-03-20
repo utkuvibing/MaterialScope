@@ -631,6 +631,74 @@ def test_render_literature_sections_shows_abstract_backed_evidence_basis_note(mo
     assert any("accessible abstract-level evidence" in item for item in captions)
 
 
+def test_build_literature_sections_places_abstract_backed_supportive_thermal_citation_in_relevant_references():
+    sections = literature_compare_panel.build_literature_sections(
+        {
+            "analysis_type": "TGA",
+            "summary": {"sample_name": ""},
+            "literature_context": {
+                "analysis_type": "TGA",
+                "query_text": "calcium carbonate thermogravimetric analysis decarbonation",
+                "query_display_title": "CaCO3 decomposition",
+                "real_literature_available": True,
+                "metadata_only_evidence": False,
+                "evidence_specificity_summary": "mixed_metadata_and_abstract",
+            },
+            "literature_claims": [{"claim_id": "C1", "claim_text": "The TGA result indicates a decomposition profile."}],
+            "literature_comparisons": [
+                {
+                    "claim_id": "C1",
+                    "paper_title": "Calcite thermal decomposition by thermogravimetric analysis",
+                    "access_class": "abstract_only",
+                    "validation_posture": "contextual_only",
+                    "support_label": "related_but_inconclusive",
+                    "confidence": "moderate",
+                    "rationale": "Abstract-backed direct decomposition reference.",
+                    "citation_ids": ["ref7"],
+                }
+            ],
+            "citations": [{"citation_id": "ref7", "title": "Calcite thermal decomposition by thermogravimetric analysis", "access_class": "abstract_only"}],
+        }
+    )
+
+    assert [item["citation_id"] for item in sections["supporting_references"]] == ["ref7"]
+    assert sections["alternative_references"] == []
+
+
+def test_build_literature_sections_keeps_weak_metadata_only_neighbor_in_alternative_references():
+    sections = literature_compare_panel.build_literature_sections(
+        {
+            "analysis_type": "TGA",
+            "summary": {"sample_name": ""},
+            "literature_context": {
+                "analysis_type": "TGA",
+                "query_text": "calcium carbonate thermogravimetric analysis decarbonation",
+                "query_display_title": "CaCO3 decomposition",
+                "real_literature_available": True,
+                "metadata_only_evidence": True,
+                "evidence_specificity_summary": "metadata_only",
+            },
+            "literature_claims": [{"claim_id": "C1", "claim_text": "The TGA result indicates a decomposition profile."}],
+            "literature_comparisons": [
+                {
+                    "claim_id": "C1",
+                    "paper_title": "Carbonation in low-clinker cement systems",
+                    "access_class": "metadata_only",
+                    "validation_posture": "non_validating",
+                    "support_label": "related_but_inconclusive",
+                    "confidence": "low",
+                    "rationale": "Weak neighboring materials paper.",
+                    "citation_ids": ["ref6"],
+                }
+            ],
+            "citations": [{"citation_id": "ref6", "title": "Carbonation in low-clinker cement systems", "access_class": "metadata_only"}],
+        }
+    )
+
+    assert sections["supporting_references"] == []
+    assert [item["citation_id"] for item in sections["alternative_references"]] == ["ref6"]
+
+
 def test_render_literature_sections_keeps_turkish_zero_hit_copy_fully_turkish(monkeypatch):
     captions: list[str] = []
     markdowns: list[str] = []

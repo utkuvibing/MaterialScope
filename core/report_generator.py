@@ -2029,6 +2029,42 @@ def _comparison_is_fixture(
     return provider_id == "fixture_provider"
 
 
+def _comparison_reference_bucket(
+    comparison: Mapping[str, Any],
+    *,
+    context: Mapping[str, Any],
+    citations: list[Mapping[str, Any]],
+    analysis_type: str,
+) -> str:
+    raw_label = normalize_report_text(comparison.get("support_label") or "related_but_inconclusive").lower()
+    posture = normalize_report_text(comparison.get("validation_posture") or "").lower()
+    confidence = normalize_report_text(comparison.get("confidence") or "low").lower()
+    access_classes = {
+        normalize_report_text(citation.get("access_class") or "").lower()
+        for citation in citations
+        if normalize_report_text(citation.get("access_class") or "")
+    }
+    if not access_classes and normalize_report_text(comparison.get("access_class") or ""):
+        access_classes.add(normalize_report_text(comparison.get("access_class") or "").lower())
+    evidence_specificity = normalize_report_text(context.get("evidence_specificity_summary") or "").lower()
+
+    if raw_label == "contradicts" or posture == "alternative_interpretation":
+        return "alternative"
+    if raw_label in {"supports", "partially_supports"} or posture == "related_support":
+        return "supporting"
+    if (
+        analysis_type in {"DSC", "DTA", "TGA"}
+        and confidence in {"moderate", "high"}
+        and posture in {"related_support", "contextual_only"}
+        and (
+            evidence_specificity in {"abstract_backed", "mixed_metadata_and_abstract", "oa_backed"}
+            or access_classes & {"abstract_only", "open_access_full_text", "user_provided_document"}
+        )
+    ):
+        return "supporting"
+    return "alternative"
+
+
 def _citation_report_line(citation: Mapping[str, Any]) -> str:
     if _citation_is_fixture(citation):
         title = normalize_report_text(citation.get("title") or "Fixture citation metadata")
@@ -2218,7 +2254,14 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
         ]
         citation_note = f" Citations: {', '.join(citation_ids)}." if citation_ids else " No accessible citation was retained for this claim."
         comparison_payload[f"{claim_id} ({label}, {confidence})"] = normalize_report_text(f"{rationale}{citation_note}")
-        if label in {"supports", "partially_supports"}:
+        cited_rows = [dict(citations_by_id[citation_id]) for citation_id in citation_ids if citation_id in citations_by_id]
+        reference_bucket = _comparison_reference_bucket(
+            item,
+            context=context,
+            citations=cited_rows,
+            analysis_type=analysis_type,
+        )
+        if reference_bucket == "supporting":
             for citation_id in citation_ids:
                 if citation_id not in supporting_ids:
                     supporting_ids.append(citation_id)
@@ -2275,7 +2318,7 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
         normalize_report_text(item.get("access_class") or "")
         for item in citations_by_id.values()
     }
-    if citation_access_classes & {"abstract_only", "metadata_only"}:
+    if context.get("metadata_only_evidence") or citation_access_classes == {"metadata_only"}:
         follow_up_checks["Check 3"] = (
             "Some literature reasoning relies on metadata or abstract-level evidence only; broader open-access or user-provided documents could refine the comparison."
         )

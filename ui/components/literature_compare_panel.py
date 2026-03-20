@@ -240,6 +240,14 @@ def _label_text(lang: str, key: str) -> str:
             "İlgili ama doğrulayıcı değil",
             "Related but non-validating",
         ),
+        "contextually_supportive_non_validating": (
+            "Bağlamsal olarak destekleyici, doğrulayıcı değil",
+            "Contextually supportive, non-validating",
+        ),
+        "alternative_or_weakly_related": (
+            "Alternatif veya zayıf ilişkili",
+            "Alternative or weakly related",
+        ),
     }
     tr, en = labels.get(key, ("İlgili ama sonuçsuz", "Related but inconclusive"))
     return _ui_text(lang, tr, en)
@@ -680,32 +688,92 @@ def _comparison_display_label(
     citations: list[dict[str, Any]],
 ) -> str:
     raw_label = _clean_text(row.get("support_label")).lower() or "related_but_inconclusive"
-    if raw_label not in {"supports", "partially_supports"}:
-        return raw_label
-
     if any(_citation_is_fixture(citation) for citation in citations):
         return "demo_fixture_only"
 
+    analysis_type = _clean_text(context.get("analysis_type") or "").upper()
     match_status = _clean_text(summary.get("match_status")).lower()
     confidence_band = _clean_text(summary.get("confidence_band")).lower()
     comparison_confidence = _clean_text(row.get("confidence")).lower()
+    posture = _clean_text(row.get("validation_posture")).lower()
     access_classes = {
         _clean_text(citation.get("access_class")).lower()
         for citation in citations
         if _clean_text(citation.get("access_class"))
     }
+    if not access_classes and _clean_text(row.get("access_class")):
+        access_classes.add(_clean_text(row.get("access_class")).lower())
+    evidence_specificity = _clean_text(context.get("evidence_specificity_summary")).lower()
     weak_evidence = (
         context.get("metadata_only_evidence")
         or comparison_confidence == "low"
-        or (access_classes and access_classes.issubset({"metadata_only", "abstract_only"}))
+        or (access_classes and access_classes == {"metadata_only"})
         or not citations
     )
 
     if match_status == "no_match" or confidence_band in {"no_match", "low", "not_run"}:
         return "insufficient_literature_evidence"
+    if analysis_type in {"DSC", "DTA", "TGA"}:
+        if raw_label in {"supports", "partially_supports"}:
+            return "contextually_supportive_non_validating" if comparison_confidence in {"moderate", "high"} else "related_but_non_validating"
+        if (
+            raw_label == "related_but_inconclusive"
+            and comparison_confidence in {"moderate", "high"}
+            and posture in {"related_support", "contextual_only"}
+            and (
+                evidence_specificity in {"abstract_backed", "mixed_metadata_and_abstract", "oa_backed"}
+                or access_classes & {"abstract_only", "open_access_full_text", "user_provided_document"}
+            )
+        ):
+            return "contextually_supportive_non_validating"
+        if raw_label == "contradicts" or posture == "alternative_interpretation":
+            return "alternative_or_weakly_related"
+        if weak_evidence:
+            return "alternative_or_weakly_related"
+        return raw_label
+
+    if raw_label not in {"supports", "partially_supports"}:
+        return raw_label
     if weak_evidence:
         return "related_but_non_validating"
     return raw_label
+
+
+def _comparison_reference_bucket(
+    row: Mapping[str, Any],
+    *,
+    context: Mapping[str, Any],
+    citations: list[dict[str, Any]],
+) -> str:
+    raw_label = _clean_text(row.get("support_label")).lower() or "related_but_inconclusive"
+    display_label = _clean_text(row.get("display_label_key")).lower()
+    posture = _clean_text(row.get("validation_posture")).lower()
+    confidence = _clean_text(row.get("confidence")).lower()
+    analysis_type = _clean_text(context.get("analysis_type") or "").upper()
+    access_classes = {
+        _clean_text(citation.get("access_class")).lower()
+        for citation in citations
+        if _clean_text(citation.get("access_class"))
+    }
+    if not access_classes and _clean_text(row.get("access_class")):
+        access_classes.add(_clean_text(row.get("access_class")).lower())
+    evidence_specificity = _clean_text(context.get("evidence_specificity_summary")).lower()
+
+    if raw_label == "contradicts" or posture == "alternative_interpretation" or display_label == "alternative_or_weakly_related":
+        return "alternative"
+    if raw_label in {"supports", "partially_supports"} or posture == "related_support":
+        return "supporting"
+    if (
+        analysis_type in {"DSC", "DTA", "TGA"}
+        and confidence in {"moderate", "high"}
+        and display_label in {"contextually_supportive_non_validating", "related_but_non_validating"}
+        and (
+            evidence_specificity in {"abstract_backed", "mixed_metadata_and_abstract", "oa_backed"}
+            or access_classes & {"abstract_only", "open_access_full_text", "user_provided_document"}
+        )
+    ):
+        return "supporting"
+    return "alternative"
 
 
 def _follow_up_check_text(lang: str, key: str) -> str:
@@ -1077,7 +1145,13 @@ def build_literature_sections(record: Mapping[str, Any] | None) -> dict[str, Any
                 "fixture": fixture_row,
             }
         )
-        if display_label_key in {"supports", "partially_supports"}:
+        reference_bucket = _comparison_reference_bucket(
+            comparison_rows[-1],
+            context=context,
+            citations=citation_items,
+        )
+        comparison_rows[-1]["reference_bucket"] = reference_bucket
+        if reference_bucket == "supporting":
             for citation_id in citation_ids:
                 if citation_id not in supporting_ids:
                     supporting_ids.append(citation_id)
@@ -1096,7 +1170,7 @@ def build_literature_sections(record: Mapping[str, Any] | None) -> dict[str, Any
         for item in citations_by_id.values()
         if _clean_text(item.get("access_class"))
     }
-    if context.get("metadata_only_evidence") or citation_access_classes & {"abstract_only", "metadata_only"}:
+    if context.get("metadata_only_evidence") or (citation_access_classes and citation_access_classes == {"metadata_only"}):
         follow_up_checks.append("metadata_only")
     if context.get("low_specificity_retrieval"):
         follow_up_checks.append("low_specificity_retrieval")
