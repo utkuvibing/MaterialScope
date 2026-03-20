@@ -18,6 +18,7 @@ from core.dsc_processor import DSCProcessor
 from core.result_serialization import serialize_dsc_result
 from core.validation import validate_thermal_dataset
 from ui.components.chrome import render_page_header
+from ui.components.literature_compare_panel import render_literature_compare_panel
 from ui.components.plot_builder import (
     create_dsc_plot,
     create_thermal_plot,
@@ -772,9 +773,12 @@ def render():
 
             st.divider()
 
+        result_id = f"dsc_{selected_key}"
+        saved_record = st.session_state.get("results", {}).get(result_id)
         if st.button(tx("Sonuçları Oturuma Kaydet", "Save Results to Session"), key="dsc_save_results"):
             try:
                 _store_dsc_result(selected_key, dataset, temperature, signal, state)
+                saved_record = st.session_state.get("results", {}).get(result_id)
                 _log_event(tx("Sonuçlar Kaydedildi", "Results Saved"), tx("Kararlı DSC sonucu kaydedildi", "Stable DSC result saved"), t("dsc.title"), dataset_key=selected_key, result_id=f"dsc_{selected_key}")
                 st.success(tx("Kararlı DSC sonuçları kaydedildi. İndirmek için Rapor Merkezi'ne gidin.", "Stable DSC results saved. Go to Report Center to download."))
             except Exception as exc:
@@ -787,4 +791,26 @@ def render():
                     exception=exc,
                 )
                 st.error(tx("DSC sonuçları kaydedilemedi: {error}", "Saving DSC results failed: {error}", error=f"{exc} (Error ID: {error_id})"))
+
+        st.divider()
+        if saved_record:
+            st.caption(tx("Kaydedilmiş sonuç kimliği: {result_id}", "Saved result ID: {result_id}", result_id=result_id))
+        saved_record, literature_action = render_literature_compare_panel(
+            record=saved_record,
+            result_id=result_id if saved_record else None,
+            lang=st.session_state.get("lang", "tr"),
+            key_prefix=f"dsc_literature_compare_{selected_key}",
+        )
+        if literature_action and literature_action.get("status") == "success":
+            _log_event(
+                tx("Literatür Karşılaştırması", "Literature Compare"),
+                tx(
+                    "{result_id} için literatür karşılaştırması güncellendi.",
+                    "Literature comparison was refreshed for {result_id}.",
+                    result_id=result_id,
+                ),
+                t("dsc.title"),
+                dataset_key=selected_key,
+                result_id=result_id,
+            )
 

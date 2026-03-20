@@ -26,6 +26,7 @@ from utils.reference_data import find_nearest_reference
 
 try:
     from docx import Document
+    from docx.opc.constants import RELATIONSHIP_TYPE as RT
     from docx.shared import Inches, Pt, RGBColor
     from docx.enum.section import WD_ORIENTATION, WD_SECTION_START
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -81,7 +82,15 @@ _BULLET_SECTION_TITLES = {
     "Alternative Explanations",
     "Uncertainty and Methodological Limits",
     "Recommended Follow-Up Experiments",
+    "Literature Comparison",
+    "Relevant References",
+    "Alternative or Non-Validating References",
+    "Supporting References",
+    "Contradictory or Alternative References",
+    "Recommended Follow-Up Literature Checks",
 }
+_MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
+_BARE_URL_PATTERN = re.compile(r"(https?://[^\s)]+)")
 
 
 def _set_cell_bg(cell, hex_color: str) -> None:
@@ -148,6 +157,72 @@ def _set_docx_section_orientation(section, *, landscape: bool) -> None:
 
 def _add_heading(doc: Document, text: str, level: int = 1) -> None:
     doc.add_heading(normalize_report_text(text), level=level)
+
+
+def _append_docx_hyperlink(paragraph, *, url: str, text: str) -> None:
+    clean_url = normalize_report_text(url)
+    clean_text = normalize_report_text(text)
+    if not clean_url or not clean_text:
+        return
+    relationship_id = paragraph.part.relate_to(clean_url, RT.HYPERLINK, is_external=True)
+    hyperlink = OxmlElement("w:hyperlink")
+    hyperlink.set(qn("r:id"), relationship_id)
+    run = OxmlElement("w:r")
+    run_properties = OxmlElement("w:rPr")
+    style = OxmlElement("w:rStyle")
+    style.set(qn("w:val"), "Hyperlink")
+    run_properties.append(style)
+    run.append(run_properties)
+    text_element = OxmlElement("w:t")
+    text_element.text = clean_text
+    run.append(text_element)
+    hyperlink.append(run)
+    paragraph._p.append(hyperlink)
+
+
+def _append_docx_text_with_links(paragraph, text: str) -> None:
+    clean_text = normalize_report_text(text)
+    if not clean_text:
+        return
+
+    def append_plain(segment: str) -> None:
+        cursor = 0
+        for url_match in _BARE_URL_PATTERN.finditer(segment):
+            if url_match.start() > cursor:
+                paragraph.add_run(segment[cursor:url_match.start()])
+            url = url_match.group(1)
+            _append_docx_hyperlink(paragraph, url=url, text=url)
+            cursor = url_match.end()
+        if cursor < len(segment):
+            paragraph.add_run(segment[cursor:])
+
+    cursor = 0
+    for match in _MARKDOWN_LINK_PATTERN.finditer(clean_text):
+        if match.start() > cursor:
+            append_plain(clean_text[cursor:match.start()])
+        _append_docx_hyperlink(paragraph, url=match.group(2), text=match.group(1))
+        cursor = match.end()
+    if cursor < len(clean_text):
+        append_plain(clean_text[cursor:])
+
+
+def _doi_url(value: Any) -> str:
+    cleaned = normalize_report_text(value)
+    if not cleaned:
+        return ""
+    if cleaned.lower().startswith(("http://", "https://")):
+        return cleaned
+    return f"https://doi.org/{cleaned}"
+
+
+def _citation_link_markup(citation: Mapping[str, Any]) -> str:
+    doi = normalize_report_text(citation.get("doi") or "")
+    url = normalize_report_text(citation.get("url") or "")
+    if doi:
+        return normalize_report_text(f"DOI: [{doi}]({_doi_url(doi)}).")
+    if url:
+        return normalize_report_text(f"Link: [Open paper]({url}).")
+    return ""
 
 
 def _add_key_value_table(doc: Document, data: dict) -> None:
@@ -1855,12 +1930,17 @@ def _record_main_sections(record: dict) -> list[tuple[str, dict[str, Any]]]:
         "Equations and Formulation": 10,
         "Primary Scientific Interpretation": 20,
         "Evidence Supporting This Interpretation": 30,
+        "Literature Comparison": 35,
+        "Supporting References": 36,
+        "Contradictory or Alternative References": 37,
         "Alternative Explanations": 40,
         "Uncertainty and Methodological Limits": 50,
+        "Recommended Follow-Up Literature Checks": 55,
         "Recommended Follow-Up Experiments": 60,
         "Scientific Interpretation": 70,
         "Fit Quality": 80,
     }
+    ordered_sections.extend(_literature_main_sections(record))
     ordered_sections.sort(key=lambda item: section_priority.get(item[0], 999))
     sections.extend(ordered_sections)
 
@@ -1877,6 +1957,431 @@ def _record_main_sections(record: dict) -> list[tuple[str, dict[str, Any]]]:
         warning_payload["Methodological Limitations"] = grouped["methodological_limitations"]
     if warning_payload:
         sections.append(("Warnings and Limitations", warning_payload))
+    return sections
+
+
+def _citation_lookup(record: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    lookup: dict[str, dict[str, Any]] = {}
+    for item in record.get("citations") or []:
+        if not isinstance(item, Mapping):
+            continue
+        citation_id = normalize_report_text(item.get("citation_id") or "")
+        if not citation_id:
+            continue
+        lookup[citation_id] = dict(item)
+    return lookup
+
+
+def _literature_demo_enabled() -> bool:
+    token = (
+        os.getenv("THERMOANALYZER_INCLUDE_DEMO_LITERATURE")
+        or os.getenv("MATERIALSCOPE_INCLUDE_DEMO_LITERATURE")
+        or ""
+    )
+    return token.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _citation_is_fixture(citation: Mapping[str, Any]) -> bool:
+    provenance = dict(citation.get("provenance") or {})
+    provider_id = normalize_report_text(provenance.get("provider_id") or "").lower()
+    result_source = normalize_report_text(provenance.get("result_source") or "").lower()
+    provider_scope = [
+        normalize_report_text(item).lower()
+        for item in (provenance.get("provider_scope") or [])
+        if normalize_report_text(item)
+    ]
+    return provider_id == "fixture_provider" or result_source == "fixture_search" or "fixture_provider" in provider_scope
+
+
+def _literature_fixture_state(record: Mapping[str, Any]) -> dict[str, bool]:
+    context = dict(record.get("literature_context") or {})
+    provider_scope = [
+        normalize_report_text(item).lower()
+        for item in (context.get("provider_scope") or [])
+        if normalize_report_text(item)
+    ]
+    citations = [dict(item) for item in (record.get("citations") or []) if isinstance(item, Mapping)]
+    fixture_from_scope = "fixture_provider" in provider_scope
+    fixture_citations = [citation for citation in citations if _citation_is_fixture(citation)]
+    fixture_detected = fixture_from_scope or bool(fixture_citations)
+    fixture_only = fixture_detected and (not citations or len(fixture_citations) == len(citations))
+    return {
+        "fixture_detected": fixture_detected,
+        "fixture_only": fixture_only,
+    }
+
+
+def _comparison_is_fixture(
+    comparison: Mapping[str, Any],
+    *,
+    citations_by_id: Mapping[str, Mapping[str, Any]],
+) -> bool:
+    citation_ids = [
+        normalize_report_text(token)
+        for token in (comparison.get("citation_ids") or [])
+        if normalize_report_text(token)
+    ]
+    cited_rows = [dict(citations_by_id[citation_id]) for citation_id in citation_ids if citation_id in citations_by_id]
+    if cited_rows:
+        return all(_citation_is_fixture(citation) for citation in cited_rows)
+
+    provider_id = normalize_report_text(comparison.get("provider_id") or "").lower()
+    return provider_id == "fixture_provider"
+
+
+def _citation_report_line(citation: Mapping[str, Any]) -> str:
+    if _citation_is_fixture(citation):
+        title = normalize_report_text(citation.get("title") or "Fixture citation metadata")
+        access_class = normalize_report_text(citation.get("access_class") or "metadata_only")
+        return normalize_report_text(
+            f"Development/demo fixture citation only: {title}. Access class: {access_class}. "
+            "This is not an authoritative bibliographic reference."
+        )
+    citation_text = normalize_report_text(citation.get("citation_text") or citation.get("title") or "Citation not recorded")
+    access_class = normalize_report_text(citation.get("access_class") or "metadata_only")
+    link_markup = _citation_link_markup(citation)
+    suffix = f" {link_markup}" if link_markup else ""
+    return normalize_report_text(f"{citation_text} Access class: {access_class}.{suffix}")
+
+
+def _citation_appendix_line(citation: Mapping[str, Any]) -> str:
+    if _citation_is_fixture(citation):
+        title = normalize_report_text(citation.get("title") or "Fixture citation metadata")
+        access_class = normalize_report_text(citation.get("access_class") or "metadata_only")
+        provenance = dict(citation.get("provenance") or {})
+        provider_id = normalize_report_text(provenance.get("provider_id") or "fixture_provider")
+        result_source = normalize_report_text(provenance.get("result_source") or "fixture_search")
+        return normalize_report_text(
+            f"Development/demo fixture citation only: {title}. Access class: {access_class}. "
+            f"Provider: {provider_id}. Result source: {result_source}. "
+            "DOI/URL text is intentionally omitted from authoritative citation display."
+        )
+    citation_text = normalize_report_text(citation.get("citation_text") or citation.get("title") or "Citation not recorded")
+    access_class = normalize_report_text(citation.get("access_class") or "metadata_only")
+    license_note = normalize_report_text(citation.get("source_license_note") or "not recorded")
+    provenance = dict(citation.get("provenance") or {})
+    provider_id = normalize_report_text(provenance.get("provider_id") or "")
+    result_source = normalize_report_text(provenance.get("result_source") or "")
+    provider_scope = ", ".join(
+        normalize_report_text(item)
+        for item in (provenance.get("provider_scope") or [])
+        if normalize_report_text(item)
+    )
+    request_ids = ", ".join(
+        normalize_report_text(item)
+        for item in ((provenance.get("provider_request_ids") or []) or [provenance.get("request_id")])
+        if normalize_report_text(item)
+    )
+    segments = [
+        citation_text,
+        f"Access class: {access_class}.",
+        f"License note: {license_note}.",
+    ]
+    if provider_id:
+        segments.append(f"Provider: {provider_id}.")
+    if result_source:
+        segments.append(f"Result source: {result_source}.")
+    if provider_scope:
+        segments.append(f"Provider scope: {provider_scope}.")
+    if request_ids:
+        segments.append(f"Provider request IDs: {request_ids}.")
+    link_markup = _citation_link_markup(citation)
+    if link_markup:
+        segments.append(link_markup)
+    return normalize_report_text(" ".join(segments))
+
+
+def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    comparisons = [dict(item) for item in (record.get("literature_comparisons") or []) if isinstance(item, Mapping)]
+    context = dict(record.get("literature_context") or {})
+    analysis_type = str(record.get("analysis_type") or "").upper()
+    all_citations_by_id = _citation_lookup(record)
+    fixture_state = _literature_fixture_state(record)
+    if fixture_state["fixture_only"]:
+        return []
+    citations_by_id = {
+        citation_id: citation
+        for citation_id, citation in all_citations_by_id.items()
+        if not _citation_is_fixture(citation)
+    }
+    reportable_xrd_comparisons = [
+        item
+        for item in comparisons
+        if not _comparison_is_fixture(item, citations_by_id=all_citations_by_id)
+    ]
+    if not comparisons and not citations_by_id:
+        return []
+
+    if analysis_type == "XRD" and (
+        normalize_report_text(context.get("query_text") or "")
+        or any(normalize_report_text(item.get("paper_title") or "") for item in reportable_xrd_comparisons)
+    ):
+        if not reportable_xrd_comparisons and not citations_by_id:
+            return []
+        sections: list[tuple[str, dict[str, Any]]] = []
+        candidate_name = (
+            normalize_report_text(context.get("candidate_display_name") or "")
+            or normalize_report_text(context.get("candidate_name") or "")
+            or normalize_report_text((record.get("summary") or {}).get("top_candidate_display_name_unicode") or "")
+            or normalize_report_text((record.get("summary") or {}).get("top_candidate_name") or "")
+            or "Not recorded"
+        )
+        candidate_context = {
+            "Candidate": candidate_name,
+            "Query Text": normalize_report_text(context.get("query_text") or "Not recorded"),
+            "Accepted Match Status": normalize_report_text(context.get("match_status_snapshot") or (record.get("summary") or {}).get("match_status") or "Not recorded"),
+            "Confidence Band": normalize_report_text(context.get("confidence_band_snapshot") or (record.get("summary") or {}).get("confidence_band") or "Not recorded"),
+            "Authoritative Note": "Literature provides contextual evidence around the top-ranked candidate and does not override XRD screening.",
+        }
+        sections.append(("XRD Candidate Literature Check", candidate_context))
+
+        relevant_payload: dict[str, Any] = {}
+        alternative_payload: dict[str, Any] = {}
+        for item in reportable_xrd_comparisons:
+            title = normalize_report_text(item.get("paper_title") or item.get("claim_text") or f"Paper {len(relevant_payload) + len(alternative_payload) + 1}")
+            journal = normalize_report_text(item.get("paper_journal") or "")
+            year = normalize_report_text(item.get("paper_year") or "n.d.")
+            link = _citation_link_markup({"doi": item.get("paper_doi"), "url": item.get("paper_url")})
+            posture = normalize_report_text(item.get("validation_posture") or "non_validating")
+            provider = normalize_report_text(item.get("provider_id") or "not_recorded")
+            access_class = normalize_report_text(item.get("access_class") or "metadata_only")
+            note = normalize_report_text(item.get("comparison_note") or item.get("rationale") or "No comparison note recorded.")
+            line = f"{year}. {journal}. provider={provider}; access={access_class}; posture={posture}. {note}"
+            if link:
+                line = f"{line} {link}"
+            if posture == "related_support":
+                relevant_payload[title] = normalize_report_text(line)
+            else:
+                alternative_payload[title] = normalize_report_text(line)
+
+        if not relevant_payload and reportable_xrd_comparisons:
+            relevant_payload["Note"] = "No paper met the threshold for candidate-related support; literature remains contextual and non-definitive."
+        sections.append(("Relevant Papers", relevant_payload))
+
+        if not alternative_payload and reportable_xrd_comparisons:
+            alternative_payload["Note"] = "No alternative or non-validating papers were retained beyond the contextual candidate check."
+        sections.append(("Alternative or Non-Validating Papers", alternative_payload))
+
+        follow_up_checks: dict[str, Any] = {}
+        if not reportable_xrd_comparisons:
+            follow_up_checks["Check 1"] = "No bibliographic papers were retained for the top-ranked candidate; consider broadening candidate labels or searching additional metadata providers."
+        if normalize_report_text(context.get("match_status_snapshot") or "").lower() == "no_match":
+            follow_up_checks["Check 2"] = "The accepted XRD outcome remains no_match; literature does not validate a phase call and confirmatory experiments may still be required."
+        if context.get("metadata_only_evidence"):
+            follow_up_checks["Check 3"] = "The retained paper set is metadata- or abstract-heavy; broader open-access evidence could refine candidate-level context."
+        if follow_up_checks:
+            sections.append(("Recommended Follow-Up Literature Checks", follow_up_checks))
+        return sections
+
+    sections: list[tuple[str, dict[str, Any]]] = []
+    comparison_payload: dict[str, Any] = {}
+    supporting_ids: list[str] = []
+    alternative_ids: list[str] = []
+
+    if analysis_type in {"DSC", "DTA", "TGA"} and normalize_report_text(context.get("query_text") or ""):
+        thermal_context = {
+            "Search Focus": normalize_report_text(context.get("query_display_title") or context.get("candidate_display_name") or context.get("candidate_name") or "Not recorded"),
+            "Search Mode": normalize_report_text(context.get("query_display_mode") or "Thermal / interpretation"),
+            "Query Text": normalize_report_text(context.get("query_text") or "Not recorded"),
+            "Authoritative Note": "Literature provides context around the recorded thermal interpretation and does not validate or override the current result.",
+        }
+        if normalize_report_text(context.get("query_rationale") or ""):
+            thermal_context["Query Rationale"] = normalize_report_text(context.get("query_rationale"))
+        if context.get("low_specificity_retrieval"):
+            thermal_context["Retrieval Note"] = (
+                "Real literature results were found, but the retained set is low-specificity and mostly metadata/abstract-level; direct validation remains unavailable."
+            )
+        sections.append(("Thermal Literature Search Summary", thermal_context))
+
+    for item in comparisons:
+        claim_id = normalize_report_text(item.get("claim_id") or f"C{len(comparison_payload) + 1}")
+        label = normalize_report_text(item.get("support_label") or "related_but_inconclusive")
+        confidence = normalize_report_text(item.get("confidence") or "low")
+        rationale = normalize_report_text(item.get("rationale") or "No literature rationale recorded.")
+        citation_ids = [
+            normalize_report_text(token)
+            for token in (item.get("citation_ids") or [])
+            if normalize_report_text(token) and normalize_report_text(token) in citations_by_id
+        ]
+        citation_note = f" Citations: {', '.join(citation_ids)}." if citation_ids else " No accessible citation was retained for this claim."
+        comparison_payload[f"{claim_id} ({label}, {confidence})"] = normalize_report_text(f"{rationale}{citation_note}")
+        if label in {"supports", "partially_supports"}:
+            for citation_id in citation_ids:
+                if citation_id not in supporting_ids:
+                    supporting_ids.append(citation_id)
+        else:
+            for citation_id in citation_ids:
+                if citation_id not in alternative_ids:
+                    alternative_ids.append(citation_id)
+
+    if comparison_payload:
+        sections.append(("Literature Comparison", comparison_payload))
+
+    supporting_payload = {
+        citation_id: _citation_report_line(citations_by_id[citation_id])
+        for citation_id in supporting_ids
+        if citation_id in citations_by_id
+    }
+    if not supporting_payload and comparisons:
+        supporting_payload["Note"] = (
+            "No supporting accessible references were retained for this run; evidence is limited and remains non-definitive."
+        )
+    if supporting_payload:
+        sections.append(
+            ("Relevant References", supporting_payload)
+            if analysis_type in {"DSC", "DTA", "TGA"}
+            else ("Supporting References", supporting_payload)
+        )
+
+    alternative_payload = {
+        citation_id: _citation_report_line(citations_by_id[citation_id])
+        for citation_id in alternative_ids
+        if citation_id in citations_by_id
+    }
+    if not alternative_payload and comparisons:
+        alternative_payload["Note"] = (
+            "No contradictory accessible references were retained, but the current comparison still remains qualitative and cautionary."
+        )
+    if alternative_payload:
+        sections.append(
+            ("Alternative or Non-Validating References", alternative_payload)
+            if analysis_type in {"DSC", "DTA", "TGA"}
+            else ("Contradictory or Alternative References", alternative_payload)
+        )
+
+    follow_up_checks: dict[str, Any] = {}
+    if any(not (item.get("citation_ids") or []) for item in comparisons):
+        follow_up_checks["Check 1"] = (
+            "At least one claim remained citation-limited; additional confirmatory experiments may be required before stronger literature alignment is inferred."
+        )
+    if any(str(item.get("confidence") or "").lower() == "low" for item in comparisons):
+        follow_up_checks["Check 2"] = (
+            "Low-confidence literature outcomes should be treated as screening context only, not as confirmation."
+        )
+    citation_access_classes = {
+        normalize_report_text(item.get("access_class") or "")
+        for item in citations_by_id.values()
+    }
+    if citation_access_classes & {"abstract_only", "metadata_only"}:
+        follow_up_checks["Check 3"] = (
+            "Some literature reasoning relies on metadata or abstract-level evidence only; broader open-access or user-provided documents could refine the comparison."
+        )
+    if context.get("low_specificity_retrieval"):
+        follow_up_checks["Check 3b"] = (
+            "The retained real-literature set is low-specificity and may reflect neighboring materials/process papers rather than direct thermal validation."
+        )
+    if context.get("restricted_content_used") is False:
+        follow_up_checks["Check 4"] = (
+            "Closed-access full text was intentionally excluded from reasoning; the system remains legal-safe by design."
+        )
+    if follow_up_checks:
+        sections.append(("Recommended Follow-Up Literature Checks", follow_up_checks))
+
+    return sections
+
+
+def _literature_appendix_sections(record: Mapping[str, Any]) -> list[tuple[str, dict[str, str]]]:
+    sections: list[tuple[str, dict[str, str]]] = []
+    fixture_state = _literature_fixture_state(record)
+    if fixture_state["fixture_only"] and not _literature_demo_enabled():
+        return [
+            (
+                "Development / Demo Literature Output",
+                {
+                    "Status": (
+                        "Fixture/demo-only literature output was excluded from the report by default because it is not a real bibliographic source."
+                    )
+                },
+            )
+        ]
+
+    context = dict(record.get("literature_context") or {})
+    if context:
+        context_payload = _table_payload(context)
+        candidate_label = (
+            normalize_report_text(context.get("candidate_display_name") or "")
+            or normalize_report_text(context.get("candidate_name") or "")
+            or normalize_report_text((record.get("summary") or {}).get("top_candidate_display_name_unicode") or "")
+            or normalize_report_text((record.get("summary") or {}).get("top_candidate_name") or "")
+        )
+        if candidate_label:
+            context_payload["Candidate Label"] = candidate_label
+        reason = normalize_report_text(context.get("no_results_reason") or "").lower()
+        query_status = normalize_report_text(context.get("provider_query_status") or "").lower()
+        real_literature_available = bool(context.get("real_literature_available"))
+        source_count = int(context.get("source_count") or 0)
+        citation_count = int(context.get("citation_count") or 0)
+        if (
+            str(record.get("analysis_type") or "").upper() == "XRD"
+            and not real_literature_available
+            and source_count == 0
+            and citation_count == 0
+        ):
+            if reason == "provider_unavailable" or query_status == "provider_unavailable":
+                context_payload["Real Literature Search Outcome"] = (
+                    "The configured real provider could not return usable bibliographic results for this candidate in the current run."
+                )
+            elif reason == "request_failed" or query_status == "request_failed":
+                context_payload["Real Literature Search Outcome"] = (
+                    "A request reached the configured real provider, but it did not return a usable bibliographic response for this candidate-centered query."
+                )
+            elif reason == "not_configured" or query_status == "not_configured":
+                context_payload["Real Literature Search Outcome"] = (
+                    "A live real-provider client was not configured for this environment, so no bibliographic papers were retrieved for the candidate-centered query."
+                )
+            elif reason == "query_too_narrow" or query_status == "query_too_narrow":
+                context_payload["Real Literature Search Outcome"] = (
+                    "The candidate-centered XRD query was too narrow to retrieve usable bibliographic metadata in this run; a clearer candidate label or formula may be required."
+                )
+            else:
+                context_payload["Real Literature Search Outcome"] = (
+                    "A real provider query completed but did not return suitable bibliographic results for the candidate-centered XRD search. "
+                    "This does not imply that the phase is absent from the literature."
+                )
+            context_payload["Authoritative Note"] = (
+                "XRD accepted match status remains authoritative; literature absence does not validate or invalidate the phase call."
+            )
+        title = "Literature Comparison Context"
+        if fixture_state["fixture_only"]:
+            title = "Development / Demo Literature Output"
+        sections.append((title, context_payload))
+
+    comparisons_payload = {}
+    for item in record.get("literature_comparisons") or []:
+        if not isinstance(item, Mapping):
+            continue
+        claim_id = normalize_report_text(item.get("claim_id") or f"C{len(comparisons_payload) + 1}")
+        label = normalize_report_text(item.get("support_label") or "related_but_inconclusive")
+        confidence = normalize_report_text(item.get("confidence") or "low")
+        rationale = normalize_report_text(item.get("rationale") or "No literature rationale recorded.")
+        citations = ", ".join(
+            normalize_report_text(token)
+            for token in (item.get("citation_ids") or [])
+            if normalize_report_text(token)
+        )
+        comparisons_payload[f"{claim_id} ({label})"] = normalize_report_text(
+            f"confidence={confidence}; citations={citations or 'none'}; {rationale}"
+        )
+    if comparisons_payload:
+        sections.append(
+            (
+                "Demo Literature Comparison Outcomes" if fixture_state["fixture_only"] else "Literature Comparison Outcomes",
+                comparisons_payload,
+            )
+        )
+
+    citations_payload = {}
+    for citation_id, citation in _citation_lookup(record).items():
+        if _citation_is_fixture(citation) and not _literature_demo_enabled():
+            continue
+        citations_payload[citation_id] = _citation_appendix_line(citation)
+    if citations_payload:
+        sections.append(
+            (
+                "Demo Literature Citations" if fixture_state["fixture_only"] else "Literature Citations",
+                citations_payload,
+            )
+        )
     return sections
 
 
@@ -1988,6 +2493,7 @@ def _record_appendix_sections(record: dict) -> list[tuple[str, dict[str, str]]]:
     review_payload = _table_payload(record.get("review"))
     if review_payload:
         sections.append(("Internal Review Context", review_payload))
+    sections.extend(_literature_appendix_sections(record))
 
     context = normalize_scientific_context(record.get("scientific_context"))
     context_warnings = {f"Warning {idx}": normalize_report_text(item) for idx, item in enumerate(context.get("warnings") or [], start=1)}
@@ -2388,7 +2894,8 @@ def _render_record_mapping(doc: Document, title: str, payload: dict | None) -> N
             bullet = normalize_report_text(value)
             if title not in {"Scientific Interpretation", "Alternative Explanations", "Recommended Follow-Up Experiments"}:
                 bullet = normalize_report_text(f"{key}: {value}")
-            doc.add_paragraph(bullet, style="List Bullet")
+            paragraph = doc.add_paragraph(style="List Bullet")
+            _append_docx_text_with_links(paragraph, bullet)
         doc.add_paragraph()
         return
 
@@ -2397,9 +2904,11 @@ def _render_record_mapping(doc: Document, title: str, payload: dict | None) -> N
             doc.add_paragraph(normalize_report_text(group), style="Heading 4")
             if isinstance(values, list):
                 for item in values:
-                    doc.add_paragraph(normalize_report_text(item), style="List Bullet")
+                    paragraph = doc.add_paragraph(style="List Bullet")
+                    _append_docx_text_with_links(paragraph, normalize_report_text(item))
             else:
-                doc.add_paragraph(normalize_report_text(values), style="List Bullet")
+                paragraph = doc.add_paragraph(style="List Bullet")
+                _append_docx_text_with_links(paragraph, normalize_report_text(values))
         doc.add_paragraph()
         return
 
@@ -2968,8 +3477,12 @@ def _pdf_render_sections(record: dict) -> list[tuple[str, dict[str, Any]]]:
     allowed_titles = {
         "Primary Scientific Interpretation",
         "Evidence Supporting This Interpretation",
+        "Literature Comparison",
+        "Supporting References",
+        "Contradictory or Alternative References",
         "Alternative Explanations",
         "Uncertainty and Methodological Limits",
+        "Recommended Follow-Up Literature Checks",
         "Recommended Follow-Up Experiments",
     }
     output = []
@@ -3143,7 +3656,14 @@ def generate_pdf_report(
             add_heading(title, level=3)
             for key, value in payload.items():
                 text = normalize_report_text(value)
-                if title in {"Evidence Supporting This Interpretation", "Uncertainty and Methodological Limits"}:
+                if title in {
+                    "Evidence Supporting This Interpretation",
+                    "Uncertainty and Methodological Limits",
+                    "Literature Comparison",
+                    "Supporting References",
+                    "Contradictory or Alternative References",
+                    "Recommended Follow-Up Literature Checks",
+                }:
                     text = normalize_report_text(f"{key}: {value}")
                 story.append(Paragraph(normalize_report_text(f"• {text}"), body_style))
             story.append(Spacer(1, 3))

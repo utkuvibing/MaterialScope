@@ -28,6 +28,7 @@ from core.xrd_display import (
 )
 from ui.components.chrome import render_page_header
 from ui.components.history_tracker import _log_event
+from ui.components.literature_compare_panel import render_literature_compare_panel
 from ui.components.preset_manager import render_processing_preset_panel, seed_pending_workflow_template
 from ui.components.plot_builder import (
     PLOTLY_CONFIG,
@@ -2259,6 +2260,12 @@ def render():
                         "No saved XRD result found. Configure parameters and run analysis first.",
                     )
                 )
+            render_literature_compare_panel(
+                record=None,
+                result_id=None,
+                lang=lang,
+                key_prefix=f"xrd_literature_compare_{selected_key}",
+            )
             return
 
         summary = record.get("summary") or {}
@@ -2362,6 +2369,25 @@ def render():
                     "Bu sonuç rapor merkezine grafik ile birlikte hazır.",
                     "This result is ready for the Report Center together with its figure.",
                 )
+            )
+
+        record, literature_action = render_literature_compare_panel(
+            record=record,
+            result_id=record.get("id"),
+            lang=lang,
+            key_prefix=f"xrd_literature_compare_{selected_key}",
+        )
+        if literature_action and literature_action.get("status") == "success":
+            _log_event(
+                tx("Literatür Karşılaştırması", "Literature Compare"),
+                tx(
+                    "{result_id} için literatür karşılaştırması güncellendi.",
+                    "Literature comparison was refreshed for {result_id}.",
+                    result_id=record.get("id"),
+                ),
+                t("xrd.title"),
+                dataset_key=selected_key,
+                result_id=record.get("id"),
             )
 
         st.divider()

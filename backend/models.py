@@ -317,8 +317,47 @@ class ResultDetailResponse(BaseModel):
     provenance: dict[str, Any]
     validation: dict[str, Any]
     review: dict[str, Any]
+    literature_context: dict[str, Any] = Field(default_factory=dict)
+    literature_claims: list[dict[str, Any]] = Field(default_factory=list)
+    literature_comparisons: list[dict[str, Any]] = Field(default_factory=list)
+    citations: list[dict[str, Any]] = Field(default_factory=list)
     rows_preview: list[dict[str, Any]]
     row_count: int
+
+
+class LiteratureUserDocumentInput(BaseModel):
+    document_id: str | None = None
+    title: str = Field(..., min_length=1)
+    text: str = Field(..., min_length=1)
+    authors: list[str] = Field(default_factory=list)
+    year: int | None = None
+    journal: str = ""
+    doi: str = ""
+    url: str = ""
+    citation_text: str = ""
+    comparison_hint: str = ""
+    keywords: list[str] = Field(default_factory=list)
+    modalities: list[str] = Field(default_factory=list)
+    source_license_note: str = "user_provided_document"
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class LiteratureCompareRequest(BaseModel):
+    provider_ids: list[str] | None = None
+    max_claims: int = Field(default=3, ge=1)
+    filters: dict[str, Any] = Field(default_factory=dict)
+    user_documents: list[LiteratureUserDocumentInput] = Field(default_factory=list)
+    persist: bool = True
+
+
+class LiteratureCompareResponse(BaseModel):
+    project_id: str
+    result_id: str
+    literature_context: dict[str, Any] = Field(default_factory=dict)
+    literature_claims: list[dict[str, Any]] = Field(default_factory=list)
+    literature_comparisons: list[dict[str, Any]] = Field(default_factory=list)
+    citations: list[dict[str, Any]] = Field(default_factory=list)
+    detail: ResultDetailResponse | None = None
 
 
 class CompareWorkspacePayload(BaseModel):

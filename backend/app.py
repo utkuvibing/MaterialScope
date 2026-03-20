@@ -7,6 +7,7 @@ import binascii
 import io
 from datetime import datetime
 from pathlib import Path
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import httpx
@@ -55,6 +56,8 @@ from backend.models import (
     LibraryStatusResponse,
     LibrarySyncRequest,
     LibrarySyncResponse,
+    LiteratureCompareRequest,
+    LiteratureCompareResponse,
     ProjectLoadRequest,
     ProjectLoadResponse,
     ProjectSaveRequest,
@@ -82,6 +85,13 @@ from backend.workspace_context import build_workspace_context, set_active_datase
 from core.data_io import read_thermal_data
 from core.execution_engine import run_batch_analysis, run_single_analysis
 from core.modalities import stable_analysis_types
+from core.literature_compare import attach_literature_package, compare_result_to_literature
+from core.literature_provider import (
+    LiteratureProvider,
+    MultiLiteratureProviderAggregator,
+    default_literature_provider_registry,
+    resolve_literature_providers,
+)
 from core.project_io import PROJECT_EXTENSION, load_project_archive, save_project_archive
 from core.reference_library import ReferenceLibraryManager, get_reference_library_manager
 from core.result_serialization import split_valid_results
@@ -163,12 +173,19 @@ def _backend_license_state() -> dict:
         }
 
 
-def create_app(*, api_token: str | None = None, store: ProjectStore | None = None, library_manager: ReferenceLibraryManager | None = None) -> FastAPI:
+def create_app(
+    *,
+    api_token: str | None = None,
+    store: ProjectStore | None = None,
+    library_manager: ReferenceLibraryManager | None = None,
+    literature_provider_registry: Mapping[str, Callable[[], LiteratureProvider]] | None = None,
+) -> FastAPI:
     """Create a backend app instance with an in-memory project store."""
     app = FastAPI(title="MaterialScope Backend", version=BACKEND_API_VERSION)
     project_store = store or ProjectStore()
     global_library_manager = library_manager or get_reference_library_manager()
     cloud_library_service = ManagedLibraryCloudService(global_library_manager)
+    literature_provider_registry = dict(literature_provider_registry or default_literature_provider_registry())
     app.state.cloud_library_bootstrap_status = dict(cloud_library_service.bootstrap_status or {})
 
     def _record_cloud_lookup_success(payload: dict[str, Any]) -> None:
@@ -489,6 +506,70 @@ def create_app(*, api_token: str | None = None, store: ProjectStore | None = Non
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return ResultDetailResponse(project_id=project_id, **payload)
+
+    @app.post("/workspace/{project_id}/results/{result_id}/literature/compare", response_model=LiteratureCompareResponse)
+    def result_literature_compare(
+        project_id: str,
+        result_id: str,
+        request: LiteratureCompareRequest,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> LiteratureCompareResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        valid_results, issues = split_valid_results(state.get("results", {}))
+        record = valid_results.get(result_id)
+        if record is None:
+            if result_id in (state.get("results", {}) or {}):
+                issue_text = "; ".join([issue for issue in issues if issue.startswith(f"{result_id}:")]) or "invalid result record"
+                raise HTTPException(status_code=400, detail=f"Result '{result_id}' is present but invalid: {issue_text}")
+            raise HTTPException(status_code=404, detail=f"Unknown result_id: {result_id}")
+
+        provider_ids = [str(item).strip() for item in (request.provider_ids or []) if str(item).strip()]
+        if not provider_ids and str(record.get("analysis_type") or "").upper() in {"XRD", "DSC", "DTA", "TGA"}:
+            provider_ids = ["openalex_like_provider"]
+        try:
+            providers, provider_scope = resolve_literature_providers(
+                provider_ids,
+                registry=literature_provider_registry,
+            )
+            provider = providers[0] if len(providers) == 1 else MultiLiteratureProviderAggregator(providers)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        package = compare_result_to_literature(
+            record,
+            provider=provider,
+            provider_scope=provider_scope,
+            max_claims=request.max_claims,
+            filters=request.filters,
+            user_documents=[_model_payload(item) for item in request.user_documents],
+        )
+
+        detail_payload: dict[str, Any] | None = None
+        if request.persist:
+            state.setdefault("results", {})[result_id] = attach_literature_package(
+                state.get("results", {}).get(result_id) or record,
+                package,
+            )
+            add_history_event(
+                state,
+                action="Literature Compared",
+                details=f"Literature comparison persisted for {result_id}",
+                dataset_key=record.get("dataset_key"),
+                result_id=result_id,
+            )
+            project_store.set(project_id, state)
+            detail_payload = build_result_detail(state, result_id)
+
+        return LiteratureCompareResponse(
+            project_id=project_id,
+            result_id=result_id,
+            literature_context=package.get("literature_context") or {},
+            literature_claims=package.get("literature_claims") or [],
+            literature_comparisons=package.get("literature_comparisons") or [],
+            citations=package.get("citations") or [],
+            detail=ResultDetailResponse(project_id=project_id, **detail_payload) if detail_payload else None,
+        )
 
     @app.get("/workspace/{project_id}/compare", response_model=CompareWorkspaceResponse)
     def compare_workspace_get(
