@@ -26,6 +26,7 @@ from utils.reference_data import find_nearest_reference
 
 try:
     from docx import Document
+    from docx.opc.constants import RELATIONSHIP_TYPE as RT
     from docx.shared import Inches, Pt, RGBColor
     from docx.enum.section import WD_ORIENTATION, WD_SECTION_START
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -82,10 +83,14 @@ _BULLET_SECTION_TITLES = {
     "Uncertainty and Methodological Limits",
     "Recommended Follow-Up Experiments",
     "Literature Comparison",
+    "Relevant References",
+    "Alternative or Non-Validating References",
     "Supporting References",
     "Contradictory or Alternative References",
     "Recommended Follow-Up Literature Checks",
 }
+_MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
+_BARE_URL_PATTERN = re.compile(r"(https?://[^\s)]+)")
 
 
 def _set_cell_bg(cell, hex_color: str) -> None:
@@ -152,6 +157,72 @@ def _set_docx_section_orientation(section, *, landscape: bool) -> None:
 
 def _add_heading(doc: Document, text: str, level: int = 1) -> None:
     doc.add_heading(normalize_report_text(text), level=level)
+
+
+def _append_docx_hyperlink(paragraph, *, url: str, text: str) -> None:
+    clean_url = normalize_report_text(url)
+    clean_text = normalize_report_text(text)
+    if not clean_url or not clean_text:
+        return
+    relationship_id = paragraph.part.relate_to(clean_url, RT.HYPERLINK, is_external=True)
+    hyperlink = OxmlElement("w:hyperlink")
+    hyperlink.set(qn("r:id"), relationship_id)
+    run = OxmlElement("w:r")
+    run_properties = OxmlElement("w:rPr")
+    style = OxmlElement("w:rStyle")
+    style.set(qn("w:val"), "Hyperlink")
+    run_properties.append(style)
+    run.append(run_properties)
+    text_element = OxmlElement("w:t")
+    text_element.text = clean_text
+    run.append(text_element)
+    hyperlink.append(run)
+    paragraph._p.append(hyperlink)
+
+
+def _append_docx_text_with_links(paragraph, text: str) -> None:
+    clean_text = normalize_report_text(text)
+    if not clean_text:
+        return
+
+    def append_plain(segment: str) -> None:
+        cursor = 0
+        for url_match in _BARE_URL_PATTERN.finditer(segment):
+            if url_match.start() > cursor:
+                paragraph.add_run(segment[cursor:url_match.start()])
+            url = url_match.group(1)
+            _append_docx_hyperlink(paragraph, url=url, text=url)
+            cursor = url_match.end()
+        if cursor < len(segment):
+            paragraph.add_run(segment[cursor:])
+
+    cursor = 0
+    for match in _MARKDOWN_LINK_PATTERN.finditer(clean_text):
+        if match.start() > cursor:
+            append_plain(clean_text[cursor:match.start()])
+        _append_docx_hyperlink(paragraph, url=match.group(2), text=match.group(1))
+        cursor = match.end()
+    if cursor < len(clean_text):
+        append_plain(clean_text[cursor:])
+
+
+def _doi_url(value: Any) -> str:
+    cleaned = normalize_report_text(value)
+    if not cleaned:
+        return ""
+    if cleaned.lower().startswith(("http://", "https://")):
+        return cleaned
+    return f"https://doi.org/{cleaned}"
+
+
+def _citation_link_markup(citation: Mapping[str, Any]) -> str:
+    doi = normalize_report_text(citation.get("doi") or "")
+    url = normalize_report_text(citation.get("url") or "")
+    if doi:
+        return normalize_report_text(f"DOI: [{doi}]({_doi_url(doi)}).")
+    if url:
+        return normalize_report_text(f"Link: [Open paper]({url}).")
+    return ""
 
 
 def _add_key_value_table(doc: Document, data: dict) -> None:
@@ -1968,7 +2039,9 @@ def _citation_report_line(citation: Mapping[str, Any]) -> str:
         )
     citation_text = normalize_report_text(citation.get("citation_text") or citation.get("title") or "Citation not recorded")
     access_class = normalize_report_text(citation.get("access_class") or "metadata_only")
-    return normalize_report_text(f"{citation_text} Access class: {access_class}.")
+    link_markup = _citation_link_markup(citation)
+    suffix = f" {link_markup}" if link_markup else ""
+    return normalize_report_text(f"{citation_text} Access class: {access_class}.{suffix}")
 
 
 def _citation_appendix_line(citation: Mapping[str, Any]) -> str:
@@ -2012,6 +2085,9 @@ def _citation_appendix_line(citation: Mapping[str, Any]) -> str:
         segments.append(f"Provider scope: {provider_scope}.")
     if request_ids:
         segments.append(f"Provider request IDs: {request_ids}.")
+    link_markup = _citation_link_markup(citation)
+    if link_markup:
+        segments.append(link_markup)
     return normalize_report_text(" ".join(segments))
 
 
@@ -2065,14 +2141,14 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
             title = normalize_report_text(item.get("paper_title") or item.get("claim_text") or f"Paper {len(relevant_payload) + len(alternative_payload) + 1}")
             journal = normalize_report_text(item.get("paper_journal") or "")
             year = normalize_report_text(item.get("paper_year") or "n.d.")
-            link = normalize_report_text(item.get("paper_doi") or item.get("paper_url") or "")
+            link = _citation_link_markup({"doi": item.get("paper_doi"), "url": item.get("paper_url")})
             posture = normalize_report_text(item.get("validation_posture") or "non_validating")
             provider = normalize_report_text(item.get("provider_id") or "not_recorded")
             access_class = normalize_report_text(item.get("access_class") or "metadata_only")
             note = normalize_report_text(item.get("comparison_note") or item.get("rationale") or "No comparison note recorded.")
             line = f"{year}. {journal}. provider={provider}; access={access_class}; posture={posture}. {note}"
             if link:
-                line = f"{line} Link: {link}."
+                line = f"{line} {link}"
             if posture == "related_support":
                 relevant_payload[title] = normalize_report_text(line)
             else:
@@ -2818,7 +2894,8 @@ def _render_record_mapping(doc: Document, title: str, payload: dict | None) -> N
             bullet = normalize_report_text(value)
             if title not in {"Scientific Interpretation", "Alternative Explanations", "Recommended Follow-Up Experiments"}:
                 bullet = normalize_report_text(f"{key}: {value}")
-            doc.add_paragraph(bullet, style="List Bullet")
+            paragraph = doc.add_paragraph(style="List Bullet")
+            _append_docx_text_with_links(paragraph, bullet)
         doc.add_paragraph()
         return
 
@@ -2827,9 +2904,11 @@ def _render_record_mapping(doc: Document, title: str, payload: dict | None) -> N
             doc.add_paragraph(normalize_report_text(group), style="Heading 4")
             if isinstance(values, list):
                 for item in values:
-                    doc.add_paragraph(normalize_report_text(item), style="List Bullet")
+                    paragraph = doc.add_paragraph(style="List Bullet")
+                    _append_docx_text_with_links(paragraph, normalize_report_text(item))
             else:
-                doc.add_paragraph(normalize_report_text(values), style="List Bullet")
+                paragraph = doc.add_paragraph(style="List Bullet")
+                _append_docx_text_with_links(paragraph, normalize_report_text(values))
         doc.add_paragraph()
         return
 

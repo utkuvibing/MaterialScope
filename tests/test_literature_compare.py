@@ -528,6 +528,48 @@ def test_tga_ranking_prefers_direct_decomposition_papers_over_generic_neighbors(
     assert package["literature_context"]["real_literature_available"] is False
 
 
+def test_tga_primary_surfaced_citation_prefers_direct_decomposition_paper():
+    record = _thermal_record("TGA")
+    record["metadata"]["display_name"] = "CaCO3 decomposition"
+    record["metadata"]["sample_name"] = ""
+    record["summary"]["sample_name"] = ""
+    record["summary"]["total_mass_loss_percent"] = 43.9
+    record["rows"][0]["midpoint_temperature"] = 718.0
+
+    provider = StubProvider(
+        [
+            {
+                **_source(
+                    source_id="carbonation_neighbor",
+                    access_class="abstract_only",
+                    text="Carbonation cycle behavior in cement and calcined clay systems.",
+                    hint="related",
+                ),
+                "title": "Carbonation cycle in blended cement systems",
+                "doi": "10.1000/cement-neighbor",
+            },
+            {
+                **_source(
+                    source_id="direct_calcite_tga",
+                    access_class="abstract_only",
+                    text="Calcite thermal decomposition by thermogravimetric analysis produces CaO and CO2 release during calcination.",
+                    hint="related",
+                ),
+                "title": "Calcite thermal decomposition by thermogravimetric analysis",
+                "doi": "10.1000/calcite-direct",
+            },
+        ]
+    )
+
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["stub_provider"])
+
+    top_comparison = package["literature_comparisons"][0]
+    citations_by_id = {item["citation_id"]: item for item in package["citations"]}
+
+    assert top_comparison["paper_title"] == "Calcite thermal decomposition by thermogravimetric analysis"
+    assert citations_by_id[top_comparison["citation_ids"][0]]["doi"] == "10.1000/calcite-direct"
+
+
 def test_weak_metadata_only_neighbors_are_filtered_from_surfaced_thermal_comparisons():
     record = _thermal_record("TGA")
     record["metadata"]["display_name"] = "CaCO3 decomposition"
@@ -1702,3 +1744,70 @@ def test_docx_report_thermal_low_specificity_retrieval_note_is_rendered():
         xml = archive.read("word/document.xml").decode("utf-8")
 
     assert "low-specificity and mostly metadata/abstract-level" in xml
+
+
+def test_docx_report_preserves_clickable_doi_links_for_thermal_references():
+    record = attach_literature_package(
+        _thermal_record("TGA"),
+        {
+            "literature_context": {
+                "mode": "metadata_abstract_oa_only",
+                "comparison_run_id": "litcmp_tga_doi_links",
+                "provider_scope": ["openalex_like_provider"],
+                "provider_request_ids": ["openalex_req_tga_doi"],
+                "provider_result_source": "openalex_api",
+                "query_text": "calcium carbonate thermogravimetric analysis decarbonation",
+                "query_display_title": "Calcium carbonate decomposition",
+                "query_display_mode": "TGA / decomposition profile",
+                "real_literature_available": True,
+            },
+            "literature_claims": [{"claim_id": "C1", "claim_text": "The TGA result indicates a decomposition profile."}],
+            "literature_comparisons": [
+                {
+                    "claim_id": "C1",
+                    "claim_text": "The TGA result indicates a decomposition profile.",
+                    "support_label": "partially_supports",
+                    "confidence": "low",
+                    "rationale": "Direct calcite TGA decomposition reference.",
+                    "validation_posture": "related_support",
+                    "citation_ids": ["ref1"],
+                }
+            ],
+            "citations": [
+                {
+                    "citation_id": "ref1",
+                    "title": "Calcite thermal decomposition by thermogravimetric analysis",
+                    "authors": ["A. Author"],
+                    "year": 2024,
+                    "journal": "Journal of Thermal Analysis",
+                    "doi": "10.1000/calcite-direct",
+                    "url": "https://example.test/calcite-direct",
+                    "access_class": "abstract_only",
+                    "citation_text": "A. Author (2024). Calcite thermal decomposition by thermogravimetric analysis. Journal of Thermal Analysis.",
+                    "source_license_note": "provider_abstract",
+                    "provenance": {
+                        "provider_id": "openalex_like_provider",
+                        "result_source": "openalex_api",
+                        "provider_scope": ["openalex_like_provider"],
+                        "provider_request_ids": ["openalex_req_tga_doi"],
+                    },
+                }
+            ],
+        },
+    )
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": [650.0, 718.0, 790.0], "signal": [100.0, 82.0, 56.1]}),
+        metadata={"sample_name": "CaCO3 decomposition", "display_name": "CaCO3 decomposition"},
+        data_type="TGA",
+        units={"temperature": "degC", "signal": "%"},
+        original_columns={"temperature": "temperature", "signal": "signal"},
+        file_path="",
+    )
+
+    docx_bytes = generate_docx_report(results={record["id"]: record}, datasets={record["dataset_key"]: dataset})
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        xml = archive.read("word/document.xml").decode("utf-8")
+        rels = archive.read("word/_rels/document.xml.rels").decode("utf-8")
+
+    assert "10.1000/calcite-direct" in xml
+    assert "https://doi.org/10.1000/calcite-direct" in rels

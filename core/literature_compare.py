@@ -58,6 +58,27 @@ THERMAL_GENERIC_NEIGHBOR_TERMS = {
     "calcined clay",
     "alkali activated",
 }
+THERMAL_TGA_DIRECT_ENTITY_TERMS = {
+    "caco3",
+    "calcium carbonate",
+    "calcite",
+}
+THERMAL_TGA_DIRECT_PROCESS_TERMS = {
+    "thermal decomposition",
+    "decomposition",
+    "decarbonation",
+    "calcination",
+    "cao",
+    "co2 release",
+    "co2 evolution",
+}
+THERMAL_TGA_DIRECT_MODALITY_TERMS = {
+    "tga",
+    "thermogravimetric",
+    "thermogravimetric analysis",
+    "mass loss",
+    "residue",
+}
 
 
 def _clean_text(value: Any) -> str:
@@ -449,18 +470,48 @@ def _thermal_relevance_score(
     modality_hits = _phrase_overlap_count(source_text, signals["modality_terms"])
     temperature_hits = _phrase_overlap_count(source_text, signals["temperature_terms"])
     generic_neighbor_hits = _phrase_overlap_count(source_text, list(THERMAL_GENERIC_NEIGHBOR_TERMS))
+    direct_entity_hits = 0
+    direct_process_hits = 0
+    direct_modality_hits = 0
+    if analysis_type == "TGA":
+        direct_entity_hits = _phrase_overlap_count(source_text, list(THERMAL_TGA_DIRECT_ENTITY_TERMS))
+        direct_process_hits = _phrase_overlap_count(source_text, list(THERMAL_TGA_DIRECT_PROCESS_TERMS))
+        direct_modality_hits = _phrase_overlap_count(source_text, list(THERMAL_TGA_DIRECT_MODALITY_TERMS))
     score = overlap
     score += entity_hits * 4
     score += process_hits * 3
     score += modality_hits * 3
     score += temperature_hits * 2
+    if analysis_type == "TGA":
+        score += direct_entity_hits * 5
+        score += direct_process_hits * 4
+        score += direct_modality_hits * 4
+        if direct_entity_hits and direct_process_hits:
+            score += 10
+        if direct_entity_hits and direct_modality_hits:
+            score += 8
+        if direct_process_hits and direct_modality_hits:
+            score += 6
+        if direct_entity_hits and direct_process_hits and direct_modality_hits:
+            score += 10
+        if temperature_hits and (direct_process_hits or process_hits):
+            score += 2
     if access_class in {"open_access_full_text", "user_provided_document"}:
         score += 2
-    if generic_neighbor_hits and entity_hits == 0:
-        score -= generic_neighbor_hits * 3
-    elif generic_neighbor_hits and process_hits == 0 and modality_hits == 0:
-        score -= generic_neighbor_hits * 2
-    low_specificity = score < 7 and access_class in {"metadata_only", "abstract_only"} and process_hits == 0
+    if generic_neighbor_hits:
+        direct_signal_count = int(bool(entity_hits or direct_entity_hits)) + int(bool(process_hits or direct_process_hits)) + int(bool(modality_hits or direct_modality_hits))
+        if direct_signal_count == 0:
+            score -= generic_neighbor_hits * 5
+        elif direct_signal_count == 1:
+            score -= generic_neighbor_hits * 4
+        elif direct_signal_count == 2:
+            score -= generic_neighbor_hits * 2
+    low_specificity = (
+        score < 12
+        and access_class in {"metadata_only", "abstract_only"}
+        and not (direct_entity_hits and (direct_process_hits or direct_modality_hits))
+        and process_hits == 0
+    )
     return score, low_specificity
 
 
@@ -898,7 +949,7 @@ def _compare_thermal_result_to_literature(
     seen_titles: set[str] = set()
     strong_rows = [item for item in comparisons_with_rank if item[0] >= 10 and not item[1]]
     candidate_rows = strong_rows if strong_rows else comparisons_with_rank
-    limit = 3 if strong_rows else 1
+    limit = 2 if strong_rows else 1
     for _score, low_specificity, item in candidate_rows:
         title_key = _clean_text(item.get("paper_title") or item.get("paper_doi") or item.get("paper_url")).casefold()
         if title_key and title_key in seen_titles:

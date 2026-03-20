@@ -136,6 +136,33 @@ def test_render_literature_sections_renders_compact_payload(monkeypatch):
     assert warnings == []
 
 
+def test_render_citation_item_renders_clickable_doi_link(monkeypatch):
+    markdowns: list[str] = []
+    captions: list[str] = []
+
+    fake_st = SimpleNamespace(
+        caption=lambda text: captions.append(str(text)),
+        markdown=lambda text: markdowns.append(str(text)),
+        warning=lambda text: captions.append(str(text)),
+        container=lambda: nullcontext(),
+    )
+    monkeypatch.setattr(literature_compare_panel, "st", fake_st)
+
+    literature_compare_panel._render_citation_item(
+        {
+            "title": "Calcite thermal decomposition by thermogravimetric analysis",
+            "year": 2024,
+            "journal": "Journal of Thermal Analysis",
+            "doi": "10.1000/calcite-direct",
+            "access_class": "abstract_only",
+        },
+        lang="en",
+        provider_scope=[],
+    )
+
+    assert any("DOI: [10.1000/calcite-direct](https://doi.org/10.1000/calcite-direct)" in item for item in markdowns)
+
+
 def test_build_literature_sections_marks_xrd_candidate_mode_and_paper_cards():
     sections = literature_compare_panel.build_literature_sections(
         {

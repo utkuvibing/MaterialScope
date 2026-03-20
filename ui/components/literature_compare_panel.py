@@ -38,6 +38,15 @@ def _ui_text(lang: str, tr: str, en: str, **kwargs: Any) -> str:
     return text
 
 
+def _doi_url(doi: str) -> str:
+    cleaned = _clean_text(doi)
+    if not cleaned:
+        return ""
+    if cleaned.lower().startswith(("http://", "https://")):
+        return cleaned
+    return f"https://doi.org/{cleaned}"
+
+
 def _to_text_list(value: Any) -> list[str]:
     if value in (None, "", [], (), {}):
         return []
@@ -1176,9 +1185,9 @@ def _render_citation_item(citation: Mapping[str, Any], *, lang: str, provider_sc
                     )
                 )
         elif doi:
-            st.markdown(f"DOI: `{doi}`")
+            st.markdown(f"DOI: [{doi}]({_doi_url(doi)})")
         elif url:
-            st.markdown(url)
+            st.markdown(_ui_text(lang, "[Open paper]({url})", "[Open paper]({url})", url=url))
 
 
 def _render_xrd_candidate_summary(candidate_summary: Mapping[str, Any], *, lang: str) -> None:
@@ -1233,9 +1242,10 @@ def _render_xrd_paper_card(row: Mapping[str, Any], *, lang: str) -> None:
         )
         st.markdown(_xrd_comparison_note_text(row, lang=lang))
         if _clean_text(row.get("paper_doi")):
-            st.markdown(f"DOI: `{_clean_text(row.get('paper_doi'))}`")
+            doi = _clean_text(row.get("paper_doi"))
+            st.markdown(f"DOI: [{doi}]({_doi_url(doi)})")
         elif _clean_text(row.get("paper_url")):
-            st.markdown(_clean_text(row.get("paper_url")))
+            st.markdown(_ui_text(lang, "[Open paper]({url})", "[Open paper]({url})", url=_clean_text(row.get("paper_url"))))
 
 
 def render_literature_sections(record: Mapping[str, Any] | None, *, lang: str) -> None:
