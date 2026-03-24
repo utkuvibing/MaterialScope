@@ -10,6 +10,7 @@ import re
 from typing import Any, Mapping, Optional, Union
 
 from core.batch_runner import normalize_batch_summary_rows, summarize_batch_outcomes
+from core.chemical_formula_formatting import format_chemical_formula_text
 from core.mechanism_rules import tga_mechanism_signals
 from core.processing_schema import ensure_processing_payload
 from core.xrd_reference_dossier import XRD_NO_VISUAL_ASSET_NOTE
@@ -21,6 +22,7 @@ from core.scientific_sections import (
     normalize_scientific_context,
     scientific_context_to_report_sections,
 )
+from core.literature_partitioning import partition_reference_ids
 from core.xrd_display import xrd_candidate_display_name
 from utils.reference_data import find_nearest_reference
 
@@ -159,9 +161,13 @@ def _add_heading(doc: Document, text: str, level: int = 1) -> None:
     doc.add_heading(normalize_report_text(text), level=level)
 
 
+def _presentation_text(value: Any) -> str:
+    return format_chemical_formula_text(normalize_report_text(value))
+
+
 def _append_docx_hyperlink(paragraph, *, url: str, text: str) -> None:
     clean_url = normalize_report_text(url)
-    clean_text = normalize_report_text(text)
+    clean_text = _presentation_text(text)
     if not clean_url or not clean_text:
         return
     relationship_id = paragraph.part.relate_to(clean_url, RT.HYPERLINK, is_external=True)
@@ -181,7 +187,7 @@ def _append_docx_hyperlink(paragraph, *, url: str, text: str) -> None:
 
 
 def _append_docx_text_with_links(paragraph, text: str) -> None:
-    clean_text = normalize_report_text(text)
+    clean_text = _presentation_text(text)
     if not clean_text:
         return
 
@@ -200,7 +206,7 @@ def _append_docx_text_with_links(paragraph, text: str) -> None:
     for match in _MARKDOWN_LINK_PATTERN.finditer(clean_text):
         if match.start() > cursor:
             append_plain(clean_text[cursor:match.start()])
-        _append_docx_hyperlink(paragraph, url=match.group(2), text=match.group(1))
+            _append_docx_hyperlink(paragraph, url=match.group(2), text=match.group(1))
         cursor = match.end()
     if cursor < len(clean_text):
         append_plain(clean_text[cursor:])
@@ -2037,7 +2043,7 @@ def _citation_report_line(citation: Mapping[str, Any]) -> str:
             f"Development/demo fixture citation only: {title}. Access class: {access_class}. "
             "This is not an authoritative bibliographic reference."
         )
-    citation_text = normalize_report_text(citation.get("citation_text") or citation.get("title") or "Citation not recorded")
+    citation_text = _presentation_text(citation.get("citation_text") or citation.get("title") or "Citation not recorded")
     access_class = normalize_report_text(citation.get("access_class") or "metadata_only")
     link_markup = _citation_link_markup(citation)
     suffix = f" {link_markup}" if link_markup else ""
@@ -2056,7 +2062,7 @@ def _citation_appendix_line(citation: Mapping[str, Any]) -> str:
             f"Provider: {provider_id}. Result source: {result_source}. "
             "DOI/URL text is intentionally omitted from authoritative citation display."
         )
-    citation_text = normalize_report_text(citation.get("citation_text") or citation.get("title") or "Citation not recorded")
+    citation_text = _presentation_text(citation.get("citation_text") or citation.get("title") or "Citation not recorded")
     access_class = normalize_report_text(citation.get("access_class") or "metadata_only")
     license_note = normalize_report_text(citation.get("source_license_note") or "not recorded")
     provenance = dict(citation.get("provenance") or {})
@@ -2175,21 +2181,31 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
 
     sections: list[tuple[str, dict[str, Any]]] = []
     comparison_payload: dict[str, Any] = {}
-    supporting_ids: list[str] = []
-    alternative_ids: list[str] = []
-
     if analysis_type in {"DSC", "DTA", "TGA"} and normalize_report_text(context.get("query_text") or ""):
         thermal_context = {
-            "Search Focus": normalize_report_text(context.get("query_display_title") or context.get("candidate_display_name") or context.get("candidate_name") or "Not recorded"),
+            "Search Focus": _presentation_text(context.get("query_display_title") or context.get("candidate_display_name") or context.get("candidate_name") or "Not recorded"),
             "Search Mode": normalize_report_text(context.get("query_display_mode") or "Thermal / interpretation"),
-            "Query Text": normalize_report_text(context.get("query_text") or "Not recorded"),
+            "Query Text": _presentation_text(context.get("query_text") or "Not recorded"),
             "Authoritative Note": "Literature provides context around the recorded thermal interpretation and does not validate or override the current result.",
         }
         if normalize_report_text(context.get("query_rationale") or ""):
-            thermal_context["Query Rationale"] = normalize_report_text(context.get("query_rationale"))
+            thermal_context["Query Rationale"] = _presentation_text(context.get("query_rationale"))
         if context.get("low_specificity_retrieval"):
             thermal_context["Retrieval Note"] = (
                 "Real literature results were found, but the retained set is low-specificity and mostly metadata/abstract-level; direct validation remains unavailable."
+            )
+        evidence_specificity = normalize_report_text(context.get("evidence_specificity_summary") or "").lower()
+        if evidence_specificity == "abstract_backed":
+            thermal_context["Evidence Basis"] = (
+                "At least one retained source includes accessible abstract-level evidence; interpretation remains non-validating but is better grounded than metadata-only retrieval."
+            )
+        elif evidence_specificity == "mixed_metadata_and_abstract":
+            thermal_context["Evidence Basis"] = (
+                "The retained source set mixes metadata-only and accessible abstract evidence; interpretation remains cautious, but it is not purely metadata-based."
+            )
+        elif evidence_specificity == "oa_backed":
+            thermal_context["Evidence Basis"] = (
+                "At least one retained source includes accessible open text; the interpretation remains cautious and non-validating."
             )
         sections.append(("Thermal Literature Search Summary", thermal_context))
 
@@ -2197,7 +2213,7 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
         claim_id = normalize_report_text(item.get("claim_id") or f"C{len(comparison_payload) + 1}")
         label = normalize_report_text(item.get("support_label") or "related_but_inconclusive")
         confidence = normalize_report_text(item.get("confidence") or "low")
-        rationale = normalize_report_text(item.get("rationale") or "No literature rationale recorded.")
+        rationale = _presentation_text(item.get("rationale") or "No literature rationale recorded.")
         citation_ids = [
             normalize_report_text(token)
             for token in (item.get("citation_ids") or [])
@@ -2205,17 +2221,15 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
         ]
         citation_note = f" Citations: {', '.join(citation_ids)}." if citation_ids else " No accessible citation was retained for this claim."
         comparison_payload[f"{claim_id} ({label}, {confidence})"] = normalize_report_text(f"{rationale}{citation_note}")
-        if label in {"supports", "partially_supports"}:
-            for citation_id in citation_ids:
-                if citation_id not in supporting_ids:
-                    supporting_ids.append(citation_id)
-        else:
-            for citation_id in citation_ids:
-                if citation_id not in alternative_ids:
-                    alternative_ids.append(citation_id)
-
     if comparison_payload:
         sections.append(("Literature Comparison", comparison_payload))
+
+    supporting_ids, alternative_ids = partition_reference_ids(
+        comparisons,
+        citations_by_id=citations_by_id,
+        context={**context, "analysis_type": analysis_type},
+        analysis_type=analysis_type,
+    )
 
     supporting_payload = {
         citation_id: _citation_report_line(citations_by_id[citation_id])
@@ -2262,13 +2276,22 @@ def _literature_main_sections(record: Mapping[str, Any]) -> list[tuple[str, dict
         normalize_report_text(item.get("access_class") or "")
         for item in citations_by_id.values()
     }
-    if citation_access_classes & {"abstract_only", "metadata_only"}:
+    if context.get("metadata_only_evidence") or citation_access_classes == {"metadata_only"}:
         follow_up_checks["Check 3"] = (
             "Some literature reasoning relies on metadata or abstract-level evidence only; broader open-access or user-provided documents could refine the comparison."
         )
     if context.get("low_specificity_retrieval"):
         follow_up_checks["Check 3b"] = (
             "The retained real-literature set is low-specificity and may reflect neighboring materials/process papers rather than direct thermal validation."
+        )
+    evidence_specificity = normalize_report_text(context.get("evidence_specificity_summary") or "").lower()
+    if evidence_specificity in {"abstract_backed", "mixed_metadata_and_abstract"}:
+        follow_up_checks["Check 3c"] = (
+            "At least one retained source includes accessible abstract-level evidence; interpretation is better grounded than metadata-only retrieval but remains non-validating."
+        )
+    elif evidence_specificity == "oa_backed":
+        follow_up_checks["Check 3c"] = (
+            "At least one retained source includes accessible open text; interpretation remains cautious and does not override the current result."
         )
     if context.get("restricted_content_used") is False:
         follow_up_checks["Check 4"] = (
@@ -3655,17 +3678,19 @@ def generate_pdf_report(
         for title, payload in _pdf_render_sections(record):
             add_heading(title, level=3)
             for key, value in payload.items():
-                text = normalize_report_text(value)
+                text = _presentation_text(value)
                 if title in {
                     "Evidence Supporting This Interpretation",
                     "Uncertainty and Methodological Limits",
                     "Literature Comparison",
                     "Supporting References",
                     "Contradictory or Alternative References",
+                    "Relevant References",
+                    "Alternative or Non-Validating References",
                     "Recommended Follow-Up Literature Checks",
                 }:
-                    text = normalize_report_text(f"{key}: {value}")
-                story.append(Paragraph(normalize_report_text(f"• {text}"), body_style))
+                    text = _presentation_text(f"{key}: {value}")
+                story.append(Paragraph(_presentation_text(f"• {text}"), body_style))
             story.append(Spacer(1, 3))
 
         mini_table = _record_main_mini_table(record)

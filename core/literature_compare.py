@@ -257,7 +257,21 @@ def _fetch_accessible_text(source: Mapping[str, Any], *, provider: LiteraturePro
         if not text:
             return None
         return {"source_id": source.get("source_id"), "text": text, "field": "user_provided_document", "access_class": access_class}
-    return provider.fetch_accessible_text(dict(source))
+    accessible = provider.fetch_accessible_text(dict(source))
+    if accessible is not None and _clean_text(accessible.get("text")):
+        return accessible
+    fallback_oa = _clean_text(source.get("oa_full_text"))
+    if fallback_oa and access_class == "open_access_full_text":
+        return {"source_id": source.get("source_id"), "text": fallback_oa, "field": "oa_full_text", "access_class": access_class}
+    fallback_abstract = _clean_text(source.get("abstract_text"))
+    if fallback_abstract and access_class in {"abstract_only", "metadata_only", "open_access_full_text"}:
+        return {
+            "source_id": source.get("source_id"),
+            "text": fallback_abstract,
+            "field": "abstract_text",
+            "access_class": "abstract_only" if access_class == "metadata_only" else access_class,
+        }
+    return None
 
 
 def _source_overlap(claim: Mapping[str, Any], source: Mapping[str, Any], text: str) -> int:
@@ -547,7 +561,72 @@ def _thermal_support_label_for_posture(posture: str) -> str:
     return "related_but_inconclusive"
 
 
-def _thermal_comparison_confidence(posture: str, access_class: str, overlap: int) -> str:
+def _thermal_evidence_basis(access_field: str, access_class: str) -> str:
+    field = _clean_text(access_field).lower()
+    token = _clean_text(access_class).lower()
+    if field in {"", "metadata_only"}:
+        return "metadata_only"
+    if field in {"oa_full_text", "user_provided_document"} or token in {"open_access_full_text", "user_provided_document"}:
+        return "oa_backed"
+    if field == "abstract_text" or token == "abstract_only":
+        return "abstract_backed"
+    return "metadata_only"
+
+
+def _thermal_evidence_specificity_summary(*, source_count: int, accessible_source_count: int, used_access_fields: set[str]) -> str:
+    if used_access_fields & {"oa_full_text", "user_provided_document"}:
+        return "oa_backed"
+    if used_access_fields & {"abstract_text"}:
+        if source_count > accessible_source_count:
+            return "mixed_metadata_and_abstract"
+        return "abstract_backed"
+    return "metadata_only" if source_count else ""
+
+
+def _merge_thermal_surfaced_comparisons(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged_rows: list[dict[str, Any]] = []
+    for row in rows:
+        similarity_key = (
+            _clean_text(row.get("claim_id")).casefold(),
+            _clean_text(row.get("support_label")).casefold(),
+            _clean_text(row.get("validation_posture")).casefold(),
+            _clean_text(row.get("confidence")).casefold(),
+            _clean_text(row.get("access_class")).casefold(),
+            _clean_text(row.get("comparison_note")).casefold(),
+        )
+        existing = next((item for item in merged_rows if item.get("_similarity_key") == similarity_key), None)
+        if existing is None:
+            merged = dict(row)
+            merged["_similarity_key"] = similarity_key
+            merged_rows.append(merged)
+            continue
+        for citation_id in _as_list(row.get("citation_ids")):
+            cleaned = _clean_text(citation_id)
+            if cleaned and cleaned not in existing.get("citation_ids", []):
+                existing.setdefault("citation_ids", []).append(cleaned)
+        for evidence in _as_list(row.get("evidence_used")):
+            cleaned = _clean_text(evidence)
+            if cleaned and cleaned not in existing.get("evidence_used", []):
+                existing.setdefault("evidence_used", []).append(cleaned)
+        for source_id in _as_list(row.get("retrieved_sources")):
+            cleaned = _clean_text(source_id)
+            if cleaned and cleaned not in existing.get("retrieved_sources", []):
+                existing.setdefault("retrieved_sources", []).append(cleaned)
+        existing["sources_considered"] = max(
+            _clean_int(existing.get("sources_considered")) or 0,
+            _clean_int(row.get("sources_considered")) or 0,
+        )
+    for item in merged_rows:
+        item.pop("_similarity_key", None)
+    return merged_rows
+
+
+def _thermal_comparison_confidence(posture: str, access_class: str, overlap: int, *, precision_score: int, access_field: str) -> str:
+    evidence_basis = _thermal_evidence_basis(access_field, access_class)
+    if posture == "related_support" and evidence_basis == "oa_backed" and overlap >= 2:
+        return "moderate"
+    if posture == "related_support" and evidence_basis == "abstract_backed" and precision_score >= 14 and overlap >= 2:
+        return "moderate"
     if posture == "related_support" and access_class in {"open_access_full_text", "user_provided_document"} and overlap >= 2:
         return "moderate"
     if posture == "alternative_interpretation" and overlap >= 1:
@@ -573,52 +652,69 @@ def _thermal_comparison_note(
     subject: str,
     posture: str,
     query_payload: Mapping[str, Any],
+    access_field: str,
+    source_text: str,
 ) -> str:
     evidence_snapshot = dict(query_payload.get("evidence_snapshot") or {})
+    evidence_basis = _thermal_evidence_basis(access_field, "")
+    basis_note = (
+        "Reasoning used accessible open-access or user-provided text."
+        if evidence_basis == "oa_backed"
+        else "Reasoning used accessible abstract-level text."
+        if evidence_basis == "abstract_backed"
+        else "Reasoning was limited to metadata-level overlap."
+    )
     if analysis_type == "DSC":
         tg_midpoint = _clean_float(evidence_snapshot.get("tg_midpoint"))
         event_label = _clean_text(evidence_snapshot.get("peak_type")) or "thermal event"
         if posture == "alternative_interpretation":
             return (
-                f"This paper discusses DSC behavior relevant to {subject}. It may indicate an alternative interpretation for the recorded calorimetric event rather than confirming the present result."
+                f"This paper discusses DSC behavior relevant to {subject}. It may indicate an alternative interpretation for the recorded calorimetric event rather than confirming the present result. {basis_note}"
             )
         if posture == "related_support":
             if tg_midpoint is not None:
                 return (
-                    f"This paper discusses DSC glass-transition or event behavior relevant to {subject}. It is directionally consistent with a transition near {tg_midpoint:.0f} C, but it remains contextual support rather than confirmation."
+                    f"This paper discusses DSC glass-transition or event behavior relevant to {subject}. It is directionally consistent with a transition near {tg_midpoint:.0f} C, but it remains contextual support rather than confirmation. {basis_note}"
                 )
             return (
-                f"This paper discusses DSC {event_label} behavior relevant to {subject}. It adds contextual support for the recorded event, but it does not validate the current result."
+                f"This paper discusses DSC {event_label} behavior relevant to {subject}. It adds contextual support for the recorded event, but it does not validate the current result. {basis_note}"
             )
         if posture == "contextual_only":
             return (
-                f"This paper discusses DSC behavior relevant to {subject}. It provides thermal-event context only and should not be treated as confirmation of the current interpretation."
+                f"This paper discusses DSC behavior relevant to {subject}. It provides thermal-event context only and should not be treated as confirmation of the current interpretation. {basis_note}"
             )
         return (
-            f"This paper is related to the DSC interpretation for {subject}, but the current evidence remains limited and non-validating."
+            f"This paper is related to the DSC interpretation for {subject}, but the current evidence remains limited and non-validating. {basis_note}"
         )
     if analysis_type == "DTA":
         direction = _clean_text(evidence_snapshot.get("event_direction")) or "thermal event"
         if posture == "alternative_interpretation":
             return (
-                f"This paper discusses DTA behavior relevant to {subject}. It may point toward an alternative reading of the recorded {direction} event rather than confirming the present interpretation."
+                f"This paper discusses DTA behavior relevant to {subject}. It may point toward an alternative reading of the recorded {direction} event rather than confirming the present interpretation. {basis_note}"
             )
         if posture == "related_support":
             return (
-                f"This paper discusses DTA behavior relevant to {subject}. It is directionally consistent with the recorded {direction} event, but it remains qualitative context rather than validation."
+                f"This paper discusses DTA behavior relevant to {subject}. It is directionally consistent with the recorded {direction} event, but it remains qualitative context rather than validation. {basis_note}"
             )
         if posture == "contextual_only":
             return (
-                f"This paper discusses DTA behavior relevant to {subject}. It adds qualitative thermal-event context only and does not validate the current result."
+                f"This paper discusses DTA behavior relevant to {subject}. It adds qualitative thermal-event context only and does not validate the current result. {basis_note}"
             )
         return (
-            f"This paper is related to the DTA interpretation for {subject}, but the current evidence remains limited and non-validating."
+            f"This paper is related to the DTA interpretation for {subject}, but the current evidence remains limited and non-validating. {basis_note}"
         )
     total_mass_loss = _clean_float(evidence_snapshot.get("total_mass_loss_percent"))
     residue = _clean_float(evidence_snapshot.get("residue_percent"))
+    lowered = source_text.lower()
+    entity_bits = [term for term in ("calcium carbonate", "calcite", "caco3") if term in lowered]
+    process_bits = [term for term in ("decarbonation", "calcination", "thermal decomposition", "decomposition") if term in lowered]
+    modality_bits = [term for term in ("thermogravimetric analysis", "thermogravimetric", "tga") if term in lowered]
+    product_bits = [term for term in ("cao", "co2 release", "co2 evolution") if term in lowered]
+    topic_tokens = _dedupe(entity_bits + process_bits + modality_bits + product_bits)
+    topic_clause = f" It explicitly discusses {' / '.join(topic_tokens[:4])}." if topic_tokens else ""
     if posture == "alternative_interpretation":
         return (
-            f"This paper discusses TGA decomposition behavior relevant to {subject}. It may indicate an alternative interpretation for the recorded mass-loss profile rather than confirming the current result."
+            f"This paper discusses TGA decomposition behavior relevant to {subject}.{topic_clause} It may indicate an alternative interpretation for the recorded mass-loss profile rather than confirming the current result. {basis_note}"
         )
     if posture == "related_support":
         detail = []
@@ -628,14 +724,14 @@ def _thermal_comparison_note(
             detail.append(f"residue around {residue:.1f}%")
         suffix = f" ({', '.join(detail)})" if detail else ""
         return (
-            f"This paper discusses TGA decomposition behavior relevant to {subject}. It is directionally consistent with the recorded mass-loss profile{suffix}, but it remains contextual support rather than validation."
+            f"This paper discusses TGA decomposition behavior relevant to {subject}.{topic_clause} It is directionally consistent with the recorded mass-loss profile{suffix}, but it remains contextual support rather than validation. {basis_note}"
         )
     if posture == "contextual_only":
         return (
-            f"This paper discusses TGA decomposition behavior relevant to {subject}. It provides decomposition-profile context only and does not validate the current result."
+            f"This paper discusses TGA decomposition behavior relevant to {subject}.{topic_clause} It provides decomposition-profile context only and does not validate the current result. {basis_note}"
         )
     return (
-        f"This paper is related to the TGA interpretation for {subject}, but the current evidence remains limited and non-validating."
+        f"This paper is related to the TGA interpretation for {subject}.{topic_clause} The current evidence remains limited and non-validating. {basis_note}"
     )
 
 
@@ -794,7 +890,7 @@ def _compare_generic_result_to_literature(
         citation_count=len(citations_by_identity),
         accessible_source_count=len(accessible_source_ids),
         restricted_source_count=len(restricted_source_ids),
-        metadata_only_evidence=bool(accessible_source_ids) and not (used_access_fields & {"oa_full_text", "user_provided_document"}),
+        metadata_only_evidence=bool(all_sources_seen) and not bool(used_access_fields),
         restricted_content_used=False,
         generated_at_utc=datetime.now(timezone.utc).isoformat(),
     ).to_dict()
@@ -880,10 +976,11 @@ def _compare_thermal_result_to_literature(
             if access_class == "restricted_external":
                 restricted_source_ids.add(source_identity)
             evidence_used: list[str] = []
+            access_field = "metadata_only"
         else:
             accessible_source_ids.add(source_identity)
-            field = _clean_text(accessible.get("field")).lower() or "abstract_text"
-            used_access_fields.add(field)
+            access_field = _clean_text(accessible.get("field")).lower() or "abstract_text"
+            used_access_fields.add(access_field)
             evidence_used = [_brief_evidence(_clean_text(accessible.get("text")))] if _clean_text(accessible.get("text")) else []
 
         source_text = _thermal_source_text(source, accessible)
@@ -909,6 +1006,8 @@ def _compare_thermal_result_to_literature(
             subject=subject_label,
             posture=posture,
             query_payload=query_payload,
+            access_field=access_field,
+            source_text=source_text,
         )
         citation_key = citation_identity_key(source)
         if citation_key not in citations_by_identity:
@@ -938,7 +1037,7 @@ def _compare_thermal_result_to_literature(
             rationale=note,
             evidence_used=evidence_used,
             citation_ids=[citation["citation_id"]],
-            confidence=_thermal_comparison_confidence(posture, access_class, overlap),
+            confidence=_thermal_comparison_confidence(posture, access_class, overlap, precision_score=precision_score, access_field=access_field),
             sources_considered=len(search_results),
         ).to_dict()
         score = precision_score + (6 if posture == "related_support" else 4 if posture == "alternative_interpretation" else 2 if posture == "contextual_only" else 0)
@@ -963,8 +1062,13 @@ def _compare_thermal_result_to_literature(
             break
     if not surfaced_comparisons and comparisons_with_rank:
         surfaced_comparisons = [comparisons_with_rank[0][2]]
-    comparisons = surfaced_comparisons
+    comparisons = _merge_thermal_surfaced_comparisons(surfaced_comparisons)
     low_specificity_retrieval = bool(comparisons_with_rank) and not strong_rows and all(item[1] for item in comparisons_with_rank[: min(len(comparisons_with_rank), 3)])
+    evidence_specificity = _thermal_evidence_specificity_summary(
+        source_count=len(search_results),
+        accessible_source_count=len(accessible_source_ids),
+        used_access_fields=used_access_fields,
+    )
     evidence_snapshot = dict(query_payload.get("evidence_snapshot") or {})
     context = LiteratureContext(
         mode="metadata_abstract_oa_only",
@@ -983,7 +1087,7 @@ def _compare_thermal_result_to_literature(
         citation_count=len(citations_by_identity),
         accessible_source_count=len(accessible_source_ids),
         restricted_source_count=len(restricted_source_ids),
-        metadata_only_evidence=bool(search_results) and not (used_access_fields & {"oa_full_text", "user_provided_document"}),
+        metadata_only_evidence=evidence_specificity == "metadata_only",
         restricted_content_used=False,
         generated_at_utc=datetime.now(timezone.utc).isoformat(),
         query_text=executed_queries[0] if executed_queries else _clean_text(query_payload.get("query_text")),
@@ -1016,6 +1120,7 @@ def _compare_thermal_result_to_literature(
         query_display_terms=_as_list(query_presentation.get("display_terms")),
         low_specificity_retrieval=low_specificity_retrieval,
         surfaced_comparison_count=len(comparisons),
+        evidence_specificity_summary=evidence_specificity,
         shared_peak_count_snapshot=_clean_int(evidence_snapshot.get("peak_count") or evidence_snapshot.get("step_count")),
         coverage_ratio_snapshot=_clean_float(evidence_snapshot.get("total_mass_loss_percent")),
         weighted_overlap_score_snapshot=_clean_float(
@@ -1340,7 +1445,7 @@ def _compare_xrd_candidate_to_literature(
         citation_count=len(citations_by_identity),
         accessible_source_count=len(accessible_source_ids),
         restricted_source_count=len(restricted_source_ids),
-        metadata_only_evidence=bool(search_results) and not (used_access_fields & {"oa_full_text", "user_provided_document"}),
+        metadata_only_evidence=bool(search_results) and not bool(used_access_fields),
         restricted_content_used=False,
         generated_at_utc=datetime.now(timezone.utc).isoformat(),
         query_text=query_text,

@@ -11,6 +11,8 @@ from typing import Any, Mapping
 import httpx
 import streamlit as st
 
+from core.chemical_formula_formatting import format_chemical_formula_text
+from core.literature_partitioning import partition_reference_ids, reference_bucket_for_comparison
 from core.project_io import save_project_archive
 from utils.diagnostics import record_exception
 
@@ -36,6 +38,10 @@ def _ui_text(lang: str, tr: str, en: str, **kwargs: Any) -> str:
     if kwargs:
         return text.format(**kwargs)
     return text
+
+
+def _display_text(value: Any) -> str:
+    return format_chemical_formula_text(_clean_text(value))
 
 
 def _doi_url(doi: str) -> str:
@@ -240,6 +246,14 @@ def _label_text(lang: str, key: str) -> str:
             "İlgili ama doğrulayıcı değil",
             "Related but non-validating",
         ),
+        "contextually_supportive_non_validating": (
+            "Bağlamsal olarak destekleyici, doğrulayıcı değil",
+            "Contextually supportive, non-validating",
+        ),
+        "alternative_or_weakly_related": (
+            "Alternatif veya zayıf ilişkili",
+            "Alternative or weakly related",
+        ),
     }
     tr, en = labels.get(key, ("İlgili ama sonuçsuz", "Related but inconclusive"))
     return _ui_text(lang, tr, en)
@@ -326,7 +340,7 @@ def _query_terms(value: Any) -> list[str]:
 def _xrd_comparison_note_text(row: Mapping[str, Any], *, lang: str) -> str:
     stored_note = _clean_text(row.get("comparison_note"))
     if stored_note and _clean_text(lang).lower() != "tr":
-        return stored_note
+        return _display_text(stored_note)
     candidate = _clean_text(row.get("candidate_name")) or _ui_text(lang, "aday faz", "the candidate phase")
     match_status = _clean_text(row.get("match_status_snapshot")).lower()
     confidence_band = _clean_text(row.get("confidence_band_snapshot")).lower()
@@ -369,7 +383,7 @@ def _xrd_comparison_note_text(row: Mapping[str, Any], *, lang: str) -> str:
 
 
 def _xrd_search_interpretation_lines(candidate_summary: Mapping[str, Any], *, lang: str) -> list[str]:
-    candidate = _clean_text(candidate_summary.get("best_ranked_candidate")) or _ui_text(lang, "aday faz", "the candidate phase")
+    candidate = _display_text(candidate_summary.get("best_ranked_candidate")) or _ui_text(lang, "aday faz", "the candidate phase")
     match_status = _clean_text(candidate_summary.get("accepted_match_status")).lower()
     lines = [
         _ui_text(
@@ -396,9 +410,9 @@ def _xrd_search_interpretation_lines(candidate_summary: Mapping[str, Any], *, la
 
 
 def _render_xrd_search_summary(candidate_summary: Mapping[str, Any], *, lang: str) -> None:
-    candidate = _clean_text(candidate_summary.get("query_display_title") or candidate_summary.get("best_ranked_candidate"))
+    candidate = _display_text(candidate_summary.get("query_display_title") or candidate_summary.get("best_ranked_candidate"))
     mode = _xrd_search_mode_text(lang, _clean_text(candidate_summary.get("query_display_mode")) or "XRD / phase identification")
-    extra_terms = ", ".join(_query_terms(candidate_summary.get("query_display_terms")))
+    extra_terms = ", ".join(_display_text(item) for item in _query_terms(candidate_summary.get("query_display_terms")))
     raw_query = _clean_text(candidate_summary.get("query_text"))
 
     st.markdown(f"**{_ui_text(lang, 'Literatür Arama Özeti', 'Literature Search Summary')}**")
@@ -545,10 +559,10 @@ def _render_xrd_no_results_status(candidate_summary: Mapping[str, Any], *, lang:
 
 def _thermal_subject_label(context: Mapping[str, Any], summary: Mapping[str, Any], *, lang: str) -> str:
     return (
-        _clean_text(context.get("query_display_title"))
-        or _clean_text(context.get("candidate_display_name"))
-        or _clean_text(context.get("candidate_name"))
-        or _clean_text(summary.get("sample_name"))
+        _display_text(context.get("query_display_title"))
+        or _display_text(context.get("candidate_display_name"))
+        or _display_text(context.get("candidate_name"))
+        or _display_text(summary.get("sample_name"))
         or _ui_text(lang, "kayıt yok", "not recorded")
     )
 
@@ -556,9 +570,9 @@ def _thermal_subject_label(context: Mapping[str, Any], summary: Mapping[str, Any
 def _render_thermal_search_summary(context: Mapping[str, Any], summary: Mapping[str, Any], *, lang: str) -> None:
     title = _thermal_subject_label(context, summary, lang=lang)
     mode = _thermal_search_mode_text(lang, _clean_text(context.get("query_display_mode")) or "Thermal / interpretation")
-    extra_terms = ", ".join(_query_terms(context.get("query_display_terms")))
+    extra_terms = ", ".join(_display_text(item) for item in _query_terms(context.get("query_display_terms")))
     raw_query = _clean_text(context.get("query_text"))
-    rationale = _clean_text(context.get("query_rationale"))
+    rationale = _display_text(context.get("query_rationale"))
 
     st.markdown(f"**{_ui_text(lang, 'Termal Literatür Arama Özeti', 'Thermal Literature Search Summary')}**")
     with _streamlit_block():
@@ -680,29 +694,52 @@ def _comparison_display_label(
     citations: list[dict[str, Any]],
 ) -> str:
     raw_label = _clean_text(row.get("support_label")).lower() or "related_but_inconclusive"
-    if raw_label not in {"supports", "partially_supports"}:
-        return raw_label
-
     if any(_citation_is_fixture(citation) for citation in citations):
         return "demo_fixture_only"
 
+    analysis_type = _clean_text(context.get("analysis_type") or "").upper()
     match_status = _clean_text(summary.get("match_status")).lower()
     confidence_band = _clean_text(summary.get("confidence_band")).lower()
     comparison_confidence = _clean_text(row.get("confidence")).lower()
+    posture = _clean_text(row.get("validation_posture")).lower()
     access_classes = {
         _clean_text(citation.get("access_class")).lower()
         for citation in citations
         if _clean_text(citation.get("access_class"))
     }
+    if not access_classes and _clean_text(row.get("access_class")):
+        access_classes.add(_clean_text(row.get("access_class")).lower())
+    evidence_specificity = _clean_text(context.get("evidence_specificity_summary")).lower()
     weak_evidence = (
         context.get("metadata_only_evidence")
         or comparison_confidence == "low"
-        or (access_classes and access_classes.issubset({"metadata_only", "abstract_only"}))
+        or (access_classes and access_classes == {"metadata_only"})
         or not citations
     )
 
     if match_status == "no_match" or confidence_band in {"no_match", "low", "not_run"}:
         return "insufficient_literature_evidence"
+    if analysis_type in {"DSC", "DTA", "TGA"}:
+        if raw_label in {"supports", "partially_supports"}:
+            return "contextually_supportive_non_validating" if comparison_confidence in {"moderate", "high"} else "related_but_non_validating"
+        if (
+            raw_label == "related_but_inconclusive"
+            and comparison_confidence in {"moderate", "high"}
+            and posture in {"related_support", "contextual_only"}
+            and (
+                evidence_specificity in {"abstract_backed", "mixed_metadata_and_abstract", "oa_backed"}
+                or access_classes & {"abstract_only", "open_access_full_text", "user_provided_document"}
+            )
+        ):
+            return "contextually_supportive_non_validating"
+        if raw_label == "contradicts" or posture == "alternative_interpretation":
+            return "alternative_or_weakly_related"
+        if weak_evidence:
+            return "alternative_or_weakly_related"
+        return raw_label
+
+    if raw_label not in {"supports", "partially_supports"}:
+        return raw_label
     if weak_evidence:
         return "related_but_non_validating"
     return raw_label
@@ -734,9 +771,36 @@ def _follow_up_check_text(lang: str, key: str) -> str:
             "Gerçek literatür bulundu, ancak elde tutulan kayıt kümesi düşük özgüllüklü ve çoğunlukla metadata/özet düzeyinde; doğrudan doğrulama hâlâ mevcut değildir.",
             "Real literature results were found, but the retained set is low-specificity and mostly metadata/abstract-level; direct validation remains unavailable.",
         ),
+        "abstract_backed": (
+            "En az bir elde tutulan kaynak erişilebilir özet düzeyinde kanıt içeriyor; yorum hâlâ doğrulayıcı değildir, ancak yalnızca metadata toplamaya göre daha iyi temellenmiştir.",
+            "At least one retained source includes accessible abstract-level evidence; interpretation remains non-validating but is better grounded than metadata-only retrieval.",
+        ),
+        "oa_backed": (
+            "Elde tutulan kaynak kümesinde açık erişimli veya kullanıcı tarafından sağlanan erişilebilir metin bulunuyor; yorum yine de temkinli ve doğrulayıcı olmayan çerçevede kalır.",
+            "The retained source set includes open-access or user-provided accessible text; interpretation still remains cautious and non-validating.",
+        ),
     }
     tr, en = messages[key]
     return _ui_text(lang, tr, en)
+
+
+def _evidence_specificity_note(lang: str, summary_key: str) -> str:
+    messages = {
+        "abstract_backed": (
+            "En az bir elde tutulan kaynak erişilebilir özet düzeyinde kanıt içeriyor; yorum hâlâ doğrulayıcı değildir, ancak yalnızca metadata toplamaya göre daha iyi temellenmiştir.",
+            "At least one retained source includes accessible abstract-level evidence; interpretation remains non-validating but is better grounded than metadata-only retrieval.",
+        ),
+        "mixed_metadata_and_abstract": (
+            "Elde tutulan kaynak kümesi metadata ve erişilebilir özet kanıtını birlikte içeriyor; yorum temkinli kalır, ancak tamamen metadata tabanlı değildir.",
+            "The retained source set mixes metadata-only and accessible abstract evidence; interpretation remains cautious, but it is not purely metadata-based.",
+        ),
+        "oa_backed": (
+            "En az bir elde tutulan kaynak erişilebilir açık metin içeriyor; yorum yine de doğrulama yerine bağlamsal destek olarak ele alınmalıdır.",
+            "At least one retained source includes accessible open text; the interpretation should still be treated as contextual support rather than validation.",
+        ),
+    }
+    tr, en = messages.get(summary_key, ("", ""))
+    return _ui_text(lang, tr, en) if tr or en else ""
 
 
 def _backend_base_url(base_url: str | None = None) -> str:
@@ -874,30 +938,33 @@ def merge_literature_detail_into_record(
     if detail.get("result") and detail["result"].get("dataset_key") and not updated.get("dataset_key"):
         updated["dataset_key"] = detail["result"].get("dataset_key")
 
-    updated["literature_context"] = copy.deepcopy(
-        detail.get("literature_context")
-        or compare.get("literature_context")
-        or updated.get("literature_context")
-        or {}
-    )
-    updated["literature_claims"] = copy.deepcopy(
-        detail.get("literature_claims")
-        or compare.get("literature_claims")
-        or updated.get("literature_claims")
-        or []
-    )
-    updated["literature_comparisons"] = copy.deepcopy(
-        detail.get("literature_comparisons")
-        or compare.get("literature_comparisons")
-        or updated.get("literature_comparisons")
-        or []
-    )
-    updated["citations"] = copy.deepcopy(
-        detail.get("citations")
-        or compare.get("citations")
-        or updated.get("citations")
-        or []
-    )
+    if "literature_context" in detail:
+        updated["literature_context"] = copy.deepcopy(detail.get("literature_context") or {})
+    elif "literature_context" in compare:
+        updated["literature_context"] = copy.deepcopy(compare.get("literature_context") or {})
+    else:
+        updated["literature_context"] = copy.deepcopy(updated.get("literature_context") or {})
+
+    if "literature_claims" in detail:
+        updated["literature_claims"] = copy.deepcopy(detail.get("literature_claims") or [])
+    elif "literature_claims" in compare:
+        updated["literature_claims"] = copy.deepcopy(compare.get("literature_claims") or [])
+    else:
+        updated["literature_claims"] = copy.deepcopy(updated.get("literature_claims") or [])
+
+    if "literature_comparisons" in detail:
+        updated["literature_comparisons"] = copy.deepcopy(detail.get("literature_comparisons") or [])
+    elif "literature_comparisons" in compare:
+        updated["literature_comparisons"] = copy.deepcopy(compare.get("literature_comparisons") or [])
+    else:
+        updated["literature_comparisons"] = copy.deepcopy(updated.get("literature_comparisons") or [])
+
+    if "citations" in detail:
+        updated["citations"] = copy.deepcopy(detail.get("citations") or [])
+    elif "citations" in compare:
+        updated["citations"] = copy.deepcopy(compare.get("citations") or [])
+    else:
+        updated["citations"] = copy.deepcopy(updated.get("citations") or [])
     return _apply_report_guardrail_flags(updated)
 
 
@@ -964,6 +1031,7 @@ def _citation_lookup(record: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
 
 def build_literature_sections(record: Mapping[str, Any] | None) -> dict[str, Any]:
     source = dict(record or {})
+    analysis_type = _clean_text(source.get("analysis_type")).upper()
     comparisons = [dict(item) for item in (source.get("literature_comparisons") or []) if isinstance(item, Mapping)]
     citations_by_id = _citation_lookup(source)
     context = dict(source.get("literature_context") or {})
@@ -994,8 +1062,6 @@ def build_literature_sections(record: Mapping[str, Any] | None) -> dict[str, Any
             "candidate_summary": {},
         }
 
-    supporting_ids: list[str] = []
-    alternative_ids: list[str] = []
     comparison_rows: list[dict[str, Any]] = []
     for item in comparisons:
         citation_ids = [
@@ -1013,9 +1079,9 @@ def build_literature_sections(record: Mapping[str, Any] | None) -> dict[str, Any
         claim = claim_lookup.get(_clean_text(item.get("claim_id")))
         provider_badges = _provider_badges_for_citations(citation_items, provider_scope=flags["provider_scope"])
         evidence_badges = _evidence_badges_for_citations(citation_items)
-        paper_title = _clean_text(item.get("paper_title")) or _clean_text((citation_items[0] if citation_items else {}).get("title"))
+        paper_title = _display_text(item.get("paper_title")) or _display_text((citation_items[0] if citation_items else {}).get("title"))
         paper_year = item.get("paper_year") if item.get("paper_year") not in (None, "") else (citation_items[0].get("year") if citation_items else None)
-        paper_journal = _clean_text(item.get("paper_journal")) or _clean_text((citation_items[0] if citation_items else {}).get("journal"))
+        paper_journal = _display_text(item.get("paper_journal")) or _display_text((citation_items[0] if citation_items else {}).get("journal"))
         paper_doi = _clean_text(item.get("paper_doi")) or _clean_text((citation_items[0] if citation_items else {}).get("doi"))
         paper_url = _clean_text(item.get("paper_url")) or _clean_text((citation_items[0] if citation_items else {}).get("url"))
         provider_id = _clean_text(item.get("provider_id")) or ", ".join(provider_badges)
@@ -1023,11 +1089,11 @@ def build_literature_sections(record: Mapping[str, Any] | None) -> dict[str, Any
         comparison_rows.append(
             {
                 "claim_id": _clean_text(item.get("claim_id")) or "C1",
-                "claim_text": _clean_text((claim or {}).get("claim_text"))
-                or _clean_text(item.get("claim_text"))
+                "claim_text": _display_text((claim or {}).get("claim_text"))
+                or _display_text(item.get("claim_text"))
                 or "No human-readable scientific claim was recorded.",
-                "candidate_name": _clean_text(item.get("candidate_name")) or _clean_text(context.get("candidate_display_name") or context.get("candidate_name")),
-                "candidate_formula": _clean_text(item.get("candidate_formula")) or _clean_text(context.get("candidate_formula")),
+                "candidate_name": _display_text(item.get("candidate_name")) or _display_text(context.get("candidate_display_name") or context.get("candidate_name")),
+                "candidate_formula": _display_text(item.get("candidate_formula")) or _display_text(context.get("candidate_formula")),
                 "paper_title": paper_title,
                 "paper_year": paper_year,
                 "paper_journal": paper_journal,
@@ -1035,7 +1101,7 @@ def build_literature_sections(record: Mapping[str, Any] | None) -> dict[str, Any
                 "paper_url": paper_url,
                 "provider_id": provider_id,
                 "access_class": _clean_text(item.get("access_class")) or _clean_text((citation_items[0] if citation_items else {}).get("access_class")) or "metadata_only",
-                "comparison_note": _clean_text(item.get("comparison_note")) or _clean_text(item.get("rationale")),
+                "comparison_note": _display_text(item.get("comparison_note")) or _display_text(item.get("rationale")),
                 "validation_posture": _clean_text(item.get("validation_posture")) or "non_validating",
                 "query_text": _clean_text(item.get("query_text")) or _clean_text(context.get("query_text")),
                 "match_status_snapshot": _clean_text(item.get("match_status_snapshot")) or _clean_text(context.get("match_status_snapshot") or summary.get("match_status")),
@@ -1043,21 +1109,27 @@ def build_literature_sections(record: Mapping[str, Any] | None) -> dict[str, Any
                 "support_label": _clean_text(item.get("support_label")) or "related_but_inconclusive",
                 "display_label_key": display_label_key,
                 "confidence": _clean_text(item.get("confidence")) or "low",
-                "rationale": _clean_text(item.get("rationale")) or "",
+                "rationale": _display_text(item.get("rationale")) or "",
                 "citation_ids": citation_ids,
                 "provider_badges": provider_badges,
                 "evidence_badges": evidence_badges,
                 "fixture": fixture_row,
             }
         )
-        if display_label_key in {"supports", "partially_supports"}:
-            for citation_id in citation_ids:
-                if citation_id not in supporting_ids:
-                    supporting_ids.append(citation_id)
-        else:
-            for citation_id in citation_ids:
-                if citation_id not in alternative_ids:
-                    alternative_ids.append(citation_id)
+        reference_bucket = reference_bucket_for_comparison(
+            comparison_rows[-1],
+            context=context,
+            citations=citation_items,
+            analysis_type=analysis_type,
+        )
+        comparison_rows[-1]["reference_bucket"] = reference_bucket
+
+    supporting_ids, alternative_ids = partition_reference_ids(
+        comparison_rows,
+        citations_by_id=citations_by_id,
+        context={**context, "analysis_type": analysis_type},
+        analysis_type=analysis_type,
+    )
 
     follow_up_checks: list[str] = []
     if any(not row["citation_ids"] for row in comparison_rows):
@@ -1069,10 +1141,15 @@ def build_literature_sections(record: Mapping[str, Any] | None) -> dict[str, Any
         for item in citations_by_id.values()
         if _clean_text(item.get("access_class"))
     }
-    if context.get("metadata_only_evidence") or citation_access_classes & {"abstract_only", "metadata_only"}:
+    if context.get("metadata_only_evidence") or (citation_access_classes and citation_access_classes == {"metadata_only"}):
         follow_up_checks.append("metadata_only")
     if context.get("low_specificity_retrieval"):
         follow_up_checks.append("low_specificity_retrieval")
+    evidence_specificity = _clean_text(context.get("evidence_specificity_summary")).lower()
+    if evidence_specificity in {"abstract_backed", "mixed_metadata_and_abstract"}:
+        follow_up_checks.append("abstract_backed")
+    elif evidence_specificity == "oa_backed":
+        follow_up_checks.append("oa_backed")
     if context.get("restricted_content_used") is False:
         follow_up_checks.append("restricted_excluded")
     if flags["fixture_detected"]:
@@ -1140,9 +1217,9 @@ def build_literature_sections(record: Mapping[str, Any] | None) -> dict[str, Any
 
 
 def _render_citation_item(citation: Mapping[str, Any], *, lang: str, provider_scope: list[str]) -> None:
-    title = _clean_text(citation.get("title")) or "Untitled source"
+    title = _display_text(citation.get("title")) or "Untitled source"
     year = _clean_text(citation.get("year")) or "n.d."
-    journal = _clean_text(citation.get("journal"))
+    journal = _display_text(citation.get("journal"))
     doi = _clean_text(citation.get("doi"))
     url = _clean_text(citation.get("url"))
     access_class = _clean_text(citation.get("access_class")) or "metadata_only"
@@ -1227,14 +1304,14 @@ def _render_xrd_candidate_summary(candidate_summary: Mapping[str, Any], *, lang:
 
 def _render_xrd_paper_card(row: Mapping[str, Any], *, lang: str) -> None:
     with _streamlit_block():
-        st.markdown(f"**{_clean_text(row.get('paper_title')) or _ui_text(lang, 'Başlık kaydedilmedi', 'Title not recorded')}**")
+        st.markdown(f"**{_display_text(row.get('paper_title')) or _ui_text(lang, 'Başlık kaydedilmedi', 'Title not recorded')}**")
         st.caption(
             _ui_text(
                 lang,
                 "Yıl: {year} | Dergi: {journal} | Sağlayıcı: {provider} | Erişim: {access} | Duruş: {posture}",
                 "Year: {year} | Journal: {journal} | Provider: {provider} | Access: {access} | Posture: {posture}",
                 year=str(row.get("paper_year") if row.get("paper_year") not in (None, "") else "n.d."),
-                journal=_clean_text(row.get("paper_journal")) or _ui_text(lang, "kayıt yok", "not recorded"),
+                journal=_display_text(row.get("paper_journal")) or _ui_text(lang, "kayıt yok", "not recorded"),
                 provider=_clean_text(row.get("provider_id")) or _ui_text(lang, "kayıt yok", "not recorded"),
                 access=_evidence_badge_text(lang, _access_basis_key(access_class=_clean_text(row.get("access_class")), fixture=False)),
                 posture=_validation_posture_text(lang, _clean_text(row.get("validation_posture"))),
@@ -1366,6 +1443,10 @@ def render_literature_sections(record: Mapping[str, Any] | None, *, lang: str) -
                     "Real literature results were found, but the retained set is low-specificity and metadata/abstract-heavy; direct validation is still unavailable.",
                 )
             )
+        evidence_specificity = _clean_text(sections["context"].get("evidence_specificity_summary")).lower()
+        evidence_note = _evidence_specificity_note(lang, evidence_specificity)
+        if evidence_note:
+            st.caption(evidence_note)
 
     if sections["fixture_detected"]:
         st.warning(
@@ -1397,7 +1478,7 @@ def render_literature_sections(record: Mapping[str, Any] | None, *, lang: str) -
         provider_note = ", ".join(row["provider_badges"]) or _ui_text(lang, "kayıt yok", "not recorded")
         evidence_note = ", ".join(_evidence_badge_text(lang, item) for item in row["evidence_badges"])
         with _streamlit_block():
-            st.markdown(f"**{row['claim_text']}**")
+            st.markdown(f"**{_display_text(row['claim_text'])}**")
             st.caption(
                 _ui_text(
                     lang,
@@ -1417,7 +1498,7 @@ def render_literature_sections(record: Mapping[str, Any] | None, *, lang: str) -
                     evidence=evidence_note,
                 )
             )
-            st.markdown(row["rationale"] or _ui_text(lang, "Ek gerekçe kaydedilmedi.", "No additional rationale was recorded."))
+            st.markdown(_display_text(row["rationale"]) or _ui_text(lang, "Ek gerekçe kaydedilmedi.", "No additional rationale was recorded."))
             st.caption(
                 _ui_text(
                     lang,

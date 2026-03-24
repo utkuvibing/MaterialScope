@@ -203,6 +203,55 @@ def _first_non_empty(*values: Any) -> str:
     return ""
 
 
+def _abstract_from_inverted_index(value: Any) -> str:
+    if not isinstance(value, Mapping):
+        return ""
+    positions: dict[int, str] = {}
+    for token, offsets in value.items():
+        cleaned_token = _clean_text(token)
+        if not cleaned_token:
+            continue
+        for offset in offsets if isinstance(offsets, list) else []:
+            try:
+                index = int(offset)
+            except (TypeError, ValueError):
+                continue
+            positions[index] = cleaned_token
+    if not positions:
+        return ""
+    return _clean_text(" ".join(positions[index] for index in sorted(positions)))
+
+
+def _extract_accessible_abstract_text(source: Mapping[str, Any]) -> str:
+    direct_text = _first_non_empty(
+        source.get("abstract_text"),
+        source.get("abstract"),
+        source.get("summary"),
+        source.get("excerpt"),
+        _nested_get(source, "primary_location", "abstract"),
+        _nested_get(source, "primary_location", "summary"),
+        _nested_get(source, "best_oa_location", "abstract"),
+        _nested_get(source, "best_oa_location", "summary"),
+    )
+    if direct_text:
+        return direct_text
+    return _abstract_from_inverted_index(
+        source.get("abstract_inverted_index") or source.get("abstract_inverted_index_v3") or source.get("inverted_index")
+    )
+
+
+def _extract_accessible_oa_text(source: Mapping[str, Any]) -> str:
+    return _first_non_empty(
+        source.get("oa_full_text"),
+        source.get("fulltext"),
+        source.get("full_text"),
+        source.get("open_access_text"),
+        _nested_get(source, "best_oa_location", "fulltext"),
+        _nested_get(source, "best_oa_location", "text"),
+        _nested_get(source, "open_access", "text"),
+    )
+
+
 def _provider_env(*suffixes: str) -> str:
     for suffix in suffixes:
         for prefix in ("MATERIALSCOPE_OPENALEX_", "THERMOANALYZER_OPENALEX_"):
@@ -573,7 +622,7 @@ class MetadataAPILiteratureProvider:
                 return {"source_id": source_id, "text": text, "field": field, "access_class": access_class}
             return None
         if access_class in {"abstract_only", "metadata_only"}:
-            text = _clean_text(candidate.get("abstract_text"))
+            text = _clean_text(candidate.get("abstract_text") or _extract_accessible_abstract_text(candidate))
             if text:
                 return {"source_id": source_id, "text": text, "field": "abstract_text", "access_class": access_class}
         return None
@@ -659,11 +708,15 @@ class OpenAlexLikeLiteratureProvider(MetadataAPILiteratureProvider):
                     if author_name:
                         authors.append(author_name)
 
-        abstract_text = _clean_text(source.get("abstract_text"))
-        oa_full_text = _clean_text(source.get("oa_full_text"))
+        abstract_text = _extract_accessible_abstract_text(source)
+        oa_full_text = _extract_accessible_oa_text(source)
         access_class = _clean_text(source.get("access_class")).lower()
         if access_class not in ACCESS_CLASS_PRIORITY:
             access_class = "open_access_full_text" if oa_full_text else "abstract_only" if abstract_text else "metadata_only"
+        elif access_class == "metadata_only" and abstract_text:
+            access_class = "abstract_only"
+        elif access_class == "abstract_only" and oa_full_text:
+            access_class = "open_access_full_text"
 
         available_fields = _as_str_list(source.get("available_fields"))
         if not available_fields:
@@ -671,6 +724,11 @@ class OpenAlexLikeLiteratureProvider(MetadataAPILiteratureProvider):
             if abstract_text:
                 available_fields.append("abstract")
             if oa_full_text:
+                available_fields.append("oa_full_text")
+        else:
+            if abstract_text and "abstract" not in available_fields:
+                available_fields.append("abstract")
+            if oa_full_text and "oa_full_text" not in available_fields:
                 available_fields.append("oa_full_text")
 
         normalized = normalize_literature_sources(
@@ -688,7 +746,10 @@ class OpenAlexLikeLiteratureProvider(MetadataAPILiteratureProvider):
                     "doi": _clean_doi(source.get("doi") or _nested_get(source, "ids", "doi")),
                     "url": _first_non_empty(
                         source.get("url"),
+                        _nested_get(source, "open_access", "oa_url"),
                         _nested_get(source, "best_oa_location", "landing_page_url"),
+                        _nested_get(source, "best_oa_location", "pdf_url"),
+                        _nested_get(source, "primary_location", "pdf_url"),
                         _nested_get(source, "primary_location", "landing_page_url"),
                         source.get("id"),
                     ),
