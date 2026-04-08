@@ -9,12 +9,16 @@ function readArgValue(name) {
 const backendUrl = readArgValue("ta-backend-url");
 const backendToken = readArgValue("ta-backend-token");
 
-async function apiCall(pathname, options) {
-  const headers = {
+function authHeaders(customHeaders) {
+  return {
     "Content-Type": "application/json",
     "X-TA-Token": backendToken,
-    ...(options && options.headers ? options.headers : {}),
+    ...(customHeaders || {}),
   };
+}
+
+async function apiCall(pathname, options) {
+  const headers = authHeaders(options && options.headers);
   const response = await fetch(`${backendUrl}${pathname}`, {
     ...(options || {}),
     headers,
@@ -154,6 +158,83 @@ contextBridge.exposeInMainWorld("taDesktop", {
       method: "POST",
       body: JSON.stringify(payload || {}),
     });
+  },
+  async getLibraryStatus() {
+    return apiCall("/library/status", { method: "GET" });
+  },
+  async getLibraryCatalog() {
+    return apiCall("/library/catalog", { method: "GET" });
+  },
+  async syncLibrary(payload) {
+    return apiCall("/library/sync", {
+      method: "POST",
+      body: JSON.stringify(payload || {}),
+    });
+  },
+  async requestLibraryCloudToken(licenseToken) {
+    const headers = {};
+    if (licenseToken) {
+      headers["X-TA-License"] = licenseToken;
+    }
+    return apiCall("/v1/library/auth/token", {
+      method: "POST",
+      headers,
+    });
+  },
+  async getLibraryProviders(accessToken) {
+    const headers = {};
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`;
+    }
+    return apiCall("/v1/library/providers", {
+      method: "GET",
+      headers,
+    });
+  },
+  async getLibraryCoverage(accessToken) {
+    const headers = {};
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`;
+    }
+    return apiCall("/v1/library/coverage", {
+      method: "GET",
+      headers,
+    });
+  },
+  async prefetchLibrary(payload, accessToken) {
+    const headers = {};
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`;
+    }
+    return apiCall("/v1/library/prefetch", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload || {}),
+    });
+  },
+  async searchLibrary(analysisType, payload, accessToken) {
+    const normalized = String(analysisType || "").trim().toUpperCase();
+    if (!["FTIR", "RAMAN", "XRD"].includes(normalized)) {
+      throw new Error(`Unsupported library search analysis_type: ${analysisType}`);
+    }
+    const headers = {};
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`;
+    }
+    return apiCall(`/v1/library/search/${normalized.toLowerCase()}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload || {}),
+    });
+  },
+  async compareResultLiterature(projectId, resultId, payload) {
+    return apiCall(
+      `/workspace/${encodeURIComponent(projectId)}/results/${encodeURIComponent(resultId)}/literature/compare`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload || {}),
+      }
+    );
   },
   async persistProjectArchive(defaultName, archiveBase64) {
     return ipcRenderer.invoke("ta:save-project-archive", {

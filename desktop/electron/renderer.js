@@ -9,22 +9,31 @@ let currentActiveDatasetKey = null;
 let compareSelectedDatasetKeys = new Set();
 let currentDatasetDetail = null;
 let currentResultDetail = null;
-let currentLanguage = "tr";
 let activeView = "home";
+let currentLanguage = "tr";
+let libraryCloudToken = null;
+let lastLibrarySearchPayload = null;
 const lastAnalysisRuns = {
   DSC: null,
   DTA: null,
   TGA: null,
+  FTIR: null,
+  RAMAN: null,
+  XRD: null,
 };
 
 const I18N = {
   tr: {
     nav: {
       home: "Veri Al",
-      compare: "Karşılaştırma",
       dsc: "DSC Analizi",
       dta: "DTA Analizi",
       tga: "TGA Analizi",
+      ftir: "FTIR Analizi",
+      raman: "Raman Analizi",
+      xrd: "XRD Analizi",
+      compare: "Karşılaştırma",
+      library: "Kütüphane",
       export: "Rapor Merkezi",
       project: "Proje Alanı",
       license: "Lisans ve Marka",
@@ -81,10 +90,14 @@ const I18N = {
   en: {
     nav: {
       home: "Import Runs",
-      compare: "Compare Workspace",
       dsc: "DSC Analysis",
       dta: "DTA Analysis",
       tga: "TGA Analysis",
+      ftir: "FTIR Analysis",
+      raman: "Raman Analysis",
+      xrd: "XRD Analysis",
+      compare: "Compare Workspace",
+      library: "Library",
       export: "Report Center",
       project: "Project Workspace",
       license: "License & Branding",
@@ -139,18 +152,22 @@ const I18N = {
     },
   },
 };
+
 const viewTitleKeys = {
   home: "nav.home",
-  compare: "nav.compare",
   dsc: "nav.dsc",
   dta: "nav.dta",
   tga: "nav.tga",
+  ftir: "nav.ftir",
+  raman: "nav.raman",
+  xrd: "nav.xrd",
+  compare: "nav.compare",
+  library: "nav.library",
   export: "nav.export",
   project: "nav.project",
   license: "nav.license",
   diagnostics: "nav.diagnostics",
 };
-
 function lookupI18n(key) {
   const locale = I18N[currentLanguage] || I18N.tr;
   const fallback = I18N.en;
@@ -224,10 +241,16 @@ function applyStaticLanguage() {
     trBtn.classList.toggle("active", currentLanguage === "tr");
     enBtn.classList.toggle("active", currentLanguage === "en");
   }
+
   setText("primaryGroupLabel", currentLanguage === "tr" ? "Ana Akış" : "Primary");
   setText("previewGroupLabel", currentLanguage === "tr" ? "Laboratuvar Önizlemesi" : "Lab Preview");
   setText("systemGroupLabel", currentLanguage === "tr" ? "Sistem" : "System");
-  setText("brandSubtitle", currentLanguage === "tr" ? "Cihazdan bağımsız DSC/DTA/TGA/FTIR/RAMAN çalışma alanı" : "Vendor-independent DSC/DTA/TGA/FTIR/RAMAN workbench");
+  setText(
+    "brandSubtitle",
+    currentLanguage === "tr"
+      ? "Cihazdan bağımsız DSC/DTA/TGA/FTIR/RAMAN/XRD çalışma alanı"
+      : "Vendor-independent DSC/DTA/TGA/FTIR/RAMAN/XRD workbench"
+  );
   setText(
     "previewToggleLabel",
     currentLanguage === "tr"
@@ -241,14 +264,19 @@ function applyStaticLanguage() {
   setText(
     "sidebarAboutCopy",
     currentLanguage === "tr"
-      ? "Kararlı kapsam: DSC/DTA/TGA/FTIR/RAMAN, Karşılaştırma Alanı, Toplu Şablon Uygulayıcı, proje arşivi ve CSV/DOCX çıktıları."
-      : "Stable scope: DSC/DTA/TGA/FTIR/RAMAN, Compare Workspace, Batch Template Runner, project archive, and CSV/DOCX outputs."
+      ? "Kararlı kapsam: DSC/DTA/TGA/FTIR/RAMAN/XRD, Karşılaştırma Alanı, Kütüphane erişimi, Toplu Şablon Uygulayıcı, proje arşivi ve CSV/DOCX çıktıları."
+      : "Stable scope: DSC/DTA/TGA/FTIR/RAMAN/XRD, Compare Workspace, library access, Batch Template Runner, project archive, and CSV/DOCX outputs."
   );
+
   setText("navHomeBtn", t("nav.home"));
-  setText("navCompareBtn", t("nav.compare"));
   setText("navDscBtn", t("nav.dsc"));
   setText("navDtaBtn", t("nav.dta"));
   setText("navTgaBtn", t("nav.tga"));
+  setText("navFtirBtn", t("nav.ftir"));
+  setText("navRamanBtn", t("nav.raman"));
+  setText("navXrdBtn", t("nav.xrd"));
+  setText("navCompareBtn", t("nav.compare"));
+  setText("navLibraryBtn", t("nav.library"));
   setText("navExportBtn", t("nav.export"));
   setText("navProjectBtn", t("nav.project"));
   setText("navLicenseBtn", t("nav.license"));
@@ -476,7 +504,6 @@ function applyStaticLanguage() {
   setText("diagExportTitle", currentLanguage === "tr" ? "Export Payload" : "Export Payload");
   setText("diagLogTitle", currentLanguage === "tr" ? "Log" : "Log");
 }
-
 function appendLog(message) {
   const node = el("log");
   if (!node) return;

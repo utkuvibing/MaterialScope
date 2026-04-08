@@ -471,7 +471,7 @@
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">THERMOANALYZER</div>
-      <div class="brand-sub" id="brandSubtitle">Cihazdan bağımsız DSC/DTA/TGA/FTIR/RAMAN çalışma alanı</div>
+      <div class="brand-sub" id="brandSubtitle">Cihazdan bağımsız DSC/DTA/TGA/FTIR/RAMAN/XRD çalışma alanı</div>
       <div class="lang-switch">
         <button class="lang-btn active" id="langTrBtn" type="button">TR</button>
         <button class="lang-btn" id="langEnBtn" type="button">EN</button>
@@ -484,10 +484,14 @@
       <div class="nav-group">
         <div class="group-label" id="primaryGroupLabel">Ana Akış</div>
         <button class="nav-item active" data-view="home" id="navHomeBtn">Veri Al</button>
-        <button class="nav-item" data-view="compare" id="navCompareBtn">Karşılaştırma</button>
         <button class="nav-item" data-view="dsc" id="navDscBtn">DSC Analizi</button>
         <button class="nav-item" data-view="dta" id="navDtaBtn">DTA Analizi</button>
         <button class="nav-item" data-view="tga" id="navTgaBtn">TGA Analizi</button>
+        <button class="nav-item" data-view="ftir" id="navFtirBtn">FTIR Analizi</button>
+        <button class="nav-item" data-view="raman" id="navRamanBtn">Raman Analizi</button>
+        <button class="nav-item" data-view="xrd" id="navXrdBtn">XRD Analizi</button>
+        <button class="nav-item" data-view="compare" id="navCompareBtn">Karşılaştırma</button>
+        <button class="nav-item" data-view="library" id="navLibraryBtn">Kütüphane</button>
         <button class="nav-item" data-view="export" id="navExportBtn">Rapor Merkezi</button>
         <button class="nav-item" data-view="project" id="navProjectBtn">Proje Alanı</button>
       </div>
@@ -507,7 +511,7 @@
       <div class="nav-group">
         <div class="group-label" id="sidebarAboutTitle">ThermoAnalyzer Hakkında</div>
         <p class="small" id="sidebarAboutCopy">
-          Kararlı kapsam: DSC/DTA/TGA/FTIR/RAMAN, Karşılaştırma Alanı, Toplu Şablon Uygulayıcı, proje arşivi ve CSV/DOCX çıktıları.
+          Kararlı kapsam: DSC/DTA/TGA/FTIR/RAMAN/XRD, Karşılaştırma Alanı, Kütüphane erişimi, Toplu Şablon Uygulayıcı, proje arşivi ve CSV/DOCX çıktıları.
         </p>
       </div>
     </aside>
@@ -605,6 +609,7 @@
                 <option value="DTA">DTA</option>
                 <option value="FTIR">FTIR</option>
                 <option value="RAMAN">RAMAN</option>
+                <option value="XRD">XRD</option>
               </select>
             </div>
             <div class="split-2" style="margin-top:10px;">
@@ -670,6 +675,7 @@
                 <option value="TGA">TGA</option>
                 <option value="FTIR">FTIR</option>
                 <option value="RAMAN">RAMAN</option>
+                <option value="XRD">XRD</option>
               </select>
               <button id="addSelectedToCompareBtn" disabled>Seçili Veri Setini Ekle</button>
               <button id="removeSelectedFromCompareBtn" disabled>Seçili Veri Setini Çıkar</button>
@@ -696,6 +702,7 @@
                 <option value="TGA">TGA</option>
                 <option value="FTIR">FTIR</option>
                 <option value="RAMAN">RAMAN</option>
+                <option value="XRD">XRD</option>
               </select>
               <label for="batchTemplateIdInput" id="batchTemplateLabel">Şablon ID</label>
               <input id="batchTemplateIdInput" value="dsc.general" style="min-width:220px;" />
@@ -836,6 +843,120 @@
           </div>
         </section>
 
+        <section class="view" id="view-ftir">
+          <h2 class="view-title" id="ftirViewTitle">FTIR Analizi</h2>
+          <p class="view-copy" id="ftirViewCopy">Spektral bağlam, doğrulama görünürlüğü ve şablon sürekliliği ile FTIR akışını adım adım yürüt.</p>
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="ftirStep1Title">Adım 1 - Aktif veri seti ve yöntem bağlamı</p>
+            </div>
+            <div id="ftirActiveDatasetContextPanel" class="panel-soft">FTIR bağlamını başlatmak için Veri Al sayfasından bir veri seti seç.</div>
+            <div id="ftirMethodContextPanel" class="panel-soft" style="margin-top:10px;">FTIR işlem bağlamı burada görünecek.</div>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="ftirStep2Title">Adım 2 - Doğrulama ve hazır olma kontrolleri</p>
+            </div>
+            <div id="ftirValidationPanel" class="panel-soft">Doğrulama özeti, veri seti incelendikten sonra görünür.</div>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="ftirStep3Title">Adım 3 - FTIR analizini çalıştır</p>
+            </div>
+            <div id="ftirTemplateContextPanel" class="panel-soft">İş akışı şablon bağlamı burada görünecek.</div>
+            <div class="row" style="margin-top:10px;">
+              <button id="runFtirAnalysisBtn" disabled>FTIR Analizini Çalıştır</button>
+              <button id="inspectSelectedDatasetBtnFtir">Seçili Veri Setini İncele</button>
+            </div>
+            <p id="ftirAnalysisInfo" class="small">Henüz FTIR analizi çalıştırılmadı.</p>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="ftirStep4Title">Adım 4 - Kayıtlı sonuç bağlamı</p>
+            </div>
+            <div id="ftirResultSummaryPanel" class="panel-soft">Henüz FTIR sonuç bağlamı yok.</div>
+          </div>
+        </section>
+
+        <section class="view" id="view-raman">
+          <h2 class="view-title" id="ramanViewTitle">Raman Analizi</h2>
+          <p class="view-copy" id="ramanViewCopy">Spektral bağlam, doğrulama görünürlüğü ve şablon sürekliliği ile Raman akışını adım adım yürüt.</p>
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="ramanStep1Title">Adım 1 - Aktif veri seti ve yöntem bağlamı</p>
+            </div>
+            <div id="ramanActiveDatasetContextPanel" class="panel-soft">Raman bağlamını başlatmak için Veri Al sayfasından bir veri seti seç.</div>
+            <div id="ramanMethodContextPanel" class="panel-soft" style="margin-top:10px;">Raman işlem bağlamı burada görünecek.</div>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="ramanStep2Title">Adım 2 - Doğrulama ve hazır olma kontrolleri</p>
+            </div>
+            <div id="ramanValidationPanel" class="panel-soft">Doğrulama özeti, veri seti incelendikten sonra görünür.</div>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="ramanStep3Title">Adım 3 - Raman analizini çalıştır</p>
+            </div>
+            <div id="ramanTemplateContextPanel" class="panel-soft">İş akışı şablon bağlamı burada görünecek.</div>
+            <div class="row" style="margin-top:10px;">
+              <button id="runRamanAnalysisBtn" disabled>Raman Analizini Çalıştır</button>
+              <button id="inspectSelectedDatasetBtnRaman">Seçili Veri Setini İncele</button>
+            </div>
+            <p id="ramanAnalysisInfo" class="small">Henüz Raman analizi çalıştırılmadı.</p>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="ramanStep4Title">Adım 4 - Kayıtlı sonuç bağlamı</p>
+            </div>
+            <div id="ramanResultSummaryPanel" class="panel-soft">Henüz Raman sonuç bağlamı yok.</div>
+          </div>
+        </section>
+
+        <section class="view" id="view-xrd">
+          <h2 class="view-title" id="xrdViewTitle">XRD Analizi</h2>
+          <p class="view-copy" id="xrdViewCopy">Difraksiyon bağlamı, doğrulama görünürlüğü ve şablon sürekliliği ile XRD akışını adım adım yürüt.</p>
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="xrdStep1Title">Adım 1 - Aktif veri seti ve yöntem bağlamı</p>
+            </div>
+            <div id="xrdActiveDatasetContextPanel" class="panel-soft">XRD bağlamını başlatmak için Veri Al sayfasından bir veri seti seç.</div>
+            <div id="xrdMethodContextPanel" class="panel-soft" style="margin-top:10px;">XRD işlem bağlamı burada görünecek.</div>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="xrdStep2Title">Adım 2 - Doğrulama ve hazır olma kontrolleri</p>
+            </div>
+            <div id="xrdValidationPanel" class="panel-soft">Doğrulama özeti, veri seti incelendikten sonra görünür.</div>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="xrdStep3Title">Adım 3 - XRD analizini çalıştır</p>
+            </div>
+            <div id="xrdTemplateContextPanel" class="panel-soft">İş akışı şablon bağlamı burada görünecek.</div>
+            <div class="row" style="margin-top:10px;">
+              <button id="runXrdAnalysisBtn" disabled>XRD Analizini Çalıştır</button>
+              <button id="inspectSelectedDatasetBtnXrd">Seçili Veri Setini İncele</button>
+            </div>
+            <p id="xrdAnalysisInfo" class="small">Henüz XRD analizi çalıştırılmadı.</p>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="xrdStep4Title">Adım 4 - Kayıtlı sonuç bağlamı</p>
+            </div>
+            <div id="xrdResultSummaryPanel" class="panel-soft">Henüz XRD sonuç bağlamı yok.</div>
+          </div>
+        </section>
+
         <section class="view" id="view-export">
           <h2 class="view-title" id="exportViewTitle">Rapor Merkezi</h2>
           <p class="view-copy" id="exportViewCopy">Kayıtlı sonuçlardan export paketini hazırla ve CSV/DOCX çıktıları üret.</p>
@@ -952,6 +1073,56 @@
             </div>
             <p id="resultDetailInfo" class="small">Sonuç detayı seçilmedi.</p>
             <div id="resultDetailPanel" class="muted">İşleme, provenance ve doğrulama detayları için kayıtlı bir sonuç seç.</div>
+          </div>
+        </section>
+
+        <section class="view" id="view-library">
+          <h2 class="view-title" id="libraryViewTitle">Kütüphane</h2>
+          <p class="view-copy" id="libraryViewCopy">Literatür ve referans kütüphanesi durumunu denetle, kapsamı yenile ve sonuç karşılaştırması çalıştır.</p>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="libraryStep1Title">Adım 1 - Kütüphane durumunu ve kataloğu yenile</p>
+            </div>
+            <div class="row">
+              <button id="refreshLibraryStatusBtn">Durumu Yenile</button>
+              <button id="syncLibraryBtn">Kütüphane Sync</button>
+              <button id="refreshLibraryCoverageBtn">Provider Kapsamı</button>
+            </div>
+            <p id="libraryStatusInfo" class="small">Kütüphane durumu henüz alınmadı.</p>
+            <div id="libraryStatusPanel" class="panel-soft">Kütüphane metrikleri burada görünecek.</div>
+            <div id="libraryProvidersPanel" class="panel-soft" style="margin-top:10px;">Provider listesi burada görünecek.</div>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="libraryStep2Title">Adım 2 - Aktif veri setinden arama payload üret</p>
+            </div>
+            <div class="row">
+              <label for="librarySearchTypeSelect" id="librarySearchTypeLabel">Arama Tipi</label>
+              <select id="librarySearchTypeSelect">
+                <option value="FTIR">FTIR</option>
+                <option value="RAMAN">RAMAN</option>
+                <option value="XRD">XRD</option>
+              </select>
+              <button id="runLibrarySearchBtn">Kütüphane Araması Çalıştır</button>
+              <button id="prefetchLibraryBtn">Prefetch</button>
+            </div>
+            <p id="librarySearchInfo" class="small">Arama henüz çalıştırılmadı.</p>
+            <div id="librarySearchPanel" class="panel-soft">Arama sonuç özeti burada görünecek.</div>
+          </div>
+
+          <div class="card">
+            <div class="analysis-step">
+              <p class="analysis-step-title" id="libraryStep3Title">Adım 3 - Seçili sonuca literatür karşılaştırması uygula</p>
+            </div>
+            <div class="row">
+              <label for="literatureProviderInput" id="literatureProviderLabel">Provider ID (opsiyonel)</label>
+              <input id="literatureProviderInput" value="openalex_like_provider" style="min-width:280px;" />
+              <button id="runLiteratureCompareBtn" disabled>Literatür Karşılaştır</button>
+            </div>
+            <p id="literatureCompareInfo" class="small">Önce proje alanından bir sonuç seçin.</p>
+            <div id="literatureComparePanel" class="panel-soft">Literatür karşılaştırma özeti burada görünecek.</div>
           </div>
         </section>
 
