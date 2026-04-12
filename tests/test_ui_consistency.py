@@ -95,14 +95,22 @@ def test_sidebar_navigation_uses_grouped_scientific_structure():
     assert 't("nav.analyses")' in app_entry
     assert 't("nav.management")' in app_entry
     assert 'st.navigation(pages, position="hidden")' in app_entry
-    assert '_render_sidebar_page_section(t("nav.primary"), primary_pages, pg)' in app_entry
+    assert '_render_sidebar_page_section(t("nav.primary"), primary_pages, current_path)' in app_entry
     assert 'label_visibility="collapsed"' in app_entry
+    assert 'header_meta_col, header_lang_col = st.columns([1.15, 0.95], gap="small")' in app_entry
+    assert '_render_sidebar_page_section(t("nav.analyses"), analysis_pages, current_path)' in app_entry
+    analyses_call_idx = app_entry.index('_render_sidebar_page_section(t("nav.analyses"), analysis_pages, current_path)')
+    assert 'collapsible=True' not in app_entry[max(0, analyses_call_idx - 40): analyses_call_idx + 120]
     assert 'with st.expander(t("sidebar.project"), expanded=False):' not in app_entry
     import_idx = app_entry.index('st.Page(home_render, title=t("nav.import"), icon="📂", default=True, url_path="import")')
     project_idx = app_entry.index('st.Page(project_render, title=t("nav.project"), icon="🗂️", url_path="project")')
     compare_idx = app_entry.index('st.Page(compare_render, title=t("nav.compare"), icon="🧪", url_path="compare")')
     report_idx = app_entry.index('st.Page(export_render, title=t("nav.report"), icon="📝", url_path="report")')
     assert import_idx < project_idx < compare_idx < report_idx
+    brand_idx = app_entry.index('f\'<div class="sidebar-brand">{t("app.brand")}</div>\'')
+    license_idx = app_entry.index('f\'<div class="sidebar-license">License: {license_label}</div>\'')
+    segmented_idx = app_entry.index('st.segmented_control(')
+    assert brand_idx < license_idx < segmented_idx
     assert '"nav.primary"' in i18n
     assert '"nav.analyses"' in i18n
     assert '"nav.management"' in i18n

@@ -83,11 +83,14 @@ section[data-testid="stSidebar"] {
     border-right: 1px solid rgba(255,255,255,0.06);
 }
 section[data-testid="stSidebar"] div[data-testid="stSidebarHeader"] {
-    padding-top: 0.15rem !important;
-    padding-bottom: 0.15rem !important;
+    padding-top: 0 !important;
+    padding-bottom: 0.05rem !important;
 }
 section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] {
-    padding-top: 0.2rem !important;
+    padding-top: 0 !important;
+}
+section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] > div:first-child {
+    margin-top: -0.55rem !important;
 }
 section[data-testid="stSidebar"] * {
     color: #E2E8F0 !important;
@@ -99,7 +102,16 @@ section[data-testid="stSidebar"] .stSegmentedControl label {
 }
 section[data-testid="stSidebar"] .stSegmentedControl {
     margin-top: 0 !important;
-    margin-bottom: 0.35rem !important;
+    margin-bottom: 0.2rem !important;
+}
+section[data-testid="stSidebar"] .stSegmentedControl [role="radiogroup"] {
+    gap: 0.18rem !important;
+}
+section[data-testid="stSidebar"] .stSegmentedControl [role="radio"] {
+    min-height: 1.9rem !important;
+    padding: 0.2rem 0.58rem !important;
+    font-size: 0.72rem !important;
+    border-radius: 8px !important;
 }
 section[data-testid="stSidebar"] hr {
     border-color: rgba(255,255,255,0.1) !important;
@@ -203,23 +215,27 @@ div[data-testid="stFileUploader"] > div:first-child:hover {
 
 /* Sidebar branding */
 .sidebar-brand {
-    font-family: 'IBM Plex Sans', sans-serif;
+    font-family: 'IBM Plex Mono', 'IBM Plex Sans', sans-serif;
     font-weight: 700;
-    font-size: 1.05rem;
-    letter-spacing: 0.12em;
+    font-size: 1.28rem;
+    letter-spacing: 0.04em;
     color: #FFFFFF !important;
-    padding: 0.1rem 0 0.2rem 0;
+    padding: 0 0 0.08rem 0;
+    margin-top: -0.08rem;
 }
 .sidebar-version {
-    font-size: 0.7rem;
+    font-size: 0.72rem;
     color: #94A3B8 !important;
-    letter-spacing: 0.05em;
-    line-height: 1.35;
+    letter-spacing: 0.01em;
+    line-height: 1.42;
+    max-width: 15rem;
+    margin-bottom: 0.12rem;
 }
 .sidebar-license {
-    font-size: 0.78rem;
-    color: #B8C5D6 !important;
-    margin-top: 0.28rem;
+    font-size: 0.7rem;
+    color: #A7B6C9 !important;
+    margin-top: 0.18rem;
+    line-height: 1.25;
 }
 .sidebar-badge {
     display: inline-block;
@@ -234,17 +250,70 @@ div[data-testid="stFileUploader"] > div:first-child:hover {
 }
 
 .sidebar-section-label {
-    margin: 0.5rem 0 0.35rem 0;
-    color: #8FA3BF !important;
-    font-size: 0.7rem;
+    margin: 0.45rem 0 0.3rem 0;
+    color: #C9D4E3 !important;
+    font-size: 0.84rem;
     font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    letter-spacing: 0.01em;
+    text-transform: none;
+}
+
+.sidebar-nav-item-active {
+    border-left-color: rgba(148, 196, 215, 0.88) !important;
+    background: linear-gradient(90deg, rgba(148,196,215,0.11) 0%, rgba(148,196,215,0.03) 100%) !important;
+}
+
+.sidebar-nav-link,
+.sidebar-nav-item-active {
+    display: grid;
+    grid-template-columns: 1rem 1fr;
+    align-items: center;
+    column-gap: 0.6rem;
+    padding: 0.38rem 0.45rem 0.38rem 0.7rem;
+    margin: 0.06rem 0 0.16rem 0;
+    border-left: 2px solid transparent;
+    border-radius: 0 10px 10px 0;
+    text-decoration: none !important;
+    transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.sidebar-nav-link:hover {
+    background: rgba(255,255,255,0.04) !important;
+    border-left-color: rgba(201, 212, 227, 0.45) !important;
+}
+
+.sidebar-nav-icon {
+    width: 1rem;
+    text-align: center;
+    font-size: 0.92rem;
+    opacity: 0.9;
+}
+
+.sidebar-nav-label {
+    color: #DCE5F1 !important;
+    font-size: 0.92rem;
+    font-weight: 500;
+    line-height: 1.22;
+}
+
+.sidebar-nav-item-active .sidebar-nav-label {
+    color: #F2F6FB !important;
+    font-weight: 600;
 }
 
 /* Expander styling */
 details[data-testid="stExpander"] summary {
     font-weight: 500 !important;
+}
+section[data-testid="stSidebar"] details[data-testid="stExpander"] {
+    border: 1px solid rgba(255,255,255,0.06) !important;
+    border-radius: 12px !important;
+    background: rgba(255,255,255,0.02) !important;
+    margin: 0.25rem 0 0.4rem 0 !important;
+}
+section[data-testid="stSidebar"] details[data-testid="stExpander"] summary {
+    padding-top: 0.2rem !important;
+    padding-bottom: 0.2rem !important;
 }
 
 /* Dataframe styling */
@@ -306,14 +375,6 @@ div[data-testid="stMarkdownContainer"] p {
 
 # --- Sidebar branding ---
 with st.sidebar:
-    st.segmented_control(
-        "language",
-        options=list(SUPPORTED_LANGUAGES.keys()),
-        format_func=lambda code: SUPPORTED_LANGUAGES[code],
-        key="ui_language",
-        selection_mode="single",
-        label_visibility="collapsed",
-    )
     license_state = st.session_state.get("license_state", {})
     license_label = {
         "development": t("app.license.development"),
@@ -325,9 +386,21 @@ with st.sidebar:
     st.markdown(
         f'<div class="sidebar-brand">{t("app.brand")}</div>'
         f'<div class="sidebar-version">{t("app.tagline")}</div>'
-        f'<div class="sidebar-license">License: {license_label}</div>',
+        ,
         unsafe_allow_html=True,
     )
+    header_meta_col, header_lang_col = st.columns([1.15, 0.95], gap="small")
+    with header_meta_col:
+        st.markdown(f'<div class="sidebar-license">License: {license_label}</div>', unsafe_allow_html=True)
+    with header_lang_col:
+        st.segmented_control(
+            "language",
+            options=list(SUPPORTED_LANGUAGES.keys()),
+            format_func=lambda code: SUPPORTED_LANGUAGES[code],
+            key="ui_language",
+            selection_mode="single",
+            label_visibility="collapsed",
+        )
     n_datasets = len(st.session_state.get("datasets", {}))
     if n_datasets > 0:
         st.markdown(
@@ -335,11 +408,38 @@ with st.sidebar:
             unsafe_allow_html=True,
         )
 
-def _render_sidebar_page_section(title: str, page_items: list[tuple], current_page) -> None:
+def _render_sidebar_page_section(title: str, page_items: list[tuple], current_path: str, *, collapsible: bool = False, expanded: bool = True) -> None:
     """Render one grouped sidebar navigation section."""
+    def _render_items() -> None:
+        for _, label, icon, path in page_items:
+            if path == current_path:
+                st.markdown(
+                    (
+                        '<div class="sidebar-nav-item-active">'
+                        f'<span class="sidebar-nav-icon">{icon}</span>'
+                        f'<span class="sidebar-nav-label">{label}</span>'
+                        "</div>"
+                    ),
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    (
+                        f'<a class="sidebar-nav-link" href="/{path}">'
+                        f'<span class="sidebar-nav-icon">{icon}</span>'
+                        f'<span class="sidebar-nav-label">{label}</span>'
+                        "</a>"
+                    ),
+                    unsafe_allow_html=True,
+                )
+
+    if collapsible:
+        with st.expander(title, expanded=expanded):
+            _render_items()
+        return
+
     st.markdown(f'<div class="sidebar-section-label">{title}</div>', unsafe_allow_html=True)
-    for page, label, icon in page_items:
-        st.page_link(page, label=label, icon=icon, disabled=(page == current_page))
+    _render_items()
 
 # --- Page imports ---
 from ui.components.history_tracker import render_history_sidebar
@@ -371,29 +471,29 @@ else:
     show_preview_tools = False
 
 primary_pages = [
-    (st.Page(home_render, title=t("nav.import"), icon="📂", default=True, url_path="import"), t("nav.import"), "📂"),
-    (st.Page(project_render, title=t("nav.project"), icon="🗂️", url_path="project"), t("nav.project"), "🗂️"),
-    (st.Page(compare_render, title=t("nav.compare"), icon="🧪", url_path="compare"), t("nav.compare"), "🧪"),
-    (st.Page(export_render, title=t("nav.report"), icon="📝", url_path="report"), t("nav.report"), "📝"),
+    (st.Page(home_render, title=t("nav.import"), icon="📂", default=True, url_path="import"), t("nav.import"), "📂", "import"),
+    (st.Page(project_render, title=t("nav.project"), icon="🗂️", url_path="project"), t("nav.project"), "🗂️", "project"),
+    (st.Page(compare_render, title=t("nav.compare"), icon="🧪", url_path="compare"), t("nav.compare"), "🧪", "compare"),
+    (st.Page(export_render, title=t("nav.report"), icon="📝", url_path="report"), t("nav.report"), "📝", "report"),
 ]
 analysis_pages = [
-    (st.Page(dsc_render, title=t("nav.dsc"), icon="📈", url_path="dsc"), t("nav.dsc"), "📈"),
-    (st.Page(tga_render, title=t("nav.tga"), icon="📉", url_path="tga"), t("nav.tga"), "📉"),
-    (st.Page(dta_render, title=tx("DTA Analizi", "DTA Analysis"), icon="📊", url_path="dta"), tx("DTA Analizi", "DTA Analysis"), "📊"),
-    (st.Page(ftir_render, title=t("nav.ftir"), icon="🧬", url_path="ftir"), t("nav.ftir"), "🧬"),
-    (st.Page(raman_render, title=t("nav.raman"), icon="🔦", url_path="raman"), t("nav.raman"), "🔦"),
-    (st.Page(xrd_render, title=t("nav.xrd"), icon="🧿", url_path="xrd"), t("nav.xrd"), "🧿"),
+    (st.Page(dsc_render, title=t("nav.dsc"), icon="📈", url_path="dsc"), t("nav.dsc"), "📈", "dsc"),
+    (st.Page(tga_render, title=t("nav.tga"), icon="📉", url_path="tga"), t("nav.tga"), "📉", "tga"),
+    (st.Page(dta_render, title=tx("DTA Analizi", "DTA Analysis"), icon="📊", url_path="dta"), tx("DTA Analizi", "DTA Analysis"), "📊", "dta"),
+    (st.Page(ftir_render, title=t("nav.ftir"), icon="🧬", url_path="ftir"), t("nav.ftir"), "🧬", "ftir"),
+    (st.Page(raman_render, title=t("nav.raman"), icon="🔦", url_path="raman"), t("nav.raman"), "🔦", "raman"),
+    (st.Page(xrd_render, title=t("nav.xrd"), icon="🧿", url_path="xrd"), t("nav.xrd"), "🧿", "xrd"),
 ]
 management_pages = [
-    (st.Page(library_render, title=tx("Kütüphane", "Library"), icon="🗃️", url_path="library"), tx("Kütüphane", "Library"), "🗃️"),
-    (st.Page(license_render, title=t("nav.license"), icon="🔐", url_path="license"), t("nav.license"), "🔐"),
-    (st.Page(about_render, title=t("nav.about"), icon="ℹ️", url_path="about"), t("nav.about"), "ℹ️"),
+    (st.Page(library_render, title=tx("Kütüphane", "Library"), icon="🗃️", url_path="library"), tx("Kütüphane", "Library"), "🗃️", "library"),
+    (st.Page(license_render, title=t("nav.license"), icon="🔐", url_path="license"), t("nav.license"), "🔐", "license"),
+    (st.Page(about_render, title=t("nav.about"), icon="ℹ️", url_path="about"), t("nav.about"), "ℹ️", "about"),
 ]
 
 pages = {
-    t("nav.primary"): [page for page, _, _ in primary_pages],
-    t("nav.analyses"): [page for page, _, _ in analysis_pages],
-    t("nav.management"): [page for page, _, _ in management_pages],
+    t("nav.primary"): [page for page, _, _, _ in primary_pages],
+    t("nav.analyses"): [page for page, _, _, _ in analysis_pages],
+    t("nav.management"): [page for page, _, _, _ in management_pages],
 }
 preview_pages = []
 if show_preview_tools:
@@ -402,23 +502,26 @@ if show_preview_tools:
             st.Page(kinetics_render, title=tx("Kinetik Analiz (Deneysel)", "Kinetic Analysis (Experimental)"), icon="⚡", url_path="kinetics"),
             tx("Kinetik Analiz (Deneysel)", "Kinetic Analysis (Experimental)"),
             "⚡",
+            "kinetics",
         ),
         (
             st.Page(deconv_render, title=tx("Pik Dekonvolüsyonu (Deneysel)", "Peak Deconvolution (Experimental)"), icon="🔍", url_path="deconvolution"),
             tx("Pik Dekonvolüsyonu (Deneysel)", "Peak Deconvolution (Experimental)"),
             "🔍",
+            "deconvolution",
         ),
     ]
-    pages[t("nav.preview")] = [page for page, _, _ in preview_pages]
+    pages[t("nav.preview")] = [page for page, _, _, _ in preview_pages]
 
 pg = st.navigation(pages, position="hidden")
+current_path = next((path for page, _, _, path in (primary_pages + analysis_pages + management_pages + preview_pages) if page == pg), "")
 
 with st.sidebar:
-    _render_sidebar_page_section(t("nav.primary"), primary_pages, pg)
-    _render_sidebar_page_section(t("nav.analyses"), analysis_pages, pg)
-    _render_sidebar_page_section(t("nav.management"), management_pages, pg)
+    _render_sidebar_page_section(t("nav.primary"), primary_pages, current_path)
+    _render_sidebar_page_section(t("nav.analyses"), analysis_pages, current_path)
+    _render_sidebar_page_section(t("nav.management"), management_pages, current_path)
     if preview_pages:
-        _render_sidebar_page_section(t("nav.preview"), preview_pages, pg)
+        _render_sidebar_page_section(t("nav.preview"), preview_pages, current_path, collapsible=True, expanded=False)
     st.markdown("---")
 
 # --- Pipeline history in sidebar ---
