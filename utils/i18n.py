@@ -27,6 +27,10 @@ TRANSLATIONS = {
         "tr": "Kinetik ve dekonvolüsyon sayfalarını pilot değerlendirme için açar.",
         "en": "Expose kinetics and deconvolution pages used for pilot evaluations.",
     },
+    "app.preview_disabled": {
+        "tr": "Laboratuvar önizleme modülleri bu dağıtım profilinde kapalı.",
+        "en": "Lab preview modules are disabled in this deployment profile.",
+    },
     "app.language": {
         "tr": "Dil",
         "en": "Language",

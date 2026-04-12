@@ -16,6 +16,7 @@ from core.project_io import PROJECT_EXTENSION, save_project_archive, load_projec
 from utils.diagnostics import configure_diagnostics_logger, record_exception
 from utils.i18n import SUPPORTED_LANGUAGES, t, tx
 from utils.license_manager import APP_VERSION, commercial_mode_enabled, license_allows_write, load_license_state
+from utils.runtime_flags import preview_modules_enabled
 from utils.session_state import clear_project_state, ensure_session_state, replace_project_state
 
 load_dotenv(dotenv_path=Path(__file__).resolve().with_name(".env"), override=False)
@@ -396,11 +397,17 @@ from ui.deconvolution_page import render as deconv_render
 from ui.export_page import render as export_render
 
 # --- Navigation ---
-show_preview_tools = st.sidebar.toggle(
-    t("app.preview_toggle"),
-    value=False,
-    help=t("app.preview_toggle_help"),
-)
+preview_modules_available = preview_modules_enabled(default=False)
+if preview_modules_available:
+    show_preview_tools = st.sidebar.toggle(
+        t("app.preview_toggle"),
+        value=False,
+        help=t("app.preview_toggle_help"),
+    )
+else:
+    show_preview_tools = False
+    st.sidebar.caption(t("app.preview_disabled"))
+
 pages = {
     tx("Ana Akış", "Primary"): [
         st.Page(home_render, title=t("nav.import"), icon="📂", default=True, url_path="import"),
@@ -444,7 +451,8 @@ with st.sidebar:
                 "- CSV/TXT/XLSX DSC, TGA, DTA, FTIR, RAMAN ve XRD koşularını içe aktar\n"
                 "- DSC, TGA, DTA, FTIR, RAMAN ve XRD analiz akışlarını çalıştır\n"
                 "- Çoklu koşuları Karşılaştırma Alanı ve Toplu Şablon Uygulayıcı ile yönet\n"
-                "- Kararlı sonuçları proje durumu, rapor ve export akışıyla sakla\n\n"
+                "- Kararlı sonuçları proje durumu, rapor ve export akışıyla sakla\n"
+                "- Laboratuvar önizleme modülleri yalnızca özel olarak etkinleştirilen buildlerde görünür\n\n"
                 "**Laboratuvar önizleme modülleri**\n"
                 "- Kinetik ve dekonvolüsyon modülleri önizleme anahtarı arkasında kalır ve ticari stabilite sözüne dahil değildir.\n\n"
                 "**Referans standartlar**\n"
@@ -465,7 +473,8 @@ with st.sidebar:
                 "- Import DSC, TGA, DTA, FTIR, RAMAN, and XRD runs from CSV/TXT/XLSX exports\n"
                 "- Execute stable DSC, TGA, DTA, FTIR, RAMAN, and XRD analysis workflows\n"
                 "- Manage multiple runs through Compare Workspace and the Batch Template Runner\n"
-                "- Save stable results through the current project, report, and export flows\n\n"
+                "- Save stable results through the current project, report, and export flows\n"
+                "- Lab preview modules appear only in explicitly enabled builds\n\n"
                 "**Lab Preview modules**\n"
                 "- Kinetics and deconvolution stay available behind the preview toggle and are excluded from the commercial stability promise.\n\n"
                 "**Reference standards**\n"
