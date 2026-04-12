@@ -95,6 +95,10 @@ TRANSLATIONS = {
         "tr": "Lisans ve Marka",
         "en": "License & Branding",
     },
+    "nav.about": {
+        "tr": "Hakkında",
+        "en": "About",
+    },
     "nav.preview": {
         "tr": "Laboratuvar Önizlemesi",
         "en": "Lab Preview",
