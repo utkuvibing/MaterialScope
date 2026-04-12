@@ -12,12 +12,11 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from core.reference_library import maybe_refresh_library_manifest
-from core.project_io import PROJECT_EXTENSION, save_project_archive, load_project_archive
-from utils.diagnostics import configure_diagnostics_logger, record_exception
+from utils.diagnostics import configure_diagnostics_logger
 from utils.i18n import SUPPORTED_LANGUAGES, t, tx
-from utils.license_manager import APP_VERSION, commercial_mode_enabled, license_allows_write, load_license_state
+from utils.license_manager import APP_VERSION, commercial_mode_enabled, load_license_state
 from utils.runtime_flags import preview_modules_enabled
-from utils.session_state import clear_project_state, ensure_session_state, replace_project_state
+from utils.session_state import ensure_session_state
 
 load_dotenv(dotenv_path=Path(__file__).resolve().with_name(".env"), override=False)
 
@@ -336,75 +335,6 @@ with st.sidebar:
             unsafe_allow_html=True,
         )
 
-
-def _render_project_sidebar():
-    """Render project save/load actions in the sidebar."""
-    st.caption(t("sidebar.project.caption"))
-
-    has_project_data = bool(st.session_state.get("datasets") or st.session_state.get("results"))
-    if st.button(t("sidebar.project.new"), key="project_new"):
-        clear_project_state()
-        st.rerun()
-
-    if has_project_data:
-        can_write = license_allows_write(st.session_state.get("license_state"))
-        if st.button(
-            t("sidebar.project.prepare"),
-            key="project_prepare",
-            disabled=not can_write,
-            help="Build the archive first, then download it explicitly.",
-        ):
-            try:
-                st.session_state["project_archive_bytes"] = save_project_archive(st.session_state)
-                st.session_state["project_archive_ready"] = True
-            except Exception as exc:
-                error_id = record_exception(
-                    st.session_state,
-                    area="project_load",
-                    action="project_prepare",
-                    message="Preparing project archive failed.",
-                    context={"dataset_count": len(st.session_state.get("datasets", {}))},
-                    exception=exc,
-                )
-                st.error(f"Project archive preparation failed: {exc} (Error ID: {error_id})")
-
-        if st.session_state.get("project_archive_ready") and st.session_state.get("project_archive_bytes"):
-            st.download_button(
-                t("sidebar.project.download"),
-                data=st.session_state["project_archive_bytes"],
-                file_name=f"materialscope_project{PROJECT_EXTENSION}",
-                mime="application/zip",
-                key="project_save",
-                on_click="ignore",
-                help="This button only appears after you explicitly prepare the archive.",
-            )
-    else:
-        st.caption("No datasets or saved results yet.")
-
-    uploaded_project = st.file_uploader(
-        t("sidebar.project.load"),
-        type=[PROJECT_EXTENSION.lstrip(".")],
-        key="project_loader",
-        help="Load a previously saved MaterialScope project archive.",
-    )
-    if uploaded_project is not None and st.button(t("sidebar.project.load_selected"), key="project_load_btn"):
-        try:
-            project_state = load_project_archive(uploaded_project)
-            replace_project_state(project_state)
-            st.success("Project loaded.")
-            st.rerun()
-        except Exception as exc:
-            error_id = record_exception(
-                st.session_state,
-                area="project_load",
-                action="project_load",
-                message="Loading project archive failed.",
-                context={"file_name": getattr(uploaded_project, "name", "")},
-                exception=exc,
-            )
-            st.error(f"Project load failed: {exc} (Error ID: {error_id})")
-
-
 def _render_sidebar_page_section(title: str, page_items: list[tuple], current_page) -> None:
     """Render one grouped sidebar navigation section."""
     st.markdown(f'<div class="sidebar-section-label">{title}</div>', unsafe_allow_html=True)
@@ -442,9 +372,9 @@ else:
 
 primary_pages = [
     (st.Page(home_render, title=t("nav.import"), icon="📂", default=True, url_path="import"), t("nav.import"), "📂"),
+    (st.Page(project_render, title=t("nav.project"), icon="🗂️", url_path="project"), t("nav.project"), "🗂️"),
     (st.Page(compare_render, title=t("nav.compare"), icon="🧪", url_path="compare"), t("nav.compare"), "🧪"),
     (st.Page(export_render, title=t("nav.report"), icon="📝", url_path="report"), t("nav.report"), "📝"),
-    (st.Page(project_render, title=t("nav.project"), icon="🗂️", url_path="project"), t("nav.project"), "🗂️"),
 ]
 analysis_pages = [
     (st.Page(dsc_render, title=t("nav.dsc"), icon="📈", url_path="dsc"), t("nav.dsc"), "📈"),
@@ -493,9 +423,6 @@ with st.sidebar:
 
 # --- Pipeline history in sidebar ---
 with st.sidebar:
-    with st.expander(t("sidebar.project"), expanded=False):
-        _render_project_sidebar()
-    st.markdown("---")
     with st.expander(t("sidebar.pipeline"), expanded=False):
         render_history_sidebar()
 

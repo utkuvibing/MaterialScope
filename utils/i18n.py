@@ -212,8 +212,8 @@ TRANSLATIONS = {
         "en": "Session Management",
     },
     "project.sidebar_hint": {
-        "tr": "Sidebar içindeki `Proje` panelinden `Yeni Proje`, `Proje Dosyasını Hazırla`, `Projeyi Yükle` ve `Seçili Projeyi Aç` eylemlerini kullan.",
-        "en": "Use the sidebar `Project` panel for `New Project`, `Prepare Project File`, `Load Project`, and `Load Selected Project` actions.",
+        "tr": "`Proje İşlemleri` sekmesinden `Yeni Proje`, `Proje Dosyasını Hazırla`, `Projeyi Yükle` ve `Seçili Projeyi Aç` eylemlerini kullan.",
+        "en": "Use the `Project Actions` tab for `New Project`, `Prepare Project File`, `Load Project`, and `Load Selected Project` actions.",
     },
     "license.title": {
         "tr": "Lisans ve Marka",

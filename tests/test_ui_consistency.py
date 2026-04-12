@@ -61,6 +61,9 @@ def test_project_page_sidebar_hint_matches_sidebar_actions():
     assert '"project.sidebar_hint"' in i18n
     assert "Proje Dosyasını Hazırla" in i18n
     assert "Load Selected Project" in i18n
+    assert 'overview_tab, actions_tab = st.tabs(' in project_page
+    assert 'key="project_prepare_page"' in project_page
+    assert 'key="project_load_btn_page"' in project_page
 
 
 def test_about_page_is_navigation_item_not_license_tab():
@@ -94,9 +97,12 @@ def test_sidebar_navigation_uses_grouped_scientific_structure():
     assert 'st.navigation(pages, position="hidden")' in app_entry
     assert '_render_sidebar_page_section(t("nav.primary"), primary_pages, pg)' in app_entry
     assert 'label_visibility="collapsed"' in app_entry
-    assert 'with st.expander(t("sidebar.project"), expanded=False):' in app_entry
-    assert 'st.Page(export_render, title=t("nav.report"), icon="📝", url_path="report")' in app_entry
-    assert 'st.Page(project_render, title=t("nav.project"), icon="🗂️", url_path="project")' in app_entry
+    assert 'with st.expander(t("sidebar.project"), expanded=False):' not in app_entry
+    import_idx = app_entry.index('st.Page(home_render, title=t("nav.import"), icon="📂", default=True, url_path="import")')
+    project_idx = app_entry.index('st.Page(project_render, title=t("nav.project"), icon="🗂️", url_path="project")')
+    compare_idx = app_entry.index('st.Page(compare_render, title=t("nav.compare"), icon="🧪", url_path="compare")')
+    report_idx = app_entry.index('st.Page(export_render, title=t("nav.report"), icon="📝", url_path="report")')
+    assert import_idx < project_idx < compare_idx < report_idx
     assert '"nav.primary"' in i18n
     assert '"nav.analyses"' in i18n
     assert '"nav.management"' in i18n
