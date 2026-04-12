@@ -95,6 +95,7 @@ def test_sidebar_and_about_copy_do_not_show_version_or_preview_disabled_note():
 
 def test_sidebar_navigation_uses_grouped_scientific_structure():
     app_entry = _repo_text("app.py")
+    session_state = _repo_text("utils/session_state.py")
     i18n = _repo_text("utils/i18n.py")
 
     assert 't("nav.primary")' in app_entry
@@ -117,6 +118,8 @@ def test_sidebar_navigation_uses_grouped_scientific_structure():
     license_idx = app_entry.index('f\'<div class="sidebar-license">License: {license_label}</div>\'')
     segmented_idx = app_entry.index('st.segmented_control(')
     assert brand_idx < license_idx < segmented_idx
+    assert 'key="ui_theme"' in app_entry
+    assert '"ui_theme": "light"' in session_state
     assert '"nav.primary"' in i18n
     assert '"nav.analyses"' in i18n
     assert '"nav.management"' in i18n
