@@ -313,7 +313,6 @@ with st.sidebar:
 
 def _render_project_sidebar():
     """Render project save/load actions in the sidebar."""
-    st.markdown(f"**{t('sidebar.project')}**")
     st.caption(t("sidebar.project.caption"))
 
     has_project_data = bool(st.session_state.get("datasets") or st.session_state.get("results"))
@@ -409,18 +408,22 @@ else:
     show_preview_tools = False
 
 pages = {
-    tx("Ana Akış", "Primary"): [
+    t("nav.primary"): [
         st.Page(home_render, title=t("nav.import"), icon="📂", default=True, url_path="import"),
         st.Page(compare_render, title=t("nav.compare"), icon="🧪", url_path="compare"),
+        st.Page(export_render, title=t("nav.report"), icon="📝", url_path="report"),
+        st.Page(project_render, title=t("nav.project"), icon="🗂️", url_path="project"),
+    ],
+    t("nav.analyses"): [
         st.Page(dsc_render, title=t("nav.dsc"), icon="📈", url_path="dsc"),
         st.Page(tga_render, title=t("nav.tga"), icon="📉", url_path="tga"),
         st.Page(dta_render, title=tx("DTA Analizi", "DTA Analysis"), icon="📊", url_path="dta"),
         st.Page(ftir_render, title=t("nav.ftir"), icon="🧬", url_path="ftir"),
         st.Page(raman_render, title=t("nav.raman"), icon="🔦", url_path="raman"),
         st.Page(xrd_render, title=t("nav.xrd"), icon="🧿", url_path="xrd"),
+    ],
+    t("nav.management"): [
         st.Page(library_render, title=tx("Kütüphane", "Library"), icon="🗃️", url_path="library"),
-        st.Page(export_render, title=t("nav.report"), icon="📝", url_path="report"),
-        st.Page(project_render, title=t("nav.project"), icon="🗂️", url_path="project"),
         st.Page(license_render, title=t("nav.license"), icon="🔐", url_path="license"),
         st.Page(about_render, title=t("nav.about"), icon="ℹ️", url_path="about"),
     ],
@@ -435,7 +438,8 @@ pg = st.navigation(pages)
 
 # --- Pipeline history in sidebar ---
 with st.sidebar:
-    _render_project_sidebar()
+    with st.expander(t("sidebar.project"), expanded=False):
+        _render_project_sidebar()
     st.markdown("---")
     with st.expander(t("sidebar.pipeline"), expanded=False):
         render_history_sidebar()

@@ -82,3 +82,18 @@ def test_sidebar_and_about_copy_do_not_show_version_or_preview_disabled_note():
     assert 'v{APP_VERSION}' not in app_entry
     assert 'st.sidebar.caption(t("app.preview_disabled"))' not in app_entry
     assert "MaterialScope v" not in about_page
+
+
+def test_sidebar_navigation_uses_grouped_scientific_structure():
+    app_entry = _repo_text("app.py")
+    i18n = _repo_text("utils/i18n.py")
+
+    assert 't("nav.primary")' in app_entry
+    assert 't("nav.analyses")' in app_entry
+    assert 't("nav.management")' in app_entry
+    assert 'with st.expander(t("sidebar.project"), expanded=False):' in app_entry
+    assert 'st.Page(export_render, title=t("nav.report"), icon="📝", url_path="report")' in app_entry
+    assert 'st.Page(project_render, title=t("nav.project"), icon="🗂️", url_path="project")' in app_entry
+    assert '"nav.primary"' in i18n
+    assert '"nav.analyses"' in i18n
+    assert '"nav.management"' in i18n

@@ -59,6 +59,18 @@ TRANSLATIONS = {
         "tr": "Veri Al",
         "en": "Import Runs",
     },
+    "nav.primary": {
+        "tr": "Ana Akış",
+        "en": "Primary Flow",
+    },
+    "nav.analyses": {
+        "tr": "Analizler",
+        "en": "Analyses",
+    },
+    "nav.management": {
+        "tr": "Yönetim",
+        "en": "Management",
+    },
     "nav.compare": {
         "tr": "Karşılaştırma",
         "en": "Compare Workspace",
