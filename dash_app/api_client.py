@@ -49,6 +49,27 @@ def workspace_datasets(project_id: str) -> dict[str, Any]:
         return r.json()
 
 
+def workspace_dataset_detail(project_id: str, dataset_key: str) -> dict[str, Any]:
+    with _client() as c:
+        r = c.get(f"/workspace/{project_id}/datasets/{dataset_key}")
+        r.raise_for_status()
+        return r.json()
+
+
+def workspace_dataset_data(project_id: str, dataset_key: str) -> dict[str, Any]:
+    with _client() as c:
+        r = c.get(f"/workspace/{project_id}/datasets/{dataset_key}/data")
+        r.raise_for_status()
+        return r.json()
+
+
+def workspace_delete_dataset(project_id: str, dataset_key: str) -> dict[str, Any]:
+    with _client() as c:
+        r = c.delete(f"/workspace/{project_id}/datasets/{dataset_key}")
+        r.raise_for_status()
+        return r.json()
+
+
 def workspace_results(project_id: str) -> dict[str, Any]:
     with _client() as c:
         r = c.get(f"/workspace/{project_id}/results")
@@ -63,11 +84,24 @@ def workspace_context(project_id: str) -> dict[str, Any]:
         return r.json()
 
 
+def workspace_set_active_dataset(project_id: str, dataset_key: str) -> dict[str, Any]:
+    with _client() as c:
+        r = c.put(
+            f"/workspace/{project_id}/active-dataset",
+            json={"dataset_key": dataset_key},
+        )
+        r.raise_for_status()
+        return r.json()
+
+
 def dataset_import(
     project_id: str,
     file_name: str,
     file_base64: str,
     data_type: str = "auto",
+    *,
+    column_mapping: dict[str, str] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     with _client() as c:
         r = c.post(
@@ -77,6 +111,8 @@ def dataset_import(
                 "file_name": file_name,
                 "file_base64": file_base64,
                 "data_type": data_type,
+                "column_mapping": column_mapping or {},
+                "metadata": metadata or {},
             },
         )
         r.raise_for_status()
@@ -122,15 +158,92 @@ def export_results_csv(
         return r.json()
 
 
-def export_report_docx(
+def export_results_xlsx(
     project_id: str,
     selected_result_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     with _client() as c:
         r = c.post(
-            f"/workspace/{project_id}/exports/report-docx",
+            f"/workspace/{project_id}/exports/results-xlsx",
             json={"selected_result_ids": selected_result_ids},
         )
+        r.raise_for_status()
+        return r.json()
+
+
+def export_report_docx(
+    project_id: str,
+    selected_result_ids: list[str] | None = None,
+    *,
+    include_figures: bool = True,
+) -> dict[str, Any]:
+    with _client() as c:
+        r = c.post(
+            f"/workspace/{project_id}/exports/report-docx",
+            json={
+                "selected_result_ids": selected_result_ids,
+                "include_figures": include_figures,
+            },
+        )
+        r.raise_for_status()
+        return r.json()
+
+
+def export_report_pdf(
+    project_id: str,
+    selected_result_ids: list[str] | None = None,
+    *,
+    include_figures: bool = True,
+) -> dict[str, Any]:
+    with _client() as c:
+        r = c.post(
+            f"/workspace/{project_id}/exports/report-pdf",
+            json={
+                "selected_result_ids": selected_result_ids,
+                "include_figures": include_figures,
+            },
+        )
+        r.raise_for_status()
+        return r.json()
+
+
+def workspace_branding(project_id: str) -> dict[str, Any]:
+    with _client() as c:
+        r = c.get(f"/workspace/{project_id}/branding")
+        r.raise_for_status()
+        return r.json()
+
+
+def update_workspace_branding(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    with _client() as c:
+        r = c.put(f"/workspace/{project_id}/branding", json=payload)
+        r.raise_for_status()
+        return r.json()
+
+
+def compare_workspace(project_id: str) -> dict[str, Any]:
+    with _client() as c:
+        r = c.get(f"/workspace/{project_id}/compare")
+        r.raise_for_status()
+        return r.json()
+
+
+def update_compare_workspace(
+    project_id: str,
+    *,
+    analysis_type: str | None = None,
+    selected_datasets: list[str] | None = None,
+    notes: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    if analysis_type is not None:
+        payload["analysis_type"] = analysis_type
+    if selected_datasets is not None:
+        payload["selected_datasets"] = selected_datasets
+    if notes is not None:
+        payload["notes"] = notes
+    with _client() as c:
+        r = c.put(f"/workspace/{project_id}/compare", json=payload)
         r.raise_for_status()
         return r.json()
 

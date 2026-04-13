@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from backend.models import DatasetSummary, ResultSummary
+from core.modalities import analysis_state_key, stable_analysis_types
 from core.validation import validate_thermal_dataset
 
 
@@ -59,6 +60,12 @@ def normalize_workspace_state(state: dict[str, Any] | None = None) -> dict[str, 
     return normalized
 
 
+def normalize_branding_payload(branding: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = copy.deepcopy(WORKSPACE_DEFAULTS["branding"])
+    payload.update(copy.deepcopy(branding or {}))
+    return payload
+
+
 def unique_dataset_key(existing: dict[str, Any], requested_name: str) -> str:
     """Return a collision-safe dataset key."""
     token = re.sub(r"[\\/]+", "_", requested_name.strip()) or "dataset"
@@ -95,6 +102,46 @@ def add_history_event(
             "status": status,
         }
     )
+
+
+def remove_dataset_from_workspace(state: dict[str, Any], dataset_key: str) -> bool:
+    datasets = state.get("datasets", {}) or {}
+    if dataset_key not in datasets:
+        return False
+
+    del datasets[dataset_key]
+
+    for analysis_type in stable_analysis_types():
+        try:
+            state.pop(analysis_state_key(analysis_type, dataset_key), None)
+        except ValueError:
+            continue
+
+    results = state.get("results", {}) or {}
+    for result_key in list(results.keys()):
+        if (results.get(result_key) or {}).get("dataset_key") == dataset_key:
+            del results[result_key]
+
+    workspace = state.setdefault("comparison_workspace", {})
+    selected = [
+        key for key in (workspace.get("selected_datasets") or [])
+        if key != dataset_key
+    ]
+    workspace["selected_datasets"] = selected
+    if not selected:
+        workspace["figure_key"] = None
+
+    if state.get("active_dataset") == dataset_key:
+        state["active_dataset"] = None
+
+    add_history_event(
+        state,
+        action="Dataset Removed",
+        details=f"{dataset_key} removed from workspace",
+        dataset_key=dataset_key,
+        status="warning",
+    )
+    return True
 
 
 def summarize_dataset(dataset_key: str, dataset) -> DatasetSummary:

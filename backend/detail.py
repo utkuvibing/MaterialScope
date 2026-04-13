@@ -15,10 +15,10 @@ from core.result_serialization import split_valid_results
 from core.validation import validate_thermal_dataset
 
 
-def _records_preview(frame: pd.DataFrame, *, limit: int = 20) -> list[dict[str, Any]]:
-    preview = frame.head(limit).copy()
-    preview = preview.where(pd.notna(preview), None)
-    return preview.to_dict(orient="records")
+def _records_payload(frame: pd.DataFrame, *, limit: int | None = None) -> list[dict[str, Any]]:
+    payload = frame.head(limit).copy() if limit is not None else frame.copy()
+    payload = payload.where(pd.notna(payload), None)
+    return payload.to_dict(orient="records")
 
 
 def _dataset_matches_analysis(dataset: Any, analysis_type: str) -> bool:
@@ -60,8 +60,22 @@ def build_dataset_detail(state: dict[str, Any], dataset_key: str) -> dict[str, A
         "metadata": copy.deepcopy(getattr(dataset, "metadata", {}) or {}),
         "units": copy.deepcopy(getattr(dataset, "units", {}) or {}),
         "original_columns": copy.deepcopy(getattr(dataset, "original_columns", {}) or {}),
-        "data_preview": _records_preview(getattr(dataset, "data")),
+        "data_preview": _records_payload(getattr(dataset, "data"), limit=20),
         "compare_selected": dataset_key in selected_datasets,
+    }
+
+
+def build_dataset_data(state: dict[str, Any], dataset_key: str) -> dict[str, Any]:
+    datasets = state.get("datasets", {}) or {}
+    dataset = datasets.get(dataset_key)
+    if dataset is None:
+        raise KeyError(f"Unknown dataset_key: {dataset_key}")
+
+    frame = getattr(dataset, "data")
+    return {
+        "dataset_key": dataset_key,
+        "columns": [str(column) for column in frame.columns],
+        "rows": _records_payload(frame),
     }
 
 
@@ -88,7 +102,7 @@ def build_result_detail(state: dict[str, Any], result_id: str) -> dict[str, Any]
         "literature_claims": copy.deepcopy(record.get("literature_claims") or []),
         "literature_comparisons": copy.deepcopy(record.get("literature_comparisons") or []),
         "citations": copy.deepcopy(record.get("citations") or []),
-        "rows_preview": _records_preview(frame) if not frame.empty else [],
+        "rows_preview": _records_payload(frame, limit=20) if not frame.empty else [],
         "row_count": len(rows),
     }
 

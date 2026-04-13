@@ -9,7 +9,8 @@ from dash import Input, Output, State, callback, dcc, html
 NAV_PRIMARY = [
     {"label": "Import", "icon": "bi-folder2-open", "href": "/"},
     {"label": "Project", "icon": "bi-archive", "href": "/project"},
-    {"label": "Export", "icon": "bi-file-earmark-text", "href": "/export"},
+    {"label": "Report", "icon": "bi-file-earmark-text", "href": "/export"},
+    {"label": "Compare", "icon": "bi-intersect", "href": "/compare"},
 ]
 
 NAV_ANALYSIS = [

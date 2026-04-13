@@ -16,6 +16,7 @@ from fastapi import FastAPI, Header, HTTPException
 
 from backend import BACKEND_API_VERSION
 from backend.detail import (
+    build_dataset_data,
     build_dataset_detail,
     build_result_detail,
     normalize_compare_workspace,
@@ -25,6 +26,8 @@ from backend.exports import (
     build_export_preparation,
     generate_report_docx_artifact,
     generate_results_csv_artifact,
+    generate_results_xlsx_artifact,
+    generate_report_pdf_artifact,
 )
 from backend.library_cloud_service import ManagedLibraryCloudService
 from backend.models import (
@@ -38,6 +41,7 @@ from backend.models import (
     CompareSelectionUpdateRequest,
     CompareWorkspaceResponse,
     CompareWorkspaceUpdateRequest,
+    DatasetDataResponse,
     DatasetDetailResponse,
     DatasetImportRequest,
     DatasetImportResponse,
@@ -69,6 +73,8 @@ from backend.models import (
     ValidationSummary,
     VersionResponse,
     WorkspaceContextResponse,
+    WorkspaceBrandingResponse,
+    WorkspaceBrandingUpdateRequest,
     WorkspaceCreateResponse,
     WorkspaceSummaryResponse,
     XRDLibrarySearchRequest,
@@ -76,7 +82,9 @@ from backend.models import (
 from backend.store import ProjectStore
 from backend.workspace import (
     add_history_event,
+    normalize_branding_payload,
     normalize_workspace_state,
+    remove_dataset_from_workspace,
     summarize_dataset,
     summarize_result,
     unique_dataset_key,
@@ -491,6 +499,20 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return DatasetDetailResponse(project_id=project_id, **payload)
 
+    @app.get("/workspace/{project_id}/datasets/{dataset_key}/data", response_model=DatasetDataResponse)
+    def dataset_data(
+        project_id: str,
+        dataset_key: str,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> DatasetDataResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        try:
+            payload = build_dataset_data(state, dataset_key)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return DatasetDataResponse(project_id=project_id, **payload)
+
     @app.get("/workspace/{project_id}/results/{result_id}", response_model=ResultDetailResponse)
     def result_detail(
         project_id: str,
@@ -645,6 +667,20 @@ def create_app(
             active_dataset=active_dataset,
         )
 
+    @app.delete("/workspace/{project_id}/datasets/{dataset_key}", response_model=WorkspaceSummaryResponse)
+    def workspace_dataset_delete(
+        project_id: str,
+        dataset_key: str,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> WorkspaceSummaryResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        removed = remove_dataset_from_workspace(state, dataset_key)
+        if not removed:
+            raise HTTPException(status_code=404, detail=f"Unknown dataset_key: {dataset_key}")
+        project_store.set(project_id, state)
+        return WorkspaceSummaryResponse(project_id=project_id, summary=_project_summary(state))
+
     @app.post("/workspace/{project_id}/batch/run", response_model=BatchRunResponse)
     def batch_run(
         project_id: str,
@@ -720,6 +756,72 @@ def create_app(
         payload = build_export_preparation(state)
         return ExportPreparationResponse(project_id=project_id, summary=_project_summary(state), **payload)
 
+    @app.get("/workspace/{project_id}/branding", response_model=WorkspaceBrandingResponse)
+    def workspace_branding_get(
+        project_id: str,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> WorkspaceBrandingResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        branding = normalize_branding_payload(state.get("branding"))
+        return WorkspaceBrandingResponse(
+            project_id=project_id,
+            summary=_project_summary(state),
+            branding={
+                "report_title": branding.get("report_title") or "MaterialScope Professional Report",
+                "company_name": branding.get("company_name") or "",
+                "lab_name": branding.get("lab_name") or "",
+                "analyst_name": branding.get("analyst_name") or "",
+                "report_notes": branding.get("report_notes") or "",
+                "logo_name": branding.get("logo_name") or "",
+                "logo_base64": (
+                    base64.b64encode(branding["logo_bytes"]).decode("ascii")
+                    if branding.get("logo_bytes")
+                    else None
+                ),
+            },
+        )
+
+    @app.put("/workspace/{project_id}/branding", response_model=WorkspaceBrandingResponse)
+    def workspace_branding_put(
+        project_id: str,
+        request: WorkspaceBrandingUpdateRequest,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> WorkspaceBrandingResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        branding = normalize_branding_payload(state.get("branding"))
+        request_payload = _model_payload(request)
+        for key in ("report_title", "company_name", "lab_name", "analyst_name", "report_notes", "logo_name"):
+            value = request_payload.get(key)
+            if value is not None:
+                branding[key] = str(value)
+        if request.clear_logo:
+            branding["logo_bytes"] = None
+            branding["logo_name"] = ""
+        elif request.logo_base64 is not None:
+            branding["logo_bytes"] = _decode_base64_field(request.logo_base64, field_name="logo_base64")
+            branding["logo_name"] = str(request.logo_name or branding.get("logo_name") or "branding_logo")
+        state["branding"] = branding
+        project_store.set(project_id, state)
+        return WorkspaceBrandingResponse(
+            project_id=project_id,
+            summary=_project_summary(state),
+            branding={
+                "report_title": branding.get("report_title") or "MaterialScope Professional Report",
+                "company_name": branding.get("company_name") or "",
+                "lab_name": branding.get("lab_name") or "",
+                "analyst_name": branding.get("analyst_name") or "",
+                "report_notes": branding.get("report_notes") or "",
+                "logo_name": branding.get("logo_name") or "",
+                "logo_base64": (
+                    base64.b64encode(branding["logo_bytes"]).decode("ascii")
+                    if branding.get("logo_bytes")
+                    else None
+                ),
+            },
+        )
+
     @app.post("/workspace/{project_id}/exports/results-csv", response_model=ExportArtifactResponse)
     def export_results_csv(
         project_id: str,
@@ -734,6 +836,20 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return ExportArtifactResponse(project_id=project_id, **payload)
 
+    @app.post("/workspace/{project_id}/exports/results-xlsx", response_model=ExportArtifactResponse)
+    def export_results_xlsx(
+        project_id: str,
+        request: ExportGenerateRequest,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> ExportArtifactResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        try:
+            payload = generate_results_xlsx_artifact(state, selected_result_ids=request.selected_result_ids)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return ExportArtifactResponse(project_id=project_id, **payload)
+
     @app.post("/workspace/{project_id}/exports/report-docx", response_model=ExportArtifactResponse)
     def export_report_docx(
         project_id: str,
@@ -743,7 +859,29 @@ def create_app(
         _require_token(api_token, x_ta_token)
         state = _require_project_state(project_store, project_id)
         try:
-            payload = generate_report_docx_artifact(state, selected_result_ids=request.selected_result_ids)
+            payload = generate_report_docx_artifact(
+                state,
+                selected_result_ids=request.selected_result_ids,
+                include_figures=bool(request.include_figures),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return ExportArtifactResponse(project_id=project_id, **payload)
+
+    @app.post("/workspace/{project_id}/exports/report-pdf", response_model=ExportArtifactResponse)
+    def export_report_pdf(
+        project_id: str,
+        request: ExportGenerateRequest,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> ExportArtifactResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        try:
+            payload = generate_report_pdf_artifact(
+                state,
+                selected_result_ids=request.selected_result_ids,
+                include_figures=bool(request.include_figures),
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return ExportArtifactResponse(project_id=project_id, **payload)
@@ -761,7 +899,12 @@ def create_app(
         source.name = request.file_name
 
         try:
-            dataset = read_thermal_data(source, data_type=request.data_type, metadata=request.metadata)
+            dataset = read_thermal_data(
+                source,
+                column_mapping=request.column_mapping or None,
+                data_type=request.data_type,
+                metadata=request.metadata,
+            )
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Dataset import failed: {exc}") from exc
 

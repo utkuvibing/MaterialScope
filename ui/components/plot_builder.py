@@ -157,6 +157,9 @@ def _default_layout() -> dict:
     )
 
 
+DEFAULT_LAYOUT = _default_layout()
+
+
 def default_plot_display_settings(settings: dict | None = None, **overrides) -> dict:
     payload = dict(_DEFAULT_DISPLAY_SETTINGS)
     if isinstance(settings, dict):

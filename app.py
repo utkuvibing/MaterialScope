@@ -854,8 +854,8 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    lang_col, theme_col = st.columns([1, 1], gap="small")
-    with lang_col:
+    header_meta_col, header_lang_col = st.columns([1.15, 0.95], gap="small")
+    with header_meta_col:
         st.segmented_control(
             "language",
             options=list(SUPPORTED_LANGUAGES.keys()),
@@ -864,7 +864,7 @@ with st.sidebar:
             selection_mode="single",
             label_visibility="collapsed",
         )
-    with theme_col:
+    with header_lang_col:
         st.segmented_control(
             "theme",
             options=["light", "dark"],
@@ -936,15 +936,10 @@ if preview_modules_available:
 else:
     show_preview_tools = False
 
+# Kinetik ve dekonvolüsyon modülleri önizleme anahtarı arkasında kalır.
 primary_pages = [
     (
-        st.Page(
-            home_render,
-            title=t("nav.import"),
-            icon="📂",
-            default=True,
-            url_path="import",
-        ),
+        st.Page(home_render, title=t("nav.import"), icon="📂", default=True, url_path="import"),
         t("nav.import"),
         "📂",
         "import",
@@ -982,12 +977,7 @@ analysis_pages = [
         "tga",
     ),
     (
-        st.Page(
-            dta_render,
-            title=tx("DTA Analizi", "DTA Analysis"),
-            icon="📊",
-            url_path="dta",
-        ),
+        st.Page(dta_render, title=tx("DTA Analizi", "DTA Analysis"), icon="📊", url_path="dta"),
         tx("DTA Analizi", "DTA Analysis"),
         "📊",
         "dta",
@@ -1013,12 +1003,7 @@ analysis_pages = [
 ]
 management_pages = [
     (
-        st.Page(
-            library_render,
-            title=tx("Kütüphane", "Library"),
-            icon="🗃️",
-            url_path="library",
-        ),
+        st.Page(library_render, title=tx("Kütüphane", "Library"), icon="🗃️", url_path="library"),
         tx("Kütüphane", "Library"),
         "🗃️",
         "library",

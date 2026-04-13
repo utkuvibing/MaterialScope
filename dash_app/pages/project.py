@@ -1,4 +1,4 @@
-"""Project workspace page -- save/load project archives, workspace overview."""
+"""Project workspace page -- parity-focused workspace operations."""
 
 from __future__ import annotations
 
@@ -8,150 +8,335 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
 
+from core.project_io import PROJECT_EXTENSION
 from dash_app.components.chrome import page_header
+from dash_app.components.data_preview import dataset_table
 
 dash.register_page(__name__, path="/project", title="Project - MaterialScope")
 
 
-layout = html.Div([
-    page_header(
-        "Project Workspace",
-        "Save, load, and review your analysis workspace.",
-        badge="Workspace",
-    ),
+def _metric_card(label: str, value: str) -> dbc.Card:
+    return dbc.Card(dbc.CardBody([html.Small(label, className="text-muted text-uppercase"), html.H4(value, className="mb-0")]))
 
-    dbc.Row([
-        dbc.Col([
-            dbc.Card([
-                dbc.CardBody([
-                    html.H5("Workspace Summary", className="mb-3"),
-                    dcc.Loading(html.Div(id="workspace-summary")),
-                ])
-            ], className="mb-4"),
 
-            dbc.Card([
-                dbc.CardBody([
-                    html.H5("Results", className="mb-3"),
-                    dcc.Loading(html.Div(id="results-list")),
-                ])
-            ], className="mb-4"),
-        ], md=7),
+def _next_step(summary: dict, compare_workspace: dict) -> str:
+    if summary.get("dataset_count", 0) <= 0:
+        return "Start by loading runs from Import."
+    if summary.get("result_count", 0) <= 0:
+        return "Next step: save at least one analysis result."
+    if not (compare_workspace or {}).get("selected_datasets"):
+        return "Next step: prepare a Compare workspace."
+    return "Next step: generate the output package in Report Center."
 
-        dbc.Col([
-            dbc.Card([
-                dbc.CardBody([
-                    html.H5("Save Project", className="mb-3"),
-                    html.P(
-                        "Download the current workspace as a project archive.",
-                        className="text-muted",
-                    ),
-                    dbc.Button(
-                        "Prepare Archive",
-                        id="save-project-btn",
-                        color="primary",
-                        className="mb-2",
-                    ),
-                    html.Div(id="save-project-output"),
-                    dcc.Download(id="project-download"),
-                ])
-            ], className="mb-4"),
 
-            dbc.Card([
-                dbc.CardBody([
-                    html.H5("Load Project", className="mb-3"),
-                    dcc.Upload(
-                        id="project-upload",
-                        children=html.Div([
-                            html.I(className="bi bi-folder2-open me-2"),
-                            "Upload .mscope archive",
-                        ], className="text-center py-3"),
-                        className="upload-zone",
-                    ),
-                    html.Div(id="load-project-output", className="mt-2"),
-                ])
-            ], className="mb-4"),
-        ], md=5),
-    ]),
-])
+layout = html.Div(
+    [
+        dcc.Store(id="project-page-refresh", data=0),
+        dcc.Store(id="pending-project-upload"),
+        dcc.Store(id="project-confirm-action"),
+        page_header(
+            "Project Workspace",
+            "Save, load, reset, and inspect the current analysis workspace.",
+            badge="Workspace",
+        ),
+        dbc.Row(
+            [
+                dbc.Col(
+                    [
+                        dbc.Card(dbc.CardBody(html.Div(id="workspace-summary")), className="mb-4"),
+                        dbc.Card(dbc.CardBody(html.Div(id="project-confirm-panel")), className="mb-4"),
+                        dbc.Card(dbc.CardBody(html.Div(id="workspace-datasets-panel")), className="mb-4"),
+                        dbc.Card(dbc.CardBody(html.Div(id="workspace-results-panel")), className="mb-4"),
+                    ],
+                    md=8,
+                ),
+                dbc.Col(
+                    [
+                        dbc.Card(
+                            dbc.CardBody(
+                                [
+                                    html.H5("Quick Actions", className="mb-3"),
+                                    dbc.Button("Start New Workspace", id="new-workspace-btn", color="secondary", className="w-100 mb-2"),
+                                    dbc.Button("Prepare & Download Archive", id="save-project-btn", color="primary", className="w-100 mb-3"),
+                                    html.Div(id="save-project-output"),
+                                    dcc.Download(id="project-download"),
+                                    html.Hr(),
+                                    html.H5("Load Project", className="mb-3"),
+                                    dcc.Upload(
+                                        id="project-upload",
+                                        children=html.Div([html.I(className="bi bi-folder2-open me-2"), f"Upload {PROJECT_EXTENSION} archive"], className="text-center py-3"),
+                                        className="upload-zone",
+                                    ),
+                                    html.Div(id="selected-project-upload", className="small text-muted mt-2"),
+                                    dbc.Button("Load Selected Archive", id="load-project-btn", color="primary", className="w-100 mt-3"),
+                                    html.Div(id="load-project-output", className="mt-3"),
+                                ]
+                            ),
+                            className="mb-4",
+                        ),
+                        dbc.Card(dbc.CardBody(html.Div(id="compare-summary-panel")), className="mb-4"),
+                        dbc.Card(dbc.CardBody(html.Div(id="history-panel")), className="mb-4"),
+                    ],
+                    md=4,
+                ),
+            ]
+        ),
+    ]
+)
+
+
+@callback(
+    Output("pending-project-upload", "data"),
+    Output("selected-project-upload", "children"),
+    Input("project-upload", "contents"),
+    State("project-upload", "filename"),
+    prevent_initial_call=True,
+)
+def stage_project_upload(contents, file_name):
+    if not contents:
+        raise dash.exceptions.PreventUpdate
+    _, content_string = contents.split(",", 1)
+    payload = {"file_name": file_name or f"project{PROJECT_EXTENSION}", "archive_base64": content_string}
+    return payload, f"Selected archive: {payload['file_name']}"
 
 
 @callback(
     Output("workspace-summary", "children"),
-    Output("results-list", "children"),
+    Output("workspace-datasets-panel", "children"),
+    Output("workspace-results-panel", "children"),
+    Output("compare-summary-panel", "children"),
+    Output("history-panel", "children"),
     Input("project-id", "data"),
+    Input("project-page-refresh", "data"),
 )
-def load_workspace(project_id):
+def load_workspace(project_id, _refresh):
     if not project_id:
-        return html.P("No workspace.", className="text-muted"), ""
+        empty = html.P("No workspace active.", className="text-muted")
+        return empty, empty, empty, empty, empty
 
+    from dash_app.api_client import workspace_context, workspace_datasets, workspace_results
+
+    try:
+        context = workspace_context(project_id)
+        datasets_payload = workspace_datasets(project_id)
+        results_payload = workspace_results(project_id)
+    except Exception as exc:
+        error = html.P(f"Error: {exc}", className="text-danger")
+        return error, error, error, error, error
+
+    summary = context.get("summary", {})
+    compare_workspace = context.get("compare_workspace") or {}
+    metrics = dbc.Row(
+        [
+            dbc.Col(_metric_card("Datasets", str(summary.get("dataset_count", 0))), md=3),
+            dbc.Col(_metric_card("Saved Results", str(summary.get("result_count", 0))), md=3),
+            dbc.Col(_metric_card("Figures", str(summary.get("figure_count", 0))), md=3),
+            dbc.Col(_metric_card("History Steps", str(summary.get("analysis_history_count", 0))), md=3),
+        ],
+        className="g-3 mb-3",
+    )
+    status_lines = html.Ul(
+        [
+            html.Li(f"Active dataset: {(context.get('active_dataset') or {}).get('display_name', 'None')}"),
+            html.Li(f"Compare workspace: {'Ready' if compare_workspace.get('selected_datasets') else 'Empty'}"),
+            html.Li("Archive status: Ready on request"),
+        ],
+        className="mb-3",
+    )
+    summary_block = html.Div([metrics, dbc.Alert(_next_step(summary, compare_workspace), color="info"), status_lines])
+
+    dataset_rows = datasets_payload.get("datasets", [])
+    if dataset_rows:
+        dataset_table_view = html.Div(
+            [
+                html.H5("Loaded Runs", className="mb-3"),
+                dataset_table(
+                    dataset_rows,
+                    ["key", "display_name", "data_type", "vendor", "sample_name", "heating_rate", "points", "validation_status"],
+                    table_id="project-datasets-table",
+                ),
+            ]
+        )
+    else:
+        dataset_table_view = html.Div([html.H5("Loaded Runs", className="mb-3"), html.P("No datasets loaded.", className="text-muted")])
+
+    result_rows = results_payload.get("results", [])
+    if result_rows:
+        results_view = html.Div(
+            [
+                html.H5("Saved Result Records", className="mb-3"),
+                dataset_table(
+                    result_rows,
+                    ["id", "analysis_type", "status", "dataset_key", "workflow_template", "saved_at_utc"],
+                    table_id="project-results-table",
+                ),
+            ]
+        )
+    else:
+        results_view = html.Div([html.H5("Saved Result Records", className="mb-3"), html.P("No saved results yet.", className="text-muted")])
+
+    compare_view = html.Div(
+        [
+            html.H5("Compare Workspace", className="mb-3"),
+            html.P(f"Analysis Type: {compare_workspace.get('analysis_type', 'N/A')}", className="mb-1"),
+            html.P(
+                f"Selected Runs: {', '.join(compare_workspace.get('selected_datasets') or []) or 'None'}",
+                className="mb-1",
+            ),
+            html.P(f"Saved Figure: {compare_workspace.get('figure_key') or 'None'}", className="mb-1"),
+            html.P(compare_workspace.get("notes") or "No compare notes yet.", className="text-muted"),
+        ]
+    )
+
+    history = context.get("recent_history") or []
+    if history:
+        history_view = html.Div(
+            [
+                html.H5("Recent History", className="mb-3"),
+                html.Ul(
+                    [
+                        html.Li(f"{item.get('timestamp', '--')} - {item.get('action', 'Unknown')} - {item.get('details', '')}")
+                        for item in history
+                    ],
+                    className="mb-0",
+                ),
+            ]
+        )
+    else:
+        history_view = html.Div([html.H5("Recent History", className="mb-3"), html.P("No history yet.", className="text-muted")])
+
+    return summary_block, dataset_table_view, results_view, compare_view, history_view
+
+
+@callback(
+    Output("project-confirm-action", "data"),
+    Output("project-confirm-panel", "children"),
+    Output("load-project-output", "children", allow_duplicate=True),
+    Input("new-workspace-btn", "n_clicks"),
+    Input("load-project-btn", "n_clicks"),
+    State("project-id", "data"),
+    State("pending-project-upload", "data"),
+    prevent_initial_call=True,
+)
+def request_project_action(new_clicks, load_clicks, project_id, pending_upload):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        raise dash.exceptions.PreventUpdate
+
+    button_id = ctx.triggered[0]["prop_id"].split(".")[0]
     from dash_app.api_client import workspace_context
 
-    try:
-        ctx = workspace_context(project_id)
-    except Exception as exc:
-        return html.P(f"Error: {exc}", className="text-danger"), ""
+    context = workspace_context(project_id) if project_id else {"summary": {}}
+    summary = context.get("summary", {})
+    has_content = any(
+        summary.get(key, 0) > 0
+        for key in ("dataset_count", "result_count", "figure_count", "analysis_history_count")
+    ) or bool((context.get("compare_workspace") or {}).get("selected_datasets"))
 
-    summary = ctx.get("summary", {})
-    metrics = dbc.Row([
-        dbc.Col(dbc.Card(dbc.CardBody([
-            html.Small("Datasets", className="text-muted text-uppercase"),
-            html.H3(str(summary.get("dataset_count", 0))),
-        ])), md=3),
-        dbc.Col(dbc.Card(dbc.CardBody([
-            html.Small("Results", className="text-muted text-uppercase"),
-            html.H3(str(summary.get("result_count", 0))),
-        ])), md=3),
-        dbc.Col(dbc.Card(dbc.CardBody([
-            html.Small("Figures", className="text-muted text-uppercase"),
-            html.H3(str(summary.get("figure_count", 0))),
-        ])), md=3),
-        dbc.Col(dbc.Card(dbc.CardBody([
-            html.Small("History Steps", className="text-muted text-uppercase"),
-            html.H3(str(summary.get("analysis_history_count", 0))),
-        ])), md=3),
-    ], className="mb-3")
+    if button_id == "new-workspace-btn":
+        action = {"action": "new"}
+        panel = html.Div(
+            [
+                dbc.Alert(
+                    "The current workspace will be cleared. Confirm to start a fresh workspace."
+                    if has_content
+                    else "Confirm to start a fresh workspace.",
+                    color="warning",
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(dbc.Button("Confirm", id="project-confirm-btn", color="danger", className="w-100"), md=6),
+                        dbc.Col(dbc.Button("Cancel", id="project-cancel-btn", color="secondary", className="w-100"), md=6),
+                    ],
+                    className="g-2",
+                ),
+            ]
+        )
+        return action, panel, dash.no_update
 
-    active = ctx.get("active_dataset")
-    active_info = ""
-    if active:
-        active_info = dbc.Alert(
-            f"Active dataset: {active.get('display_name', active.get('key', '?'))} "
-            f"({active.get('data_type', '?')})",
-            color="info",
+    if not pending_upload:
+        return dash.no_update, dash.no_update, dbc.Alert("Choose a project archive first.", color="warning")
+    if has_content:
+        action = {"action": "load"}
+        panel = html.Div(
+            [
+                dbc.Alert("Loading the selected archive will replace the current workspace. Confirm to continue.", color="warning"),
+                dbc.Row(
+                    [
+                        dbc.Col(dbc.Button("Confirm", id="project-confirm-btn", color="danger", className="w-100"), md=6),
+                        dbc.Col(dbc.Button("Cancel", id="project-cancel-btn", color="secondary", className="w-100"), md=6),
+                    ],
+                    className="g-2",
+                ),
+            ]
+        )
+        return action, panel, dash.no_update
+    action = {"action": "load"}
+    panel = html.Div(
+        [
+            dbc.Alert(
+                "Loading the selected archive will replace the current workspace. Confirm to continue."
+                if has_content
+                else "Confirm to load the selected archive.",
+                color="warning",
+            ),
+            dbc.Row(
+                [
+                    dbc.Col(dbc.Button("Confirm", id="project-confirm-btn", color="danger", className="w-100"), md=6),
+                    dbc.Col(dbc.Button("Cancel", id="project-cancel-btn", color="secondary", className="w-100"), md=6),
+                ],
+                className="g-2",
+            ),
+        ]
+    )
+    return action, panel, dash.no_update
+
+
+@callback(
+    Output("project-id", "data", allow_duplicate=True),
+    Output("project-page-refresh", "data", allow_duplicate=True),
+    Output("project-confirm-panel", "children", allow_duplicate=True),
+    Output("project-confirm-action", "data", allow_duplicate=True),
+    Output("pending-project-upload", "data", allow_duplicate=True),
+    Output("load-project-output", "children"),
+    Input("project-confirm-btn", "n_clicks"),
+    Input("project-cancel-btn", "n_clicks"),
+    State("project-confirm-action", "data"),
+    State("pending-project-upload", "data"),
+    State("project-page-refresh", "data"),
+    prevent_initial_call=True,
+)
+def resolve_project_action(confirm_clicks, cancel_clicks, action, pending_upload, refresh_value):
+    ctx = dash.callback_context
+    if not ctx.triggered or not action:
+        raise dash.exceptions.PreventUpdate
+
+    button_id = ctx.triggered[0]["prop_id"].split(".")[0]
+    if button_id == "project-cancel-btn":
+        return dash.no_update, dash.no_update, "", None, dash.no_update, dbc.Alert("Project action cancelled.", color="secondary")
+
+    from dash_app.api_client import project_load, workspace_new
+
+    if action.get("action") == "new":
+        result = workspace_new()
+        return result.get("project_id"), int(refresh_value or 0) + 1, "", None, dash.no_update, dbc.Alert("Started a fresh workspace.", color="success")
+
+    if action.get("action") == "load" and pending_upload:
+        result = project_load(pending_upload["archive_base64"])
+        summary = result.get("summary", {})
+        return (
+            result.get("project_id"),
+            int(refresh_value or 0) + 1,
+            "",
+            None,
+            None,
+            dbc.Alert(
+                f"Project loaded: {summary.get('dataset_count', 0)} datasets, {summary.get('result_count', 0)} results.",
+                color="success",
+            ),
         )
 
-    from dash_app.api_client import workspace_results
-
-    try:
-        results_data = workspace_results(project_id)
-    except Exception:
-        results_data = {"results": []}
-
-    results = results_data.get("results", [])
-    if not results:
-        results_content = html.P("No saved results yet.", className="text-muted")
-    else:
-        rows = []
-        for r in results:
-            badge_color = {"stable": "success", "experimental": "info"}.get(
-                r.get("status", ""), "secondary"
-            )
-            rows.append(
-                dbc.ListGroupItem([
-                    html.Div([
-                        html.Strong(r.get("analysis_type", "?")),
-                        dbc.Badge(r.get("status", "?"), color=badge_color, className="ms-2"),
-                    ]),
-                    html.Small(
-                        f"Dataset: {r.get('dataset_key', '?')} | "
-                        f"Template: {r.get('workflow_template', 'default')}",
-                        className="text-muted",
-                    ),
-                ])
-            )
-        results_content = dbc.ListGroup(rows, flush=True)
-
-    return html.Div([metrics, active_info]), results_content
+    raise dash.exceptions.PreventUpdate
 
 
 @callback(
@@ -173,41 +358,6 @@ def save_project(n_clicks, project_id):
         return dbc.Alert(f"Save failed: {exc}", color="danger"), dash.no_update
 
     archive_b64 = result.get("archive_base64", "")
-    file_name = result.get("file_name", "materialscope_project.mscope")
+    file_name = result.get("file_name", f"materialscope_project{PROJECT_EXTENSION}")
     archive_bytes = base64.b64decode(archive_b64)
-
-    return (
-        dbc.Alert("Archive prepared. Downloading...", color="success"),
-        dcc.send_bytes(archive_bytes, file_name),
-    )
-
-
-@callback(
-    Output("load-project-output", "children"),
-    Output("project-id", "data", allow_duplicate=True),
-    Input("project-upload", "contents"),
-    prevent_initial_call=True,
-)
-def load_project(contents):
-    if not contents:
-        return dash.no_update, dash.no_update
-
-    _, content_string = contents.split(",", 1)
-
-    from dash_app.api_client import project_load
-
-    try:
-        result = project_load(content_string)
-    except Exception as exc:
-        return dbc.Alert(f"Load failed: {exc}", color="danger"), dash.no_update
-
-    new_project_id = result.get("project_id")
-    summary = result.get("summary", {})
-    return (
-        dbc.Alert(
-            f"Project loaded: {summary.get('dataset_count', 0)} datasets, "
-            f"{summary.get('result_count', 0)} results.",
-            color="success",
-        ),
-        new_project_id,
-    )
+    return dbc.Alert("Archive prepared. Downloading...", color="success"), dcc.send_bytes(archive_bytes, file_name)

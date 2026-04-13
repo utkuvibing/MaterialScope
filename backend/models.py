@@ -264,6 +264,7 @@ class DatasetImportRequest(BaseModel):
     file_name: str = Field(..., min_length=1)
     file_base64: str = Field(..., min_length=1)
     data_type: str | None = None
+    column_mapping: dict[str, str] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -308,6 +309,13 @@ class DatasetDetailResponse(BaseModel):
     original_columns: dict[str, Any]
     data_preview: list[dict[str, Any]]
     compare_selected: bool = False
+
+
+class DatasetDataResponse(BaseModel):
+    project_id: str
+    dataset_key: str
+    columns: list[str]
+    rows: list[dict[str, Any]]
 
 
 class ResultDetailResponse(BaseModel):
@@ -399,6 +407,7 @@ class ExportPreparationResponse(BaseModel):
 
 class ExportGenerateRequest(BaseModel):
     selected_result_ids: list[str] | None = None
+    include_figures: bool = True
 
 
 class ExportArtifactResponse(BaseModel):
@@ -431,6 +440,23 @@ class ActiveDatasetResponse(BaseModel):
     summary: ProjectSummary
     active_dataset_key: str | None = None
     active_dataset: DatasetSummary | None = None
+
+
+class WorkspaceBrandingUpdateRequest(BaseModel):
+    report_title: str | None = None
+    company_name: str | None = None
+    lab_name: str | None = None
+    analyst_name: str | None = None
+    report_notes: str | None = None
+    logo_name: str | None = None
+    logo_base64: str | None = None
+    clear_logo: bool = False
+
+
+class WorkspaceBrandingResponse(BaseModel):
+    project_id: str
+    summary: ProjectSummary
+    branding: dict[str, Any]
 
 
 class CompareSelectionUpdateRequest(BaseModel):

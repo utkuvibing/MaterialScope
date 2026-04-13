@@ -13,6 +13,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app import create_app
@@ -977,6 +978,8 @@ def test_runtime_cloud_client_dev_override_enables_real_cloud_full_access(tmp_pa
 
 
 def test_backend_main_starts_and_runtime_client_reaches_cloud_chain(tmp_path, monkeypatch):
+    if sys.platform == "win32":
+        pytest.skip("Backend subprocess startup smoke is not supported in this Windows local test harness.")
     home_root = tmp_path / "home"
     hosted_root = tmp_path / "reference_library_hosted"
     mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"

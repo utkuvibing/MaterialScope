@@ -112,6 +112,46 @@ def test_export_docx_generation_returns_docx_bytes(thermal_dataset):
     assert docx_bytes[:4] == b"PK\x03\x04"
 
 
+def test_export_results_xlsx_generation_returns_workbook(thermal_dataset):
+    app = create_app(api_token="exports-token")
+    client = TestClient(app)
+    project_id, result_id = _seed_workspace_with_result(client, thermal_dataset)
+
+    xlsx_export = client.post(
+        f"/workspace/{project_id}/exports/results-xlsx",
+        headers=_headers(),
+        json={"selected_result_ids": [result_id]},
+    )
+    assert xlsx_export.status_code == 200
+    payload = xlsx_export.json()
+    assert payload["output_type"] == "results_xlsx"
+    assert payload["included_result_ids"] == [result_id]
+    workbook_bytes = base64.b64decode(payload["artifact_base64"].encode("ascii"))
+
+    workbook = pd.ExcelFile(io.BytesIO(workbook_bytes))
+    assert "Results" in workbook.sheet_names
+    results_sheet = pd.read_excel(io.BytesIO(workbook_bytes), sheet_name="Results")
+    assert result_id in results_sheet["result_id"].astype(str).tolist()
+
+
+def test_export_report_pdf_generation_returns_pdf_bytes(thermal_dataset):
+    app = create_app(api_token="exports-token")
+    client = TestClient(app)
+    project_id, result_id = _seed_workspace_with_result(client, thermal_dataset)
+
+    pdf_export = client.post(
+        f"/workspace/{project_id}/exports/report-pdf",
+        headers=_headers(),
+        json={"selected_result_ids": [result_id], "include_figures": True},
+    )
+    assert pdf_export.status_code == 200
+    payload = pdf_export.json()
+    assert payload["output_type"] == "report_pdf"
+    assert payload["included_result_ids"] == [result_id]
+    pdf_bytes = base64.b64decode(payload["artifact_base64"].encode("ascii"))
+    assert pdf_bytes[:4] == b"%PDF"
+
+
 def test_export_docx_generation_keeps_dta_in_stable_partition(thermal_dataset):
     app = create_app(api_token="exports-token")
     client = TestClient(app)

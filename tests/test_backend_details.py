@@ -308,6 +308,73 @@ def test_compare_workspace_read_write(thermal_dataset):
     assert payload["notes"] == "Desktop compare smoke"
 
 
+def test_dataset_data_endpoint_and_delete_cascade(thermal_dataset):
+    app = create_app(api_token="details-token")
+    client = TestClient(app)
+    project_id, dataset_key, _result_id = _seed_workspace_with_dsc_result(client, thermal_dataset)
+
+    data_response = client.get(
+        f"/workspace/{project_id}/datasets/{dataset_key}/data",
+        headers=_headers(),
+    )
+    assert data_response.status_code == 200
+    data_payload = data_response.json()
+    assert data_payload["dataset_key"] == dataset_key
+    assert data_payload["columns"] == ["temperature", "signal"]
+    assert len(data_payload["rows"]) == len(thermal_dataset.data)
+
+    delete_response = client.delete(
+        f"/workspace/{project_id}/datasets/{dataset_key}",
+        headers=_headers(),
+    )
+    assert delete_response.status_code == 200
+    summary = delete_response.json()["summary"]
+    assert summary["dataset_count"] == 0
+    assert summary["result_count"] == 0
+    assert summary["active_dataset"] is None
+
+    missing_detail = client.get(
+        f"/workspace/{project_id}/datasets/{dataset_key}",
+        headers=_headers(),
+    )
+    assert missing_detail.status_code == 404
+
+
+def test_workspace_branding_roundtrip():
+    app = create_app(api_token="details-token")
+    client = TestClient(app)
+    project_id = client.post("/workspace/new", headers=_headers()).json()["project_id"]
+
+    initial = client.get(f"/workspace/{project_id}/branding", headers=_headers())
+    assert initial.status_code == 200
+    assert initial.json()["branding"]["report_title"] == "MaterialScope Professional Report"
+
+    logo_bytes = b"fake-logo-bytes"
+    updated = client.put(
+        f"/workspace/{project_id}/branding",
+        headers=_headers(),
+        json={
+            "report_title": "Acme Thermal Report",
+            "company_name": "Acme Materials",
+            "lab_name": "Applications Lab",
+            "analyst_name": "Ada Lovelace",
+            "report_notes": "Internal release candidate.",
+            "logo_name": "acme_logo.png",
+            "logo_base64": _as_b64(logo_bytes),
+        },
+    )
+    assert updated.status_code == 200
+    branding = updated.json()["branding"]
+    assert branding["report_title"] == "Acme Thermal Report"
+    assert branding["company_name"] == "Acme Materials"
+    assert branding["logo_name"] == "acme_logo.png"
+    assert base64.b64decode(branding["logo_base64"].encode("ascii")) == logo_bytes
+
+    reloaded = client.get(f"/workspace/{project_id}/branding", headers=_headers())
+    assert reloaded.status_code == 200
+    assert reloaded.json()["branding"]["analyst_name"] == "Ada Lovelace"
+
+
 def test_compare_workspace_accepts_spectral_analysis_types():
     app = create_app(api_token="details-token")
     client = TestClient(app)
