@@ -27,6 +27,7 @@ from dash_app.components.analysis_page import (
     metrics_row,
     no_data_figure_msg,
     processing_details_section,
+    resolve_sample_name,
     result_placeholder_card,
     workflow_template_card,
 )
@@ -283,12 +284,12 @@ def display_result(result_id, _refresh, project_id):
     # --- Metrics row ---
     peak_count = summary.get("peak_count", 0)
     tg_count = summary.get("glass_transition_count", 0)
-    sample_name = summary.get("sample_name") or result_meta.get("dataset_key", "N/A")
+    sample_name = resolve_sample_name(summary, result_meta)
     metrics = metrics_row([
         ("Peaks", str(peak_count)),
         ("Glass Transitions", str(tg_count)),
         ("Template", str(processing.get("workflow_template_label", "N/A"))),
-        ("Sample", str(sample_name)),
+        ("Sample", sample_name),
     ])
 
     # --- Tg metric cards ---
@@ -362,7 +363,7 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, peak_rows: l
     tg_onset = summary.get("tg_onset")
     tg_endset = summary.get("tg_endset")
     tg_count = summary.get("glass_transition_count", 0)
-    sample_name = summary.get("sample_name", dataset_key)
+    sample_name = resolve_sample_name(summary, {}, fallback_display_name=dataset_key)
 
     fig = go.Figure()
 
@@ -390,6 +391,10 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, peak_rows: l
             go.Scatter(x=temperature, y=corrected, mode="lines", name="Corrected", line=dict(color="#059669", width=1.5))
         )
 
+    # Collect peak temperatures to detect label overlaps with Tg lines
+    _ANNOTATION_MIN_SEP = 15.0  # C -- suppress label if closer than this to another
+    annotated_temps: list[float] = []
+
     for row in peak_rows:
         pt = row.get("peak_temperature")
         if pt is None:
@@ -398,22 +403,37 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, peak_rows: l
         color = _PEAK_TYPE_COLORS.get(peak_type, "#B45309")
         idx = min(range(len(temperature)), key=lambda i: abs(temperature[i] - pt)) if temperature else None
         if idx is not None:
+            # Only show text label if not too close to an already-annotated temp
+            too_close = any(abs(pt - t) < _ANNOTATION_MIN_SEP for t in annotated_temps)
+            text_str = f"{pt:.1f}" if not too_close else ""
             fig.add_trace(
                 go.Scatter(
                     x=[temperature[idx]], y=[raw_signal[idx]], mode="markers+text",
                     marker=dict(size=10, color=color, symbol="diamond"),
-                    text=[f"{pt:.1f}"], textposition="bottom center",
+                    text=[text_str], textposition="bottom center",
                     textfont=dict(size=9, color=color),
                     name=f"{peak_type.title()} {pt:.1f} C", showlegend=False,
                 )
             )
+            if text_str:
+                annotated_temps.append(pt)
 
+    # Tg vertical lines -- always show midpoint; onset/endset only when
+    # far enough apart to avoid overlapping annotations
     if tg_count > 0 and tg_midpoint is not None:
-        fig.add_vline(x=tg_midpoint, line=dict(color="#EF4444", width=2, dash="dash"), annotation_text=f"Tg mid {tg_midpoint:.1f}")
-        if tg_onset is not None:
-            fig.add_vline(x=tg_onset, line=dict(color="#F59E0B", width=1, dash="dot"), annotation_text=f"Onset {tg_onset:.1f}")
-        if tg_endset is not None:
-            fig.add_vline(x=tg_endset, line=dict(color="#F59E0B", width=1, dash="dot"), annotation_text=f"Endset {tg_endset:.1f}")
+        fig.add_vline(x=tg_midpoint, line=dict(color="#EF4444", width=2, dash="dash"),
+                      annotation_text=f"Tg {tg_midpoint:.1f}",
+                      annotation_position="top left")
+        annotated_temps.append(tg_midpoint)
+
+        if tg_onset is not None and all(abs(tg_onset - t) >= _ANNOTATION_MIN_SEP for t in annotated_temps):
+            fig.add_vline(x=tg_onset, line=dict(color="#F59E0B", width=1, dash="dot"),
+                          annotation_text=f"On {tg_onset:.1f}", annotation_position="top left")
+            annotated_temps.append(tg_onset)
+
+        if tg_endset is not None and all(abs(tg_endset - t) >= _ANNOTATION_MIN_SEP for t in annotated_temps):
+            fig.add_vline(x=tg_endset, line=dict(color="#F59E0B", width=1, dash="dot"),
+                          annotation_text=f"End {tg_endset:.1f}", annotation_position="top left")
 
     fig.update_layout(
         title=f"DSC - {sample_name}", template="plotly_white",

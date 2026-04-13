@@ -243,3 +243,44 @@ def empty_result_msg(text: str = "Run an analysis to see results here.") -> html
 
 def no_data_figure_msg(text: str = "No data available for plotting.") -> html.P:
     return html.P(text, className="text-muted")
+
+
+# ---------------------------------------------------------------------------
+# Sample name resolution
+# ---------------------------------------------------------------------------
+
+def resolve_sample_name(
+    summary: dict,
+    result_meta: dict,
+    *,
+    fallback_display_name: str | None = None,
+) -> str:
+    """Resolve the best available sample name for display.
+
+    Fallback chain (first non-empty value wins):
+      1. ``summary["sample_name"]`` -- set from dataset metadata during analysis
+      2. ``fallback_display_name`` -- typically from the dataset list's display_name
+      3. ``result_meta["dataset_key"]`` -- the raw key, with extension stripped
+      4. ``"N/A"`` -- last resort
+
+    This prevents the display from showing ``None`` or raw filenames
+    when the dataset or project metadata already contains a usable name.
+    """
+    name = summary.get("sample_name")
+    if name and str(name).strip():
+        return str(name).strip()
+
+    if fallback_display_name and str(fallback_display_name).strip():
+        return str(fallback_display_name).strip()
+
+    dataset_key = result_meta.get("dataset_key") or ""
+    if dataset_key:
+        # Strip common data-file extensions for a cleaner label
+        for ext in (".csv", ".txt", ".dat", ".xls", ".xlsx"):
+            if dataset_key.lower().endswith(ext):
+                dataset_key = dataset_key[: -len(ext)]
+                break
+        if dataset_key.strip():
+            return dataset_key.strip()
+
+    return "N/A"

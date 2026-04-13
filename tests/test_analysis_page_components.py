@@ -15,6 +15,7 @@ from dash_app.components.analysis_page import (
     metrics_row,
     no_data_figure_msg,
     processing_details_section,
+    resolve_sample_name,
 )
 
 
@@ -233,3 +234,46 @@ def test_no_data_figure_msg():
     msg = no_data_figure_msg()
     assert isinstance(msg, html.P)
     assert "No data available" in msg.children
+
+
+# ---------------------------------------------------------------------------
+# resolve_sample_name
+# ---------------------------------------------------------------------------
+
+def test_resolve_sample_name_prefers_summary_name():
+    name = resolve_sample_name({"sample_name": "Polymer A"}, {"dataset_key": "polymer_a.csv"})
+    assert name == "Polymer A"
+
+
+def test_resolve_sample_name_uses_fallback_when_summary_empty():
+    name = resolve_sample_name({"sample_name": None}, {"dataset_key": "polymer_a.csv"},
+                               fallback_display_name="Polymer A Display")
+    assert name == "Polymer A Display"
+
+
+def test_resolve_sample_name_strips_extension_from_key():
+    name = resolve_sample_name({"sample_name": None}, {"dataset_key": "polymer_a.csv"})
+    assert name == "polymer_a"
+
+
+def test_resolve_sample_name_strips_various_extensions():
+    for ext in (".csv", ".txt", ".dat", ".xls", ".xlsx"):
+        name = resolve_sample_name({}, {"dataset_key": f"sample{ext}"})
+        assert name == "sample", f"Failed for extension {ext}"
+
+
+def test_resolve_sample_name_na_fallback():
+    name = resolve_sample_name({}, {})
+    assert name == "N/A"
+
+
+def test_resolve_sample_name_ignores_blank_sample_name():
+    name = resolve_sample_name({"sample_name": "  "}, {"dataset_key": "test.csv"})
+    assert name == "test"
+
+
+def test_resolve_sample_name_prefers_display_name_over_key():
+    name = resolve_sample_name({"sample_name": ""},
+                               {"dataset_key": "raw_data.csv"},
+                               fallback_display_name="Calcium Oxalate")
+    assert name == "Calcium Oxalate"

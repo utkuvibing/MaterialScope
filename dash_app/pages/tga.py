@@ -28,6 +28,7 @@ from dash_app.components.analysis_page import (
     metrics_row,
     no_data_figure_msg,
     processing_details_section,
+    resolve_sample_name,
     result_placeholder_card,
     workflow_template_card,
 )
@@ -301,7 +302,7 @@ def display_result(result_id, _refresh, project_id):
     step_count = summary.get("step_count", 0)
     total_mass_loss = summary.get("total_mass_loss_percent")
     residue = summary.get("residue_percent")
-    sample_name = summary.get("sample_name") or result_meta.get("dataset_key", "N/A")
+    sample_name = resolve_sample_name(summary, result_meta)
 
     total_loss_str = f"{total_mass_loss:.2f} %" if total_mass_loss is not None else "N/A"
     residue_str = f"{residue:.1f} %" if residue is not None else "N/A"
@@ -310,7 +311,7 @@ def display_result(result_id, _refresh, project_id):
         ("Steps", str(step_count)),
         ("Total Mass Loss", total_loss_str),
         ("Residue", residue_str),
-        ("Sample", str(sample_name)),
+        ("Sample", sample_name),
     ])
 
     # --- Step cards ---
@@ -375,7 +376,7 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, step_rows: l
     if not temperature:
         return no_data_figure_msg()
 
-    sample_name = summary.get("sample_name", dataset_key)
+    sample_name = resolve_sample_name(summary, {}, fallback_display_name=dataset_key)
 
     fig = go.Figure()
 
@@ -401,27 +402,47 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, step_rows: l
             )
         )
 
+    # Step markers: always show midpoint diamond; suppress text when
+    # too many steps crowd each other
+    _ANNOTATION_MIN_SEP = 15.0  # C
+    annotated_temps: list[float] = []
+
     for row in step_rows:
         midpoint = row.get("midpoint_temperature")
         if midpoint is not None and temperature:
             idx = min(range(len(temperature)), key=lambda i: abs(temperature[i] - midpoint))
+            too_close = any(abs(midpoint - t) < _ANNOTATION_MIN_SEP for t in annotated_temps)
+            text_str = f"{midpoint:.1f}" if not too_close else ""
             fig.add_trace(
                 go.Scatter(
                     x=[temperature[idx]], y=[raw_signal[idx]], mode="markers+text",
                     marker=dict(size=10, color="#059669", symbol="diamond"),
-                    text=[f"{midpoint:.1f}"], textposition="bottom center",
+                    text=[text_str], textposition="bottom center",
                     textfont=dict(size=9, color="#059669"),
                     name=f"Step mid {midpoint:.1f} C", showlegend=False,
                 )
             )
+            if text_str:
+                annotated_temps.append(midpoint)
+
+    # Onset/endset vertical lines: draw as thin guides without annotation
+    # text when many steps are present; only annotate when sparse enough
+    n_steps = len(step_rows)
+    annotate_onset_endset = n_steps <= 4
 
     for row in step_rows:
         onset = row.get("onset_temperature")
         endset = row.get("endset_temperature")
         if onset is not None:
-            fig.add_vline(x=onset, line=dict(color="#F59E0B", width=1, dash="dot"), annotation_text=f"Onset {onset:.1f}")
+            ann_text = f"On {onset:.1f}" if annotate_onset_endset else ""
+            fig.add_vline(x=onset, line=dict(color="#F59E0B", width=1, dash="dot"),
+                          annotation_text=ann_text or None,
+                          annotation_position="top left")
         if endset is not None:
-            fig.add_vline(x=endset, line=dict(color="#F59E0B", width=1, dash="dot"), annotation_text=f"Endset {endset:.1f}")
+            ann_text = f"End {endset:.1f}" if annotate_onset_endset else ""
+            fig.add_vline(x=endset, line=dict(color="#F59E0B", width=1, dash="dot"),
+                          annotation_text=ann_text or None,
+                          annotation_position="top left")
 
     fig.update_layout(
         title=f"TGA - {sample_name}", template="plotly_white",
