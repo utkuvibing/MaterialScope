@@ -108,8 +108,9 @@ def stage_project_upload(contents, file_name):
     Output("history-panel", "children"),
     Input("project-id", "data"),
     Input("project-page-refresh", "data"),
+    Input("workspace-refresh", "data"),
 )
-def load_workspace(project_id, _refresh):
+def load_workspace(project_id, _refresh, _global_refresh):
     if not project_id:
         empty = html.P("No workspace active.", className="text-muted")
         return empty, empty, empty, empty, empty

@@ -35,6 +35,7 @@ from backend.models import (
     ActiveDatasetUpdateRequest,
     AnalysisRunRequest,
     AnalysisRunResponse,
+    AnalysisStateCurvesResponse,
     BatchRunRequest,
     BatchRunResponse,
     CompareSelectionResponse,
@@ -92,7 +93,7 @@ from backend.workspace import (
 from backend.workspace_context import build_workspace_context, set_active_dataset, update_compare_selection
 from core.data_io import read_thermal_data
 from core.execution_engine import run_batch_analysis, run_single_analysis
-from core.modalities import stable_analysis_types
+from core.modalities import analysis_state_key, stable_analysis_types
 from core.literature_compare import attach_literature_package, compare_result_to_literature
 from core.literature_provider import (
     LiteratureProvider,
@@ -528,6 +529,66 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return ResultDetailResponse(project_id=project_id, **payload)
+
+    @app.get("/workspace/{project_id}/analysis-state/{analysis_type}/{dataset_key}", response_model=AnalysisStateCurvesResponse)
+    def analysis_state_curves(
+        project_id: str,
+        analysis_type: str,
+        dataset_key: str,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> AnalysisStateCurvesResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        datasets = state.get("datasets", {}) or {}
+        dataset = datasets.get(dataset_key)
+        if dataset is None:
+            raise HTTPException(status_code=404, detail=f"Unknown dataset_key: {dataset_key}")
+
+        try:
+            skey = analysis_state_key(analysis_type, dataset_key)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        analysis_state = state.get(skey)
+        if analysis_state is None:
+            return AnalysisStateCurvesResponse(
+                project_id=project_id, dataset_key=dataset_key,
+                analysis_type=analysis_type.upper(),
+            )
+
+        import numpy as np
+
+        frame = getattr(dataset, "data", None)
+        temperature = []
+        raw_signal = []
+        if frame is not None and "temperature" in frame.columns:
+            temperature = frame["temperature"].tolist()
+            raw_signal = frame["signal"].tolist() if "signal" in frame.columns else []
+
+        def _to_list(arr: Any) -> list[float]:
+            if arr is None:
+                return []
+            a = np.asarray(arr, dtype=float)
+            a = np.where(np.isfinite(a), a, None)
+            return a.tolist()
+
+        smoothed = _to_list(analysis_state.get("smoothed"))
+        baseline = _to_list(analysis_state.get("baseline"))
+        corrected = _to_list(analysis_state.get("corrected"))
+
+        return AnalysisStateCurvesResponse(
+            project_id=project_id,
+            dataset_key=dataset_key,
+            analysis_type=analysis_type.upper(),
+            temperature=temperature,
+            raw_signal=raw_signal,
+            smoothed=smoothed,
+            baseline=baseline,
+            corrected=corrected,
+            has_smoothed=bool(smoothed),
+            has_baseline=bool(baseline),
+            has_corrected=bool(corrected),
+        )
 
     @app.post("/workspace/{project_id}/results/{result_id}/literature/compare", response_model=LiteratureCompareResponse)
     def result_literature_compare(

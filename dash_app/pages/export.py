@@ -138,8 +138,9 @@ layout = html.Div(
     Output("report-export-results", "value"),
     Input("project-id", "data"),
     Input("report-refresh", "data"),
+    Input("workspace-refresh", "data"),
 )
-def load_report_center(project_id, _refresh):
+def load_report_center(project_id, _refresh, _global_refresh):
     if not project_id:
         empty = html.P("No workspace active.", className="text-muted")
         return empty, [], [], [], [], [], []
@@ -217,8 +218,9 @@ def load_report_center(project_id, _refresh):
     Output("branding-logo-preview", "children"),
     Input("project-id", "data"),
     Input("report-refresh", "data"),
+    Input("workspace-refresh", "data"),
 )
-def load_branding(project_id, _refresh):
+def load_branding(project_id, _refresh, _global_refresh):
     if not project_id:
         return "MaterialScope Professional Report", "", "", "", "", ""
     from dash_app.api_client import workspace_branding

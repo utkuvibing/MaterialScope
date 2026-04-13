@@ -81,9 +81,10 @@ layout = html.Div(
     Output("compare-notes", "value"),
     Input("project-id", "data"),
     Input("compare-refresh", "data"),
+    Input("workspace-refresh", "data"),
     prevent_initial_call=False,
 )
-def load_compare_workspace(project_id, _refresh):
+def load_compare_workspace(project_id, _refresh, _global_refresh):
     if not project_id:
         return [], None, [], [], ""
 

@@ -477,6 +477,20 @@ class BatchRunRequest(BaseModel):
     dataset_keys: list[str] | None = None
 
 
+class AnalysisStateCurvesResponse(BaseModel):
+    project_id: str
+    dataset_key: str
+    analysis_type: str
+    temperature: list[float] = Field(default_factory=list)
+    raw_signal: list[float] = Field(default_factory=list)
+    smoothed: list[float] = Field(default_factory=list)
+    baseline: list[float] = Field(default_factory=list)
+    corrected: list[float] = Field(default_factory=list)
+    has_smoothed: bool = False
+    has_baseline: bool = False
+    has_corrected: bool = False
+
+
 class BatchRunResponse(BaseModel):
     project_id: str
     analysis_type: str

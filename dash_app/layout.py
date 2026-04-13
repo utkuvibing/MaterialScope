@@ -84,6 +84,7 @@ def build_layout() -> html.Div:
         [
             dcc.Store(id="project-id", storage_type="session"),
             dcc.Store(id="workspace-data", storage_type="memory"),
+            dcc.Store(id="workspace-refresh", storage_type="memory", data=0),
             dcc.Location(id="url", refresh="callback-nav"),
             html.Div(
                 [

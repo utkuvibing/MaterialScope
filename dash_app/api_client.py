@@ -84,6 +84,13 @@ def workspace_result_detail(project_id: str, result_id: str) -> dict[str, Any]:
         return r.json()
 
 
+def analysis_state_curves(project_id: str, analysis_type: str, dataset_key: str) -> dict[str, Any]:
+    with _client() as c:
+        r = c.get(f"/workspace/{project_id}/analysis-state/{analysis_type}/{dataset_key}")
+        r.raise_for_status()
+        return r.json()
+
+
 def workspace_context(project_id: str) -> dict[str, Any]:
     with _client() as c:
         r = c.get(f"/workspace/{project_id}/context")
