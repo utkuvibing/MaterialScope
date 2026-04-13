@@ -1307,6 +1307,15 @@ def read_thermal_data(
     if "time" in col_map:
         keep_cols["time"] = col_map["time"]
 
+    # Validate that mapped columns actually exist in the DataFrame
+    actual_columns = set(raw_df.columns)
+    missing = [v for v in keep_cols.values() if v not in actual_columns]
+    if missing:
+        raise ValueError(
+            f"Column mapping references column(s) {missing} that do not exist in the file. "
+            f"Available columns: {list(actual_columns)}."
+        )
+
     # Build output DataFrame preserving all original columns
     out_df = raw_df.copy()
 

@@ -453,6 +453,18 @@ def import_with_mapping(
             dash.no_update,
         )
 
+    available_columns = set(preview.get("columns", []))
+    if temp_col not in available_columns or signal_col not in available_columns:
+        return (
+            dbc.Alert(
+                "Column mapping is stale. Select the file again, then re-map axis and signal columns.",
+                color="warning",
+            ),
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+        )
+
     from dash_app.api_client import dataset_import
 
     metadata = {

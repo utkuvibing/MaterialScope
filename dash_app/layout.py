@@ -14,7 +14,7 @@ NAV_PRIMARY = [
 ]
 
 NAV_ANALYSIS = [
-    {"label": "DSC", "icon": "bi-graph-up", "href": "/dsc", "disabled": True},
+    {"label": "DSC", "icon": "bi-graph-up", "href": "/dsc"},
     {"label": "TGA", "icon": "bi-graph-down", "href": "/tga", "disabled": True},
     {"label": "DTA", "icon": "bi-bar-chart", "href": "/dta", "disabled": True},
     {"label": "FTIR", "icon": "bi-border-style", "href": "/ftir", "disabled": True},
@@ -62,7 +62,7 @@ def _sidebar() -> html.Div:
             html.Div(
                 [
                     _nav_section("Primary", NAV_PRIMARY),
-                    _nav_section("Analysis (coming soon)", NAV_ANALYSIS),
+                    _nav_section("Analysis", NAV_ANALYSIS),
                     _nav_section("Management", NAV_MANAGEMENT),
                 ],
                 className="px-2",
@@ -105,10 +105,17 @@ def build_layout() -> html.Div:
     prevent_initial_call=False,
 )
 def ensure_project(current_id):
-    """Auto-create a workspace on first load if none exists."""
+    """Auto-create a workspace on first load; validate stale ids after server restart."""
+    from dash_app.api_client import workspace_new, workspace_summary
+
     if current_id:
-        return dash.no_update
-    from dash_app.api_client import workspace_new
+        try:
+            resp = workspace_summary(current_id)
+            if resp.get("project_id"):
+                return dash.no_update
+        except Exception:
+            pass  # project_id is stale (server restart) — fall through to create new
+
     try:
         result = workspace_new()
         return result.get("project_id")
