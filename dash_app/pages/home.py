@@ -6,9 +6,10 @@ import base64
 
 import dash
 import dash_bootstrap_components as dbc
-from dash import Input, Output, State, callback, dash_table, dcc, html
+from dash import Input, Output, State, callback, dcc, html
 
 from dash_app.components.chrome import page_header
+from dash_app.sample_data import resolve_sample_request
 
 dash.register_page(__name__, path="/", title="Import - MaterialScope")
 
@@ -270,42 +271,32 @@ def load_sample(dsc_clicks, tga_clicks, project_id):
     if not project_id:
         return dash.no_update, dash.no_update, dash.no_update
 
-    import os
-
     ctx = dash.callback_context
     if not ctx.triggered:
         return dash.no_update, dash.no_update, dash.no_update
 
     button_id = ctx.triggered[0]["prop_id"].split(".")[0]
-    sample_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sample_data")
-
-    sample_map = {
-        "load-sample-dsc": ("sample_dsc.csv", "DSC"),
-        "load-sample-tga": ("sample_tga.csv", "TGA"),
-    }
-
-    fname, dtype = sample_map.get(button_id, (None, None))
-    if not fname:
+    sample_path, dtype = resolve_sample_request(button_id)
+    if sample_path is None or dtype is None:
         return dash.no_update, dash.no_update, dash.no_update
 
-    fpath = os.path.join(sample_dir, fname)
-    if not os.path.exists(fpath):
+    if not sample_path.exists():
         return (
-            dbc.Alert(f"Sample file not found: {fname}", color="warning"),
+            dbc.Alert(f"Sample file not found: {sample_path.name}", color="warning"),
             dash.no_update,
             dash.no_update,
         )
 
-    with open(fpath, "rb") as f:
+    with sample_path.open("rb") as f:
         file_b64 = base64.b64encode(f.read()).decode("ascii")
 
     from dash_app.api_client import dataset_import
 
     try:
-        result = dataset_import(project_id, fname, file_b64, data_type=dtype)
+        result = dataset_import(project_id, sample_path.name, file_b64, data_type=dtype)
         ds = result.get("dataset", {})
         msg = dbc.Alert(
-            f"Loaded sample: {ds.get('display_name', fname)}",
+            f"Loaded sample: {ds.get('display_name', sample_path.name)}",
             color="success",
             dismissable=True,
         )
