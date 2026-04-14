@@ -19,7 +19,7 @@ NAV_ANALYSIS = [
     {"label": "DTA", "icon": "bi-bar-chart", "href": "/dta"},
     {"label": "FTIR", "icon": "bi-border-style", "href": "/ftir"},
     {"label": "RAMAN", "icon": "bi-lightbulb", "href": "/raman"},
-    {"label": "XRD", "icon": "bi-bullseye", "href": "/xrd", "disabled": True},
+    {"label": "XRD", "icon": "bi-bullseye", "href": "/xrd"},
 ]
 
 NAV_MANAGEMENT = [
