@@ -19,6 +19,7 @@ _SPECTRAL_ANALYSIS_TYPES = {"FTIR", "RAMAN"}
 TEMPERATURE_MIN_C = -200.0
 TEMPERATURE_MAX_C = 2000.0
 TEMPERATURE_UNITS = {"°C", "degC", "K"}
+_SPECTRAL_AXIS_UNITS = {"cm^-1", "1/cm", "nm", "eV"}
 XRD_AXIS_UNITS = {"degree_2theta", "deg", "2theta", "angstrom", "1/angstrom"}
 SIGNAL_UNITS_BY_TYPE = {
     "DSC": {"mW", "mW/mg", "W/g"},
@@ -128,6 +129,7 @@ def _check_dataset_axis(
     analysis_type: str,
     checks: dict[str, Any],
     issues: list[str],
+    warnings: list[str],
 ) -> None:
     if temperature.isna().any():
         if analysis_type in _SPECTRAL_ANALYSIS_TYPES or analysis_type == "XRD":
@@ -149,9 +151,34 @@ def _check_dataset_axis(
         return
 
     if analysis_type in _SPECTRAL_ANALYSIS_TYPES:
-        checks["axis_direction"] = "increasing" if increasing else "decreasing" if decreasing else "mixed"
-        if not increasing and not decreasing:
-            issues.append(f"{analysis_type} spectral axis must be strictly monotonic.")
+        duplicate_points = int((diffs == 0).sum())
+        positive_steps = int((diffs > 0).sum())
+        negative_steps = int((diffs < 0).sum())
+        unique_points = int(temperature.nunique(dropna=True))
+        checks["axis_duplicate_points"] = duplicate_points
+        checks["axis_unique_points"] = unique_points
+
+        if positive_steps and negative_steps:
+            checks["axis_direction"] = "mixed"
+        elif negative_steps:
+            checks["axis_direction"] = "decreasing"
+        elif positive_steps:
+            checks["axis_direction"] = "increasing"
+        else:
+            checks["axis_direction"] = "constant"
+
+        if unique_points < 3:
+            issues.append(f"{analysis_type} spectral axis must contain at least 3 unique points.")
+            return
+
+        if checks["axis_direction"] == "mixed":
+            warnings.append(
+                f"{analysis_type} spectral axis was not monotonic at import; points will be sorted by axis position during analysis."
+            )
+        if duplicate_points:
+            warnings.append(
+                f"{analysis_type} spectral axis contains duplicate positions; duplicates will be collapsed during analysis."
+            )
         return
 
     checks["axis_direction"] = "increasing" if increasing else "mixed"
@@ -1053,6 +1080,7 @@ def validate_thermal_dataset(
         analysis_type=normalized_analysis_type,
         checks=checks,
         issues=issues,
+        warnings=warnings,
     )
 
     if signal.isna().all():
@@ -1074,6 +1102,11 @@ def validate_thermal_dataset(
     if normalized_analysis_type == "XRD":
         if temperature_unit and str(temperature_unit) not in XRD_AXIS_UNITS:
             warnings.append(f"XRD axis unit '{temperature_unit}' is unusual; verify axis normalization before analysis.")
+    elif normalized_analysis_type in _SPECTRAL_ANALYSIS_TYPES:
+        if temperature_unit and str(temperature_unit) not in _SPECTRAL_AXIS_UNITS:
+            warnings.append(
+                f"{normalized_analysis_type} axis unit '{temperature_unit}' is unusual; verify spectral-axis normalization before analysis."
+            )
     elif temperature_unit and temperature_unit not in TEMPERATURE_UNITS:
         warnings.append(f"Temperature unit '{temperature_unit}' is unusual; verify unit conversion before analysis.")
     checks["temperature_unit"] = temperature_unit or "unspecified"

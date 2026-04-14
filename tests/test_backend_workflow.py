@@ -165,6 +165,144 @@ def test_workspace_import_run_dta_analysis_roundtrip(thermal_dataset):
     assert results[0]["analysis_type"] == "DTA"
 
 
+def test_workspace_import_run_ftir_analysis_with_duplicate_wavenumbers():
+    app = create_app(api_token="workflow-token")
+    client = TestClient(app)
+
+    create_response = client.post("/workspace/new", headers=_headers())
+    assert create_response.status_code == 200
+    project_id = create_response.json()["project_id"]
+
+    csv_text = "\n".join(
+        [
+            "wavenumber,absorbance",
+            "4000.0,0.05",
+            "3950.0,0.07",
+            "3900.0,0.1",
+            "3850.0,0.14",
+            "3800.0,0.18",
+            "3750.0,0.23",
+            "3700.0,0.29",
+            "3650.0,0.34",
+            "3600.0,0.39",
+            "3550.0,0.42",
+            "3500.0,0.46",
+            "3450.0,0.51",
+            "3400.0,0.57",
+            "3400.0,0.56",
+            "3350.0,0.5",
+            "3300.0,0.43",
+            "3250.0,0.35",
+            "3200.0,0.28",
+            "3150.0,0.2",
+            "3100.0,0.14",
+        ]
+    )
+
+    import_response = client.post(
+        "/dataset/import",
+        headers=_headers(),
+        json={
+            "project_id": project_id,
+            "file_name": "duplicate_axis_ftir.csv",
+            "file_base64": _to_base64(csv_text.encode("utf-8")),
+            "data_type": "FTIR",
+            "metadata": {
+                "sample_name": "Duplicate Axis FTIR",
+                "sample_mass": 1.0,
+                "heating_rate": 1.0,
+                "instrument": "SpecBench",
+                "vendor": "TestVendor",
+            },
+        },
+    )
+    assert import_response.status_code == 200
+    dataset_key = import_response.json()["dataset"]["key"]
+
+    run_response = client.post(
+        "/analysis/run",
+        headers=_headers(),
+        json={
+            "project_id": project_id,
+            "dataset_key": dataset_key,
+            "analysis_type": "FTIR",
+            "workflow_template_id": "ftir.general",
+        },
+    )
+    assert run_response.status_code == 200
+    run_payload = run_response.json()
+    assert run_payload["analysis_type"] == "FTIR"
+    assert run_payload["execution_status"] == "saved"
+    assert run_payload["result_id"].startswith("ftir_")
+    assert run_payload["validation"]["status"] == "warn"
+    assert run_payload["validation"]["warning_count"] >= 1
+
+
+def test_workspace_import_run_ftir_analysis_with_mixed_axis_order():
+    app = create_app(api_token="workflow-token")
+    client = TestClient(app)
+
+    create_response = client.post("/workspace/new", headers=_headers())
+    assert create_response.status_code == 200
+    project_id = create_response.json()["project_id"]
+
+    csv_text = "\n".join(
+        [
+            "wavenumber,absorbance",
+            "4000.0,0.05",
+            "3950.0,0.07",
+            "3900.0,0.10",
+            "3825.0,0.16",
+            "3875.0,0.13",
+            "3800.0,0.18",
+            "3750.0,0.23",
+            "3700.0,0.29",
+            "3650.0,0.34",
+            "3600.0,0.39",
+            "3550.0,0.42",
+            "3500.0,0.46",
+        ]
+    )
+
+    import_response = client.post(
+        "/dataset/import",
+        headers=_headers(),
+        json={
+            "project_id": project_id,
+            "file_name": "mixed_axis_ftir.csv",
+            "file_base64": _to_base64(csv_text.encode("utf-8")),
+            "data_type": "FTIR",
+            "metadata": {
+                "sample_name": "Mixed Axis FTIR",
+                "sample_mass": 1.0,
+                "heating_rate": 1.0,
+                "instrument": "SpecBench",
+                "vendor": "TestVendor",
+            },
+        },
+    )
+    assert import_response.status_code == 200
+    dataset_key = import_response.json()["dataset"]["key"]
+
+    run_response = client.post(
+        "/analysis/run",
+        headers=_headers(),
+        json={
+            "project_id": project_id,
+            "dataset_key": dataset_key,
+            "analysis_type": "FTIR",
+            "workflow_template_id": "ftir.general",
+        },
+    )
+    assert run_response.status_code == 200
+    run_payload = run_response.json()
+    assert run_payload["analysis_type"] == "FTIR"
+    assert run_payload["execution_status"] == "saved"
+    assert run_payload["result_id"].startswith("ftir_")
+    assert run_payload["validation"]["status"] == "warn"
+    assert run_payload["validation"]["warning_count"] >= 1
+
+
 def test_workspace_compare_batch_run_with_dta_stable_template(thermal_dataset):
     app = create_app(api_token="workflow-token")
     client = TestClient(app)

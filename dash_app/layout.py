@@ -17,7 +17,7 @@ NAV_ANALYSIS = [
     {"label": "DSC", "icon": "bi-graph-up", "href": "/dsc"},
     {"label": "TGA", "icon": "bi-graph-down", "href": "/tga"},
     {"label": "DTA", "icon": "bi-bar-chart", "href": "/dta", "disabled": True},
-    {"label": "FTIR", "icon": "bi-border-style", "href": "/ftir", "disabled": True},
+    {"label": "FTIR", "icon": "bi-border-style", "href": "/ftir"},
     {"label": "RAMAN", "icon": "bi-lightbulb", "href": "/raman", "disabled": True},
     {"label": "XRD", "icon": "bi-bullseye", "href": "/xrd", "disabled": True},
 ]
@@ -52,7 +52,7 @@ def _sidebar() -> html.Div:
                 [
                     html.Div("MaterialScope", className="sidebar-brand"),
                     html.Div(
-                        "Vendor-independent thermal analysis",
+                        "Multimodal materials characterization workbench",
                         className="sidebar-version",
                     ),
                 ],
