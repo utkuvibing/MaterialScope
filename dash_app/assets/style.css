@@ -954,3 +954,97 @@ html[data-theme="dark"] .main-content textarea.form-control {
     color: var(--ta-ink) !important;
     border-color: var(--ta-input-border) !important;
 }
+
+/* -------------------------------------------------------------------------- */
+/* HARD OVERRIDE — Dash dcc.Dropdown legacy react-select dark mode fix        */
+/* Put this at the VERY END of style.css                                       */
+/* -------------------------------------------------------------------------- */
+
+html[data-theme="dark"] .Select-control,
+html[data-theme="dark"] .is-open > .Select-control,
+html[data-theme="dark"] .is-focused > .Select-control {
+  background: #1A1917 !important;
+  border-color: #3D3B38 !important;
+  color: #EEEDEA !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="dark"] .Select-value,
+html[data-theme="dark"] .Select-multi-value-wrapper,
+html[data-theme="dark"] .Select-input,
+html[data-theme="dark"] .Select-input > input,
+html[data-theme="dark"] .Select-input input {
+  background: #1A1917 !important;
+  color: #EEEDEA !important;
+}
+
+html[data-theme="dark"] .Select-placeholder,
+html[data-theme="dark"] .Select-value-label {
+  color: #9E9A93 !important;
+}
+
+html[data-theme="dark"] .Select-menu-outer,
+html[data-theme="dark"] .Select-menu {
+  background: #22211E !important;
+  border-color: #3D3B38 !important;
+}
+
+html[data-theme="dark"] .Select-option,
+html[data-theme="dark"] .VirtualizedSelectOption {
+  background: #22211E !important;
+  color: #EEEDEA !important;
+}
+
+html[data-theme="dark"] .Select-option.is-focused,
+html[data-theme="dark"] .VirtualizedSelectFocusedOption {
+  background: rgba(203,184,150,0.18) !important;
+  color: #EEEDEA !important;
+}
+
+html[data-theme="dark"] .Select-option.is-selected {
+  background: rgba(203,184,150,0.30) !important;
+  color: #121110 !important;
+}
+
+html[data-theme="dark"] .Select-arrow-zone,
+html[data-theme="dark"] .Select-clear-zone,
+html[data-theme="dark"] .Select-arrow {
+  color: #9E9A93 !important;
+  border-color: #3D3B38 !important;
+}
+
+html[data-theme="dark"] .Select--multi .Select-value {
+  background: rgba(203,184,150,0.24) !important;
+  border: 1px solid rgba(203,184,150,0.28) !important;
+  color: #EEEDEA !important;
+}
+
+html[data-theme="dark"] .Select--multi .Select-value-label {
+  color: #EEEDEA !important;
+}
+
+html[data-theme="dark"] .Select--multi .Select-value-icon {
+  border-right: 1px solid rgba(203,184,150,0.22) !important;
+  color: #EEEDEA !important;
+}
+
+html[data-theme="dark"] #locale-select .Select-control,
+html[data-theme="dark"] .ta-dropdown--sidebar .Select-control {
+  background: #2A2826 !important;
+  border-color: rgba(235,219,183,0.28) !important;
+}
+
+html[data-theme="dark"] #locale-select .Select-value,
+html[data-theme="dark"] #locale-select .Select-input,
+html[data-theme="dark"] .ta-dropdown--sidebar .Select-value,
+html[data-theme="dark"] .ta-dropdown--sidebar .Select-input {
+  background: #2A2826 !important;
+  color: #F2F0EB !important;
+}
+
+html[data-theme="dark"] #locale-select .Select-menu-outer,
+html[data-theme="dark"] #locale-select .Select-menu,
+html[data-theme="dark"] .ta-dropdown--sidebar .Select-menu-outer,
+html[data-theme="dark"] .ta-dropdown--sidebar .Select-menu {
+  background: #2A2826 !important;
+}
