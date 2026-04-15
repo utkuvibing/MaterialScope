@@ -555,40 +555,40 @@ html[data-theme="dark"] .alert-danger {
     border-top-color: var(--ta-muted) !important;
 }
 
-/* ----- Sidebar locale: dedicated dark rail skin ----------------------------- */
-.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-control,
-.sidebar :is(.ta-dropdown--sidebar, #locale-select) [class$="-control"],
-.sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="__control"],
-.sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="-control"] {
+/* ----- Sidebar locale: legacy react-select dark skin (dark theme only) ----- */
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-control,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) [class$="-control"],
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="__control"],
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="-control"] {
     background-color: rgba(42, 40, 38, 0.96) !important;
     border-color: rgba(235, 219, 183, 0.28) !important;
 }
 
-.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-value-label,
-.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-placeholder,
-.sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="ingleValue"],
-.sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="laceholder"] {
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-value-label,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-placeholder,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="ingleValue"],
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="laceholder"] {
     color: #f2f0eb !important;
 }
 
-.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-placeholder {
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-placeholder {
     color: rgba(242, 240, 235, 0.72) !important;
 }
 
-.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-input > input,
-.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-input input,
-.sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="Input"] input {
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-input > input,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-input input,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="Input"] input {
     color: #f2f0eb !important;
     background: transparent !important;
 }
 
-.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-arrow-zone,
-.sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="ndicatorCo"] svg {
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-arrow-zone,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="ndicatorCo"] svg {
     fill: rgba(242, 240, 235, 0.75) !important;
 }
 
-.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-arrow-zone .Select-arrow,
-.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-arrow {
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-arrow-zone .Select-arrow,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-arrow {
     border-top-color: rgba(242, 240, 235, 0.75) !important;
 }
 
@@ -644,25 +644,25 @@ div[role="listbox"] div[role="option"][class*="focused"] {
     color: var(--ta-ink) !important;
 }
 
-/* When menu renders inside sidebar DOM, pin dark tokens (portaled menus use html vars below) */
-.sidebar div[role="listbox"] {
+/* When legacy menu renders inside sidebar DOM, pin dark tokens in dark mode */
+html[data-theme="dark"] .sidebar div[role="listbox"] {
     --ta-listbox-bg: #2A2826;
     --ta-listbox-border: rgba(255, 255, 255, 0.12);
     background-color: #2A2826 !important;
     border-color: rgba(255, 255, 255, 0.12) !important;
 }
 
-.sidebar div[role="listbox"] div[role="option"] {
+html[data-theme="dark"] .sidebar div[role="listbox"] div[role="option"] {
     color: #F2F0EB !important;
 }
 
-.sidebar div[role="listbox"] div[role="option"][aria-selected="true"] {
+html[data-theme="dark"] .sidebar div[role="listbox"] div[role="option"][aria-selected="true"] {
     background-color: rgba(235, 219, 183, 0.28) !important;
     color: #1c1a1a !important;
 }
 
-.sidebar div[role="listbox"] div[role="option"]:hover,
-.sidebar div[role="listbox"] div[role="option"][class*="focused"] {
+html[data-theme="dark"] .sidebar div[role="listbox"] div[role="option"]:hover,
+html[data-theme="dark"] .sidebar div[role="listbox"] div[role="option"][class*="focused"] {
     background-color: rgba(235, 219, 183, 0.22) !important;
     color: #1c1a1a !important;
 }
@@ -1208,30 +1208,120 @@ html[data-theme="dark"] .sidebar .ta-dropdown--sidebar .dash-dropdown-trigger-ic
   fill: rgba(242, 240, 235, 0.75) !important;
 }
 
+/* Light theme locale trigger/menu surfaces */
+html[data-theme="light"] .sidebar #locale-select.dash-dropdown,
+html:not([data-theme]) .sidebar #locale-select.dash-dropdown,
+html[data-theme="light"] .sidebar .ta-dropdown--sidebar.dash-dropdown,
+html:not([data-theme]) .sidebar .ta-dropdown--sidebar.dash-dropdown {
+  background-color: #F6F5F2 !important;
+  border-color: #D4D1CA !important;
+  color: #1C1A1A !important;
+  box-shadow: none !important;
+}
+
+html[data-theme="light"] .sidebar #locale-select.dash-dropdown:focus,
+html:not([data-theme]) .sidebar #locale-select.dash-dropdown:focus,
+html[data-theme="light"] .sidebar #locale-select.dash-dropdown[aria-expanded="true"],
+html:not([data-theme]) .sidebar #locale-select.dash-dropdown[aria-expanded="true"],
+html[data-theme="light"] .sidebar .ta-dropdown--sidebar.dash-dropdown:focus,
+html:not([data-theme]) .sidebar .ta-dropdown--sidebar.dash-dropdown:focus,
+html[data-theme="light"] .sidebar .ta-dropdown--sidebar.dash-dropdown[aria-expanded="true"],
+html:not([data-theme]) .sidebar .ta-dropdown--sidebar.dash-dropdown[aria-expanded="true"] {
+  border-color: #BFAE8B !important;
+  outline: 1px solid rgba(191, 174, 139, 0.28) !important;
+}
+
+html[data-theme="light"] .sidebar #locale-select .dash-dropdown-value,
+html:not([data-theme]) .sidebar #locale-select .dash-dropdown-value,
+html[data-theme="light"] .sidebar .ta-dropdown--sidebar .dash-dropdown-value,
+html:not([data-theme]) .sidebar .ta-dropdown--sidebar .dash-dropdown-value {
+  color: #1C1A1A !important;
+}
+
+html[data-theme="light"] .sidebar #locale-select .dash-dropdown-placeholder,
+html:not([data-theme]) .sidebar #locale-select .dash-dropdown-placeholder,
+html[data-theme="light"] .sidebar .ta-dropdown--sidebar .dash-dropdown-placeholder,
+html:not([data-theme]) .sidebar .ta-dropdown--sidebar .dash-dropdown-placeholder {
+  color: #66645E !important;
+}
+
+html[data-theme="light"] .sidebar #locale-select .dash-dropdown-trigger-icon,
+html:not([data-theme]) .sidebar #locale-select .dash-dropdown-trigger-icon,
+html[data-theme="light"] .sidebar .ta-dropdown--sidebar .dash-dropdown-trigger-icon,
+html:not([data-theme]) .sidebar .ta-dropdown--sidebar .dash-dropdown-trigger-icon {
+  color: #66645E !important;
+  fill: #66645E !important;
+}
+
 /* Sidebar locale menu/search surfaces */
 html[data-theme="dark"] .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-content,
-html[data-theme="dark"] .sidebar .dash-dropdown-content {
+html[data-theme="dark"] .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-content {
   background-color: #2A2826 !important;
   border-color: rgba(255, 255, 255, 0.12) !important;
 }
 
 html[data-theme="dark"] .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-search-container,
 html[data-theme="dark"] .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-search,
-html[data-theme="dark"] .sidebar .dash-dropdown-search-container,
-html[data-theme="dark"] .sidebar .dash-dropdown-search {
+html[data-theme="dark"] .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-search-container,
+html[data-theme="dark"] .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-search {
   background-color: #2A2826 !important;
   border-color: rgba(255, 255, 255, 0.12) !important;
   color: #F2F0EB !important;
 }
 
-html[data-theme="dark"] .sidebar .dash-dropdown-option {
+html[data-theme="dark"] .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-option,
+html[data-theme="dark"] .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-option {
   background-color: transparent !important;
   color: #F2F0EB !important;
 }
 
-html[data-theme="dark"] .sidebar .dash-dropdown-option:hover,
-html[data-theme="dark"] .sidebar .dash-dropdown-option:focus {
+html[data-theme="dark"] .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-option:hover,
+html[data-theme="dark"] .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-option:focus,
+html[data-theme="dark"] .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-option:hover,
+html[data-theme="dark"] .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-option:focus {
   background-color: rgba(235, 219, 183, 0.22) !important;
+  color: #1C1A1A !important;
+}
+
+/* Light theme locale menu/search/option surfaces */
+html[data-theme="light"] .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-content,
+html:not([data-theme]) .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-content,
+html[data-theme="light"] .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-content,
+html:not([data-theme]) .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-content {
+  background-color: #FFFFFF !important;
+  border-color: #D4D1CA !important;
+}
+
+html[data-theme="light"] .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-search-container,
+html:not([data-theme]) .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-search-container,
+html[data-theme="light"] .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-search,
+html:not([data-theme]) .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-search,
+html[data-theme="light"] .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-search-container,
+html:not([data-theme]) .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-search-container,
+html[data-theme="light"] .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-search,
+html:not([data-theme]) .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-search {
+  background-color: #FFFFFF !important;
+  border-color: #D4D1CA !important;
+  color: #1C1A1A !important;
+}
+
+html[data-theme="light"] .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-option,
+html:not([data-theme]) .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-option,
+html[data-theme="light"] .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-option,
+html:not([data-theme]) .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-option {
+  background-color: transparent !important;
+  color: #1C1A1A !important;
+}
+
+html[data-theme="light"] .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-option:hover,
+html:not([data-theme]) .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-option:hover,
+html[data-theme="light"] .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-option:focus,
+html:not([data-theme]) .sidebar .dash-dropdown-wrapper:has(> #locale-select) .dash-dropdown-option:focus,
+html[data-theme="light"] .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-option:hover,
+html:not([data-theme]) .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-option:hover,
+html[data-theme="light"] .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-option:focus,
+html:not([data-theme]) .sidebar .dash-dropdown-wrapper:has(> .ta-dropdown--sidebar) .dash-dropdown-option:focus {
+  background-color: rgba(235, 219, 183, 0.45) !important;
   color: #1C1A1A !important;
 }
 
