@@ -29,6 +29,24 @@ NAV_MANAGEMENT_DEF: list[tuple[str, str, str]] = [
 ]
 
 
+def _sidebar_history(locale: str) -> html.Div:
+    loc = normalize_locale(locale)
+    return html.Div(
+        [
+            html.Div(
+                t(loc, "sidebar.history_title"),
+                className="sidebar-section-label",
+            ),
+            html.Div(
+                id="sidebar-history-panel",
+                children=html.Small(t(loc, "sidebar.history_empty"), className="text-muted"),
+                className="sidebar-history-list",
+            ),
+        ],
+        className="px-3 pb-2",
+    )
+
+
 def _nav_section(locale: str, title_key: str, defs: list[tuple[str, str, str]]) -> html.Div:
     links = []
     for label_key, icon, href in defs:
@@ -114,6 +132,8 @@ def build_sidebar_inner(locale: str, theme: str) -> html.Div:
                     _nav_section(loc, "nav.section_primary", NAV_PRIMARY_DEF),
                     _nav_section(loc, "nav.section_analysis", NAV_ANALYSIS_DEF),
                     _nav_section(loc, "nav.section_management", NAV_MANAGEMENT_DEF),
+                    html.Hr(className="sidebar-hr my-2"),
+                    _sidebar_history(loc),
                 ],
                 className="px-2",
             ),
@@ -234,3 +254,43 @@ def ensure_project(current_id):
         return result.get("project_id")
     except Exception:
         return None
+
+
+@callback(
+    Output("sidebar-history-panel", "children"),
+    Input("project-id", "data"),
+    Input("workspace-refresh", "data"),
+    Input("ui-locale", "data"),
+    prevent_initial_call=False,
+)
+def refresh_sidebar_history(project_id, _refresh, locale):
+    loc = normalize_locale(locale)
+    if not project_id:
+        return html.Small(t(loc, "sidebar.history_empty"), className="text-muted")
+
+    from dash_app.api_client import workspace_context
+
+    try:
+        context = workspace_context(project_id)
+    except Exception:
+        return html.Small(t(loc, "sidebar.history_empty"), className="text-muted")
+
+    history = context.get("recent_history") or []
+    if not history:
+        return html.Small(t(loc, "sidebar.history_empty"), className="text-muted")
+
+    items = []
+    for item in history:
+        ts = item.get("timestamp", "--")
+        action = item.get("action", "?")
+        detail = item.get("details", "")
+        label = f"{action}"
+        if detail:
+            label += f" — {detail}"
+        items.append(
+            html.Li(
+                [html.Small(ts, className="d-block text-muted sidebar-history-ts"), html.Span(label)],
+                className="sidebar-history-item",
+            )
+        )
+    return html.Ul(items, className="sidebar-history-list mb-0")

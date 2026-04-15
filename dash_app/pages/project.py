@@ -102,7 +102,6 @@ layout = html.Div(
                             className="mb-4",
                         ),
                         dbc.Card(dbc.CardBody(html.Div(id="compare-summary-panel")), className="mb-4"),
-                        dbc.Card(dbc.CardBody(html.Div(id="history-panel")), className="mb-4"),
                     ],
                     md=4,
                 ),
@@ -132,7 +131,6 @@ def stage_project_upload(contents, file_name):
     Output("workspace-datasets-panel", "children"),
     Output("workspace-results-panel", "children"),
     Output("compare-summary-panel", "children"),
-    Output("history-panel", "children"),
     Input("project-id", "data"),
     Input("project-page-refresh", "data"),
     Input("workspace-refresh", "data"),
@@ -143,7 +141,7 @@ def load_workspace(project_id, _refresh, _global_refresh):
             "No active workspace. Go to Import to load runs or use Quick Actions here to start/load a workspace.",
             title="Workspace required",
         )
-        return empty, empty, empty, empty, empty
+        return empty, empty, empty, empty
 
     from dash_app.api_client import workspace_context, workspace_datasets, workspace_results
 
@@ -153,7 +151,7 @@ def load_workspace(project_id, _refresh, _global_refresh):
         results_payload = workspace_results(project_id)
     except Exception as exc:
         error = html.P(f"Error: {exc}", className="text-danger")
-        return error, error, error, error, error
+        return error, error, error, error
 
     summary = context.get("summary", {})
     compare_workspace = context.get("compare_workspace") or {}
@@ -237,33 +235,7 @@ def load_workspace(project_id, _refresh, _global_refresh):
         ]
     )
 
-    history = context.get("recent_history") or []
-    if history:
-        history_view = html.Div(
-            [
-                html.H5("Recent History", className="mb-3"),
-                html.Ul(
-                    [
-                        html.Li(f"{item.get('timestamp', '--')} - {item.get('action', 'Unknown')} - {item.get('details', '')}")
-                        for item in history
-                    ],
-                    className="mb-0",
-                ),
-            ]
-        )
-    else:
-        history_view = html.Div(
-            [
-                html.H5("Recent History", className="mb-3"),
-                prereq_or_empty_help(
-                    "No workflow history yet. Actions such as import, analysis save, compare updates, and archive operations will appear here.",
-                    tone="secondary",
-                    title="No history entries",
-                ),
-            ]
-        )
-
-    return summary_block, dataset_table_view, results_view, compare_view, history_view
+    return summary_block, dataset_table_view, results_view, compare_view
 
 
 @callback(
