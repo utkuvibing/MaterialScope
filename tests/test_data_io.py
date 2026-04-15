@@ -435,9 +435,10 @@ class TestReadCSV:
 
         assert ds.data_type == "FTIR"
         assert ds.units["temperature"] == "cm^-1"
-        assert ds.metadata["modality_confirmation_required"] is True
-        assert ds.metadata["modality_confirmation_applied"] is True
-        assert any("user-confirmed" in warning.lower() for warning in ds.metadata["import_warnings"])
+        # When modality is explicitly set, confirmation is not required because
+        # the modality-aware guess_columns already locks the type.
+        assert ds.metadata["modality_confirmation_required"] is False
+        assert ds.metadata["modality_confirmation_applied"] is False
 
     def test_read_raman_csv_infers_spectral_contract_metadata(self):
         buf = io.StringIO(

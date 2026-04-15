@@ -74,10 +74,10 @@ def load_raw_preview_dataframe(file_name: str, file_bytes: bytes) -> pd.DataFram
     return df
 
 
-def build_import_preview(file_name: str, content_string: str) -> dict[str, Any]:
+def build_import_preview(file_name: str, content_string: str, modality: str | None = None) -> dict[str, Any]:
     file_bytes = decode_base64_content(content_string)
     frame = load_raw_preview_dataframe(file_name, file_bytes)
-    guessed = guess_columns(frame, source_name=file_name)
+    guessed = guess_columns(frame, source_name=file_name, modality=modality)
     preview = frame.head(20).copy().where(pd.notna(frame.head(20)), None)
     return {
         "file_name": file_name,

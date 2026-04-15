@@ -94,11 +94,14 @@ def _coerce_float(value: Any) -> float | None:
     return result
 
 
-def _validation_status(*, issues: list[str], warnings: list[str]) -> str:
+def _validation_status(*, issues: list[str], warnings: list[str], review_flags: list[str] | None = None) -> str:
     if issues:
         return "fail"
+    review_flags = review_flags or []
     if warnings:
         return "warn"
+    if review_flags:
+        return "pass_with_review"
     return "pass"
 
 
@@ -1030,6 +1033,7 @@ def validate_thermal_dataset(
     """Return a structured validation summary for a ThermalDataset-like object."""
     issues: list[str] = []
     warnings: list[str] = []
+    review_flags: list[str] = []
     checks: dict[str, Any] = {}
 
     if dataset is None:
@@ -1037,6 +1041,7 @@ def validate_thermal_dataset(
             "status": "fail",
             "issues": ["Dataset is missing."],
             "warnings": [],
+            "review_flags": [],
             "checks": {},
             "required_metadata": list(RECOMMENDED_METADATA_FIELDS),
             "optional_metadata": list(OPTIONAL_METADATA_FIELDS),
@@ -1056,6 +1061,7 @@ def validate_thermal_dataset(
             "status": "fail",
             "issues": issues,
             "warnings": warnings,
+            "review_flags": review_flags,
             "checks": checks,
             "required_metadata": list(RECOMMENDED_METADATA_FIELDS),
             "optional_metadata": list(OPTIONAL_METADATA_FIELDS),
@@ -1068,6 +1074,7 @@ def validate_thermal_dataset(
             "status": "fail",
             "issues": issues,
             "warnings": warnings,
+            "review_flags": review_flags,
             "checks": checks,
             "required_metadata": list(RECOMMENDED_METADATA_FIELDS),
             "optional_metadata": list(OPTIONAL_METADATA_FIELDS),
@@ -1121,6 +1128,16 @@ def validate_thermal_dataset(
 
     _check_import_context(metadata=metadata, checks=checks, warnings=warnings)
 
+    # Modality-specific suspicious unit combinations (review flags)
+    try:
+        from core.modality_specs import check_suspicious_unit_combo
+        suspicious_warnings = check_suspicious_unit_combo(normalized_analysis_type, temperature_unit or "", signal_unit or "")
+        for sw in suspicious_warnings:
+            review_flags.append(sw)
+            checks.setdefault("modality_unit_review", []).append(sw)
+    except ImportError:
+        pass
+
     missing_metadata = [field for field in RECOMMENDED_METADATA_FIELDS if not metadata.get(field)]
     if missing_metadata:
         warnings.append(f"Recommended metadata missing: {', '.join(missing_metadata)}.")
@@ -1148,9 +1165,10 @@ def validate_thermal_dataset(
 
     if not enforce_workflow_context:
         return {
-            "status": _validation_status(issues=issues, warnings=warnings),
+            "status": _validation_status(issues=issues, warnings=warnings, review_flags=review_flags),
             "issues": issues,
             "warnings": warnings,
+            "review_flags": review_flags,
             "checks": checks,
             "required_metadata": list(RECOMMENDED_METADATA_FIELDS),
             "optional_metadata": list(OPTIONAL_METADATA_FIELDS),
@@ -1202,9 +1220,10 @@ def validate_thermal_dataset(
         )
 
     return {
-        "status": _validation_status(issues=issues, warnings=warnings),
+        "status": _validation_status(issues=issues, warnings=warnings, review_flags=review_flags),
         "issues": issues,
         "warnings": warnings,
+        "review_flags": review_flags,
         "checks": checks,
         "required_metadata": list(RECOMMENDED_METADATA_FIELDS),
         "optional_metadata": list(OPTIONAL_METADATA_FIELDS),

@@ -817,13 +817,19 @@ def _find_header_and_data_rows(
 # ---------------------------------------------------------------------------
 
 
-def guess_columns(df: pd.DataFrame, source_name: str | None = None) -> dict:
+def guess_columns(df: pd.DataFrame, source_name: str | None = None, modality: str | None = None) -> dict:
     """Guess the role of each column using regex pattern matching.
 
     Parameters
     ----------
     df : pd.DataFrame
         Raw DataFrame whose column names have been stripped of whitespace.
+    source_name : str or None
+        File name for source-name heuristics.
+    modality : str or None
+        When provided, restricts signal detection to this modality's patterns
+        and narrows unit validation.  One of 'DSC', 'TGA', 'DTA', 'FTIR',
+        'RAMAN', 'XRD'.
 
     Returns
     -------
@@ -835,25 +841,39 @@ def guess_columns(df: pd.DataFrame, source_name: str | None = None) -> dict:
     """
     cols = list(df.columns)
     numeric_cols = {col for col in cols if _is_mostly_numeric(df[col])}
+
+    # Resolve modality spec when available
+    _modality_upper = str(modality).upper() if modality else None
+    _modality_spec = None
+    if _modality_upper:
+        try:
+            from core.modality_specs import get_modality_spec
+            _modality_spec = get_modality_spec(_modality_upper)
+        except ImportError:
+            pass
+
     result: Dict[str, Optional[str] | dict | list] = {
         "temperature": None,
         "time": None,
         "signal": None,
-        "data_type": "unknown",
+        "data_type": _modality_upper or "unknown",
         "warnings": [],
         "confidence": {},
         "candidates": {},
         "inferred_signal_unit": "unknown",
-        "inferred_analysis_type": "unknown",
+        "inferred_analysis_type": _modality_upper or "unknown",
     }
     warnings_list: list[str] = []
     confidence: dict[str, str] = {}
 
-    def _rank_role(pattern_key: str, *, prefer_monotonic: bool = False) -> list[dict[str, object]]:
+    def _rank_role(pattern_key: str, *, prefer_monotonic: bool = False, aliases: tuple[str, ...] | None = None) -> list[dict[str, object]]:
         ranked: list[dict[str, object]] = []
+        patterns_to_use = list(_PATTERNS.get(pattern_key, []))
+        if aliases:
+            patterns_to_use = list(aliases)
         for col in cols:
             score = 0
-            pattern_hits = _count_pattern_hits(col, _PATTERNS[pattern_key])
+            pattern_hits = sum(1 for pat in patterns_to_use if re.search(pat, str(col)))
             if pattern_hits:
                 score += 10 + pattern_hits * 2
             header_lower = str(col).lower()
@@ -872,7 +892,9 @@ def guess_columns(df: pd.DataFrame, source_name: str | None = None) -> dict:
     xrd_source_bonus = _xrd_source_hint_score(source_name)
     spectral_source_bonus, spectral_source_suggested_type = _spectral_source_hint_score(source_name)
 
-    temp_ranked = _rank_role("temperature", prefer_monotonic=True)
+    # Use modality-specific x_aliases for axis detection when available
+    _axis_aliases = _modality_spec["x_aliases"] if _modality_spec else None
+    temp_ranked = _rank_role("temperature", prefer_monotonic=True, aliases=_axis_aliases)
     time_ranked = _rank_role("time", prefer_monotonic=True)
     result["candidates"]["temperature"] = temp_ranked[:3]
     result["candidates"]["time"] = time_ranked[:3]
@@ -917,8 +939,11 @@ def guess_columns(df: pd.DataFrame, source_name: str | None = None) -> dict:
         confidence["time"] = "review" if any(int(item["score"]) > 0 for item in time_ranked) else "medium"
 
     assigned = {result["temperature"], result["time"]}
-    signal_candidates: dict[str, list[dict[str, object]]] = {analysis_type: [] for analysis_type in _ANALYSIS_TYPE_KEYS}
-    for analysis_type in _ANALYSIS_TYPE_KEYS:
+
+    # When modality is specified, only evaluate that modality's signal candidates.
+    _eval_types = [_modality_upper] if _modality_upper else list(_ANALYSIS_TYPE_KEYS)
+    signal_candidates: dict[str, list[dict[str, object]]] = {analysis_type: [] for analysis_type in _eval_types}
+    for analysis_type in _eval_types:
         pattern_key = _TYPE_PATTERN_KEYS[analysis_type]
         for col in cols:
             if col in assigned:
@@ -980,19 +1005,54 @@ def guess_columns(df: pd.DataFrame, source_name: str | None = None) -> dict:
         if ranked:
             top = ranked[0]
             score = int(top["score"])
-            if analysis_type == "XRD":
-                score += xrd_source_bonus
-                if _is_xrd_axis_hint(str(result.get("temperature") or "")):
-                    score += 12
-            if analysis_type in {"FTIR", "RAMAN"} and spectral_source_bonus > 0:
-                if spectral_source_suggested_type and analysis_type == spectral_source_suggested_type:
-                    score += spectral_source_bonus
-                elif not spectral_source_suggested_type:
-                    score += spectral_source_bonus
+            # Skip source bonuses when modality is explicitly set -- the user already decided.
+            if not _modality_upper:
+                if analysis_type == "XRD":
+                    score += xrd_source_bonus
+                    if _is_xrd_axis_hint(str(result.get("temperature") or "")):
+                        score += 12
+                if analysis_type in {"FTIR", "RAMAN"} and spectral_source_bonus > 0:
+                    if spectral_source_suggested_type and analysis_type == spectral_source_suggested_type:
+                        score += spectral_source_bonus
+                    elif not spectral_source_suggested_type:
+                        score += spectral_source_bonus
             type_scores.append((analysis_type, score, str(top["column"]), str(top["signal_unit"])))
     type_scores.sort(key=lambda item: (item[1], item[0]), reverse=True)
 
-    if type_scores and type_scores[0][1] > 0:
+    # When modality is explicit, skip ambiguity detection across types.
+    if _modality_upper:
+        if type_scores and type_scores[0][1] > 0:
+            best_type, best_score, best_col, best_unit = type_scores[0]
+            result["signal"] = best_col
+            result["inferred_signal_unit"] = best_unit or "unknown"
+            confidence["signal"] = "high" if best_score >= 10 else "medium"
+            if best_score < 10:
+                warnings_list.append(
+                    f"{_modality_upper} signal column '{best_col}' had low pattern match score ({best_score}); "
+                    "verify the column mapping."
+                )
+        else:
+            # Fallback: pick best numeric column not yet assigned
+            fallback_signal = None
+            for col in cols:
+                if col not in assigned and col in numeric_cols:
+                    fallback_signal = col
+                    break
+            result["signal"] = fallback_signal
+            result["inferred_signal_unit"] = _extract_unit(fallback_signal, "signal") if fallback_signal else "unknown"
+            confidence["signal"] = "review"
+            if fallback_signal is not None:
+                warnings_list.append(
+                    f"{_modality_upper} signal column was inferred by numeric fallback as '{fallback_signal}'; verify the column mapping."
+                )
+            else:
+                warnings_list.append(
+                    f"No numeric column could be identified for {_modality_upper} signal; manual column mapping required."
+                )
+        result["inferred_analysis_type"] = _modality_upper
+        result["data_type"] = _modality_upper
+        confidence["data_type"] = "high"
+    elif type_scores and type_scores[0][1] > 0:
         best_type, best_score, best_col, best_unit = type_scores[0]
         ambiguous_type = False
         ambiguity_margin = 4
@@ -1309,7 +1369,7 @@ def read_thermal_data(
     import_confidence = "high"
     inferred_analysis_type = "unknown"
     if column_mapping is None:
-        guessed = guess_columns(raw_df, source_name=source_name)
+        guessed = guess_columns(raw_df, source_name=source_name, modality=data_type)
         col_map = {
             k: v
             for k, v in guessed.items()
