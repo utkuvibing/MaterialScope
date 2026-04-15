@@ -22,7 +22,8 @@ def create_dash_app(*, requests_pathname_prefix: str = "/") -> dash.Dash:
         update_title="MaterialScope ...",
     )
 
-    from dash_app.layout import build_layout
+    from dash_app.layout import build_layout, register_clientside_theme
 
     app.layout = build_layout()
+    register_clientside_theme(app)
     return app

@@ -12,6 +12,7 @@ from core.processing_schema import get_workflow_templates
 from dash_app.compare_curve_utils import axis_titles, pick_best_series
 from dash_app.components.chrome import page_header
 from dash_app.components.data_preview import dataset_table
+from dash_app.theme import apply_figure_theme
 
 dash.register_page(__name__, path="/compare", title="Compare - MaterialScope")
 
@@ -49,7 +50,7 @@ layout = html.Div(
                                     dbc.Label("Analysis Type"),
                                     dbc.Select(id="compare-analysis-type"),
                                     dbc.Label("Selected Runs", className="mt-3"),
-                                    dcc.Dropdown(id="compare-selected-runs", multi=True),
+                                    dcc.Dropdown(id="compare-selected-runs", multi=True, className="ta-dropdown"),
                                     dbc.Label("Overlay signal", className="mt-3"),
                                     dbc.RadioItems(
                                         id="compare-signal-mode",
@@ -263,9 +264,12 @@ def run_compare_batch(n_clicks, project_id, analysis_type, selected_runs, templa
     Input("compare-signal-mode", "value"),
     Input("compare-refresh", "data"),
     Input("workspace-refresh", "data"),
+    Input("ui-theme", "data"),
     prevent_initial_call=False,
 )
-def render_compare_workspace(project_id, analysis_type, selected_runs, signal_mode, _compare_refresh, _workspace_refresh):
+def render_compare_workspace(
+    project_id, analysis_type, selected_runs, signal_mode, _compare_refresh, _workspace_refresh, ui_theme
+):
     if not project_id:
         empty = html.P("No workspace active.", className="text-muted")
         return empty, empty, empty, empty
@@ -367,12 +371,12 @@ def render_compare_workspace(project_id, analysis_type, selected_runs, signal_mo
                 title=f"{analysis_type} Compare — {mode_caption}",
                 xaxis_title=x_title,
                 yaxis_title=y_title,
-                template="plotly_white",
                 margin=dict(l=48, r=24, t=56, b=48),
                 height=420,
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
             )
-            overlay = dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True})
+            apply_figure_theme(fig, ui_theme)
+            overlay = dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True}, className="ta-plot")
 
     summary_rows = []
     for dataset_key in selected_runs:

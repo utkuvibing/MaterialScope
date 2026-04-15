@@ -1,23 +1,71 @@
-/* MaterialScope Dash theme -- professional scientific app styling */
+/* MaterialScope Dash — restrained scientific theme (light + dark via html[data-theme]) */
 
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
 @import url('https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css');
 
-:root {
-    --ta-ink: #0F172A;
-    --ta-muted: #5A6578;
-    --ta-border: #D1D9E0;
+/* Light palette (product spec) */
+html[data-theme="light"],
+html:not([data-theme]) {
+    --ta-bg: #FFFFFF;
+    --ta-ink: #1C1A1A;
+    --ta-muted: #66645E;
+    --ta-border: #E0DDD6;
     --ta-panel: #FFFFFF;
-    --ta-panel-strong: #F8FAFC;
-    --ta-accent: #0E7490;
-    --ta-accent-strong: #155E75;
-    --ta-gold: #B45309;
-    --ta-bg: #F0F2F5;
-    --ta-sidebar-bg: #0F172A;
-    --ta-sidebar-text: #E2E8F0;
-    --ta-sidebar-muted: #A9B8CC;
-    --ta-input-bg: #FAFBFC;
-    --ta-input-border: #D1D9E0;
+    --ta-panel-strong: #F7F6F3;
+    --ta-accent: #EBDBB7;
+    --ta-accent-hover: #D9C9A3;
+    --ta-accent-ink: #1C1A1A;
+    --ta-hero-badge-bg: rgba(102, 100, 94, 0.10);
+    --ta-hero-badge-fg: #66645E;
+    --ta-sidebar-bg: #1C1A1A;
+    --ta-sidebar-text: #F2F0EB;
+    --ta-sidebar-muted: #A8A59C;
+    --ta-sidebar-border: rgba(255, 255, 255, 0.08);
+    --ta-sidebar-hover: rgba(255, 255, 255, 0.05);
+    --ta-sidebar-active-bg: rgba(235, 219, 183, 0.12);
+    --ta-sidebar-active-border: #EBDBB7;
+    --ta-input-bg: #FFFFFF;
+    --ta-input-border: #D4D1CA;
+    --ta-card-shadow: 0 1px 2px rgba(28, 26, 26, 0.06);
+    --ta-danger-bg: rgba(92, 64, 60, 0.10);
+    --ta-danger-ink: #5C403C;
+    --ta-danger-border: #9A847E;
+    --ta-listbox-bg: #FFFFFF;
+    --ta-listbox-border: #D4D1CA;
+    --ta-option-hover-bg: rgba(235, 219, 183, 0.55);
+    --ta-option-selected-bg: rgba(102, 100, 94, 0.12);
+}
+
+/* Dark counterpart — same typographic discipline, warm neutrals */
+html[data-theme="dark"] {
+    --ta-bg: #121110;
+    --ta-ink: #EEEDEA;
+    --ta-muted: #9E9A93;
+    --ta-border: #3D3B38;
+    --ta-panel: #1A1917;
+    --ta-panel-strong: #22211E;
+    --ta-accent: #CBB896;
+    --ta-accent-hover: #B8A382;
+    --ta-accent-ink: #121110;
+    --ta-hero-badge-bg: rgba(203, 184, 150, 0.12);
+    --ta-hero-badge-fg: #CBB896;
+    --ta-sidebar-bg: #1C1A1A;
+    --ta-sidebar-text: #F2F0EB;
+    --ta-sidebar-muted: #9E9A93;
+    --ta-sidebar-border: rgba(255, 255, 255, 0.07);
+    --ta-sidebar-hover: rgba(255, 255, 255, 0.05);
+    --ta-sidebar-active-bg: rgba(203, 184, 150, 0.14);
+    --ta-sidebar-active-border: #CBB896;
+    --ta-input-bg: #1A1917;
+    --ta-input-border: #3D3B38;
+    --ta-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    --ta-danger-bg: rgba(212, 166, 153, 0.12);
+    --ta-danger-ink: #D4A699;
+    --ta-danger-border: #8B726D;
+    --ta-listbox-bg: #22211E;
+    --ta-listbox-border: #3D3B38;
+    --ta-option-hover-bg: rgba(203, 184, 150, 0.35);
+    --ta-option-selected-bg: rgba(203, 184, 150, 0.22);
 }
 
 html, body {
@@ -45,122 +93,166 @@ html, body {
     padding: 1.5rem 2rem;
     max-width: calc(100vw - 260px);
     overflow-x: hidden;
+    background: var(--ta-bg);
 }
 
-/* Sidebar */
+/* Sidebar (fixed dark rail in both themes) */
 .sidebar {
     position: fixed;
     top: 0;
     left: 0;
     width: 260px;
     height: 100vh;
-    background: linear-gradient(180deg, var(--ta-sidebar-bg) 0%, #18263A 100%);
+    background: var(--ta-sidebar-bg);
     color: var(--ta-sidebar-text);
     overflow-y: auto;
     z-index: 1000;
-    border-right: 1px solid rgba(255,255,255,0.06);
+    border-right: 1px solid var(--ta-sidebar-border);
 }
 
 .sidebar-brand {
     font-family: 'IBM Plex Mono', monospace;
     font-weight: 700;
-    font-size: 1.15rem;
+    font-size: 1.12rem;
     color: #FFFFFF;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.03em;
 }
 
 .sidebar-version {
-    font-size: 0.78rem;
-    color: #C1D0E0;
-    line-height: 1.35;
+    font-size: 0.76rem;
+    color: var(--ta-sidebar-muted);
+    line-height: 1.4;
+    margin-top: 0.25rem;
 }
 
 .sidebar-hr {
-    border-color: rgba(255,255,255,0.08);
+    border-color: var(--ta-sidebar-border);
     margin: 0.5rem 0;
+    opacity: 1;
 }
 
 .sidebar-section-label {
-    color: #C9D4E3;
-    font-size: 0.72rem;
+    color: var(--ta-sidebar-muted);
+    font-size: 0.7rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    padding: 0.6rem 0.75rem 0.25rem;
+    letter-spacing: 0.07em;
+    padding: 0.55rem 0.75rem 0.2rem;
 }
 
 .sidebar-nav-link {
-    color: #DCE5F1 !important;
-    font-size: 0.9rem;
+    color: rgba(242, 240, 235, 0.92) !important;
+    font-size: 0.88rem;
     font-weight: 500;
-    padding: 0.45rem 0.75rem !important;
-    border-radius: 0 8px 8px 0 !important;
+    padding: 0.42rem 0.75rem !important;
+    border-radius: 0 6px 6px 0 !important;
     border-left: 2px solid transparent;
-    transition: background 0.14s, border-color 0.14s;
+    transition: background 0.14s ease, border-color 0.14s ease;
 }
 
 .sidebar-nav-link:hover {
-    background: rgba(255,255,255,0.04) !important;
-    border-left-color: rgba(201, 212, 227, 0.45);
+    background: var(--ta-sidebar-hover) !important;
+    border-left-color: rgba(235, 219, 183, 0.35);
 }
 
 .sidebar-nav-link.active {
-    background: linear-gradient(90deg, rgba(148,196,215,0.11) 0%, rgba(148,196,215,0.03) 100%) !important;
-    border-left-color: rgba(148, 196, 215, 0.88) !important;
-    color: #F2F6FB !important;
+    background: var(--ta-sidebar-active-bg) !important;
+    border-left-color: var(--ta-sidebar-active-border) !important;
+    color: #FFFFFF !important;
     font-weight: 600;
 }
 
 .sidebar-nav-link.disabled {
-    color: #6B7B90 !important;
-    opacity: 0.6;
+    color: #6B6A66 !important;
+    opacity: 0.55;
 }
 
-/* Page header hero */
+.sidebar-control-group-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ta-sidebar-muted);
+    margin-bottom: 0.35rem;
+}
+
+.sidebar-theme-btn {
+    border-color: rgba(235, 219, 183, 0.45) !important;
+    color: var(--ta-sidebar-text) !important;
+    font-weight: 600;
+    border-radius: 6px !important;
+}
+
+.sidebar-theme-btn:hover,
+.sidebar-theme-btn:focus {
+    background: rgba(235, 219, 183, 0.14) !important;
+    border-color: #EBDBB7 !important;
+    color: #FFFFFF !important;
+}
+
+.sidebar-theme-btn-text {
+    font-size: 0.8rem;
+}
+
+.sidebar-select {
+    background: rgba(255, 255, 255, 0.06) !important;
+    color: var(--ta-sidebar-text) !important;
+    border-color: rgba(255, 255, 255, 0.14) !important;
+    border-radius: 6px !important;
+    font-size: 0.82rem;
+}
+
+.sidebar-select:focus {
+    border-color: rgba(235, 219, 183, 0.55) !important;
+    box-shadow: 0 0 0 0.15rem rgba(235, 219, 183, 0.18) !important;
+}
+
+/* Page header */
 .ta-hero {
     margin: 0 0 1.4rem 0;
     padding: 1.5rem 1.6rem;
     border-radius: 4px;
     background: var(--ta-panel);
+    border: 1px solid var(--ta-border);
 }
 
 .ta-hero-badge {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    padding: 0.35rem 0.75rem;
+    padding: 0.32rem 0.7rem;
     border-radius: 999px;
-    background: rgba(180,83,9,0.10);
-    color: var(--ta-gold);
-    font-size: 0.74rem;
+    background: var(--ta-hero-badge-bg);
+    color: var(--ta-hero-badge-fg);
+    font-size: 0.72rem;
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    margin-bottom: 0.9rem;
+    margin-bottom: 0.85rem;
 }
 
 .ta-hero-title {
     margin: 0;
     color: var(--ta-ink);
-    font-size: 1.8rem;
-    line-height: 1.1;
+    font-size: 1.75rem;
+    line-height: 1.12;
     letter-spacing: -0.02em;
     font-weight: 700;
 }
 
 .ta-hero-copy {
     max-width: 880px;
-    margin: 0.6rem 0 0 0;
+    margin: 0.55rem 0 0 0;
     color: var(--ta-muted);
-    font-size: 0.95rem;
+    font-size: 0.94rem;
     line-height: 1.6;
 }
 
 /* Cards */
 .card {
-    border: none;
+    border: 1px solid var(--ta-border);
     border-radius: 4px;
-    box-shadow: 0 1px 3px rgba(15,23,42,0.06);
+    box-shadow: var(--ta-card-shadow);
     background: var(--ta-panel);
 }
 
@@ -168,25 +260,33 @@ html, body {
 .upload-zone {
     border: 2px dashed var(--ta-input-border);
     border-radius: 8px;
-    background: var(--ta-input-bg);
+    background: var(--ta-panel-strong);
     cursor: pointer;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s ease;
 }
 
 .upload-zone:hover {
     border-color: var(--ta-accent);
 }
 
-/* Buttons */
+/* Primary actions — cream family */
 .btn-primary {
-    background: linear-gradient(180deg, var(--ta-accent) 0%, var(--ta-accent-strong) 100%);
-    border: 1px solid rgba(255,255,255,0.10);
+    background: var(--ta-accent) !important;
+    border: 1px solid rgba(28, 26, 26, 0.12) !important;
+    color: var(--ta-accent-ink) !important;
     font-weight: 600;
-    border-radius: 8px;
+    border-radius: 6px;
 }
 
-.btn-primary:hover {
-    background: linear-gradient(180deg, var(--ta-accent-strong) 0%, #0C4A5E 100%);
+.btn-primary:hover,
+.btn-primary:focus {
+    background: var(--ta-accent-hover) !important;
+    border-color: rgba(28, 26, 26, 0.18) !important;
+    color: var(--ta-accent-ink) !important;
+}
+
+.btn-primary:active {
+    background: var(--ta-accent-hover) !important;
 }
 
 /* Metrics */
@@ -200,6 +300,7 @@ html, body {
 .list-group-item {
     border-color: var(--ta-border);
     background: transparent;
+    color: var(--ta-ink);
 }
 
 /* Alerts */
@@ -214,9 +315,485 @@ html, body {
     font-size: 0.72rem;
 }
 
-/* Select/input */
+/* Form controls */
 .form-select, .form-control {
     background: var(--ta-input-bg);
     border-color: var(--ta-input-border);
     color: var(--ta-ink);
+}
+
+.form-label,
+.col-form-label {
+    color: var(--ta-ink);
+}
+
+.text-muted {
+    color: var(--ta-muted) !important;
+}
+
+/* Tables */
+.table {
+    color: var(--ta-ink);
+    --bs-table-bg: transparent;
+}
+
+html[data-theme="dark"] .table-striped > tbody > tr:nth-of-type(odd) > * {
+    --bs-table-accent-bg: rgba(255, 255, 255, 0.03);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Bootstrap tokens — remove default “link blue” / improve dark readability   */
+/* -------------------------------------------------------------------------- */
+
+html[data-theme="light"],
+html:not([data-theme]) {
+    --bs-body-color: var(--ta-ink);
+    --bs-body-bg: var(--ta-bg);
+    --bs-secondary-color: var(--ta-muted);
+    --bs-heading-color: var(--ta-ink);
+    --bs-border-color: var(--ta-border);
+    --bs-link-color: var(--ta-muted);
+    --bs-link-hover-color: var(--ta-ink);
+}
+
+html[data-theme="dark"] {
+    --bs-body-color: var(--ta-ink);
+    --bs-body-bg: var(--ta-bg);
+    --bs-secondary-color: var(--ta-muted);
+    --bs-heading-color: var(--ta-ink);
+    --bs-border-color: var(--ta-border);
+    --bs-link-color: #CBB896;
+    --bs-link-hover-color: #EBDBB7;
+}
+
+/* Tabs (dbc.Tabs) — inactive tab text not link-blue */
+.main-content .nav-tabs .nav-link {
+    color: var(--ta-muted) !important;
+    border-color: transparent;
+    font-weight: 500;
+}
+
+.main-content .nav-tabs .nav-link:hover,
+.main-content .nav-tabs .nav-link:focus {
+    color: var(--ta-ink) !important;
+    border-color: var(--ta-border);
+    isolation: isolate;
+}
+
+.main-content .nav-tabs .nav-link.active,
+.main-content .nav-tabs .nav-link.active:hover {
+    color: var(--ta-ink) !important;
+    font-weight: 600;
+    background-color: var(--ta-panel) !important;
+    border-color: var(--ta-border) var(--ta-border) var(--ta-panel) !important;
+}
+
+/* Info alerts — neutral / cream tint instead of cyan */
+.alert-info {
+    color: var(--ta-ink) !important;
+    background-color: rgba(235, 219, 183, 0.32) !important;
+    border-color: var(--ta-border) !important;
+    border-left: 3px solid var(--ta-muted) !important;
+}
+
+html[data-theme="dark"] .alert-info {
+    background-color: rgba(203, 184, 150, 0.14) !important;
+    border-left-color: #CBB896 !important;
+}
+
+.alert-success {
+    border-left: 3px solid #5A7A62 !important;
+}
+
+.alert-warning {
+    border-left: 3px solid #9A8A5A !important;
+}
+
+.alert-danger {
+    color: var(--ta-ink) !important;
+    background-color: var(--ta-danger-bg) !important;
+    border-color: var(--ta-danger-border) !important;
+    border-left: 3px solid var(--ta-danger-ink) !important;
+}
+
+html[data-theme="dark"] .alert-danger {
+    color: var(--ta-ink) !important;
+}
+
+/* Secondary / outline — no Bootstrap blue-gray */
+.btn-secondary,
+.btn-outline-secondary {
+    background: var(--ta-panel-strong) !important;
+    color: var(--ta-ink) !important;
+    border: 1px solid var(--ta-border) !important;
+    font-weight: 600;
+}
+
+.btn-secondary:hover,
+.btn-secondary:focus,
+.btn-outline-secondary:hover,
+.btn-outline-secondary:focus {
+    background: var(--ta-border) !important;
+    color: var(--ta-ink) !important;
+    border-color: var(--ta-muted) !important;
+}
+
+/* Destructive actions — restrained (Remove, confirm delete) */
+.btn-danger,
+.btn-outline-danger {
+    background: var(--ta-input-bg) !important;
+    color: var(--ta-muted) !important;
+    border: 1px solid var(--ta-border) !important;
+    font-weight: 600;
+}
+
+.btn-danger:hover,
+.btn-danger:focus,
+.btn-outline-danger:hover,
+.btn-outline-danger:focus {
+    background: var(--ta-danger-bg) !important;
+    color: var(--ta-ink) !important;
+    border-color: var(--ta-danger-border) !important;
+}
+
+.ta-btn-remove {
+    border-style: dashed !important;
+}
+
+.ta-link-emphasis {
+    color: var(--ta-muted) !important;
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.ta-link-emphasis:hover {
+    color: var(--ta-ink) !important;
+}
+
+/* Inline error text — readable, not pure red */
+.main-content .text-danger {
+    color: var(--ta-danger-ink) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* dcc.Dropdown (react-select) — listbox + options match theme                */
+/* -------------------------------------------------------------------------- */
+
+/* react-select class segments use "Control" / "ValueContainer" (capital C) — match *ontrol / *alueContainer */
+#locale-select [class*="ontrol"],
+.main-content .dash-dropdown [class*="ontrol"] {
+    min-height: 38px !important;
+    border-radius: 6px !important;
+    border-color: var(--ta-input-border) !important;
+    background-color: var(--ta-input-bg) !important;
+    box-shadow: none !important;
+}
+
+#locale-select [class*="ingleValue"],
+#locale-select [class*="laceholder"] {
+    color: #f2f0eb !important;
+}
+
+.main-content .dash-dropdown [class*="ingleValue"],
+.main-content .dash-dropdown [class*="laceholder"] {
+    color: var(--ta-ink) !important;
+}
+
+#locale-select [class*="ndicatorCo"] svg,
+.main-content .dash-dropdown [class*="ndicatorCo"] svg {
+    fill: var(--ta-muted) !important;
+}
+
+/* Menu list (often portaled to body — keep theme vars) */
+div[role="listbox"] {
+    background-color: var(--ta-listbox-bg) !important;
+    border: 1px solid var(--ta-listbox-border) !important;
+    border-radius: 6px !important;
+    box-shadow: var(--ta-card-shadow) !important;
+    z-index: 12000 !important;
+}
+
+div[role="listbox"] div[role="option"] {
+    color: var(--ta-ink) !important;
+    background-color: transparent !important;
+}
+
+div[role="listbox"] div[role="option"][aria-selected="true"] {
+    background-color: var(--ta-option-selected-bg) !important;
+    color: var(--ta-ink) !important;
+}
+
+div[role="listbox"] div[role="option"]:hover,
+div[role="listbox"] div[role="option"][class*="focused"] {
+    background-color: var(--ta-option-hover-bg) !important;
+    color: var(--ta-ink) !important;
+}
+
+/* Multi-select chips (MultiValue*) */
+.main-content .dash-dropdown [class*="ultiValue"] {
+    background: rgba(235, 219, 183, 0.45) !important;
+    border-radius: 4px !important;
+}
+
+html[data-theme="dark"] .main-content .dash-dropdown [class*="ultiValue"],
+html[data-theme="dark"] #compare-selected-runs [class*="ultiValue"],
+html[data-theme="dark"] #data-export-datasets [class*="ultiValue"],
+html[data-theme="dark"] #result-export-results [class*="ultiValue"],
+html[data-theme="dark"] #report-export-results [class*="ultiValue"] {
+    background: rgba(203, 184, 150, 0.32) !important;
+}
+
+.main-content .dash-dropdown [class*="ultiValueLabel"],
+#compare-selected-runs [class*="ultiValueLabel"],
+#data-export-datasets [class*="ultiValueLabel"],
+#result-export-results [class*="ultiValueLabel"],
+#report-export-results [class*="ultiValueLabel"] {
+    color: var(--ta-ink) !important;
+}
+
+/* Sidebar locale — always on dark rail (override main-area token bleed) */
+.sidebar-locale-wrap [class*="ontrol"],
+#locale-select [class*="ontrol"] {
+    background-color: rgba(42, 40, 38, 0.96) !important;
+    border-color: rgba(235, 219, 183, 0.28) !important;
+}
+
+.sidebar-locale-wrap {
+    margin-bottom: 0;
+}
+
+/* When menu is inside sidebar tree, force dark menu regardless of theme */
+.sidebar div[role="listbox"] {
+    --ta-listbox-bg: #2A2826;
+    --ta-listbox-border: rgba(255, 255, 255, 0.12);
+    background-color: #2A2826 !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.sidebar div[role="listbox"] div[role="option"] {
+    color: #F2F0EB !important;
+}
+
+.sidebar div[role="listbox"] div[role="option"][aria-selected="true"] {
+    background-color: rgba(235, 219, 183, 0.28) !important;
+    color: #1c1a1a !important;
+}
+
+.sidebar div[role="listbox"] div[role="option"]:hover,
+.sidebar div[role="listbox"] div[role="option"][class*="focused"] {
+    background-color: rgba(235, 219, 183, 0.22) !important;
+    color: #1c1a1a !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Range inputs (dcc.Slider / native) if used later                           */
+/* -------------------------------------------------------------------------- */
+
+input[type="range"] {
+    accent-color: var(--ta-muted);
+}
+
+input[type="range"]:hover {
+    accent-color: #8A8780;
+}
+
+html[data-theme="dark"] input[type="range"] {
+    accent-color: #CBB896;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Multi-select dcc.Dropdown — remove white control / purple focus ring       */
+/* -------------------------------------------------------------------------- */
+
+.main-content .ta-dropdown [class*="ontrol"],
+#compare-selected-runs [class*="ontrol"],
+#data-export-datasets [class*="ontrol"],
+#result-export-results [class*="ontrol"],
+#report-export-results [class*="ontrol"] {
+    background-color: var(--ta-input-bg) !important;
+    border-color: var(--ta-input-border) !important;
+    min-height: 42px !important;
+    border-radius: 6px !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="dark"] .main-content .ta-dropdown [class*="alueContainer"],
+html[data-theme="dark"] #compare-selected-runs [class*="alueContainer"],
+html[data-theme="dark"] #data-export-datasets [class*="alueContainer"],
+html[data-theme="dark"] #result-export-results [class*="alueContainer"],
+html[data-theme="dark"] #report-export-results [class*="alueContainer"] {
+    background-color: var(--ta-input-bg) !important;
+}
+
+html[data-theme="light"] .main-content .ta-dropdown [class*="alueContainer"],
+html:not([data-theme]) .main-content .ta-dropdown [class*="alueContainer"],
+html[data-theme="light"] #compare-selected-runs [class*="alueContainer"],
+html:not([data-theme]) #compare-selected-runs [class*="alueContainer"],
+html[data-theme="light"] #data-export-datasets [class*="alueContainer"],
+html:not([data-theme]) #data-export-datasets [class*="alueContainer"],
+html[data-theme="light"] #result-export-results [class*="alueContainer"],
+html:not([data-theme]) #result-export-results [class*="alueContainer"],
+html[data-theme="light"] #report-export-results [class*="alueContainer"],
+html:not([data-theme]) #report-export-results [class*="alueContainer"] {
+    background-color: transparent !important;
+}
+
+.main-content .ta-dropdown [class*="ontrol"]:focus-within,
+#compare-selected-runs [class*="ontrol"]:focus-within,
+#data-export-datasets [class*="ontrol"]:focus-within,
+#result-export-results [class*="ontrol"]:focus-within,
+#report-export-results [class*="ontrol"]:focus-within {
+    border-color: rgba(102, 100, 94, 0.55) !important;
+    box-shadow: 0 0 0 1px rgba(235, 219, 183, 0.35) !important;
+}
+
+html[data-theme="dark"] .main-content .ta-dropdown [class*="ontrol"]:focus-within,
+html[data-theme="dark"] #compare-selected-runs [class*="ontrol"]:focus-within,
+html[data-theme="dark"] #data-export-datasets [class*="ontrol"]:focus-within,
+html[data-theme="dark"] #result-export-results [class*="ontrol"]:focus-within,
+html[data-theme="dark"] #report-export-results [class*="ontrol"]:focus-within {
+    border-color: #CBB896 !important;
+    box-shadow: 0 0 0 1px rgba(203, 184, 150, 0.28) !important;
+}
+
+.main-content .ta-dropdown [class*="Input"] input,
+#compare-selected-runs [class*="Input"] input {
+    color: var(--ta-ink) !important;
+    outline: none !important;
+}
+
+div[role="listbox"] input[type="text"],
+div[role="listbox"] input[type="search"] {
+    background: var(--ta-input-bg) !important;
+    color: var(--ta-ink) !important;
+    border: 1px solid var(--ta-input-border) !important;
+    border-radius: 4px !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Dash DataTable — theme-aligned cells (import + analysis tables)           */
+/* -------------------------------------------------------------------------- */
+
+html[data-theme="dark"] .ta-datatable .dash-cell,
+html[data-theme="dark"] .ta-datatable .dash-header-cell,
+html[data-theme="dark"] .ta-datatable th.column-header,
+html[data-theme="dark"] .ta-datatable thead th,
+html[data-theme="dark"] .ta-datatable .dash-spreadsheet th,
+html[data-theme="dark"] .ta-datatable .dash-spreadsheet-container th {
+    background-color: var(--ta-panel-strong) !important;
+    color: var(--ta-ink) !important;
+    border-color: var(--ta-border) !important;
+}
+
+html[data-theme="dark"] .ta-datatable .dash-spreadsheet-inner tr:hover td.dash-cell {
+    background-color: var(--ta-panel-strong) !important;
+}
+
+html[data-theme="light"] .ta-datatable .dash-cell,
+html:not([data-theme]) .ta-datatable .dash-cell,
+html[data-theme="light"] .ta-datatable .dash-header-cell,
+html:not([data-theme]) .ta-datatable .dash-header-cell {
+    background-color: #ffffff !important;
+    color: var(--ta-ink) !important;
+    border-color: var(--ta-border) !important;
+}
+
+html[data-theme="dark"] .ta-datatable .previous-next-container button,
+html[data-theme="dark"] .ta-datatable .page-number,
+html[data-theme="dark"] .ta-datatable input.current-page {
+    color: var(--ta-ink) !important;
+    background: var(--ta-panel-strong) !important;
+    border-color: var(--ta-border) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Compare radios — neutral checked state                                       */
+/* -------------------------------------------------------------------------- */
+
+.main-content .form-check-input {
+    border-color: var(--ta-input-border);
+}
+
+.main-content .form-check-input:checked {
+    background-color: var(--ta-muted) !important;
+    border-color: var(--ta-muted) !important;
+}
+
+html[data-theme="dark"] .main-content .form-check-input:checked {
+    background-color: #CBB896 !important;
+    border-color: #CBB896 !important;
+}
+
+.main-content .form-check-label {
+    color: var(--ta-ink);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Plotly graph shell                                                           */
+/* -------------------------------------------------------------------------- */
+
+.ta-plot {
+    width: 100%;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Dark mode: scrollbars + react-select chrome (links, placeholder, checkbox) */
+/* -------------------------------------------------------------------------- */
+
+html[data-theme="dark"] .ta-datatable .dash-table-container,
+html[data-theme="dark"] .ta-datatable .dash-spreadsheet-menu,
+html[data-theme="dark"] .ta-datatable .dash-spreadsheet-inner {
+    scrollbar-color: var(--ta-border) var(--ta-panel);
+}
+
+html[data-theme="dark"] .ta-datatable *::-webkit-scrollbar,
+html[data-theme="dark"] .dash-spreadsheet *::-webkit-scrollbar,
+html[data-theme="dark"] .main-content .dash-dropdown *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+html[data-theme="dark"] .ta-datatable *::-webkit-scrollbar-track,
+html[data-theme="dark"] .dash-spreadsheet *::-webkit-scrollbar-track,
+html[data-theme="dark"] .main-content .dash-dropdown *::-webkit-scrollbar-track {
+    background: var(--ta-bg);
+}
+
+html[data-theme="dark"] .ta-datatable *::-webkit-scrollbar-thumb,
+html[data-theme="dark"] .dash-spreadsheet *::-webkit-scrollbar-thumb,
+html[data-theme="dark"] .main-content .dash-dropdown *::-webkit-scrollbar-thumb {
+    background: var(--ta-border);
+    border-radius: 6px;
+}
+
+div[role="listbox"] a,
+div[role="listbox"] button {
+    color: var(--ta-muted) !important;
+}
+
+div[role="listbox"] a:hover {
+    color: var(--ta-ink) !important;
+}
+
+html[data-theme="dark"] div[role="listbox"] input[type="checkbox"] {
+    accent-color: #cbb896;
+}
+
+html[data-theme="dark"] .main-content .dash-dropdown [class*="laceholder"],
+html[data-theme="dark"] #compare-selected-runs [class*="laceholder"],
+html[data-theme="dark"] #data-export-datasets [class*="laceholder"],
+html[data-theme="dark"] #result-export-results [class*="laceholder"],
+html[data-theme="dark"] #report-export-results [class*="laceholder"] {
+    color: var(--ta-muted) !important;
+}
+
+/* Native selects (e.g. Active Dataset) — kill white popover chrome in dark */
+html[data-theme="dark"] .main-content select.form-select,
+html[data-theme="dark"] .main-content textarea.form-control {
+    background-color: var(--ta-input-bg) !important;
+    color: var(--ta-ink) !important;
+    border-color: var(--ta-input-border) !important;
 }

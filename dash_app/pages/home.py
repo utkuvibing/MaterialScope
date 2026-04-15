@@ -103,7 +103,7 @@ layout = html.Div(
                                                                     [
                                                                         html.I(className="bi bi-cloud-arrow-up fs-1 d-block mb-2 text-muted"),
                                                                         "Drag and drop files here, or ",
-                                                                        html.A("browse", className="text-primary"),
+                                                                        html.A("browse", className="ta-link-emphasis"),
                                                                     ],
                                                                     className="text-center py-4",
                                                                 ),
@@ -231,11 +231,17 @@ layout = html.Div(
                                                 md=9,
                                             ),
                                             dbc.Col(
-                                                dbc.Button("Remove", id="remove-dataset-btn", color="danger", className="mt-4 w-100"),
+                                                dbc.Button(
+                                                    "Remove",
+                                                    id="remove-dataset-btn",
+                                                    color="secondary",
+                                                    className="ta-btn-remove w-100",
+                                                ),
                                                 md=3,
+                                                className="d-flex align-items-center",
                                             ),
                                         ],
-                                        className="g-2",
+                                        className="g-2 align-items-center",
                                     ),
                                     html.Div(id="dataset-action-status", className="mt-3"),
                                 ]
@@ -316,10 +322,11 @@ def pending_file_options(pending_files):
     Output("mapping-heating-rate", "value"),
     Output("mapping-xrd-wavelength", "value"),
     Input("pending-file-select", "value"),
+    Input("ui-theme", "data"),
     State("pending-upload-files", "data"),
     prevent_initial_call=False,
 )
-def build_pending_preview(selected_file, pending_files):
+def build_pending_preview(selected_file, _ui_theme, pending_files):
     if not selected_file:
         empty_options = _mapping_options([])
         return (
@@ -573,9 +580,10 @@ def load_sample(_clicks, ids, project_id, refresh_value):
     Output("active-dataset-select", "value"),
     Input("project-id", "data"),
     Input("home-refresh", "data"),
+    Input("ui-theme", "data"),
     prevent_initial_call=False,
 )
-def load_workspace_datasets(project_id, _refresh):
+def load_workspace_datasets(project_id, _refresh, _ui_theme):
     if not project_id:
         return "", html.P("No workspace active.", className="text-muted"), [], None
 
@@ -656,9 +664,10 @@ def remove_dataset(n_clicks, dataset_key, project_id, refresh_value):
     Input("project-id", "data"),
     Input("active-dataset-select", "value"),
     Input("home-refresh", "data"),
+    Input("ui-theme", "data"),
     prevent_initial_call=False,
 )
-def load_active_dataset_detail(project_id, dataset_key, _refresh):
+def load_active_dataset_detail(project_id, dataset_key, _refresh, ui_theme):
     if not project_id or not dataset_key:
         return html.P("Select a dataset to inspect its details.", className="text-muted")
 
@@ -690,6 +699,6 @@ def load_active_dataset_detail(project_id, dataset_key, _refresh):
                 className="mb-3",
             ),
             html.H6("Quick View", className="mb-2"),
-            quick_plot(rows, detail),
+            quick_plot(rows, detail, ui_theme=ui_theme),
         ]
     )

@@ -6,64 +6,114 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
 
-NAV_PRIMARY = [
-    {"label": "Import", "icon": "bi-folder2-open", "href": "/"},
-    {"label": "Project", "icon": "bi-archive", "href": "/project"},
-    {"label": "Report", "icon": "bi-file-earmark-text", "href": "/export"},
-    {"label": "Compare", "icon": "bi-intersect", "href": "/compare"},
+from dash_app.i18n import SUPPORTED_LOCALES, normalize_locale, t
+
+NAV_PRIMARY_DEF: list[tuple[str, str, str]] = [
+    ("nav.import", "bi-folder2-open", "/"),
+    ("nav.project", "bi-archive", "/project"),
+    ("nav.report", "bi-file-earmark-text", "/export"),
+    ("nav.compare", "bi-intersect", "/compare"),
 ]
 
-NAV_ANALYSIS = [
-    {"label": "DSC", "icon": "bi-graph-up", "href": "/dsc"},
-    {"label": "TGA", "icon": "bi-graph-down", "href": "/tga"},
-    {"label": "DTA", "icon": "bi-bar-chart", "href": "/dta"},
-    {"label": "FTIR", "icon": "bi-border-style", "href": "/ftir"},
-    {"label": "RAMAN", "icon": "bi-lightbulb", "href": "/raman"},
-    {"label": "XRD", "icon": "bi-bullseye", "href": "/xrd"},
+NAV_ANALYSIS_DEF: list[tuple[str, str, str]] = [
+    ("nav.dsc", "bi-graph-up", "/dsc"),
+    ("nav.tga", "bi-graph-down", "/tga"),
+    ("nav.dta", "bi-bar-chart", "/dta"),
+    ("nav.ftir", "bi-border-style", "/ftir"),
+    ("nav.raman", "bi-lightbulb", "/raman"),
+    ("nav.xrd", "bi-bullseye", "/xrd"),
 ]
 
-NAV_MANAGEMENT = [
-    {"label": "About", "icon": "bi-info-circle", "href": "/about"},
+NAV_MANAGEMENT_DEF: list[tuple[str, str, str]] = [
+    ("nav.about", "bi-info-circle", "/about"),
 ]
 
 
-def _nav_section(title: str, items: list[dict]) -> html.Div:
+def _nav_section(locale: str, title_key: str, defs: list[tuple[str, str, str]]) -> html.Div:
     links = []
-    for item in items:
-        disabled = item.get("disabled", False)
+    for label_key, icon, href in defs:
         link = dbc.NavLink(
-            [html.I(className=f"bi {item['icon']} me-2"), item["label"]],
-            href=item["href"],
+            [html.I(className=f"bi {icon} me-2"), t(locale, label_key)],
+            href=href,
             active="exact",
-            disabled=disabled,
+            disabled=False,
             className="sidebar-nav-link",
         )
         links.append(link)
     return html.Div(
-        [html.Div(title, className="sidebar-section-label"), dbc.Nav(links, vertical=True)],
+        [
+            html.Div(t(locale, title_key), className="sidebar-section-label"),
+            dbc.Nav(links, vertical=True),
+        ],
         className="mb-2",
     )
 
 
-def _sidebar() -> html.Div:
+def _sidebar_controls(locale: str, theme: str) -> html.Div:
+    theme = theme if theme in ("light", "dark") else "light"
+    next_is_dark = theme == "light"
+    tip = t(locale, "ui.theme_use_dark" if next_is_dark else "ui.theme_use_light")
+    label_cur = t(locale, "ui.theme_current_light" if theme == "light" else "ui.theme_current_dark")
+    return html.Div(
+        [
+            html.Div(
+                t(locale, "ui.theme_hint"),
+                className="sidebar-control-group-label",
+            ),
+            dbc.Button(
+                [
+                    html.I(className=("bi bi-moon-stars" if next_is_dark else "bi bi-sun")),
+                    html.Span(label_cur, className="ms-2 sidebar-theme-btn-text"),
+                ],
+                id="theme-toggle",
+                color="light",
+                outline=True,
+                size="sm",
+                className="sidebar-theme-btn w-100 mb-2",
+                n_clicks=0,
+                title=tip,
+            ),
+            html.Div(
+                t(locale, "ui.language"),
+                className="sidebar-control-group-label",
+            ),
+            html.Div(
+                dcc.Dropdown(
+                    id="locale-select",
+                    options=[
+                        {"label": "English", "value": "en"},
+                        {"label": "Türkçe", "value": "tr"},
+                    ],
+                    value=normalize_locale(locale),
+                    clearable=False,
+                    searchable=False,
+                    className="ta-dropdown ta-dropdown--sidebar",
+                ),
+                className="sidebar-locale-wrap",
+            ),
+        ],
+        className="sidebar-controls px-3 pb-2",
+    )
+
+
+def build_sidebar_inner(locale: str, theme: str) -> html.Div:
+    loc = normalize_locale(locale)
     return html.Div(
         [
             html.Div(
                 [
                     html.Div("MaterialScope", className="sidebar-brand"),
-                    html.Div(
-                        "Multimodal materials characterization workbench",
-                        className="sidebar-version",
-                    ),
+                    html.Div(t(loc, "app.tagline"), className="sidebar-version"),
                 ],
                 className="px-3 pt-3 pb-2",
             ),
+            _sidebar_controls(loc, theme),
             html.Hr(className="sidebar-hr"),
             html.Div(
                 [
-                    _nav_section("Primary", NAV_PRIMARY),
-                    _nav_section("Analysis", NAV_ANALYSIS),
-                    _nav_section("Management", NAV_MANAGEMENT),
+                    _nav_section(loc, "nav.section_primary", NAV_PRIMARY_DEF),
+                    _nav_section(loc, "nav.section_analysis", NAV_ANALYSIS_DEF),
+                    _nav_section(loc, "nav.section_management", NAV_MANAGEMENT_DEF),
                 ],
                 className="px-2",
             ),
@@ -73,6 +123,18 @@ def _sidebar() -> html.Div:
                     html.Div(id="sidebar-dataset-badge", className="px-3 pb-3"),
                 ],
                 className="mt-auto",
+            ),
+        ],
+        className="d-flex flex-column h-100",
+    )
+
+
+def _sidebar() -> html.Div:
+    return html.Div(
+        [
+            html.Div(
+                id="sidebar-inner",
+                children=build_sidebar_inner("en", "light"),
             ),
         ],
         className="sidebar d-flex flex-column",
@@ -85,6 +147,9 @@ def build_layout() -> html.Div:
             dcc.Store(id="project-id", storage_type="session"),
             dcc.Store(id="workspace-data", storage_type="memory"),
             dcc.Store(id="workspace-refresh", storage_type="memory", data=0),
+            dcc.Store(id="ui-theme", data="light", storage_type="session"),
+            dcc.Store(id="ui-locale", data="en", storage_type="session"),
+            html.Div(id="_clientside-theme-holder", style={"display": "none"}),
             dcc.Location(id="url", refresh="callback-nav"),
             html.Div(
                 [
@@ -98,6 +163,53 @@ def build_layout() -> html.Div:
             ),
         ]
     )
+
+
+def register_clientside_theme(app: dash.Dash) -> None:
+    app.clientside_callback(
+        """
+        function(theme) {
+            const t = (theme === 'dark') ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', t);
+            return '';
+        }
+        """,
+        Output("_clientside-theme-holder", "children"),
+        Input("ui-theme", "data"),
+    )
+
+
+@callback(
+    Output("sidebar-inner", "children"),
+    Input("ui-locale", "data"),
+    Input("ui-theme", "data"),
+)
+def render_sidebar(locale: str | None, theme: str | None) -> html.Div:
+    th = theme if theme in ("light", "dark") else "light"
+    return build_sidebar_inner(normalize_locale(locale), th)
+
+
+@callback(
+    Output("ui-theme", "data"),
+    Input("theme-toggle", "n_clicks"),
+    State("ui-theme", "data"),
+    prevent_initial_call=True,
+)
+def toggle_ui_theme(_n_clicks: int, current: str | None) -> str:
+    cur = current if current in ("light", "dark") else "light"
+    return "dark" if cur == "light" else "light"
+
+
+@callback(
+    Output("ui-locale", "data"),
+    Input("locale-select", "value"),
+    prevent_initial_call=True,
+)
+def persist_ui_locale(value: str | None) -> str:
+    if not value:
+        return "en"
+    v = str(value).lower().split("-", 1)[0]
+    return v if v in SUPPORTED_LOCALES else "en"
 
 
 @callback(

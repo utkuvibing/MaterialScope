@@ -333,6 +333,7 @@ def test_build_figure_uses_corrected_as_primary_trace(monkeypatch):
                 "height": 0.8,
             }
         ],
+        "light",
     )
 
     assert isinstance(graph, dcc.Graph)
@@ -366,6 +367,7 @@ def test_build_figure_handles_missing_primary_signal(monkeypatch):
         "dataset-1",
         "Synthetic DTA Run",
         [{"direction": "exo", "peak_temperature": 150.0}],
+        "light",
     )
 
     assert isinstance(result, html.P)

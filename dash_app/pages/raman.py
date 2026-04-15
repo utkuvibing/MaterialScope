@@ -26,6 +26,7 @@ from dash_app.components.analysis_page import (
 )
 from dash_app.components.chrome import page_header
 from dash_app.components.data_preview import dataset_table
+from dash_app.theme import PLOT_THEME, normalize_ui_theme
 
 dash.register_page(__name__, path="/raman", title="RAMAN Analysis - MaterialScope")
 
@@ -233,9 +234,10 @@ def run_raman_analysis(n_clicks, project_id, dataset_key, template_id, refresh_v
     Output("raman-result-processing", "children"),
     Input("raman-latest-result-id", "data"),
     Input("raman-refresh", "data"),
+    Input("ui-theme", "data"),
     State("project-id", "data"),
 )
-def display_result(result_id, _refresh, project_id):
+def display_result(result_id, _refresh, ui_theme, project_id):
     empty_msg = empty_result_msg()
     if not result_id or not project_id:
         return empty_msg, empty_msg, empty_msg, empty_msg, empty_msg
@@ -273,7 +275,7 @@ def display_result(result_id, _refresh, project_id):
     dataset_key = result_meta.get("dataset_key")
     figure_area = empty_msg
     if dataset_key:
-        figure_area = _build_figure(project_id, dataset_key, summary)
+        figure_area = _build_figure(project_id, dataset_key, summary, ui_theme)
 
     table_area = _build_match_table(rows)
 
@@ -335,7 +337,7 @@ def _y_axis_range(*series: list | None) -> list[float] | None:
     return [y_min - padding, y_max + padding]
 
 
-def _build_figure(project_id: str, dataset_key: str, summary: dict) -> html.Div:
+def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: str | None) -> html.Div:
     from dash_app.api_client import analysis_state_curves
 
     try:
@@ -353,6 +355,12 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict) -> html.Div:
         return no_data_figure_msg()
 
     sample_name = resolve_sample_name(summary, {}, fallback_display_name=dataset_key)
+    tone = normalize_ui_theme(ui_theme)
+    pt = PLOT_THEME[tone]
+    muted = "#66645E" if tone == "light" else "#9E9A93"
+    legend_bg = "rgba(255,255,255,0.9)" if tone == "light" else "rgba(26,25,23,0.94)"
+    hover_bg = "rgba(255,255,255,0.96)" if tone == "light" else "rgba(34,33,30,0.96)"
+    hover_fg = "#1C1A1A" if tone == "light" else "#EEEDEA"
     has_corrected = bool(corrected and len(corrected) == len(raman_shift))
     has_smoothed = bool(smoothed and len(smoothed) == len(raman_shift))
     has_baseline = bool(baseline and len(baseline) == len(raman_shift))
@@ -411,33 +419,32 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict) -> html.Div:
         )
 
     fig.update_layout(
-        title=("RAMAN Query Spectrum" f"<br><span style='font-size:0.82em;color:#64748B'>{sample_name}</span>"),
-        template="plotly_white",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor=_RAMAN_FIGURE_COLORS["panel"],
+        title=("RAMAN Query Spectrum" f"<br><span style='font-size:0.82em;color:{muted}'>{sample_name}</span>"),
+        paper_bgcolor=pt["paper_bg"],
+        plot_bgcolor=pt["plot_bg"],
         hovermode="x unified",
         xaxis_title="Raman Shift (cm^-1)",
         yaxis_title="Intensity (a.u.)",
         xaxis=dict(
             showgrid=True,
-            gridcolor=_RAMAN_FIGURE_COLORS["grid"],
-            linecolor=_RAMAN_FIGURE_COLORS["axis"],
-            tickfont=dict(size=12, color=_RAMAN_FIGURE_COLORS["axis"]),
-            title_font=dict(size=13, color=_RAMAN_FIGURE_COLORS["axis"]),
+            gridcolor=pt["grid"],
+            linecolor=pt["grid"],
+            tickfont=dict(size=12, color=pt["text"]),
+            title_font=dict(size=13, color=pt["text"]),
             zeroline=False,
         ),
         yaxis=dict(
             range=y_range,
             showgrid=True,
-            gridcolor=_RAMAN_FIGURE_COLORS["grid"],
-            linecolor=_RAMAN_FIGURE_COLORS["axis"],
-            tickfont=dict(size=12, color=_RAMAN_FIGURE_COLORS["axis"]),
-            title_font=dict(size=13, color=_RAMAN_FIGURE_COLORS["axis"]),
+            gridcolor=pt["grid"],
+            linecolor=pt["grid"],
+            tickfont=dict(size=12, color=pt["text"]),
+            title_font=dict(size=13, color=pt["text"]),
             zeroline=False,
         ),
         margin=dict(l=64, r=28, t=82, b=56),
         height=520,
-        title_font=dict(size=20, color=_RAMAN_FIGURE_COLORS["query"]),
+        title_font=dict(size=20, color=pt["text"]),
         title_x=0.01,
         legend=dict(
             orientation="h",
@@ -445,16 +452,17 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict) -> html.Div:
             y=1.02,
             xanchor="left",
             x=0,
-            bgcolor="rgba(255,255,255,0.84)",
-            bordercolor="rgba(148, 163, 184, 0.35)",
+            bgcolor=legend_bg,
+            bordercolor=pt["grid"],
             borderwidth=1,
-            font=dict(size=12, color="#334155"),
+            font=dict(size=12, color=pt["text"]),
         ),
-        hoverlabel=dict(bgcolor="rgba(255,255,255,0.96)", font=dict(color="#0F172A")),
+        hoverlabel=dict(bgcolor=hover_bg, font=dict(color=hover_fg)),
     )
     if fig.data and dominant_name != "Query Spectrum":
         fig.data[-1].name = dominant_name
-    return dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True})
+    fig.update_layout(template=pt["template"])
+    return dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True}, className="ta-plot")
 
 
 def _build_match_table(rows: list) -> html.Div:

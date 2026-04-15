@@ -167,6 +167,7 @@ def test_build_figure_uses_corrected_as_primary_trace(monkeypatch):
         "dataset-1",
         {"sample_name": "XRD Run A"},
         {"method_context": {"xrd_axis_role": "two_theta"}},
+        "light",
     )
 
     assert isinstance(graph, dcc.Graph)
@@ -198,6 +199,7 @@ def test_build_figure_handles_missing_primary_signal(monkeypatch):
         "dataset-1",
         {"sample_name": "XRD Run B"},
         {"method_context": {"xrd_axis_role": "two_theta"}},
+        "light",
     )
 
     assert isinstance(result, html.P)

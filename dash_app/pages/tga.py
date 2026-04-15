@@ -34,6 +34,7 @@ from dash_app.components.analysis_page import (
 )
 from dash_app.components.chrome import page_header
 from dash_app.components.data_preview import dataset_table
+from dash_app.theme import PLOT_THEME, apply_figure_theme, normalize_ui_theme
 
 dash.register_page(__name__, path="/tga", title="TGA Analysis - MaterialScope")
 
@@ -278,9 +279,10 @@ def run_tga_analysis(n_clicks, project_id, dataset_key, template_id, unit_mode, 
     Output("tga-result-processing", "children"),
     Input("tga-latest-result-id", "data"),
     Input("tga-refresh", "data"),
+    Input("ui-theme", "data"),
     State("project-id", "data"),
 )
-def display_result(result_id, _refresh, project_id):
+def display_result(result_id, _refresh, ui_theme, project_id):
     empty_msg = empty_result_msg()
     if not result_id or not project_id:
         return empty_msg, empty_msg, empty_msg, empty_msg, empty_msg
@@ -321,7 +323,7 @@ def display_result(result_id, _refresh, project_id):
     dataset_key = result_meta.get("dataset_key")
     figure_area = empty_msg
     if dataset_key:
-        figure_area = _build_figure(project_id, dataset_key, summary, rows)
+        figure_area = _build_figure(project_id, dataset_key, summary, rows, ui_theme)
 
     # --- Step table ---
     table_area = _build_step_table(rows)
@@ -358,7 +360,7 @@ def _build_step_cards(rows: list) -> html.Div:
     return html.Div(cards)
 
 
-def _build_figure(project_id: str, dataset_key: str, summary: dict, step_rows: list) -> html.Div:
+def _build_figure(project_id: str, dataset_key: str, summary: dict, step_rows: list, ui_theme: str | None) -> html.Div:
     from dash_app.api_client import analysis_state_curves
 
     try:
@@ -445,13 +447,27 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, step_rows: l
                           annotation_position="top left")
 
     fig.update_layout(
-        title=f"TGA - {sample_name}", template="plotly_white",
-        xaxis_title="Temperature (C)", yaxis_title="Mass (%)",
+        title=f"TGA - {sample_name}",
+        xaxis_title="Temperature (C)",
+        yaxis_title="Mass (%)",
         yaxis2=dict(title="DTG (%/C)", overlaying="y", side="right", showgrid=False) if has_dtg else {},
-        margin=dict(l=56, r=56, t=56, b=48), height=480,
+        margin=dict(l=56, r=56, t=56, b=48),
+        height=480,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
-    return dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True})
+    apply_figure_theme(fig, ui_theme)
+    if has_dtg:
+        ink = PLOT_THEME[normalize_ui_theme(ui_theme)]["text"]
+        fig.update_layout(
+            yaxis2=dict(
+                title=dict(text="DTG (%/C)", font=dict(color=ink)),
+                overlaying="y",
+                side="right",
+                showgrid=False,
+                tickfont=dict(color=ink),
+            )
+        )
+    return dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True}, className="ta-plot")
 
 
 def _build_step_table(rows: list) -> html.Div:

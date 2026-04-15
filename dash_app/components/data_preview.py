@@ -9,6 +9,8 @@ import dash_bootstrap_components as dbc
 from dash import dash_table, dcc, html
 import plotly.graph_objects as go
 
+from dash_app.theme import apply_figure_theme
+
 
 def metric_cards(detail: dict[str, Any]) -> dbc.Row:
     dataset = detail.get("dataset") or {}
@@ -31,15 +33,18 @@ def metric_cards(detail: dict[str, Any]) -> dbc.Row:
 
 
 def dataset_table(rows: list[dict[str, Any]], columns: list[str], *, page_size: int = 10, table_id: str = "dataset-preview-table"):
-    return dash_table.DataTable(
-        id=table_id,
-        data=rows,
-        columns=[{"name": column, "id": column} for column in columns],
-        page_size=page_size,
-        sort_action="native",
-        style_table={"overflowX": "auto"},
-        style_cell={"textAlign": "left", "padding": "0.5rem", "fontSize": "0.85rem"},
-        style_header={"fontWeight": 700},
+    return html.Div(
+        dash_table.DataTable(
+            id=table_id,
+            data=rows,
+            columns=[{"name": column, "id": column} for column in columns],
+            page_size=page_size,
+            sort_action="native",
+            style_table={"overflowX": "auto"},
+            style_cell={"textAlign": "left", "padding": "0.5rem", "fontSize": "0.85rem"},
+            style_header={"fontWeight": 700},
+        ),
+        className="ta-datatable",
     )
 
 
@@ -64,7 +69,7 @@ def original_columns_list(detail: dict[str, Any]) -> html.Div:
     )
 
 
-def quick_plot(rows: list[dict[str, Any]], detail: dict[str, Any]):
+def quick_plot(rows: list[dict[str, Any]], detail: dict[str, Any], *, ui_theme: str | None = None):
     if not rows:
         return html.P("No data available for plotting.", className="text-muted")
     first = rows[0]
@@ -80,12 +85,12 @@ def quick_plot(rows: list[dict[str, Any]], detail: dict[str, Any]):
     fig.update_layout(
         title=f"{dataset.get('data_type', 'Data')} - {dataset.get('display_name', dataset.get('key', 'Dataset'))}",
         margin=dict(l=48, r=24, t=56, b=48),
-        template="plotly_white",
         xaxis_title=f"Temperature ({units.get('temperature', '°C')})",
         yaxis_title=f"Signal ({units.get('signal', 'a.u.')})",
         height=360,
     )
-    return dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True})
+    apply_figure_theme(fig, ui_theme)
+    return dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True}, className="ta-plot")
 
 
 def stats_table(rows: list[dict[str, Any]], columns: list[str]):

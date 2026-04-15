@@ -36,6 +36,7 @@ from dash_app.components.analysis_page import (
 )
 from dash_app.components.chrome import page_header
 from dash_app.components.data_preview import dataset_table
+from dash_app.theme import apply_figure_theme
 
 dash.register_page(__name__, path="/dta", title="DTA Analysis - MaterialScope")
 
@@ -392,9 +393,10 @@ def run_dta_analysis(n_clicks, project_id, dataset_key, template_id, refresh_val
     Output("dta-result-processing", "children"),
     Input("dta-latest-result-id", "data"),
     Input("dta-refresh", "data"),
+    Input("ui-theme", "data"),
     State("project-id", "data"),
 )
-def display_result(result_id, _refresh, project_id):
+def display_result(result_id, _refresh, ui_theme, project_id):
     empty_msg = empty_result_msg()
     if not result_id or not project_id:
         return empty_msg, empty_msg, empty_msg, empty_msg, empty_msg
@@ -437,7 +439,7 @@ def display_result(result_id, _refresh, project_id):
     # --- Figure with smoothed/baseline/corrected overlay ---
     figure_area = empty_msg
     if dataset_key:
-        figure_area = _build_figure(project_id, dataset_key, sample_name, rows)
+        figure_area = _build_figure(project_id, dataset_key, sample_name, rows, ui_theme)
 
     # --- Peak table ---
     table_area = _build_peak_table(rows)
@@ -500,7 +502,7 @@ def _build_peak_cards(rows: list) -> html.Div:
     return html.Div(cards)
 
 
-def _build_figure(project_id: str, dataset_key: str, sample_name: str, peak_rows: list) -> html.Div:
+def _build_figure(project_id: str, dataset_key: str, sample_name: str, peak_rows: list, ui_theme: str | None) -> html.Div:
     from dash_app.api_client import analysis_state_curves
 
     try:
@@ -632,7 +634,6 @@ def _build_figure(project_id: str, dataset_key: str, sample_name: str, peak_rows
 
     fig.update_layout(
         title=f"DTA - {sample_name}",
-        template="plotly_white",
         xaxis_title="Temperature (C)",
         yaxis_title="Delta-T (a.u.)",
         hovermode="x unified",
@@ -640,16 +641,9 @@ def _build_figure(project_id: str, dataset_key: str, sample_name: str, peak_rows
         height=560,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
-    fig.update_xaxes(showline=True, linecolor="#CBD5E1", gridcolor="rgba(148, 163, 184, 0.18)")
-    fig.update_yaxes(
-        showline=True,
-        linecolor="#CBD5E1",
-        gridcolor="rgba(148, 163, 184, 0.14)",
-        zeroline=True,
-        zerolinecolor="rgba(100, 116, 139, 0.28)",
-        range=y_range,
-    )
-    return dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True})
+    apply_figure_theme(fig, ui_theme)
+    fig.update_yaxes(range=y_range)
+    return dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True}, className="ta-plot")
 
 
 def _build_peak_table(rows: list) -> html.Div:

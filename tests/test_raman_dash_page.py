@@ -136,7 +136,7 @@ def test_build_figure_uses_corrected_as_primary_trace(monkeypatch):
         },
     )
 
-    graph = mod._build_figure("proj-1", "dataset-1", {"sample_name": "CNT Run"})
+    graph = mod._build_figure("proj-1", "dataset-1", {"sample_name": "CNT Run"}, "light")
 
     assert isinstance(graph, dcc.Graph)
     corrected_trace = next(trace for trace in graph.figure.data if trace.name == "Query Spectrum")

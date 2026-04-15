@@ -33,6 +33,7 @@ from dash_app.components.analysis_page import (
 )
 from dash_app.components.chrome import page_header
 from dash_app.components.data_preview import dataset_table
+from dash_app.theme import apply_figure_theme
 
 dash.register_page(__name__, path="/dsc", title="DSC Analysis - MaterialScope")
 
@@ -261,9 +262,10 @@ def run_dsc_analysis(n_clicks, project_id, dataset_key, template_id, refresh_val
     Output("dsc-result-processing", "children"),
     Input("dsc-latest-result-id", "data"),
     Input("dsc-refresh", "data"),
+    Input("ui-theme", "data"),
     State("project-id", "data"),
 )
-def display_result(result_id, _refresh, project_id):
+def display_result(result_id, _refresh, ui_theme, project_id):
     empty_msg = empty_result_msg()
     if not result_id or not project_id:
         return empty_msg, empty_msg, empty_msg, empty_msg, empty_msg
@@ -299,7 +301,7 @@ def display_result(result_id, _refresh, project_id):
     dataset_key = result_meta.get("dataset_key")
     figure_area = empty_msg
     if dataset_key:
-        figure_area = _build_figure(project_id, dataset_key, summary, rows)
+        figure_area = _build_figure(project_id, dataset_key, summary, rows, ui_theme)
 
     # --- Peak cards + table ---
     table_area = _build_peak_section(rows)
@@ -341,7 +343,7 @@ def _build_tg_cards(summary: dict) -> html.Div:
     return html.Div(cards)
 
 
-def _build_figure(project_id: str, dataset_key: str, summary: dict, peak_rows: list) -> html.Div:
+def _build_figure(project_id: str, dataset_key: str, summary: dict, peak_rows: list, ui_theme: str | None) -> html.Div:
     from dash_app.api_client import analysis_state_curves
 
     try:
@@ -436,12 +438,15 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, peak_rows: l
                           annotation_text=f"End {tg_endset:.1f}", annotation_position="top left")
 
     fig.update_layout(
-        title=f"DSC - {sample_name}", template="plotly_white",
-        xaxis_title="Temperature (C)", yaxis_title="Heat Flow (a.u.)",
-        margin=dict(l=56, r=24, t=56, b=48), height=480,
+        title=f"DSC - {sample_name}",
+        xaxis_title="Temperature (C)",
+        yaxis_title="Heat Flow (a.u.)",
+        margin=dict(l=56, r=24, t=56, b=48),
+        height=480,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
-    return dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True})
+    apply_figure_theme(fig, ui_theme)
+    return dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True}, className="ta-plot")
 
 
 def _build_peak_section(rows: list) -> html.Div:

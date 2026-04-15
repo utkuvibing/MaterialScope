@@ -26,6 +26,7 @@ from dash_app.components.analysis_page import (
 )
 from dash_app.components.chrome import page_header
 from dash_app.components.data_preview import dataset_table
+from dash_app.theme import PLOT_THEME, apply_figure_theme, normalize_ui_theme
 
 dash.register_page(__name__, path="/xrd", title="XRD Analysis - MaterialScope")
 
@@ -255,9 +256,10 @@ def run_xrd_analysis(n_clicks, project_id, dataset_key, template_id, refresh_val
     Output("xrd-result-processing", "children"),
     Input("xrd-latest-result-id", "data"),
     Input("xrd-refresh", "data"),
+    Input("ui-theme", "data"),
     State("project-id", "data"),
 )
-def display_result(result_id, _refresh, project_id):
+def display_result(result_id, _refresh, ui_theme, project_id):
     empty_msg = empty_result_msg()
     if not result_id or not project_id:
         return empty_msg, empty_msg, empty_msg, empty_msg, empty_msg
@@ -297,7 +299,7 @@ def display_result(result_id, _refresh, project_id):
     dataset_key = result_meta.get("dataset_key")
     figure_area = empty_msg
     if dataset_key:
-        figure_area = _build_figure(project_id, dataset_key, summary, processing)
+        figure_area = _build_figure(project_id, dataset_key, summary, processing, ui_theme)
 
     table_area = _build_match_table(rows)
     method_context = processing.get("method_context", {})
@@ -360,7 +362,7 @@ def _build_match_cards(rows: list, summary: dict) -> html.Div:
     return html.Div(cards)
 
 
-def _build_figure(project_id: str, dataset_key: str, summary: dict, processing: dict) -> html.Div:
+def _build_figure(project_id: str, dataset_key: str, summary: dict, processing: dict, ui_theme: str | None) -> html.Div:
     from dash_app.api_client import analysis_state_curves
 
     try:
@@ -388,6 +390,10 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, processing: 
     primary_name = "Corrected Diffractogram" if has_corrected else "Smoothed Diffractogram" if has_smoothed else "Raw Diffractogram"
     has_overlay = has_corrected or has_smoothed
     sample_name = resolve_sample_name(summary, {}, fallback_display_name=dataset_key)
+    tone = normalize_ui_theme(ui_theme)
+    pt = PLOT_THEME[tone]
+    muted = "#66645E" if tone == "light" else "#9E9A93"
+    line_primary = pt["text"]
     method_context = processing.get("method_context", {})
     axis_role = str(method_context.get("xrd_axis_role") or "two_theta").strip().lower()
     axis_title = "2theta (deg)" if axis_role in {"two_theta", ""} else f"X axis ({axis_role})"
@@ -433,15 +439,14 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, processing: 
             y=primary_signal,
             mode="lines",
             name=primary_name,
-            line=dict(color="#0F172A", width=3.0),
+            line=dict(color=line_primary, width=3.0),
         )
     )
 
     fig.update_layout(
-        title=("XRD Primary Diffractogram" f"<br><span style='font-size:0.82em;color:#64748B'>{sample_name}</span>"),
-        template="plotly_white",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="#FCFDFE",
+        title=("XRD Primary Diffractogram" f"<br><span style='font-size:0.82em;color:{muted}'>{sample_name}</span>"),
+        paper_bgcolor=pt["paper_bg"],
+        plot_bgcolor=pt["plot_bg"],
         hovermode="x unified",
         xaxis_title=axis_title,
         yaxis_title="Intensity (a.u.)",
@@ -449,9 +454,8 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, processing: 
         height=520,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )
-    fig.update_xaxes(showline=True, linecolor="#CBD5E1", gridcolor="rgba(148, 163, 184, 0.18)")
-    fig.update_yaxes(showline=True, linecolor="#CBD5E1", gridcolor="rgba(148, 163, 184, 0.14)")
-    return dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True})
+    apply_figure_theme(fig, ui_theme)
+    return dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True}, className="ta-plot")
 
 
 def _build_match_table(rows: list) -> html.Div:
