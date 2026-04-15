@@ -477,12 +477,18 @@ html[data-theme="dark"] .alert-danger {
 }
 
 /* -------------------------------------------------------------------------- */
-/* dcc.Dropdown (react-select) — listbox + options match theme                */
+/* dcc.Dropdown — hardening pass (react-select v5 + legacy v1)                */
 /* -------------------------------------------------------------------------- */
 
-/* react-select class segments use "Control" / "ValueContainer" (capital C) — match *ontrol / *alueContainer */
-#locale-select [class*="ontrol"],
-.main-content .dash-dropdown [class*="ontrol"] {
+/* Known problematic non-analysis controls (kept as reliability backstop):
+   #locale-select, #compare-selected-runs, #data-export-datasets,
+   #result-export-results, #report-export-results */
+
+/* ----- Main content controls: shared class + targeted fallback selectors ---- */
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select-control,
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class$="-control"],
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="__control"],
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="-control"] {
     min-height: 38px !important;
     border-radius: 6px !important;
     border-color: var(--ta-input-border) !important;
@@ -490,28 +496,92 @@ html[data-theme="dark"] .alert-danger {
     box-shadow: none !important;
 }
 
-#locale-select [class*="ingleValue"],
-#locale-select [class*="laceholder"] {
-    color: #f2f0eb !important;
-}
-
-.main-content .dash-dropdown [class*="ingleValue"],
-.main-content .dash-dropdown [class*="laceholder"] {
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select-value-label,
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select-placeholder,
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="ingleValue"],
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="laceholder"] {
     color: var(--ta-ink) !important;
 }
 
-#locale-select [class*="ndicatorCo"] svg,
-.main-content .dash-dropdown [class*="ndicatorCo"] svg {
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select-placeholder {
+    color: var(--ta-muted) !important;
+}
+
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select-input > input,
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select-input input,
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="Input"] input {
+    color: var(--ta-ink) !important;
+    background: transparent !important;
+    outline: none !important;
+}
+
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select-arrow-zone,
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="ndicatorCo"] svg {
     fill: var(--ta-muted) !important;
 }
 
-/* Menu list (often portaled to body — keep theme vars) */
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select-arrow-zone .Select-arrow,
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select-arrow {
+    border-top-color: var(--ta-muted) !important;
+}
+
+/* ----- Sidebar locale: dedicated dark rail skin ----------------------------- */
+.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-control,
+.sidebar :is(.ta-dropdown--sidebar, #locale-select) [class$="-control"],
+.sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="__control"],
+.sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="-control"] {
+    background-color: rgba(42, 40, 38, 0.96) !important;
+    border-color: rgba(235, 219, 183, 0.28) !important;
+}
+
+.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-value-label,
+.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-placeholder,
+.sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="ingleValue"],
+.sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="laceholder"] {
+    color: #f2f0eb !important;
+}
+
+.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-placeholder {
+    color: rgba(242, 240, 235, 0.72) !important;
+}
+
+.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-input > input,
+.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-input input,
+.sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="Input"] input {
+    color: #f2f0eb !important;
+    background: transparent !important;
+}
+
+.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-arrow-zone,
+.sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="ndicatorCo"] svg {
+    fill: rgba(242, 240, 235, 0.75) !important;
+}
+
+.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-arrow-zone .Select-arrow,
+.sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-arrow {
+    border-top-color: rgba(242, 240, 235, 0.75) !important;
+}
+
+.sidebar-locale-wrap {
+    margin-bottom: 0;
+}
+
+/* ----- Listbox (often portaled — uses theme CSS vars) ----- */
 div[role="listbox"] {
     background-color: var(--ta-listbox-bg) !important;
     border: 1px solid var(--ta-listbox-border) !important;
     border-radius: 6px !important;
     box-shadow: var(--ta-card-shadow) !important;
     z-index: 12000 !important;
+}
+
+/* Kill white inner shells from react-select v5 (menu list / loading) */
+div[role="listbox"] [class*="MenuList"],
+div[role="listbox"] [class*="enuList"],
+div[role="listbox"] [class*="loadingMessage"],
+div[role="listbox"] [class*="noOptionsMessage"] {
+    background-color: var(--ta-listbox-bg) !important;
+    color: var(--ta-ink) !important;
 }
 
 div[role="listbox"] div[role="option"] {
@@ -530,40 +600,21 @@ div[role="listbox"] div[role="option"][class*="focused"] {
     color: var(--ta-ink) !important;
 }
 
-/* Multi-select chips (MultiValue*) */
-.main-content .dash-dropdown [class*="ultiValue"] {
+/* Multi chips — light */
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="ultiValue"],
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select--multi .Select-value {
     background: rgba(235, 219, 183, 0.45) !important;
     border-radius: 4px !important;
-}
-
-html[data-theme="dark"] .main-content .dash-dropdown [class*="ultiValue"],
-html[data-theme="dark"] #compare-selected-runs [class*="ultiValue"],
-html[data-theme="dark"] #data-export-datasets [class*="ultiValue"],
-html[data-theme="dark"] #result-export-results [class*="ultiValue"],
-html[data-theme="dark"] #report-export-results [class*="ultiValue"] {
-    background: rgba(203, 184, 150, 0.32) !important;
-}
-
-.main-content .dash-dropdown [class*="ultiValueLabel"],
-#compare-selected-runs [class*="ultiValueLabel"],
-#data-export-datasets [class*="ultiValueLabel"],
-#result-export-results [class*="ultiValueLabel"],
-#report-export-results [class*="ultiValueLabel"] {
+    border: 1px solid transparent !important;
     color: var(--ta-ink) !important;
 }
 
-/* Sidebar locale — always on dark rail (override main-area token bleed) */
-.sidebar-locale-wrap [class*="ontrol"],
-#locale-select [class*="ontrol"] {
-    background-color: rgba(42, 40, 38, 0.96) !important;
-    border-color: rgba(235, 219, 183, 0.28) !important;
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="ultiValueLabel"],
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select--multi .Select-value-label {
+    color: var(--ta-ink) !important;
 }
 
-.sidebar-locale-wrap {
-    margin-bottom: 0;
-}
-
-/* When menu is inside sidebar tree, force dark menu regardless of theme */
+/* When menu renders inside sidebar DOM, pin dark tokens (portaled menus use html vars below) */
 .sidebar div[role="listbox"] {
     --ta-listbox-bg: #2A2826;
     --ta-listbox-border: rgba(255, 255, 255, 0.12);
@@ -586,6 +637,147 @@ html[data-theme="dark"] #report-export-results [class*="ultiValue"] {
     color: #1c1a1a !important;
 }
 
+/* ----- Dark mode: legacy react-select v1 (global; menus often portaled) ----- */
+html[data-theme="dark"] .Select-menu-outer {
+    background-color: var(--ta-listbox-bg) !important;
+    border: 1px solid var(--ta-listbox-border) !important;
+    border-radius: 6px !important;
+    box-shadow: var(--ta-card-shadow) !important;
+}
+
+html[data-theme="dark"] .Select-menu {
+    background-color: var(--ta-listbox-bg) !important;
+}
+
+html[data-theme="dark"] .Select-option {
+    background-color: transparent !important;
+    color: var(--ta-ink) !important;
+}
+
+html[data-theme="dark"] .Select-option.is-focused {
+    background-color: var(--ta-option-hover-bg) !important;
+    color: var(--ta-ink) !important;
+}
+
+html[data-theme="dark"] .Select-option.is-selected {
+    background-color: var(--ta-option-selected-bg) !important;
+    color: var(--ta-ink) !important;
+}
+
+html[data-theme="dark"] .VirtualizedSelectOption {
+    background-color: transparent !important;
+    color: var(--ta-ink) !important;
+}
+
+html[data-theme="dark"] .VirtualizedSelectFocusedOption {
+    background-color: var(--ta-option-hover-bg) !important;
+    color: var(--ta-ink) !important;
+}
+
+html[data-theme="dark"] .Select--multi .Select-value {
+    background-color: rgba(203, 184, 150, 0.32) !important;
+    border-color: var(--ta-border) !important;
+    color: var(--ta-ink) !important;
+}
+
+html[data-theme="dark"] .Select--multi .Select-value-label {
+    color: var(--ta-ink) !important;
+}
+
+/* Any legacy control (including portaled menus’ parent stacks) */
+html[data-theme="dark"] .Select-control {
+    background-color: var(--ta-input-bg) !important;
+    border-color: var(--ta-input-border) !important;
+    color: var(--ta-ink) !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="dark"] .Select.is-focused > .Select-control,
+html[data-theme="dark"] .Select.is-open > .Select-control,
+html[data-theme="dark"] .Select-control.is-focused {
+    border-color: #CBB896 !important;
+    box-shadow: 0 0 0 1px rgba(203, 184, 150, 0.28) !important;
+}
+
+html[data-theme="dark"] .Select-placeholder,
+html[data-theme="dark"] .Select-value-label {
+    color: var(--ta-muted) !important;
+}
+
+html[data-theme="dark"] .Select-input > input,
+html[data-theme="dark"] .Select-input input {
+    color: var(--ta-ink) !important;
+    background-color: transparent !important;
+}
+
+html[data-theme="dark"] .Select-arrow-zone {
+    color: var(--ta-muted) !important;
+}
+
+html[data-theme="dark"] .Select-arrow {
+    border-top-color: var(--ta-muted) !important;
+}
+
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-menu-outer,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-menu,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) [role="listbox"],
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-control,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select.is-focused > .Select-control,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select.is-open > .Select-control,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-control.is-focused {
+    background-color: rgba(42, 40, 38, 0.96) !important;
+    border-color: rgba(235, 219, 183, 0.28) !important;
+    color: #f2f0eb !important;
+}
+
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-option,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .VirtualizedSelectOption,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) div[role="option"] {
+    background-color: transparent !important;
+    color: #f2f0eb !important;
+}
+
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-option.is-focused,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .VirtualizedSelectFocusedOption,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) div[role="option"]:hover {
+    background-color: rgba(235, 219, 183, 0.22) !important;
+    color: #1c1a1a !important;
+}
+
+html[data-theme="dark"] .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="ultiValue"] {
+    background: rgba(203, 184, 150, 0.32) !important;
+}
+
+/* ----- Dark mode: v5 inner rows that default to white ----- */
+html[data-theme="dark"] .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="alueContainer"],
+html[data-theme="dark"] .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="IndicatorsContainer"],
+html[data-theme="dark"] .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="ndicatorsContainer"] {
+    background-color: var(--ta-input-bg) !important;
+}
+
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="alueContainer"],
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="IndicatorsContainer"],
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="ndicatorsContainer"] {
+    background-color: rgba(42, 40, 38, 0.96) !important;
+}
+
+html[data-theme="dark"] .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="-control"]:focus-within,
+html[data-theme="dark"] .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select-control.is-focused,
+html[data-theme="dark"] .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select.is-focused > .Select-control,
+html[data-theme="dark"] .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select.is-open > .Select-control {
+    border-color: #CBB896 !important;
+    box-shadow: 0 0 0 1px rgba(203, 184, 150, 0.28) !important;
+}
+
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="-control"]:focus-within,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select-control.is-focused,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select.is-focused > .Select-control,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) .Select.is-open > .Select-control {
+    border-color: rgba(235, 219, 183, 0.55) !important;
+    box-shadow: 0 0 0 1px rgba(235, 219, 183, 0.22) !important;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Range inputs (dcc.Slider / native) if used later                           */
 /* -------------------------------------------------------------------------- */
@@ -603,64 +795,29 @@ html[data-theme="dark"] input[type="range"] {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Multi-select dcc.Dropdown — remove white control / purple focus ring       */
+/* Multi-select row height + light-mode value strip (class-based)             */
 /* -------------------------------------------------------------------------- */
 
-.main-content .ta-dropdown [class*="ontrol"],
-#compare-selected-runs [class*="ontrol"],
-#data-export-datasets [class*="ontrol"],
-#result-export-results [class*="ontrol"],
-#report-export-results [class*="ontrol"] {
-    background-color: var(--ta-input-bg) !important;
-    border-color: var(--ta-input-border) !important;
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select-control,
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class$="-control"],
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="__control"],
+.main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="-control"] {
     min-height: 42px !important;
-    border-radius: 6px !important;
-    box-shadow: none !important;
 }
 
-html[data-theme="dark"] .main-content .ta-dropdown [class*="alueContainer"],
-html[data-theme="dark"] #compare-selected-runs [class*="alueContainer"],
-html[data-theme="dark"] #data-export-datasets [class*="alueContainer"],
-html[data-theme="dark"] #result-export-results [class*="alueContainer"],
-html[data-theme="dark"] #report-export-results [class*="alueContainer"] {
-    background-color: var(--ta-input-bg) !important;
-}
-
-html[data-theme="light"] .main-content .ta-dropdown [class*="alueContainer"],
-html:not([data-theme]) .main-content .ta-dropdown [class*="alueContainer"],
-html[data-theme="light"] #compare-selected-runs [class*="alueContainer"],
-html:not([data-theme]) #compare-selected-runs [class*="alueContainer"],
-html[data-theme="light"] #data-export-datasets [class*="alueContainer"],
-html:not([data-theme]) #data-export-datasets [class*="alueContainer"],
-html[data-theme="light"] #result-export-results [class*="alueContainer"],
-html:not([data-theme]) #result-export-results [class*="alueContainer"],
-html[data-theme="light"] #report-export-results [class*="alueContainer"],
-html:not([data-theme]) #report-export-results [class*="alueContainer"] {
+html[data-theme="light"] .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="alueContainer"],
+html:not([data-theme]) .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="alueContainer"] {
     background-color: transparent !important;
 }
 
-.main-content .ta-dropdown [class*="ontrol"]:focus-within,
-#compare-selected-runs [class*="ontrol"]:focus-within,
-#data-export-datasets [class*="ontrol"]:focus-within,
-#result-export-results [class*="ontrol"]:focus-within,
-#report-export-results [class*="ontrol"]:focus-within {
+html[data-theme="light"] .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="-control"]:focus-within,
+html:not([data-theme]) .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="-control"]:focus-within,
+html[data-theme="light"] .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select-control.is-focused,
+html:not([data-theme]) .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select-control.is-focused,
+html[data-theme="light"] .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select.is-focused > .Select-control,
+html:not([data-theme]) .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) .Select.is-focused > .Select-control {
     border-color: rgba(102, 100, 94, 0.55) !important;
     box-shadow: 0 0 0 1px rgba(235, 219, 183, 0.35) !important;
-}
-
-html[data-theme="dark"] .main-content .ta-dropdown [class*="ontrol"]:focus-within,
-html[data-theme="dark"] #compare-selected-runs [class*="ontrol"]:focus-within,
-html[data-theme="dark"] #data-export-datasets [class*="ontrol"]:focus-within,
-html[data-theme="dark"] #result-export-results [class*="ontrol"]:focus-within,
-html[data-theme="dark"] #report-export-results [class*="ontrol"]:focus-within {
-    border-color: #CBB896 !important;
-    box-shadow: 0 0 0 1px rgba(203, 184, 150, 0.28) !important;
-}
-
-.main-content .ta-dropdown [class*="Input"] input,
-#compare-selected-runs [class*="Input"] input {
-    color: var(--ta-ink) !important;
-    outline: none !important;
 }
 
 div[role="listbox"] input[type="text"],
@@ -751,20 +908,23 @@ html[data-theme="dark"] .ta-datatable .dash-spreadsheet-inner {
 
 html[data-theme="dark"] .ta-datatable *::-webkit-scrollbar,
 html[data-theme="dark"] .dash-spreadsheet *::-webkit-scrollbar,
-html[data-theme="dark"] .main-content .dash-dropdown *::-webkit-scrollbar {
+html[data-theme="dark"] .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) *::-webkit-scrollbar,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, .ta-dropdown, .dash-dropdown, #locale-select) *::-webkit-scrollbar {
     width: 10px;
     height: 10px;
 }
 
 html[data-theme="dark"] .ta-datatable *::-webkit-scrollbar-track,
 html[data-theme="dark"] .dash-spreadsheet *::-webkit-scrollbar-track,
-html[data-theme="dark"] .main-content .dash-dropdown *::-webkit-scrollbar-track {
+html[data-theme="dark"] .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) *::-webkit-scrollbar-track,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, .ta-dropdown, .dash-dropdown, #locale-select) *::-webkit-scrollbar-track {
     background: var(--ta-bg);
 }
 
 html[data-theme="dark"] .ta-datatable *::-webkit-scrollbar-thumb,
 html[data-theme="dark"] .dash-spreadsheet *::-webkit-scrollbar-thumb,
-html[data-theme="dark"] .main-content .dash-dropdown *::-webkit-scrollbar-thumb {
+html[data-theme="dark"] .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) *::-webkit-scrollbar-thumb,
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, .ta-dropdown, .dash-dropdown, #locale-select) *::-webkit-scrollbar-thumb {
     background: var(--ta-border);
     border-radius: 6px;
 }
@@ -782,11 +942,8 @@ html[data-theme="dark"] div[role="listbox"] input[type="checkbox"] {
     accent-color: #cbb896;
 }
 
-html[data-theme="dark"] .main-content .dash-dropdown [class*="laceholder"],
-html[data-theme="dark"] #compare-selected-runs [class*="laceholder"],
-html[data-theme="dark"] #data-export-datasets [class*="laceholder"],
-html[data-theme="dark"] #result-export-results [class*="laceholder"],
-html[data-theme="dark"] #report-export-results [class*="laceholder"] {
+html[data-theme="dark"] .main-content :is(.ta-dropdown, .dash-dropdown, #compare-selected-runs, #data-export-datasets, #result-export-results, #report-export-results) [class*="laceholder"],
+html[data-theme="dark"] .sidebar :is(.ta-dropdown--sidebar, #locale-select) [class*="laceholder"] {
     color: var(--ta-muted) !important;
 }
 
