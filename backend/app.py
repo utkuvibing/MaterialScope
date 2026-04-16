@@ -96,6 +96,7 @@ from core.data_io import read_thermal_data
 from core.execution_engine import run_batch_analysis, run_single_analysis
 from core.modalities import analysis_state_key, stable_analysis_types
 from core.literature_compare import attach_literature_package, compare_result_to_literature
+from core.processing_schema import update_method_context, update_processing_step
 from core.literature_provider import (
     LiteratureProvider,
     MultiLiteratureProviderAggregator,
@@ -155,6 +156,50 @@ def _require_project_state(project_store: ProjectStore, project_id: str) -> dict
     if project_state is None:
         raise HTTPException(status_code=404, detail=f"Unknown project_id: {project_id}")
     return project_state
+
+
+def _apply_processing_overrides(
+    state: dict,
+    *,
+    analysis_type: str,
+    dataset_key: str,
+    overrides: Mapping[str, Any],
+) -> None:
+    """Merge caller-supplied per-step overrides into the workspace analysis-state.
+
+    Overrides are written to ``state[analysis_state_key(...)]["processing"]`` using
+    the canonical ``update_processing_step`` / ``update_method_context`` helpers so
+    that ``core._build_processing_payload`` picks them up as user-tuned parameters
+    that win over the template defaults.
+    """
+    if not overrides:
+        return
+    normalized_type = (analysis_type or "").strip().upper()
+    if not normalized_type:
+        raise ValueError("analysis_type is required to apply processing overrides.")
+    skey = analysis_state_key(normalized_type, dataset_key)
+    existing_state = state.get(skey) or {}
+    processing = dict(existing_state.get("processing") or {})
+    for section_name, values in overrides.items():
+        if not isinstance(values, Mapping):
+            raise ValueError(
+                f"processing_overrides[{section_name!r}] must be an object of parameter values."
+            )
+        if section_name == "method_context":
+            processing = update_method_context(
+                processing, dict(values), analysis_type=normalized_type
+            )
+            continue
+        try:
+            processing = update_processing_step(
+                processing, section_name, dict(values), analysis_type=normalized_type
+            )
+        except ValueError as exc:
+            raise ValueError(
+                f"Unsupported processing_overrides section '{section_name}' for {normalized_type}."
+            ) from exc
+    existing_state["processing"] = processing
+    state[skey] = existing_state
 
 
 def _library_status_payload(manager: ReferenceLibraryManager) -> dict:
@@ -1070,6 +1115,16 @@ def create_app(
     ) -> AnalysisRunResponse:
         _require_token(api_token, x_ta_token)
         state = _require_project_state(project_store, request.project_id)
+        if request.processing_overrides:
+            try:
+                _apply_processing_overrides(
+                    state,
+                    analysis_type=request.analysis_type,
+                    dataset_key=request.dataset_key,
+                    overrides=request.processing_overrides,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         try:
             execution = run_single_analysis(
                 state=state,

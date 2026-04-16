@@ -287,6 +287,12 @@ class AnalysisRunRequest(BaseModel):
     analysis_type: str = Field(..., min_length=1)
     workflow_template_id: str | None = None
     unit_mode: str | None = None
+    # Optional per-step parameter overrides keyed by section name
+    # (e.g. "smoothing", "baseline", "peak_detection", or "method_context").
+    # Merged into workspace analysis-state processing payload before the
+    # template defaults are applied, so user-tuned parameters win over
+    # template defaults inside core._build_processing_payload.
+    processing_overrides: dict[str, Any] | None = None
 
 
 class AnalysisRunResponse(BaseModel):

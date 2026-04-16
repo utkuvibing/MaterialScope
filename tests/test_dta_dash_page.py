@@ -532,3 +532,274 @@ def test_dta_analysis_state_curves_sorted_temperature():
     curves = client.get(f"/workspace/{project_id}/analysis-state/DTA/{dataset_key}").json()
     temps = curves["temperature"]
     assert temps == sorted(temps)
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: smoothing draft / undo / redo / reset helpers
+# ---------------------------------------------------------------------------
+
+def test_default_processing_draft_matches_template_smoothing_defaults():
+    mod = _import_dta_page()
+
+    defaults = mod._default_processing_draft()
+    assert defaults["smoothing"] == {
+        "method": "savgol",
+        "window_length": 11,
+        "polyorder": 3,
+    }
+
+
+def test_normalize_smoothing_values_enforces_odd_window_and_bounds():
+    mod = _import_dta_page()
+
+    savgol = mod._normalize_smoothing_values("savgol", window_length=12, polyorder=3, sigma=None)
+    assert savgol == {"method": "savgol", "window_length": 13, "polyorder": 3}
+
+    mov_avg = mod._normalize_smoothing_values("moving_average", window_length=8, polyorder=None, sigma=None)
+    assert mov_avg == {"method": "moving_average", "window_length": 9}
+
+    gauss = mod._normalize_smoothing_values("gaussian", window_length=None, polyorder=None, sigma=1.5)
+    assert gauss == {"method": "gaussian", "sigma": 1.5}
+
+    # Unknown method falls back to savgol defaults (sanitizes bad input)
+    fallback = mod._normalize_smoothing_values("exotic", window_length=15, polyorder=3, sigma=None)
+    assert fallback == {"method": "savgol", "window_length": 15, "polyorder": 3}
+
+
+def test_apply_draft_section_does_not_mutate_input():
+    mod = _import_dta_page()
+
+    base = mod._default_processing_draft()
+    next_draft = mod._apply_draft_section(
+        base, "smoothing", {"method": "gaussian", "sigma": 3.5}
+    )
+
+    assert base["smoothing"]["method"] == "savgol"  # unchanged
+    assert next_draft["smoothing"] == {"method": "gaussian", "sigma": 3.5}
+
+
+def test_undo_redo_cycle_restores_previous_and_future_drafts():
+    mod = _import_dta_page()
+
+    draft0 = mod._default_processing_draft()
+    draft1 = mod._apply_draft_section(
+        draft0, "smoothing", {"method": "savgol", "window_length": 21, "polyorder": 3}
+    )
+    undo_stack = mod._push_undo([], draft0)
+
+    # Undo brings draft0 back and pushes draft1 onto redo
+    restored, undo_after, redo_after = mod._do_undo(draft1, undo_stack, [])
+    assert restored == draft0
+    assert undo_after == []
+    assert redo_after == [draft1]
+
+    # Redo restores draft1 and pushes draft0 back onto undo
+    reapplied, undo_next, redo_next = mod._do_redo(restored, undo_after, redo_after)
+    assert reapplied == draft1
+    assert undo_next == [draft0]
+    assert redo_next == []
+
+
+def test_undo_on_empty_stack_is_noop():
+    mod = _import_dta_page()
+
+    draft = mod._default_processing_draft()
+    restored, undo_after, redo_after = mod._do_undo(draft, [], [])
+    assert restored == draft
+    assert undo_after == []
+    assert redo_after == []
+
+
+def test_reset_restores_defaults_and_pushes_current_to_undo():
+    mod = _import_dta_page()
+
+    defaults = mod._default_processing_draft()
+    draft = mod._apply_draft_section(
+        defaults, "smoothing", {"method": "gaussian", "sigma": 4.0}
+    )
+
+    next_draft, next_undo, next_redo = mod._do_reset(draft, [], [{"stale": True}], defaults)
+    assert next_draft == defaults
+    assert next_undo == [draft]
+    # Reset clears redo stack even when previously populated
+    assert next_redo == []
+
+    # Reset when already at defaults is a no-op (does not push to undo)
+    same_draft, same_undo, same_redo = mod._do_reset(defaults, [], [], defaults)
+    assert same_draft == defaults
+    assert same_undo == []
+    assert same_redo == []
+
+
+def test_smoothing_overrides_from_draft_returns_only_smoothing_section():
+    mod = _import_dta_page()
+
+    assert mod._smoothing_overrides_from_draft(None) == {}
+    assert mod._smoothing_overrides_from_draft({}) == {}
+    overrides = mod._smoothing_overrides_from_draft(
+        {"smoothing": {"method": "savgol", "window_length": 21, "polyorder": 3}, "other": {}}
+    )
+    assert overrides == {"smoothing": {"method": "savgol", "window_length": 21, "polyorder": 3}}
+
+
+def test_layout_includes_phase1_stores_and_smoothing_controls():
+    mod = _import_dta_page()
+
+    layout_str = str(mod.layout)
+    for element_id in (
+        "dta-processing-default",
+        "dta-processing-draft",
+        "dta-processing-undo",
+        "dta-processing-redo",
+        "dta-smooth-method",
+        "dta-smooth-window",
+        "dta-smooth-polyorder",
+        "dta-smooth-sigma",
+        "dta-smooth-apply-btn",
+        "dta-undo-btn",
+        "dta-redo-btn",
+        "dta-reset-btn",
+        "dta-smooth-status",
+    ):
+        assert element_id in layout_str, f"Missing Phase 1 element: {element_id}"
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: backend override propagation via /analysis/run
+# ---------------------------------------------------------------------------
+
+def test_dta_analysis_run_honors_smoothing_overrides():
+    """Per-step overrides must win over template defaults in persisted processing."""
+    import base64
+
+    from fastapi.testclient import TestClient
+    from dash_app.sample_data import resolve_sample_request
+    from dash_app.server import create_combined_app
+
+    app = create_combined_app()
+    client = TestClient(app)
+
+    workspace = client.post("/workspace/new")
+    project_id = workspace.json()["project_id"]
+
+    sample_path, _ = resolve_sample_request("load-sample-dsc")
+    payload = base64.b64encode(sample_path.read_bytes()).decode("ascii")
+
+    imported = client.post(
+        "/dataset/import",
+        json={
+            "project_id": project_id,
+            "file_name": sample_path.name,
+            "file_base64": payload,
+            "data_type": "DTA",
+        },
+    )
+    dataset_key = imported.json()["dataset"]["key"]
+
+    run_response = client.post(
+        "/analysis/run",
+        json={
+            "project_id": project_id,
+            "dataset_key": dataset_key,
+            "analysis_type": "DTA",
+            "workflow_template_id": "dta.general",
+            "processing_overrides": {
+                "smoothing": {"method": "savgol", "window_length": 21, "polyorder": 3},
+            },
+        },
+    )
+    assert run_response.status_code == 200, run_response.text
+    run_payload = run_response.json()
+    assert run_payload["execution_status"] == "saved"
+    result_id = run_payload["result_id"]
+
+    detail = client.get(f"/workspace/{project_id}/results/{result_id}").json()
+    smoothing = (detail.get("processing") or {}).get("signal_pipeline", {}).get("smoothing", {})
+    assert smoothing.get("window_length") == 21
+    assert smoothing.get("method") == "savgol"
+
+
+def test_dta_analysis_run_rejects_unsupported_override_section():
+    """Unknown processing sections for DTA must return a 400."""
+    import base64
+
+    from fastapi.testclient import TestClient
+    from dash_app.sample_data import resolve_sample_request
+    from dash_app.server import create_combined_app
+
+    app = create_combined_app()
+    client = TestClient(app)
+
+    workspace = client.post("/workspace/new")
+    project_id = workspace.json()["project_id"]
+
+    sample_path, _ = resolve_sample_request("load-sample-dsc")
+    payload = base64.b64encode(sample_path.read_bytes()).decode("ascii")
+
+    imported = client.post(
+        "/dataset/import",
+        json={
+            "project_id": project_id,
+            "file_name": sample_path.name,
+            "file_base64": payload,
+            "data_type": "DTA",
+        },
+    )
+    dataset_key = imported.json()["dataset"]["key"]
+
+    run_response = client.post(
+        "/analysis/run",
+        json={
+            "project_id": project_id,
+            "dataset_key": dataset_key,
+            "analysis_type": "DTA",
+            "workflow_template_id": "dta.general",
+            # normalization is NOT a DTA pipeline section
+            "processing_overrides": {"normalization": {"method": "vector"}},
+        },
+    )
+    assert run_response.status_code == 400, run_response.text
+
+
+def test_dta_api_client_forwards_processing_overrides(monkeypatch):
+    """dash_app.api_client.analysis_run must forward processing_overrides in the POST body."""
+    import dash_app.api_client as api_client
+
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"execution_status": "saved", "result_id": "dta_fake"}
+
+        def raise_for_status(self):
+            return None
+
+    class _FakeClient:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def post(self, url, json=None):  # noqa: A002 - match httpx signature
+            captured["url"] = url
+            captured["json"] = json
+            return _FakeResponse()
+
+    monkeypatch.setattr(api_client, "_client", lambda: _FakeClient())
+    monkeypatch.setattr(api_client, "_raise_with_detail", lambda _r: None)
+
+    result = api_client.analysis_run(
+        project_id="proj-1",
+        dataset_key="ds-1",
+        analysis_type="DTA",
+        workflow_template_id="dta.general",
+        processing_overrides={"smoothing": {"method": "savgol", "window_length": 21, "polyorder": 3}},
+    )
+    assert result == {"execution_status": "saved", "result_id": "dta_fake"}
+    assert captured["url"] == "/analysis/run"
+    assert captured["json"]["processing_overrides"] == {
+        "smoothing": {"method": "savgol", "window_length": 21, "polyorder": 3}
+    }

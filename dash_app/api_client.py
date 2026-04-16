@@ -155,6 +155,7 @@ def analysis_run(
     analysis_type: str,
     workflow_template_id: str | None = None,
     unit_mode: str | None = None,
+    processing_overrides: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "project_id": project_id,
@@ -165,6 +166,8 @@ def analysis_run(
         payload["workflow_template_id"] = workflow_template_id
     if unit_mode:
         payload["unit_mode"] = unit_mode
+    if processing_overrides:
+        payload["processing_overrides"] = processing_overrides
     with _client() as c:
         r = c.post("/analysis/run", json=payload)
         _raise_with_detail(r)

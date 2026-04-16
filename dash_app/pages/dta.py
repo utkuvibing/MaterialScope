@@ -12,6 +12,7 @@ Lets the user:
 
 from __future__ import annotations
 
+import copy
 import math
 
 import dash
@@ -80,6 +81,122 @@ _DIRECTION_GUIDE_COLORS = {
 _ANNOTATION_MIN_SEP = 15.0
 _PRIMARY_EVENT_LIMIT = 4
 _EMPTY_SAMPLE_TOKENS = {"", "unknown", "n/a", "na", "none", "null", "unnamed"}
+
+# Smoothing defaults mirror core/batch_runner._DTA_TEMPLATE_DEFAULTS["dta.general"]
+_SMOOTH_METHODS = ("savgol", "moving_average", "gaussian")
+_DTA_SMOOTHING_DEFAULTS: dict[str, dict] = {
+    "savgol": {"method": "savgol", "window_length": 11, "polyorder": 3},
+    "moving_average": {"method": "moving_average", "window_length": 11},
+    "gaussian": {"method": "gaussian", "sigma": 2.0},
+}
+_UNDO_STACK_LIMIT = 32
+
+
+def _default_processing_draft() -> dict:
+    """Return a fresh default processing-draft payload for DTA Phase 1 (smoothing only)."""
+    return {"smoothing": copy.deepcopy(_DTA_SMOOTHING_DEFAULTS["savgol"])}
+
+
+def _normalize_smoothing_values(method: str | None, window_length, polyorder, sigma) -> dict:
+    """Build a canonical signal_pipeline.smoothing values dict from raw control inputs."""
+    token = str(method or "savgol").strip().lower()
+    if token not in _SMOOTH_METHODS:
+        token = "savgol"
+    if token == "savgol":
+        wl = _coerce_int_positive(window_length, default=11, minimum=5)
+        if wl % 2 == 0:
+            wl += 1
+        po = _coerce_int_positive(polyorder, default=3, minimum=1)
+        po = min(po, max(wl - 2, 1))
+        return {"method": "savgol", "window_length": wl, "polyorder": po}
+    if token == "moving_average":
+        wl = _coerce_int_positive(window_length, default=11, minimum=3)
+        if wl % 2 == 0:
+            wl += 1
+        return {"method": "moving_average", "window_length": wl}
+    sg = _coerce_float_positive(sigma, default=2.0, minimum=0.1)
+    return {"method": "gaussian", "sigma": sg}
+
+
+def _coerce_int_positive(value, *, default: int, minimum: int) -> int:
+    try:
+        if value in (None, ""):
+            return max(default, minimum)
+        parsed = int(float(value))
+    except (TypeError, ValueError):
+        return max(default, minimum)
+    return max(parsed, minimum)
+
+
+def _coerce_float_positive(value, *, default: float, minimum: float) -> float:
+    try:
+        if value in (None, ""):
+            return max(default, minimum)
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return max(default, minimum)
+    if not math.isfinite(parsed):
+        return max(default, minimum)
+    return max(parsed, minimum)
+
+
+def _apply_draft_section(draft: dict | None, section: str, values: dict) -> dict:
+    """Return a new draft with *section* replaced by *values* (deep copied)."""
+    next_draft = copy.deepcopy(draft or {})
+    next_draft[section] = copy.deepcopy(values)
+    return next_draft
+
+
+def _push_undo(undo: list | None, snapshot: dict | None) -> list:
+    stack = list(undo or [])
+    stack.append(copy.deepcopy(snapshot or {}))
+    if len(stack) > _UNDO_STACK_LIMIT:
+        stack = stack[-_UNDO_STACK_LIMIT:]
+    return stack
+
+
+def _do_undo(draft: dict, undo: list | None, redo: list | None) -> tuple[dict, list, list]:
+    """Pop from undo into draft, pushing current draft onto redo. No-op when empty."""
+    undo_stack = list(undo or [])
+    redo_stack = list(redo or [])
+    if not undo_stack:
+        return copy.deepcopy(draft or {}), undo_stack, redo_stack
+    previous = undo_stack.pop()
+    redo_stack.append(copy.deepcopy(draft or {}))
+    return copy.deepcopy(previous), undo_stack, redo_stack
+
+
+def _do_redo(draft: dict, undo: list | None, redo: list | None) -> tuple[dict, list, list]:
+    """Pop from redo into draft, pushing current draft onto undo. No-op when empty."""
+    undo_stack = list(undo or [])
+    redo_stack = list(redo or [])
+    if not redo_stack:
+        return copy.deepcopy(draft or {}), undo_stack, redo_stack
+    following = redo_stack.pop()
+    undo_stack.append(copy.deepcopy(draft or {}))
+    return copy.deepcopy(following), undo_stack, redo_stack
+
+
+def _do_reset(
+    draft: dict,
+    undo: list | None,
+    redo: list | None,
+    defaults: dict | None,
+) -> tuple[dict, list, list]:
+    """Restore defaults, pushing current draft to undo, clearing redo."""
+    reset_target = copy.deepcopy(defaults or _default_processing_draft())
+    if (draft or {}) == reset_target:
+        return reset_target, list(undo or []), list(redo or [])
+    undo_stack = _push_undo(undo, draft)
+    return reset_target, undo_stack, []
+
+
+def _smoothing_overrides_from_draft(draft: dict | None) -> dict:
+    """Extract the smoothing section override if the draft carries one."""
+    section = (draft or {}).get("smoothing")
+    if not isinstance(section, dict):
+        return {}
+    return {"smoothing": copy.deepcopy(section)}
 
 
 def _loc(locale_data: str | None) -> str:
@@ -332,8 +449,115 @@ def _peak_card(row: dict, idx: int, loc: str = "en") -> dbc.Card:
     )
 
 
+def _smoothing_controls_card() -> dbc.Card:
+    """User-tunable smoothing controls with Apply / Undo / Redo / Reset.
+
+    Phase 1 scope: smoothing only. Draft params are held in dcc.Store and
+    flushed to the backend only when the Run button is clicked.
+    """
+    method_options = [
+        {"label": "Savitzky-Golay", "value": "savgol"},
+        {"label": "Moving Average", "value": "moving_average"},
+        {"label": "Gaussian", "value": "gaussian"},
+    ]
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H5(id="dta-smoothing-card-title", className="card-title mb-3"),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dta-smooth-method-label", html_for="dta-smooth-method"),
+                                dbc.Select(
+                                    id="dta-smooth-method",
+                                    options=method_options,
+                                    value="savgol",
+                                ),
+                            ],
+                            md=12,
+                        ),
+                    ],
+                    className="mb-2",
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dta-smooth-window-label", html_for="dta-smooth-window"),
+                                dbc.Input(
+                                    id="dta-smooth-window",
+                                    type="number",
+                                    min=3,
+                                    max=51,
+                                    step=2,
+                                    value=11,
+                                ),
+                            ],
+                            md=4,
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dta-smooth-polyorder-label", html_for="dta-smooth-polyorder"),
+                                dbc.Input(
+                                    id="dta-smooth-polyorder",
+                                    type="number",
+                                    min=1,
+                                    max=7,
+                                    step=1,
+                                    value=3,
+                                ),
+                            ],
+                            md=4,
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dta-smooth-sigma-label", html_for="dta-smooth-sigma"),
+                                dbc.Input(
+                                    id="dta-smooth-sigma",
+                                    type="number",
+                                    min=0.1,
+                                    max=10.0,
+                                    step=0.1,
+                                    value=2.0,
+                                    disabled=True,
+                                ),
+                            ],
+                            md=4,
+                        ),
+                    ],
+                    className="g-2 mb-2",
+                ),
+                dbc.ButtonGroup(
+                    [
+                        dbc.Button(id="dta-smooth-apply-btn", color="primary", size="sm"),
+                        dbc.Button(id="dta-undo-btn", color="secondary", size="sm", outline=True),
+                        dbc.Button(id="dta-redo-btn", color="secondary", size="sm", outline=True),
+                        dbc.Button(id="dta-reset-btn", color="warning", size="sm", outline=True),
+                    ],
+                    className="mb-2",
+                ),
+                html.Div(id="dta-smooth-status", className="small text-muted"),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
+def _processing_draft_stores() -> list:
+    """dcc.Store components that hold the DTA smoothing draft and undo/redo stacks."""
+    defaults = _default_processing_draft()
+    return [
+        dcc.Store(id="dta-processing-default", data=defaults),
+        dcc.Store(id="dta-processing-draft", data=copy.deepcopy(defaults)),
+        dcc.Store(id="dta-processing-undo", data=[]),
+        dcc.Store(id="dta-processing-redo", data=[]),
+    ]
+
+
 layout = html.Div(
     analysis_page_stores("dta-refresh", "dta-latest-result-id")
+    + _processing_draft_stores()
     + [
         html.Div(id="dta-hero-slot"),
         dbc.Row(
@@ -348,6 +572,7 @@ layout = html.Div(
                             "dta.general",
                             card_title_id="dta-workflow-card-title",
                         ),
+                        _smoothing_controls_card(),
                         execute_card("dta-run-status", "dta-run-btn", card_title_id="dta-execute-card-title"),
                     ],
                     md=4,
@@ -449,21 +674,33 @@ def load_eligible_datasets(project_id, _refresh, locale_data):
     State("dta-refresh", "data"),
     State("workspace-refresh", "data"),
     State("ui-locale", "data"),
+    State("dta-processing-draft", "data"),
     prevent_initial_call=True,
 )
-def run_dta_analysis(n_clicks, project_id, dataset_key, template_id, refresh_val, global_refresh, locale_data):
+def run_dta_analysis(
+    n_clicks,
+    project_id,
+    dataset_key,
+    template_id,
+    refresh_val,
+    global_refresh,
+    locale_data,
+    processing_draft,
+):
     loc = _loc(locale_data)
     if not n_clicks or not project_id or not dataset_key:
         raise dash.exceptions.PreventUpdate
 
     from dash_app.api_client import analysis_run
 
+    overrides = _smoothing_overrides_from_draft(processing_draft) or None
     try:
         result = analysis_run(
             project_id=project_id,
             dataset_key=dataset_key,
             analysis_type="DTA",
             workflow_template_id=template_id,
+            processing_overrides=overrides,
         )
     except Exception as exc:
         return dbc.Alert(translate_ui(loc, "dash.analysis.analysis_failed", error=str(exc)), color="danger"), dash.no_update, dash.no_update, dash.no_update
@@ -786,3 +1023,171 @@ def _build_peak_table(rows: list, loc: str = "en") -> html.Div:
             dataset_table(rows, columns, table_id="dta-peaks-table"),
         ]
     )
+
+
+def _smoothing_status_text(draft: dict | None, loc: str) -> str:
+    """Build a concise status line summarizing the current smoothing draft."""
+    values = (draft or {}).get("smoothing") or {}
+    method = str(values.get("method") or "savgol")
+    method_label = {"savgol": "Savitzky-Golay", "moving_average": "Moving Average", "gaussian": "Gaussian"}.get(method, method)
+    parts = [f"{method_label}"]
+    if "window_length" in values:
+        parts.append(f"window={values['window_length']}")
+    if "polyorder" in values:
+        parts.append(f"polyorder={values['polyorder']}")
+    if "sigma" in values:
+        parts.append(f"sigma={values['sigma']}")
+    applied = translate_ui(loc, "dash.analysis.dta.smoothing.applied")
+    if applied == "dash.analysis.dta.smoothing.applied":
+        applied = "Applied"
+    return f"{applied}: {' - '.join(parts)}"
+
+
+@callback(
+    Output("dta-smoothing-card-title", "children"),
+    Output("dta-smooth-method-label", "children"),
+    Output("dta-smooth-window-label", "children"),
+    Output("dta-smooth-polyorder-label", "children"),
+    Output("dta-smooth-sigma-label", "children"),
+    Output("dta-smooth-apply-btn", "children"),
+    Output("dta-undo-btn", "children"),
+    Output("dta-redo-btn", "children"),
+    Output("dta-reset-btn", "children"),
+    Input("ui-locale", "data"),
+)
+def render_dta_smoothing_chrome(locale_data):
+    loc = _loc(locale_data)
+
+    def _t(key: str, fallback: str) -> str:
+        value = translate_ui(loc, key)
+        return fallback if value == key else value
+
+    return (
+        _t("dash.analysis.dta.smoothing.title", "Smoothing"),
+        _t("dash.analysis.dta.smoothing.method", "Smoothing Method"),
+        _t("dash.analysis.dta.smoothing.window", "Window Length"),
+        _t("dash.analysis.dta.smoothing.polyorder", "Polynomial Order"),
+        _t("dash.analysis.dta.smoothing.sigma", "Sigma"),
+        _t("dash.analysis.dta.smoothing.apply_btn", "Apply Smoothing"),
+        _t("dash.analysis.dta.undo_btn", "Undo"),
+        _t("dash.analysis.dta.redo_btn", "Redo"),
+        _t("dash.analysis.dta.reset_btn", "Reset"),
+    )
+
+
+@callback(
+    Output("dta-smooth-window", "disabled"),
+    Output("dta-smooth-polyorder", "disabled"),
+    Output("dta-smooth-sigma", "disabled"),
+    Input("dta-smooth-method", "value"),
+)
+def toggle_smoothing_inputs(method):
+    token = str(method or "savgol").strip().lower()
+    if token == "savgol":
+        return False, False, True
+    if token == "moving_average":
+        return False, True, True
+    return True, True, False
+
+
+@callback(
+    Output("dta-processing-draft", "data", allow_duplicate=True),
+    Output("dta-processing-undo", "data", allow_duplicate=True),
+    Output("dta-processing-redo", "data", allow_duplicate=True),
+    Input("dta-smooth-apply-btn", "n_clicks"),
+    State("dta-smooth-method", "value"),
+    State("dta-smooth-window", "value"),
+    State("dta-smooth-polyorder", "value"),
+    State("dta-smooth-sigma", "value"),
+    State("dta-processing-draft", "data"),
+    State("dta-processing-undo", "data"),
+    prevent_initial_call=True,
+)
+def apply_smoothing(n_clicks, method, window, polyorder, sigma, draft, undo):
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    values = _normalize_smoothing_values(method, window, polyorder, sigma)
+    next_undo = _push_undo(undo, draft)
+    next_draft = _apply_draft_section(draft, "smoothing", values)
+    return next_draft, next_undo, []
+
+
+@callback(
+    Output("dta-processing-draft", "data", allow_duplicate=True),
+    Output("dta-processing-undo", "data", allow_duplicate=True),
+    Output("dta-processing-redo", "data", allow_duplicate=True),
+    Input("dta-undo-btn", "n_clicks"),
+    State("dta-processing-draft", "data"),
+    State("dta-processing-undo", "data"),
+    State("dta-processing-redo", "data"),
+    prevent_initial_call=True,
+)
+def undo_processing(n_clicks, draft, undo, redo):
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    next_draft, next_undo, next_redo = _do_undo(draft or {}, undo, redo)
+    return next_draft, next_undo, next_redo
+
+
+@callback(
+    Output("dta-processing-draft", "data", allow_duplicate=True),
+    Output("dta-processing-undo", "data", allow_duplicate=True),
+    Output("dta-processing-redo", "data", allow_duplicate=True),
+    Input("dta-redo-btn", "n_clicks"),
+    State("dta-processing-draft", "data"),
+    State("dta-processing-undo", "data"),
+    State("dta-processing-redo", "data"),
+    prevent_initial_call=True,
+)
+def redo_processing(n_clicks, draft, undo, redo):
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    next_draft, next_undo, next_redo = _do_redo(draft or {}, undo, redo)
+    return next_draft, next_undo, next_redo
+
+
+@callback(
+    Output("dta-processing-draft", "data", allow_duplicate=True),
+    Output("dta-processing-undo", "data", allow_duplicate=True),
+    Output("dta-processing-redo", "data", allow_duplicate=True),
+    Input("dta-reset-btn", "n_clicks"),
+    State("dta-processing-draft", "data"),
+    State("dta-processing-undo", "data"),
+    State("dta-processing-redo", "data"),
+    State("dta-processing-default", "data"),
+    prevent_initial_call=True,
+)
+def reset_processing(n_clicks, draft, undo, redo, defaults):
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    next_draft, next_undo, next_redo = _do_reset(draft or {}, undo, redo, defaults)
+    return next_draft, next_undo, next_redo
+
+
+@callback(
+    Output("dta-smooth-method", "value"),
+    Output("dta-smooth-window", "value"),
+    Output("dta-smooth-polyorder", "value"),
+    Output("dta-smooth-sigma", "value"),
+    Output("dta-smooth-status", "children"),
+    Output("dta-undo-btn", "disabled"),
+    Output("dta-redo-btn", "disabled"),
+    Output("dta-reset-btn", "disabled"),
+    Input("dta-processing-draft", "data"),
+    Input("dta-processing-undo", "data"),
+    Input("dta-processing-redo", "data"),
+    Input("dta-processing-default", "data"),
+    Input("ui-locale", "data"),
+)
+def sync_smoothing_controls(draft, undo, redo, defaults, locale_data):
+    loc = _loc(locale_data)
+    values = (draft or {}).get("smoothing") or {}
+    method = str(values.get("method") or "savgol")
+    window_length = values.get("window_length", 11)
+    polyorder = values.get("polyorder", 3)
+    sigma = values.get("sigma", 2.0)
+    status = _smoothing_status_text(draft, loc)
+    undo_disabled = not bool(undo)
+    redo_disabled = not bool(redo)
+    reset_disabled = (draft or {}) == (defaults or {})
+    return method, window_length, polyorder, sigma, status, undo_disabled, redo_disabled, reset_disabled
