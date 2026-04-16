@@ -283,6 +283,35 @@ def test_resolve_dta_sample_name_prefers_sample_name_over_file_name():
     assert sample_name == "Ore Blend"
 
 
+def test_resolve_dta_sample_name_prefers_workspace_display_when_summary_is_file_like_token():
+    """Low-signal summary (mirrors file name or dataset-key stem) must not hide display_name."""
+    mod = _import_dta_page()
+
+    assert (
+        mod._resolve_dta_sample_name(
+            {"sample_name": "lab_import.csv"},
+            {"dataset_key": "proj_lab_import_01.csv"},
+            {
+                "dataset": {"display_name": "Li-Ion Cell Batch A"},
+                "metadata": {"file_name": "lab_import.csv"},
+            },
+        )
+        == "Li-Ion Cell Batch A"
+    )
+
+    assert (
+        mod._resolve_dta_sample_name(
+            {"sample_name": "proj_run_dta"},
+            {"dataset_key": "proj_run_dta.xlsx"},
+            {
+                "dataset": {"display_name": "Furnace Ramp Study"},
+                "metadata": {},
+            },
+        )
+        == "Furnace Ramp Study"
+    )
+
+
 def test_build_peak_table_empty():
     mod = _import_dta_page()
 

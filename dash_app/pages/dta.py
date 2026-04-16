@@ -93,6 +93,23 @@ def _clean_sample_token(value) -> str | None:
     return token
 
 
+def _dataset_key_stem_token(dataset_key) -> str | None:
+    """Strip common data extensions from *dataset_key* for filename-like comparisons.
+
+    Extension list kept aligned with ``resolve_sample_name`` in
+    ``dash_app.components.analysis_page``.
+    """
+    key = str(dataset_key or "").strip()
+    if not key:
+        return None
+    lowered = key.lower()
+    for ext in (".csv", ".txt", ".dat", ".xls", ".xlsx"):
+        if lowered.endswith(ext):
+            key = key[: -len(ext)]
+            break
+    return _clean_sample_token(key)
+
+
 def _normalize_direction(value) -> str:
     token = str(value or "").strip().lower()
     if token.startswith("exo"):
@@ -170,7 +187,22 @@ def _resolve_dta_sample_name(
         or _clean_sample_token(metadata.get("file_name"))
     )
     normalized_summary = dict(summary or {})
-    normalized_summary["sample_name"] = _clean_sample_token(normalized_summary.get("sample_name"))
+    cleaned_summary_name = _clean_sample_token(normalized_summary.get("sample_name"))
+    normalized_summary["sample_name"] = cleaned_summary_name
+
+    # Narrow override: filename-like persisted sample_name should not hide a
+    # richer workspace display_name when it differs.
+    if fallback_display and cleaned_summary_name:
+        fb = str(fallback_display).strip()
+        sn_cf = str(cleaned_summary_name).casefold()
+        if fb.casefold() != sn_cf:
+            meta_file = _clean_sample_token(metadata.get("file_name"))
+            key_stem = _dataset_key_stem_token((result_meta or {}).get("dataset_key"))
+            matches_meta_file = bool(meta_file and str(meta_file).casefold() == sn_cf)
+            matches_key_stem = bool(key_stem and str(key_stem).casefold() == sn_cf)
+            if matches_meta_file or matches_key_stem:
+                normalized_summary["sample_name"] = None
+
     return resolve_sample_name(normalized_summary, result_meta or {}, fallback_display_name=fallback_display, locale_data=locale_data)
 
 
