@@ -2644,6 +2644,60 @@ def _render_literature_output(payload: dict, loc: str) -> html.Div:
     claims = payload.get("literature_claims") or []
     comparisons = payload.get("literature_comparisons") or []
     citations = payload.get("citations") or []
+    context = payload.get("literature_context") if isinstance(payload.get("literature_context"), dict) else {}
+
+    def _entry_text(entry: dict) -> str:
+        """Pick the best human-readable text field for a literature entry."""
+        text = (
+            entry.get("claim_text")
+            or entry.get("statement")
+            or entry.get("claim")
+            or entry.get("title")
+            or entry.get("summary")
+            or ""
+        )
+        return str(text).strip()
+
+    def _is_meaningful_entry(entry: dict) -> bool:
+        if _entry_text(entry):
+            return True
+        if str(entry.get("doi") or "").strip():
+            return True
+        if str(entry.get("source") or "").strip():
+            return True
+        if str(entry.get("provider") or "").strip():
+            return True
+        if str(entry.get("citation_id") or "").strip():
+            return True
+        return False
+
+    def _context_line(label_key: str, label_fallback: str, value) -> html.P | None:
+        text = str(value).strip() if value not in (None, "") else ""
+        if not text:
+            return None
+        return html.P(
+            [
+                html.Strong(f"{_literature_t(loc, label_key, label_fallback)}: "),
+                text,
+            ],
+            className="small mb-1",
+        )
+
+    def _split_relevant_vs_alternative(items: list[dict]) -> tuple[list[dict], list[dict]]:
+        relevant: list[dict] = []
+        alternative: list[dict] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if not _is_meaningful_entry(item):
+                continue
+            support = str(item.get("support_label") or "").strip().lower()
+            posture = str(item.get("validation_posture") or "").strip().lower()
+            if support == "contradicts" or posture == "alternative_interpretation":
+                alternative.append(item)
+            else:
+                relevant.append(item)
+        return relevant, alternative
 
     def _section(heading_key: str, fallback: str, items: list[dict], empty_key: str, empty_fallback: str):
         title = html.H6(_literature_t(loc, heading_key, fallback), className="mt-2 mb-1")
@@ -2655,20 +2709,87 @@ def _render_literature_output(payload: dict, loc: str) -> html.Div:
         for entry in items:
             if not isinstance(entry, dict):
                 continue
-            text = (
-                entry.get("statement")
-                or entry.get("claim")
-                or entry.get("title")
-                or entry.get("summary")
-                or ""
-            )
+            text = _entry_text(entry)
             source = entry.get("source") or entry.get("provider") or entry.get("doi") or ""
-            head = str(text).strip() or "-"
+            head = str(text).strip()
+            if not head and not str(source).strip():
+                continue
             tail = f" ({source})" if source else ""
             list_items.append(html.Li(f"{head}{tail}", className="small"))
+        if not list_items:
+            return html.Div(
+                [title, html.P(_literature_t(loc, empty_key, empty_fallback), className="small text-muted")],
+            )
         return html.Div([title, html.Ul(list_items, className="mb-0 ps-3")])
 
-    return html.Div(
+    relevant_comparisons, alternative_comparisons = _split_relevant_vs_alternative(comparisons)
+
+    summary_lines = []
+    for item in (
+        _context_line(
+            "dash.analysis.dta.literature.search_summary_title",
+            "Thermal Literature Search Summary",
+            context.get("query_display_title") or context.get("candidate_display_name") or context.get("candidate_name"),
+        ),
+        _context_line(
+            "dash.analysis.dta.literature.search_mode",
+            "Search mode",
+            context.get("query_display_mode"),
+        ),
+        _context_line(
+            "dash.analysis.dta.literature.search_query",
+            "Technical query",
+            context.get("query_text"),
+        ),
+        _context_line(
+            "dash.analysis.dta.literature.search_status",
+            "Real literature search status",
+            context.get("provider_query_status"),
+        ),
+        _context_line(
+            "dash.analysis.dta.literature.search_reason",
+            "No-results reason",
+            context.get("no_results_reason"),
+        ),
+        _context_line(
+            "dash.analysis.dta.literature.search_provider_note",
+            "Provider note",
+            context.get("provider_error_message"),
+        ),
+        _context_line(
+            "dash.analysis.dta.literature.search_source_count",
+            "Source count",
+            context.get("source_count"),
+        ),
+        _context_line(
+            "dash.analysis.dta.literature.search_citation_count",
+            "Citation count",
+            context.get("citation_count"),
+        ),
+    ):
+        if item is not None:
+            summary_lines.append(item)
+
+    children: list[Any] = []
+    if summary_lines:
+        children.append(
+            html.Div(
+                [
+                    html.H6(
+                        _literature_t(
+                            loc,
+                            "dash.analysis.dta.literature.search_summary_heading",
+                            "Thermal Literature Search Summary",
+                        ),
+                        className="mt-2 mb-1",
+                    ),
+                    html.Div(summary_lines),
+                ],
+                className="mb-2",
+            )
+        )
+
+    children.extend(
         [
             _section(
                 "dash.analysis.dta.literature.claims",
@@ -2680,9 +2801,16 @@ def _render_literature_output(payload: dict, loc: str) -> html.Div:
             _section(
                 "dash.analysis.dta.literature.comparisons",
                 "Comparisons",
-                comparisons,
+                relevant_comparisons,
                 "dash.analysis.dta.literature.comparisons_empty",
                 "No comparisons returned.",
+            ),
+            _section(
+                "dash.analysis.dta.literature.alternative_references",
+                "Alternative or non-validating references",
+                alternative_comparisons,
+                "dash.analysis.dta.literature.alternative_references_empty",
+                "No alternative references returned.",
             ),
             _section(
                 "dash.analysis.dta.literature.citations",
@@ -2693,6 +2821,51 @@ def _render_literature_output(payload: dict, loc: str) -> html.Div:
             ),
         ]
     )
+
+    follow_up: list[str] = []
+    if bool(context.get("low_specificity_retrieval")):
+        follow_up.append(
+            _literature_t(
+                loc,
+                "dash.analysis.dta.literature.follow_up.low_specificity",
+                "Low-specificity retrieval: treat this as screening context, not validation.",
+            )
+        )
+    if bool(context.get("metadata_only_evidence")):
+        follow_up.append(
+            _literature_t(
+                loc,
+                "dash.analysis.dta.literature.follow_up.metadata_only",
+                "Metadata/abstract-heavy evidence: stronger supporting sources may be needed.",
+            )
+        )
+    if context.get("restricted_content_used") is False:
+        follow_up.append(
+            _literature_t(
+                loc,
+                "dash.analysis.dta.literature.follow_up.restricted_excluded",
+                "Closed-access full text remained excluded by design.",
+            )
+        )
+    if follow_up:
+        children.append(
+            html.Div(
+                [
+                    html.H6(
+                        _literature_t(
+                            loc,
+                            "dash.analysis.dta.literature.follow_up_heading",
+                            "Recommended follow-up checks",
+                        ),
+                        className="mt-2 mb-1",
+                    ),
+                    html.Ul([html.Li(text, className="small") for text in follow_up], className="mb-0 ps-3"),
+                ],
+                className="mt-2",
+            )
+        )
+
+    return html.Div(children)
 
 
 @callback(
@@ -2742,15 +2915,59 @@ def compare_dta_literature(n_clicks, project_id, result_id, max_claims, persist_
         )
         return dash.no_update, err
 
-    status = dbc.Alert(
-        _literature_t(
-            loc,
-            "dash.analysis.dta.literature.success",
-            "Literature comparison retrieved.",
-        ),
-        color="success",
-        className="py-1 small",
+    def _entry_text(entry: dict) -> str:
+        text = (
+            entry.get("claim_text")
+            or entry.get("statement")
+            or entry.get("claim")
+            or entry.get("title")
+            or entry.get("summary")
+            or ""
+        )
+        return str(text).strip()
+
+    def _has_meaningful_entries(items) -> bool:
+        for item in items or []:
+            if not isinstance(item, dict):
+                continue
+            if _entry_text(item):
+                return True
+            if str(item.get("doi") or "").strip():
+                return True
+            if str(item.get("source") or "").strip():
+                return True
+            if str(item.get("provider") or "").strip():
+                return True
+        return False
+
+    context = payload.get("literature_context") if isinstance(payload.get("literature_context"), dict) else {}
+    has_retained_comparisons = _has_meaningful_entries(payload.get("literature_comparisons"))
+    has_retained_citations = _has_meaningful_entries(payload.get("citations"))
+    has_strong_context_signal = bool(context.get("real_literature_available")) or any(
+        str(context.get(key) or "").strip() for key in ("source_count", "citation_count")
     )
+
+    has_content = has_retained_comparisons or has_retained_citations or has_strong_context_signal
+    if has_content:
+        status = dbc.Alert(
+            _literature_t(
+                loc,
+                "dash.analysis.dta.literature.success",
+                "Literature comparison retrieved.",
+            ),
+            color="success",
+            className="py-1 small",
+        )
+    else:
+        status = dbc.Alert(
+            _literature_t(
+                loc,
+                "dash.analysis.dta.literature.empty_result",
+                "No retained literature evidence found (comparisons/citations).",
+            ),
+            color="warning",
+            className="py-1 small",
+        )
     return _render_literature_output(payload, loc), status
 
 

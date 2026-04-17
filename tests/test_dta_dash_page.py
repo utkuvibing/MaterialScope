@@ -1455,6 +1455,92 @@ def test_compare_dta_literature_renders_claims_and_citations(monkeypatch):
     assert "Ref Paper" in rendered
     status_text = str(status)
     assert "Literature comparison" in status_text
+    assert "Thermal Literature Search Summary" not in rendered
+
+
+def test_compare_dta_literature_prefers_claim_text(monkeypatch):
+    """Claim rows must use claim_text before statement/claim/title/summary."""
+    mod = _import_dta_page()
+    import dash_app.api_client as api_client
+
+    payload = {
+        "literature_claims": [
+            {"claim_text": "Peak shift matches reported transition", "statement": ""},
+        ],
+        "literature_comparisons": [],
+        "citations": [],
+    }
+
+    monkeypatch.setattr(api_client, "literature_compare", lambda *_a, **_k: payload)
+
+    children, status = mod.compare_dta_literature(
+        1,
+        "proj-1",
+        "dta_fake",
+        3,
+        [],
+        "en",
+    )
+    rendered = str(children)
+    assert "Peak shift matches reported transition" in rendered
+    assert "No retained literature evidence found" in str(status)
+
+
+def test_compare_dta_literature_empty_payload_uses_neutral_status(monkeypatch):
+    """Successful call with effectively empty content should not show success."""
+    mod = _import_dta_page()
+    import dash_app.api_client as api_client
+
+    payload = {"literature_claims": [{"statement": "claim-only"}], "literature_comparisons": [], "citations": []}
+
+    monkeypatch.setattr(api_client, "literature_compare", lambda *_a, **_k: payload)
+
+    children, status = mod.compare_dta_literature(
+        1,
+        "proj-1",
+        "dta_fake",
+        3,
+        [],
+        "en",
+    )
+    status_text = str(status)
+    assert "No retained literature evidence found" in status_text
+    assert "Literature comparison retrieved" not in status_text
+    assert "claim-only" in str(children)
+
+
+def test_compare_dta_literature_renders_context_summary_and_alt_bucket(monkeypatch):
+    """Dash should render compact search/context status + alternative bucket."""
+    mod = _import_dta_page()
+    import dash_app.api_client as api_client
+
+    payload = {
+        "literature_context": {
+            "query_display_title": "Sample X",
+            "query_display_mode": "DTA / thermal events",
+            "query_text": "sample x thermal transition",
+            "provider_query_status": "completed",
+            "source_count": 2,
+            "citation_count": 1,
+            "low_specificity_retrieval": True,
+        },
+        "literature_claims": [{"claim_text": "Claim text"}],
+        "literature_comparisons": [
+            {"summary": "Relevant comp", "support_label": "supports", "provider": "p1"},
+            {"summary": "Alt comp", "support_label": "contradicts", "provider": "p2"},
+        ],
+        "citations": [{"title": "Paper A", "doi": "10.1000/test"}],
+    }
+
+    monkeypatch.setattr(api_client, "literature_compare", lambda *_a, **_k: payload)
+    children, status = mod.compare_dta_literature(1, "proj-1", "dta_fake", 3, [], "en")
+    rendered = str(children)
+    assert "Thermal Literature Search Summary" in rendered
+    assert "Sample X" in rendered
+    assert "Alternative or non-validating references" in rendered
+    assert "Alt comp" in rendered
+    assert "Recommended follow-up checks" in rendered
+    assert "Literature comparison retrieved" in str(status)
 
 
 def test_compare_dta_literature_blocks_without_result_id():
