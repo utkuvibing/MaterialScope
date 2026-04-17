@@ -24,6 +24,36 @@ TECHNICAL_EDGE_TOKENS = {
     "dta",
     "tg",
 }
+PLACEHOLDER_SUBJECT_VALUES = {
+    "unknown",
+    "n/a",
+    "na",
+    "none",
+    "null",
+    "not recorded",
+    "unnamed",
+    "sample",
+    "sample name",
+    "specimen",
+    "material",
+}
+PLACEHOLDER_SUBJECT_TOKENS = {
+    "unknown",
+    "unnamed",
+    "sample",
+    "specimen",
+    "material",
+    "dataset",
+    "file",
+    "record",
+    "result",
+    "name",
+    "not",
+    "recorded",
+    "na",
+    "none",
+    "null",
+}
 CHEMICAL_ALIASES = {
     "caco3": ["calcium carbonate", "calcite"],
 }
@@ -136,12 +166,24 @@ def _dedupe(values: list[str]) -> list[str]:
     return output
 
 
+def _is_placeholder_subject(value: str) -> bool:
+    lowered = _clean_text(value).lower()
+    if lowered in PLACEHOLDER_SUBJECT_VALUES:
+        return True
+    tokens = _tokenize(lowered)
+    if not tokens:
+        return True
+    return all(token in PLACEHOLDER_SUBJECT_TOKENS for token in tokens)
+
+
 def _is_scientific_subject(value: str) -> bool:
     cleaned = _strip_filename_artifacts(value)
     if not cleaned:
         return False
     lowered = cleaned.lower()
     if lowered in {"tga", "dsc", "dta", "thermal", "decomposition", "thermal event"}:
+        return False
+    if _is_placeholder_subject(cleaned):
         return False
     tokens = _tokenize(cleaned)
     if not tokens:
@@ -163,6 +205,8 @@ def _normalized_subject_candidates(record: Mapping[str, Any]) -> list[dict[str, 
         raw = _clean_text(raw_value)
         cleaned = _strip_filename_artifacts(raw)
         if not cleaned:
+            continue
+        if _is_placeholder_subject(cleaned):
             continue
         filename_like = _looks_like_filename(raw)
         score = 100 - index * 10

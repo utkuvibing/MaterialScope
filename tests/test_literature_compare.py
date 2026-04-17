@@ -461,6 +461,18 @@ def test_dsc_and_dta_query_builders_keep_existing_semantics_without_filename_noi
     assert "differential thermal analysis" in dta_payload["query_text"].lower()
 
 
+def test_dta_query_builder_excludes_unknown_placeholder_subject():
+    record = _thermal_record("DTA")
+    record["summary"]["sample_name"] = "Unknown"
+    record["metadata"]["sample_name"] = "Unknown"
+    record["metadata"]["display_name"] = "Unknown"
+    payload = build_dta_literature_query(record)
+
+    assert '"Unknown"' not in payload["query_text"]
+    assert "unknown dta thermal event" not in " ".join(payload["fallback_queries"]).lower()
+    assert payload["query_display_title"] == "DTA thermal event"
+
+
 def test_thermal_compare_executes_multiple_prioritized_queries_when_available():
     record = _thermal_record("TGA")
     record["metadata"]["display_name"] = "tga_CaCO3_decomposition.csv"
@@ -852,11 +864,8 @@ def test_provider_registry_resolves_requested_provider_from_registry():
 
 def test_build_openalex_like_client_from_env_requires_explicit_config(monkeypatch):
     monkeypatch.delenv("MATERIALSCOPE_OPENALEX_EMAIL", raising=False)
-    monkeypatch.delenv("THERMOANALYZER_OPENALEX_EMAIL", raising=False)
     monkeypatch.delenv("MATERIALSCOPE_OPENALEX_API_KEY", raising=False)
-    monkeypatch.delenv("THERMOANALYZER_OPENALEX_API_KEY", raising=False)
     monkeypatch.delenv("MATERIALSCOPE_OPENALEX_BASE_URL", raising=False)
-    monkeypatch.delenv("THERMOANALYZER_OPENALEX_BASE_URL", raising=False)
 
     assert build_openalex_like_client_from_env() is None
 

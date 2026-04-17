@@ -14,11 +14,11 @@
 - **Previous slice (2026-04-16 — Phase 2b, part of `d1a154c`):** manual literature-compare panel + figure capture for Report Center. Added `ResultFigureRegisterRequest/Response` + modality-agnostic `POST /workspace/{pid}/results/{rid}/figure` endpoint; `literature_compare` + `register_result_figure` api_client helpers; `_literature_compare_card()` + `capture_dta_figure` callback (kaleido-based PNG, silent degrade when unavailable); 10 new tests.
 - **Previous slice (2026-04-16 — Phase 2a, part of `d1a154c`):** baseline + peak-detection overrides wired into the Phase 1 `processing_overrides` channel; new `_baseline_controls_card()` + `_peak_controls_card()` + chrome/sync/apply/toggle callbacks; `run_dta_analysis` now forwards the union via `_overrides_from_draft`. +8 tests.
 - **Earlier slice (2026-04-16 — Phase 1, pushed as `040f31d` + docs sync `0993218`):** `processing_overrides` channel end-to-end (backend + api_client + Dash smoothing controls + tests). See prior session notes in git history for details.
+- **Latest completed (2026-04-17 — DTA literature compare root-cause + cleanup):** Confirmed via runtime evidence that `"Unknown"` subject tokens polluted DTA query text and caused low-value query generation; added placeholder-subject filtering in `core/thermal_literature_query_builder.py`, added regression coverage in `tests/test_literature_compare.py`, then removed all temporary debug instrumentation from `core/literature_compare.py`, `core/literature_provider.py`, `backend/app.py`, and `dash_app/pages/dta.py` after user-confirmed fix. **Verify:** `python -m pytest tests/test_literature_compare.py -k "dta_query_builder_excludes_unknown_placeholder_subject or dsc_and_dta_query_builders_keep_existing_semantics_without_filename_noise" -q` → **2 passed**.
 
 ## Next step
 
-1. **Commit and push** Phase 4 DTA polish (scoped files only; avoid mixing unrelated `git status` drift from prior sessions).
-2. **Choose next slice:** **(a)** first **non-DTA** modality depth (e.g. DSC page parity using the same results-column patterns: quality + raw metadata + expandable processing), or **(b)** product-driven DTA follow-ups (e.g. kaleido health hint, preset export/import — only if requested).
-3. **Unrelated drift cleanup (later, separate commit):** same as before — do not mix with feature commits.
+1. **Choose next slice:** **(a)** first **non-DTA** modality depth (e.g. DSC page parity using the same results-column patterns: quality + raw metadata + expandable processing), or **(b)** product-driven DTA follow-ups (e.g. kaleido health hint, preset export/import — only if requested).
+2. **Unrelated drift cleanup (later, separate commit):** same as before — do not mix with feature commits.
 
 **Process defaults:** single thread, **no PM/architect/QA roleplay**, small safe diffs, explicit verification—full detail in **`00-workflow.mdc`**.
