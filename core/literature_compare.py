@@ -526,7 +526,7 @@ def _thermal_relevance_score(
         and not (direct_entity_hits and (direct_process_hits or direct_modality_hits))
         and process_hits == 0
     )
-    return score, low_specificity
+    return score, low_specificity, temperature_hits, entity_hits
 
 
 def _thermal_query_is_too_narrow(query_payload: Mapping[str, Any]) -> bool:
@@ -542,12 +542,16 @@ def _thermal_validation_posture(
     source_text: str,
     hint: str,
     precision_score: int,
+    temperature_hits: int = 0,
+    entity_hits: int = 0,
 ) -> str:
     lowered = source_text.lower()
     if hint in {"contradicts", "contradict"} or any(phrase in lowered for phrase in CONTRADICT_PHRASES):
         return "alternative_interpretation"
     if precision_score >= 10 and access_class in {"open_access_full_text", "user_provided_document", "abstract_only"}:
-        return "related_support"
+        # DTA: require material/temperature anchor so generic modality-only matches do not read as validating support.
+        if analysis_type != "DTA" or entity_hits >= 1 or temperature_hits >= 1:
+            return "related_support"
     if analysis_type in {"DSC", "DTA", "TGA"} and precision_score >= 5:
         return "contextual_only"
     return "non_validating"
@@ -559,6 +563,41 @@ def _thermal_support_label_for_posture(posture: str) -> str:
     if posture == "alternative_interpretation":
         return "contradicts"
     return "related_but_inconclusive"
+
+
+def _thermal_evidence_scope(
+    *,
+    analysis_type: str,
+    query_payload: Mapping[str, Any],
+    source_text: str,
+    search_mode: str,
+    subject_trust: str,
+    entity_hits: int,
+    temperature_hits: int,
+    posture: str,
+    low_specificity: bool,
+) -> str:
+    if low_specificity and posture == "non_validating":
+        return "generic_context"
+    signals = _thermal_precision_signals(query_payload, analysis_type)
+    process_hits = _phrase_overlap_count(source_text, signals["process_terms"])
+    modality_hits = _phrase_overlap_count(source_text, signals["modality_terms"])
+    if search_mode == "known_material" and subject_trust == "trusted" and entity_hits >= 1:
+        return "material_specific"
+    if process_hits >= 1 or modality_hits >= 1 or temperature_hits >= 1:
+        return "behavior_level"
+    return "generic_context"
+
+
+def _thermal_evidence_scope_summary(comparisons: list[dict[str, Any]]) -> str:
+    scopes = {_clean_text(item.get("evidence_scope")).lower() for item in comparisons if _clean_text(item.get("evidence_scope"))}
+    if "material_specific" in scopes:
+        return "material_specific"
+    if "behavior_level" in scopes:
+        return "behavior_level"
+    if "generic_context" in scopes:
+        return "generic_context"
+    return ""
 
 
 def _thermal_evidence_basis(access_field: str, access_class: str) -> str:
@@ -919,6 +958,8 @@ def _compare_thermal_result_to_literature(
     comparison_run_id = f"litcmp_{uuid.uuid4().hex[:12]}"
     analysis_type = _clean_text(record.get("analysis_type")).upper()
     query_payload = _thermal_query_payload(record)
+    search_mode = _clean_text(query_payload.get("search_mode")).lower() or "behavior_first"
+    subject_trust = _clean_text(query_payload.get("subject_trust")).lower() or "absent"
     query_presentation = build_thermal_query_presentation(query_payload)
     claims = extract_literature_claims(record, max_claims=max(1, int(max_claims or 1)))
     normalized_user_documents = _normalize_user_document_sources(user_documents)
@@ -989,7 +1030,7 @@ def _compare_thermal_result_to_literature(
         source_text = _thermal_source_text(source, accessible)
         overlap = _thermal_subject_overlap(source_text, subject_tokens)
         hint = _clean_text((source.get("provenance") or {}).get("comparison_hint")).lower()
-        precision_score, low_specificity = _thermal_relevance_score(
+        precision_score, low_specificity, temperature_hits, entity_hits = _thermal_relevance_score(
             source_text=source_text,
             access_class=access_class,
             query_payload=query_payload,
@@ -1003,6 +1044,8 @@ def _compare_thermal_result_to_literature(
             source_text=source_text,
             hint=hint,
             precision_score=precision_score,
+            temperature_hits=temperature_hits,
+            entity_hits=entity_hits,
         )
         note = _thermal_comparison_note(
             analysis_type=analysis_type,
@@ -1011,6 +1054,17 @@ def _compare_thermal_result_to_literature(
             query_payload=query_payload,
             access_field=access_field,
             source_text=source_text,
+        )
+        evidence_scope = _thermal_evidence_scope(
+            analysis_type=analysis_type,
+            query_payload=query_payload,
+            source_text=source_text,
+            search_mode=search_mode,
+            subject_trust=subject_trust,
+            entity_hits=entity_hits,
+            temperature_hits=temperature_hits,
+            posture=posture,
+            low_specificity=low_specificity,
         )
         citation_key = citation_identity_key(source)
         if citation_key not in citations_by_identity:
@@ -1042,6 +1096,7 @@ def _compare_thermal_result_to_literature(
             citation_ids=[citation["citation_id"]],
             confidence=_thermal_comparison_confidence(posture, access_class, overlap, precision_score=precision_score, access_field=access_field),
             sources_considered=len(search_results),
+            evidence_scope=evidence_scope,
         ).to_dict()
         score = precision_score + (6 if posture == "related_support" else 4 if posture == "alternative_interpretation" else 2 if posture == "contextual_only" else 0)
         comparisons_with_rank.append((score, low_specificity, comparison))
@@ -1121,6 +1176,9 @@ def _compare_thermal_result_to_literature(
         query_display_title=_clean_text(query_presentation.get("display_title")),
         query_display_mode=_clean_text(query_presentation.get("display_mode")),
         query_display_terms=_as_list(query_presentation.get("display_terms")),
+        search_mode=search_mode,
+        subject_trust=subject_trust,
+        evidence_scope_summary=_thermal_evidence_scope_summary(comparisons),
         low_specificity_retrieval=low_specificity_retrieval,
         surfaced_comparison_count=len(comparisons),
         evidence_specificity_summary=evidence_specificity,

@@ -433,7 +433,7 @@ def test_thermal_search_queries_keeps_broader_prioritized_fallbacks():
     assert len(set(queries)) == len(queries)
 
 
-def test_tga_query_builder_generates_precision_first_query_plan_for_caco3():
+def test_tga_query_builder_uses_behavior_first_primary_query_plan_for_low_trust_subject():
     record = _thermal_record("TGA")
     record["metadata"]["display_name"] = "tga_CaCO3_decomposition.csv"
     record["metadata"]["sample_name"] = ""
@@ -444,11 +444,42 @@ def test_tga_query_builder_generates_precision_first_query_plan_for_caco3():
     payload = build_tga_literature_query(record)
     queries = _thermal_search_queries(payload)
 
+    assert payload["search_mode"] == "behavior_first"
+    assert payload["subject_trust"] == "low_trust"
     assert len(queries) >= 4
-    assert "calcium carbonate thermogravimetric analysis decarbonation" in queries[0].lower()
-    assert any("caco3 calcination tga" in query.lower() for query in queries)
-    assert any("calcite decomposition thermogravimetric analysis" in query.lower() for query in queries)
+    assert "thermogravimetric analysis decomposition mass loss residue 718 c" in queries[0].lower()
+    assert any("decarbonation" in query.lower() or "calcination" in query.lower() for query in queries)
+    assert any("caco3 decomposition thermogravimetric analysis" in query.lower() for query in queries)
+    assert any("calcite decomposition thermogravimetric analysis" in query.lower() for query in payload["fallback_queries"])
     assert any("700 800 c" in query.lower() for query in queries)
+
+
+def test_tga_query_builder_uses_known_material_when_sample_name_is_trusted():
+    record = _thermal_record("TGA")
+    record["summary"]["sample_name"] = "Calcium carbonate"
+    record["metadata"]["sample_name"] = "Calcium carbonate"
+    record["metadata"]["display_name"] = "tga_run_001.csv"
+    record["summary"]["total_mass_loss_percent"] = 43.9
+    record["rows"][0]["midpoint_temperature"] = 718.0
+
+    payload = build_tga_literature_query(record)
+
+    assert payload["search_mode"] == "known_material"
+    assert payload["subject_trust"] == "trusted"
+    assert "calcium carbonate" in payload["query_text"].lower()
+
+
+def test_dta_query_builder_sets_behavior_first_for_display_name_only_subject():
+    record = _thermal_record("DTA")
+    record["summary"]["sample_name"] = ""
+    record["metadata"]["sample_name"] = ""
+    record["metadata"]["display_name"] = "dta_ore_b_run.csv"
+
+    payload = build_dta_literature_query(record)
+
+    assert payload["search_mode"] == "behavior_first"
+    assert payload["subject_trust"] == "low_trust"
+    assert "ore b" not in payload["query_text"].lower()
 
 
 def test_dsc_and_dta_query_builders_keep_existing_semantics_without_filename_noise():
@@ -471,6 +502,103 @@ def test_dta_query_builder_excludes_unknown_placeholder_subject():
     assert '"Unknown"' not in payload["query_text"]
     assert "unknown dta thermal event" not in " ".join(payload["fallback_queries"]).lower()
     assert payload["query_display_title"] == "DTA thermal event"
+
+
+def test_dta_third_fallback_query_uses_dta_not_generic_thermal_analysis():
+    payload = build_dta_literature_query(_thermal_record("DTA"))
+    assert len(payload["fallback_queries"]) >= 3
+    third = payload["fallback_queries"][2].lower()
+    assert "thermal analysis" not in third
+
+
+def test_dta_compare_modality_only_abstract_is_contextual_not_related_support():
+    record = _thermal_record("DTA")
+    provider = StubProvider(
+        [
+            {
+                **_source(
+                    source_id="generic_modality",
+                    access_class="abstract_only",
+                    text=(
+                        "Kinetic analysis of pyrolysis and thermal oxidation uses differential thermal analysis "
+                        "endothermic exothermic signatures in bitumen with decomposition kinetics."
+                    ),
+                    hint="related",
+                ),
+                "title": "Pyrolysis kinetics via differential thermal analysis",
+            }
+        ]
+    )
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["stub_provider"])
+    comp = package["literature_comparisons"][0]
+    assert comp["validation_posture"] == "contextual_only"
+    assert comp["support_label"] == "related_but_inconclusive"
+
+
+def test_dta_compare_prefers_entity_and_temperature_anchored_paper_over_modality_only():
+    record = _thermal_record("DTA")
+    provider = StubProvider(
+        [
+            {
+                **_source(
+                    source_id="generic_first",
+                    access_class="abstract_only",
+                    text=(
+                        "Kinetic analysis of pyrolysis and thermal oxidation uses differential thermal analysis "
+                        "endothermic exothermic signatures in bitumen with decomposition kinetics."
+                    ),
+                    hint="related",
+                ),
+                "title": "Pyrolysis DTA kinetic paper A",
+            },
+            {
+                **_source(
+                    source_id="anchored_second",
+                    access_class="abstract_only",
+                    text=(
+                        "Ore B mineral differential thermal analysis at 643 C shows exothermic peak "
+                        "consistent with ore specimen."
+                    ),
+                    hint="related",
+                ),
+                "title": "Ore B high-temperature DTA study",
+            },
+        ]
+    )
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["stub_provider"])
+    comps = package["literature_comparisons"]
+    assert comps[0]["paper_title"] == "Ore B high-temperature DTA study"
+    assert comps[0]["validation_posture"] == "related_support"
+    assert comps[0]["support_label"] == "partially_supports"
+
+
+def test_thermal_compare_context_exposes_search_mode_subject_trust_and_evidence_scope():
+    record = _thermal_record("DTA")
+    provider = StubProvider(
+        [
+            {
+                **_source(
+                    source_id="ore_b_direct_dta",
+                    access_class="abstract_only",
+                    text=(
+                        "Ore B mineral differential thermal analysis at 643 C shows an exothermic event "
+                        "with thermal-event behavior relevant to DTA interpretation."
+                    ),
+                    hint="related",
+                ),
+                "title": "Ore B high-temperature DTA study",
+            }
+        ]
+    )
+
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["stub_provider"])
+
+    context = package["literature_context"]
+    comparison = package["literature_comparisons"][0]
+    assert context["search_mode"] == "known_material"
+    assert context["subject_trust"] == "trusted"
+    assert context["evidence_scope_summary"] in {"material_specific", "behavior_level", "generic_context"}
+    assert comparison["evidence_scope"] in {"material_specific", "behavior_level", "generic_context"}
 
 
 def test_thermal_compare_executes_multiple_prioritized_queries_when_available():
