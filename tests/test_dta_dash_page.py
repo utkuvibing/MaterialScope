@@ -1453,8 +1453,10 @@ def test_compare_dta_literature_renders_claims_and_citations(monkeypatch):
     assert "Onset around 350 C" in rendered
     assert "Within 5 C of reference" in rendered
     assert "Ref Paper" in rendered
+    assert "Generated interpretation claims" in rendered
+    assert "Retained literature evidence" in rendered
     status_text = str(status)
-    assert "Literature comparison" in status_text
+    assert "Retained literature evidence was found" in status_text
     assert "Thermal Literature Search Summary" not in rendered
 
 
@@ -1483,7 +1485,8 @@ def test_compare_dta_literature_prefers_claim_text(monkeypatch):
     )
     rendered = str(children)
     assert "Peak shift matches reported transition" in rendered
-    assert "No retained literature evidence found" in str(status)
+    assert "Generated interpretation claims" in rendered
+    assert "Interpretation claims were generated, but no retained literature evidence was found." in str(status)
 
 
 def test_compare_dta_literature_empty_payload_uses_neutral_status(monkeypatch):
@@ -1504,13 +1507,13 @@ def test_compare_dta_literature_empty_payload_uses_neutral_status(monkeypatch):
         "en",
     )
     status_text = str(status)
-    assert "No retained literature evidence found" in status_text
+    assert "Interpretation claims were generated, but no retained literature evidence was found." in status_text
     assert "Literature comparison retrieved" not in status_text
     assert "claim-only" in str(children)
 
 
-def test_compare_dta_literature_renders_context_summary_and_alt_bucket(monkeypatch):
-    """Dash should render compact search/context status + alternative bucket."""
+def test_compare_dta_literature_renders_alt_bucket_and_collapsed_technical_details(monkeypatch):
+    """Dash should render curated evidence buckets and collapse technical diagnostics."""
     mod = _import_dta_page()
     import dash_app.api_client as api_client
 
@@ -1523,6 +1526,7 @@ def test_compare_dta_literature_renders_context_summary_and_alt_bucket(monkeypat
             "source_count": 2,
             "citation_count": 1,
             "low_specificity_retrieval": True,
+            "provider_error_message": "Timed out once",
         },
         "literature_claims": [{"claim_text": "Claim text"}],
         "literature_comparisons": [
@@ -1535,12 +1539,41 @@ def test_compare_dta_literature_renders_context_summary_and_alt_bucket(monkeypat
     monkeypatch.setattr(api_client, "literature_compare", lambda *_a, **_k: payload)
     children, status = mod.compare_dta_literature(1, "proj-1", "dta_fake", 3, [], "en")
     rendered = str(children)
-    assert "Thermal Literature Search Summary" in rendered
-    assert "Sample X" in rendered
+    assert "Generated interpretation claims" in rendered
+    assert "Relevant retained references" in rendered
     assert "Alternative or non-validating references" in rendered
     assert "Alt comp" in rendered
-    assert "Recommended follow-up checks" in rendered
-    assert "Literature comparison retrieved" in str(status)
+    assert "Technical search details" in rendered
+    assert "Provider status" in rendered
+    assert "Retained literature evidence is limited" in str(status)
+
+
+def test_compare_dta_literature_no_evidence_block_translates_provider_reason(monkeypatch):
+    """When retained evidence is missing, user-facing explanation should be plain language."""
+    mod = _import_dta_page()
+    import dash_app.api_client as api_client
+
+    payload = {
+        "literature_context": {
+            "provider_query_status": "not_configured",
+            "no_results_reason": "not_configured",
+            "source_count": 0,
+            "citation_count": 0,
+        },
+        "literature_claims": [{"claim_text": "Generated claim"}],
+        "literature_comparisons": [],
+        "citations": [],
+    }
+    monkeypatch.setattr(api_client, "literature_compare", lambda *_a, **_k: payload)
+
+    children, status = mod.compare_dta_literature(1, "proj-1", "dta_fake", 3, [], "en")
+    rendered = str(children)
+    assert "No retained literature evidence" in rendered
+    assert "Live literature search is not configured in this environment." in rendered
+    assert "Technical search details" in rendered
+    assert "Provider status" in rendered
+    assert "not_configured" in rendered
+    assert "Interpretation claims were generated, but no retained literature evidence was found." in str(status)
 
 
 def test_compare_dta_literature_blocks_without_result_id():

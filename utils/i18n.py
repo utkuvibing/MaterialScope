@@ -1244,6 +1244,107 @@ TRANSLATIONS = {
         "tr": "Literatür karşılaştırması alındı.",
         "en": "Literature comparison retrieved.",
     },
+    "dash.analysis.dta.literature.status.evidence_found": {
+        "tr": "Kalıcı literatür kanıtı bulundu.",
+        "en": "Retained literature evidence was found.",
+    },
+    "dash.analysis.dta.literature.status.evidence_found_detail": {
+        "tr": "Kalıcı kaynakları bu yorum için bağlamsal destek olarak kullanın.",
+        "en": "Use retained references as contextual support for this interpretation.",
+    },
+    "dash.analysis.dta.literature.status.limited_evidence": {
+        "tr": "Kalıcı literatür kanıtı sınırlı.",
+        "en": "Retained literature evidence is limited.",
+    },
+    "dash.analysis.dta.literature.status.limited_evidence_detail": {
+        "tr": "Kalıcı kaynaklar bulundu, ancak kanıtlar temkinli bağlamsal destek olarak yorumlanmalıdır.",
+        "en": "Retained references were found, but the evidence should be treated as cautious contextual support.",
+    },
+    "dash.analysis.dta.literature.status.claims_without_evidence": {
+        "tr": "Yorum iddiaları üretildi, ancak kalıcı literatür kanıtı bulunamadı.",
+        "en": "Interpretation claims were generated, but no retained literature evidence was found.",
+    },
+    "dash.analysis.dta.literature.status.no_evidence": {
+        "tr": "Kalıcı literatür kanıtı bulunamadı.",
+        "en": "No retained literature evidence was found.",
+    },
+    "dash.analysis.dta.literature.status.reason.provider_unavailable": {
+        "tr": "Canlı literatür araması sağlayıcı kullanılamadığı için tamamlanamadı.",
+        "en": "Live literature search could not complete because the provider was unavailable.",
+    },
+    "dash.analysis.dta.literature.status.reason.request_failed": {
+        "tr": "Sağlayıcı isteği bu çalıştırma için kullanılabilir bir literatür yanıtı döndürmedi.",
+        "en": "The provider request did not return a usable literature response for this run.",
+    },
+    "dash.analysis.dta.literature.status.reason.not_configured": {
+        "tr": "Bu ortamda canlı literatür araması yapılandırılmadı.",
+        "en": "Live literature search is not configured in this environment.",
+    },
+    "dash.analysis.dta.literature.status.reason.query_too_narrow": {
+        "tr": "Mevcut literatür sorgusu, kullanılabilir kaynakları elde tutmak için çok dardı.",
+        "en": "The current literature query was too narrow to retain usable references.",
+    },
+    "dash.analysis.dta.literature.status.reason.no_retained": {
+        "tr": "Bu yorum için mevcut çalıştırmada elde tutulabilir literatür kanıtı bulunamadı.",
+        "en": "No retainable literature evidence was found for this interpretation in the current run.",
+    },
+    "dash.analysis.dta.literature.claims_generated": {
+        "tr": "Üretilen yorum iddiaları",
+        "en": "Generated interpretation claims",
+    },
+    "dash.analysis.dta.literature.claims_note": {
+        "tr": "Bu iddialar analiz yorumundan üretilir; tek başına kalıcı dış literatür kanıtı sayılmaz.",
+        "en": "These claims are generated from the analysis interpretation and are not retained external literature evidence on their own.",
+    },
+    "dash.analysis.dta.literature.retained_evidence_title": {
+        "tr": "Kalıcı literatür kanıtı",
+        "en": "Retained literature evidence",
+    },
+    "dash.analysis.dta.literature.relevant_references": {
+        "tr": "İlgili kalıcı kaynaklar",
+        "en": "Relevant retained references",
+    },
+    "dash.analysis.dta.literature.relevant_references_empty": {
+        "tr": "İlgili kalıcı kaynak bulunamadı.",
+        "en": "No relevant retained references were found.",
+    },
+    "dash.analysis.dta.literature.alternative_references": {
+        "tr": "Alternatif veya doğrulayıcı olmayan kaynaklar",
+        "en": "Alternative or non-validating references",
+    },
+    "dash.analysis.dta.literature.alternative_references_empty": {
+        "tr": "Alternatif veya doğrulayıcı olmayan kalıcı kaynak bulunamadı.",
+        "en": "No alternative or non-validating references were retained.",
+    },
+    "dash.analysis.dta.literature.no_evidence_title": {
+        "tr": "Kalıcı literatür kanıtı yok",
+        "en": "No retained literature evidence",
+    },
+    "dash.analysis.dta.literature.follow_up.refine_query": {
+        "tr": "Kalıcı kanıt kalitesini artırmak için numune/olay ifadesini daha seçici hale getirin.",
+        "en": "Try a narrower sample/event phrasing to improve retained evidence quality.",
+    },
+    "dash.analysis.dta.literature.follow_up.retry_provider": {
+        "tr": "Bu ortamda canlı sağlayıcı erişimi hazır olduğunda yeniden deneyin.",
+        "en": "Retry when live provider access is available for this environment.",
+    },
+    "dash.analysis.dta.literature.follow_up.add_accessible_sources": {
+        "tr": "Mümkünse kalıcı kanıtı güçlendirmek için erişilebilir destekleyici dokümanlar ekleyin.",
+        "en": "If possible, include accessible supporting documents to strengthen retained evidence.",
+    },
+    "dash.analysis.dta.literature.technical_details_title": {
+        "tr": "Teknik arama ayrıntıları",
+        "en": "Technical search details",
+    },
+    "dash.analysis.dta.literature.technical.provider_status": {"tr": "Sağlayıcı durumu", "en": "Provider status"},
+    "dash.analysis.dta.literature.technical.no_results_reason": {"tr": "Sonuç alınamama nedeni", "en": "No-results reason"},
+    "dash.analysis.dta.literature.technical.source_count": {"tr": "Kaynak sayısı", "en": "Source count"},
+    "dash.analysis.dta.literature.technical.citation_count": {"tr": "Atıf sayısı", "en": "Citation count"},
+    "dash.analysis.dta.literature.technical.provider_note": {"tr": "Sağlayıcı notu", "en": "Provider note"},
+    "dash.analysis.dta.literature.technical.query": {"tr": "Teknik sorgu", "en": "Technical query"},
+    "dash.analysis.dta.literature.evidence.provider_prefix": {"tr": "Kaynak: {source}", "en": "Source: {source}"},
+    "dash.analysis.dta.literature.evidence.citations_prefix": {"tr": "Bağlı atıflar: {titles}", "en": "Linked citations: {titles}"},
+    "dash.analysis.dta.literature.evidence.generic_title": {"tr": "Kalıcı literatür kaynağı", "en": "Retained literature reference"},
     "dash.analysis.ftir.title": {"tr": "FTIR analizi", "en": "FTIR Analysis"},
     "dash.analysis.ftir.caption": {
         "tr": "FTIR uyumlu veri seti seçin, şablonu seçin ve spektral analizi çalıştırın.",
