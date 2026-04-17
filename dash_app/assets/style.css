@@ -1364,3 +1364,66 @@ html[data-theme="dark"] .main-content .dash-dropdown-wrapper:has(> .dash-dropdow
   background-color: var(--ta-option-hover-bg) !important;
   color: var(--ta-ink) !important;
 }
+
+/* -------------------------------------------------------------------------- */
+/* DTA — collapsible result cards (>> / vv) + theme-native code / JSON blocks */
+/* -------------------------------------------------------------------------- */
+
+.main-content .ta-ms-details {
+  border: 1px solid var(--ta-border);
+  border-radius: 0.375rem;
+  padding: 0.65rem 0.9rem;
+  background: var(--ta-panel);
+}
+
+.main-content .ta-ms-details > .ta-details-summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  font-weight: 600;
+  color: var(--ta-ink);
+  user-select: none;
+}
+
+.main-content .ta-ms-details > .ta-details-summary::-webkit-details-marker {
+  display: none;
+}
+
+.main-content .ta-ms-details .ta-details-chevron::before {
+  content: '>>';
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.78em;
+  color: var(--ta-muted);
+  margin-right: 0.35rem;
+  letter-spacing: -0.14em;
+}
+
+.main-content .ta-ms-details[open] > .ta-details-summary .ta-details-chevron::before {
+  content: 'vv';
+  letter-spacing: -0.06em;
+}
+
+.main-content pre.ta-code-block {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.8125rem;
+  background: var(--ta-panel-strong) !important;
+  color: var(--ta-ink) !important;
+  border: 1px solid var(--ta-border) !important;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 22rem;
+  overflow: auto;
+}
+
+html[data-theme="dark"] .main-content .ta-quality-alert.alert-success {
+  background-color: rgba(90, 122, 98, 0.28) !important;
+  color: var(--ta-ink) !important;
+  border-color: rgba(90, 122, 98, 0.55) !important;
+}
+
+html[data-theme="dark"] .main-content .ta-quality-alert.alert-warning {
+  background-color: rgba(154, 138, 90, 0.28) !important;
+  color: var(--ta-ink) !important;
+  border-color: rgba(154, 138, 90, 0.5) !important;
+}

@@ -101,6 +101,8 @@ def test_layout_contains_key_div_ids():
         "dta-template-select",
         "dta-run-btn",
         "dta-result-metrics",
+        "dta-result-quality",
+        "dta-result-raw-metadata",
         "dta-result-peak-cards",
         "dta-result-figure",
         "dta-result-table",
@@ -1521,6 +1523,7 @@ def test_dta_left_column_tabs_children_mount_expected_card_ids():
     assert "dta-execute-card-title" in str(run_tab)
     assert "dta-run-btn" in str(run_tab)
     assert "dta-run-status" in str(run_tab)
+    assert "dta-run-shortcut-hints" in str(run_tab)
 
 
 def test_layout_mounts_left_tabs_and_preserves_existing_ids():
@@ -1547,7 +1550,10 @@ def test_layout_mounts_left_tabs_and_preserves_existing_ids():
         "dta-reset-btn",
         "dta-run-btn",
         "dta-run-status",
+        "dta-run-shortcut-hints",
         "dta-result-metrics",
+        "dta-result-quality",
+        "dta-result-raw-metadata",
         "dta-result-figure",
         "dta-literature-compare-btn",
         "dta-figure-captured",
@@ -1804,7 +1810,7 @@ def test_apply_dta_preset_pushes_undo_and_updates_draft_and_template(monkeypatch
     initial_draft = mod._default_processing_draft()
     initial_undo: list = []
 
-    next_draft, next_undo, next_redo, template_output, status = mod.apply_dta_preset(
+    next_draft, next_undo, next_redo, template_output, status, active_tab = mod.apply_dta_preset(
         1,
         "my-preset",
         initial_draft,
@@ -1820,6 +1826,7 @@ def test_apply_dta_preset_pushes_undo_and_updates_draft_and_template(monkeypatch
     assert next_redo == []
     assert template_output == "dta.thermal_events"
     assert "my-preset" in str(status)
+    assert active_tab == "dta-tab-run"
 
 
 def test_apply_dta_preset_ignores_unknown_workflow_template(monkeypatch):
@@ -1839,10 +1846,12 @@ def test_apply_dta_preset_ignores_unknown_workflow_template(monkeypatch):
         },
     )
 
-    _draft, _undo, _redo, template_output, _status = mod.apply_dta_preset(
+    _draft, _undo, _redo, template_output, _status, tab_out = mod.apply_dta_preset(
         1, "ghost", mod._default_processing_draft(), [], "en"
     )
     assert template_output is _dash.no_update
+    # Preset still applied successfully — Phase 4 advances to Run tab.
+    assert tab_out == "dta-tab-run"
 
 
 def test_refresh_dta_preset_options_populates_dropdown_and_caption(monkeypatch):
@@ -1943,7 +1952,7 @@ def test_save_dta_preset_forwards_overrides_and_returns_refresh_bump(monkeypatch
     draft = mod._default_processing_draft()
     draft["smoothing"] = {"method": "savgol", "window_length": 21, "polyorder": 3}
 
-    next_refresh, cleared_name, status = mod.save_dta_preset(
+    next_refresh, cleared_name, status, active_tab = mod.save_dta_preset(
         1,
         "my-preset",
         draft,
@@ -1961,6 +1970,7 @@ def test_save_dta_preset_forwards_overrides_and_returns_refresh_bump(monkeypatch
     assert captured["processing"]["smoothing"]["window_length"] == 21
     assert "baseline" in captured["processing"]
     assert "peak_detection" in captured["processing"]
+    assert active_tab == "dta-tab-run"
 
 
 def test_save_dta_preset_reports_backend_failure_without_bumping_refresh(monkeypatch):
@@ -1973,7 +1983,7 @@ def test_save_dta_preset_reports_backend_failure_without_bumping_refresh(monkeyp
 
     monkeypatch.setattr(api_client, "save_analysis_preset", _boom)
 
-    refresh_out, name_out, status = mod.save_dta_preset(
+    refresh_out, name_out, status, tab_out = mod.save_dta_preset(
         1,
         "my-preset",
         mod._default_processing_draft(),
@@ -1986,6 +1996,7 @@ def test_save_dta_preset_reports_backend_failure_without_bumping_refresh(monkeyp
 
     assert refresh_out is _dash.no_update
     assert name_out is _dash.no_update
+    assert tab_out is _dash.no_update
     assert "409" in str(status) or "limit" in str(status).lower()
 
 
@@ -2101,6 +2112,26 @@ def test_layout_mounts_dataset_summary_placeholder_before_metrics():
     ), "Phase 3c — dataset summary must render above the metrics row"
 
 
+def test_layout_phase4_quality_and_raw_metadata_between_metrics_and_figure():
+    """Phase 4 — quality + raw metadata cards sit between metrics and figure."""
+    mod = _import_dta_page()
+    layout_str = str(mod.layout)
+    assert layout_str.index("dta-result-metrics") < layout_str.index("dta-result-quality")
+    assert layout_str.index("dta-result-quality") < layout_str.index("dta-result-raw-metadata")
+    assert layout_str.index("dta-result-raw-metadata") < layout_str.index("dta-result-figure")
+
+
+def test_render_dta_run_shortcut_hints_lists_undo_redo_run():
+    mod = _import_dta_page()
+    hints_en = mod.render_dta_run_shortcut_hints("en")
+    text_en = str(hints_en)
+    assert "Ctrl+Z" in text_en or "Cmd+Z" in text_en
+    assert "Enter" in text_en
+
+    hints_tr = mod.render_dta_run_shortcut_hints("tr")
+    assert "Geri al" in str(hints_tr) or "Ctrl" in str(hints_tr)
+
+
 def test_format_dataset_metadata_value_handles_empty_and_numeric():
     mod = _import_dta_page()
 
@@ -2202,13 +2233,13 @@ def test_build_dta_dataset_summary_falls_back_to_dataset_key():
     assert "orphan-key" in text
 
 
-def test_display_result_empty_state_returns_six_panels():
-    """Phase 3c — display_result now emits six panels, the first being the
-    dataset summary empty message rather than the generic result placeholder."""
+def test_display_result_empty_state_returns_eight_panels():
+    """Phase 4 — display_result emits eight panels (dataset summary, metrics,
+    quality, raw metadata, figure, peaks, table, processing)."""
     mod = _import_dta_page()
 
     panels = mod.display_result(None, 0, "light", "en", None)
-    assert len(panels) == 6
+    assert len(panels) == 8
 
     summary_text = str(panels[0])
     assert "No results yet" in summary_text
@@ -2218,7 +2249,7 @@ def test_display_result_empty_state_tr_locale_uses_translated_empty_text():
     mod = _import_dta_page()
 
     panels = mod.display_result(None, 0, "light", "tr", None)
-    assert len(panels) == 6
+    assert len(panels) == 8
     assert "Sonuç yok" in str(panels[0])
 
 
@@ -2230,7 +2261,8 @@ def test_display_result_surfaces_dataset_metadata_on_success(monkeypatch):
     from dash_app import api_client
 
     fake_detail = {
-        "result": {"dataset_key": "ds-ok"},
+        "result": {"dataset_key": "ds-ok", "validation_status": "ok", "warning_count": 0, "issue_count": 0},
+        "validation": {"status": "ok", "warnings": [], "issues": []},
         "summary": {
             "sample_name": "Sample Phase3c",
             "peak_count": 1,
@@ -2269,6 +2301,7 @@ def test_display_result_surfaces_dataset_metadata_on_success(monkeypatch):
             "sample_name": "Sample Phase3c",
             "sample_mass": 15.6,
             "heating_rate": 10.0,
+            "vendor": "TestVendor",
         },
     }
 
@@ -2284,7 +2317,7 @@ def test_display_result_surfaces_dataset_metadata_on_success(monkeypatch):
     )
 
     panels = mod.display_result("result-1", 1, "light", "en", "project-1")
-    assert len(panels) == 6
+    assert len(panels) == 8
 
     summary_panel = str(panels[0])
     assert "Analysis Summary" in summary_panel
@@ -2292,6 +2325,18 @@ def test_display_result_surfaces_dataset_metadata_on_success(monkeypatch):
     assert "Sample Phase3c" in summary_panel
     assert "15.6 mg" in summary_panel
     assert "10 °C/min" in summary_panel
+
+    quality_panel = str(panels[2])
+    assert "Validation and quality" in quality_panel
+    assert "ok" in quality_panel.lower()
+
+    raw_panel = str(panels[3])
+    assert "Raw dataset metadata" in raw_panel
+    assert "vendor" in raw_panel.lower()
+    assert "TestVendor" in raw_panel
+
+    processing_panel = str(panels[7])
+    assert "Applied processing summary" in processing_panel
 
 
 def test_display_result_backend_error_preserves_empty_dataset_summary(monkeypatch):
@@ -2306,6 +2351,6 @@ def test_display_result_backend_error_preserves_empty_dataset_summary(monkeypatc
     monkeypatch.setattr(api_client, "workspace_result_detail", _boom)
 
     panels = mod.display_result("result-x", 1, "light", "en", "project-1")
-    assert len(panels) == 6
+    assert len(panels) == 8
     assert "No results yet" in str(panels[0])
     assert "backend offline" in str(panels[1])

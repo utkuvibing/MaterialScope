@@ -72,3 +72,15 @@
 **Reason:** Closes the Streamlit `_render_dta_results` header parity with a single bounded widget, no new store/endpoint, and a TR/EN localization surface that stays inside the existing `dash.analysis.dta.*` bundle. Keeps the empty-state and error-state behaviour explicit (the summary panel carries its **own** localized "no results yet" message rather than the generic `empty_run_result`, so the page never renders a wall of identical placeholders).
 
 **Consequence / future:** DSC/TGA/XRD/FTIR Dash migrations should follow the same pattern — a modality-specific `_build_<modality>_dataset_summary` helper + a `dash.analysis.<modality>.summary.*` i18n bundle + a dedicated placeholder card above the metrics row. If future phases add applied-processing summary or quality-metrics blocks, they should be **separate** cards below the metrics row (next to `dta-result-processing`), not folded into the dataset summary.
+
+**Update (2026-04-17, Phase 4):** DTA `display_result` now owns **eight** outputs — added `dta-result-quality` (validation status + counts + optional warning/issue lists from `detail["validation"]` with `result` fallback) and `dta-result-raw-metadata` (full sorted `workspace_dataset_detail["metadata"]` key/value). Applied processing uses `processing_details_section` unchanged but wrapped in DTA-only `html.Details` plus optional per-step JSON blocks. Preset apply/save success sets `dta-left-tabs.active_tab` to `dta-tab-run`. Keyboard shortcuts are implemented via `dash_app/assets/dta_shortcuts.js` (click proxy on `#dta-undo-btn`, `#dta-redo-btn`, `#dta-run-btn`; ignores editable targets).
+
+---
+
+## 2026-04-17 — DTA Phase 4: quality + raw metadata + expandable processing + shortcuts
+
+**Decision:** On the DTA Dash page, add two results cards after metrics (`dta-result-quality`, `dta-result-raw-metadata`); keep `processing_details_section` shared and wrap/extend it only in `dta.py`; advance left tabs to Run after successful preset apply/save; ship global shortcut script under `dash_app/assets/` scoped by presence of DTA button ids.
+
+**Reason:** Surfaces `build_result_detail` validation without new endpoints; raw metadata card reuses the same `workspace_dataset_detail` fetch as the dataset summary; expandable `<details>` avoids cluttering the default view; keyboard shortcuts match Streamlit power-user expectations with minimal Dash surface (no `dcc.Store` round-trip for keys).
+
+**Consequence / future:** Other modalities can copy the same id naming (`<mod>-result-quality`, etc.) and reuse the shortcut pattern with their own button ids or a single script with per-page guards.

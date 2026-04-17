@@ -1115,6 +1115,38 @@ TRANSLATIONS = {
         "tr": "Sonuç yok — önce analizi çalıştırın.",
         "en": "No results yet — run the analysis first.",
     },
+    "dash.analysis.dta.quality.card_title": {"tr": "Doğrulama ve kalite", "en": "Validation and quality"},
+    "dash.analysis.dta.quality.status_label": {"tr": "Durum:", "en": "Status:"},
+    "dash.analysis.dta.quality.warnings_label": {"tr": "Uyarılar:", "en": "Warnings:"},
+    "dash.analysis.dta.quality.issues_label": {"tr": "Sorunlar:", "en": "Issues:"},
+    "dash.analysis.dta.quality.empty": {
+        "tr": "Sonuç yok — kalite özeti analiz çalıştırıldığında görünür.",
+        "en": "No results yet — quality summary appears after you run an analysis.",
+    },
+    "dash.analysis.dta.raw_metadata.card_title": {"tr": "Ham üst veri (metadata)", "en": "Raw dataset metadata"},
+    "dash.analysis.dta.raw_metadata.empty": {
+        "tr": "Üst veri yok veya henüz yüklenmedi.",
+        "en": "No metadata loaded yet.",
+    },
+    "dash.analysis.dta.processing.expand_summary": {
+        "tr": "Uygulanan işleme özeti",
+        "en": "Applied processing summary",
+    },
+    "dash.analysis.dta.processing.block_smoothing": {"tr": "Yumuşatma parametreleri", "en": "Smoothing parameters"},
+    "dash.analysis.dta.processing.block_baseline": {"tr": "Taban çizgisi parametreleri", "en": "Baseline parameters"},
+    "dash.analysis.dta.processing.block_peaks": {"tr": "Tepe algılama parametreleri", "en": "Peak detection parameters"},
+    "dash.analysis.dta.shortcuts.hint_undo": {
+        "tr": "Geri al: Ctrl+Z veya Cmd+Z",
+        "en": "Undo: Ctrl+Z or Cmd+Z",
+    },
+    "dash.analysis.dta.shortcuts.hint_redo": {
+        "tr": "Yinele: Ctrl+Shift+Z veya Cmd+Shift+Z",
+        "en": "Redo: Ctrl+Shift+Z or Cmd+Shift+Z",
+    },
+    "dash.analysis.dta.shortcuts.hint_run": {
+        "tr": "Çalıştır: Ctrl+Enter veya Cmd+Enter",
+        "en": "Run: Ctrl+Enter or Cmd+Enter",
+    },
     "dash.analysis.dta.smoothing.title": {"tr": "Yumuşatma", "en": "Smoothing"},
     "dash.analysis.dta.smoothing.method": {"tr": "Yumuşatma yöntemi", "en": "Smoothing Method"},
     "dash.analysis.dta.smoothing.window": {"tr": "Pencere uzunluğu", "en": "Window Length"},

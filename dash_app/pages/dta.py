@@ -13,6 +13,7 @@ Lets the user:
 from __future__ import annotations
 
 import copy
+import json
 import math
 from typing import Any
 
@@ -1088,6 +1089,7 @@ def _dta_left_column_tabs() -> dbc.Tabs:
                         "dta-run-btn",
                         card_title_id="dta-execute-card-title",
                     ),
+                    html.Small(id="dta-run-shortcut-hints", className="text-muted d-block mt-2"),
                 ],
                 tab_id="dta-tab-run",
                 label_class_name="ta-tab-label",
@@ -1115,6 +1117,8 @@ layout = html.Div(
                     [
                         result_placeholder_card("dta-result-dataset-summary"),
                         result_placeholder_card("dta-result-metrics"),
+                        result_placeholder_card("dta-result-quality"),
+                        result_placeholder_card("dta-result-raw-metadata"),
                         result_placeholder_card("dta-result-figure"),
                         result_placeholder_card("dta-result-peak-cards"),
                         result_placeholder_card("dta-result-table"),
@@ -1184,6 +1188,25 @@ def render_dta_tab_chrome(locale_data):
         translate_ui(loc, "dash.analysis.dta.tab.setup"),
         translate_ui(loc, "dash.analysis.dta.tab.processing"),
         translate_ui(loc, "dash.analysis.dta.tab.run"),
+    )
+
+
+@callback(
+    Output("dta-run-shortcut-hints", "children"),
+    Input("ui-locale", "data"),
+)
+def render_dta_run_shortcut_hints(locale_data):
+    """Phase 4 — localized keyboard shortcut hints for the Run tab."""
+    loc = _loc(locale_data)
+    return html.Span(
+        [
+            translate_ui(loc, "dash.analysis.dta.shortcuts.hint_undo"),
+            html.Br(),
+            translate_ui(loc, "dash.analysis.dta.shortcuts.hint_redo"),
+            html.Br(),
+            translate_ui(loc, "dash.analysis.dta.shortcuts.hint_run"),
+        ],
+        className="d-block",
     )
 
 
@@ -1263,6 +1286,7 @@ def toggle_dta_preset_action_buttons(selected_name):
     Output("dta-processing-redo", "data", allow_duplicate=True),
     Output("dta-template-select", "value", allow_duplicate=True),
     Output("dta-preset-status", "children", allow_duplicate=True),
+    Output("dta-left-tabs", "active_tab", allow_duplicate=True),
     Input("dta-preset-apply-btn", "n_clicks"),
     State("dta-preset-select", "value"),
     State("dta-processing-draft", "data"),
@@ -1285,6 +1309,7 @@ def apply_dta_preset(n_clicks, selected_name, draft, undo, locale_data):
             dash.no_update,
             dash.no_update,
             translate_ui(loc, "dash.analysis.dta.presets.select_required"),
+            dash.no_update,
         )
     try:
         payload = api_client.load_analysis_preset(_DTA_PRESET_ANALYSIS_TYPE, name)
@@ -1295,6 +1320,7 @@ def apply_dta_preset(n_clicks, selected_name, draft, undo, locale_data):
             dash.no_update,
             dash.no_update,
             translate_ui(loc, "dash.analysis.dta.presets.apply_failed").format(error=str(exc)),
+            dash.no_update,
         )
 
     processing = dict(payload.get("processing") or {})
@@ -1309,13 +1335,14 @@ def apply_dta_preset(n_clicks, selected_name, draft, undo, locale_data):
 
     next_undo = _push_undo(undo, draft)
     status = translate_ui(loc, "dash.analysis.dta.presets.applied").format(preset=name)
-    return next_draft, next_undo, [], template_output, status
+    return next_draft, next_undo, [], template_output, status, "dta-tab-run"
 
 
 @callback(
     Output("dta-preset-refresh", "data", allow_duplicate=True),
     Output("dta-preset-save-name", "value", allow_duplicate=True),
     Output("dta-preset-status", "children", allow_duplicate=True),
+    Output("dta-left-tabs", "active_tab", allow_duplicate=True),
     Input("dta-preset-save-btn", "n_clicks"),
     State("dta-preset-save-name", "value"),
     State("dta-processing-draft", "data"),
@@ -1337,6 +1364,7 @@ def save_dta_preset(n_clicks, save_name, draft, template_id, refresh_token, loca
             dash.no_update,
             dash.no_update,
             translate_ui(loc, "dash.analysis.dta.presets.save_name_required"),
+            dash.no_update,
         )
     try:
         response = api_client.save_analysis_preset(
@@ -1350,12 +1378,13 @@ def save_dta_preset(n_clicks, save_name, draft, template_id, refresh_token, loca
             dash.no_update,
             dash.no_update,
             translate_ui(loc, "dash.analysis.dta.presets.save_failed").format(error=str(exc)),
+            dash.no_update,
         )
     resolved_template = str(response.get("workflow_template_id") or template_id or "")
     status = translate_ui(loc, "dash.analysis.dta.presets.saved").format(
         preset=name, template=resolved_template
     )
-    return int(refresh_token or 0) + 1, "", status
+    return int(refresh_token or 0) + 1, "", status, "dta-tab-run"
 
 
 @callback(
@@ -1475,11 +1504,31 @@ def run_dta_analysis(
     return alert, refresh, dash.no_update, dash.no_update
 
 
+def _dta_collapsible_section(loc: str, title_key: str, body: Any, *, open: bool = False) -> html.Details:
+    """Collapsible card body — summary shows ``>>`` chevron + title; closed by default."""
+    return html.Details(
+        [
+            html.Summary(
+                [
+                    html.Span(className="ta-details-chevron"),
+                    html.Span(translate_ui(loc, title_key), className="ms-1"),
+                ],
+                className="ta-details-summary",
+            ),
+            html.Div(body, className="ta-details-body mt-2"),
+        ],
+        className="ta-ms-details mb-0",
+        open=open,
+    )
+
+
 @callback(
     Output("dta-result-dataset-summary", "children"),
     Output("dta-result-metrics", "children"),
-    Output("dta-result-peak-cards", "children"),
+    Output("dta-result-quality", "children"),
+    Output("dta-result-raw-metadata", "children"),
     Output("dta-result-figure", "children"),
+    Output("dta-result-peak-cards", "children"),
     Output("dta-result-table", "children"),
     Output("dta-result-processing", "children"),
     Input("dta-latest-result-id", "data"),
@@ -1495,8 +1544,29 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
         translate_ui(loc, "dash.analysis.dta.summary.empty"),
         className="text-muted",
     )
+    quality_empty = _dta_collapsible_section(
+        loc,
+        "dash.analysis.dta.quality.card_title",
+        html.P(translate_ui(loc, "dash.analysis.dta.quality.empty"), className="text-muted mb-0"),
+        open=False,
+    )
+    raw_meta_empty = _dta_collapsible_section(
+        loc,
+        "dash.analysis.dta.raw_metadata.card_title",
+        html.P(translate_ui(loc, "dash.analysis.dta.raw_metadata.empty"), className="text-muted mb-0"),
+        open=False,
+    )
     if not result_id or not project_id:
-        return summary_empty, empty_msg, empty_msg, empty_msg, empty_msg, empty_msg
+        return (
+            summary_empty,
+            empty_msg,
+            quality_empty,
+            raw_meta_empty,
+            empty_msg,
+            empty_msg,
+            empty_msg,
+            empty_msg,
+        )
 
     from dash_app.api_client import workspace_dataset_detail, workspace_result_detail
 
@@ -1504,7 +1574,16 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
         detail = workspace_result_detail(project_id, result_id)
     except Exception as exc:
         err = dbc.Alert(translate_ui(loc, "dash.analysis.error_loading_result", error=str(exc)), color="danger")
-        return summary_empty, err, empty_msg, empty_msg, empty_msg, empty_msg
+        return (
+            summary_empty,
+            err,
+            quality_empty,
+            raw_meta_empty,
+            empty_msg,
+            empty_msg,
+            empty_msg,
+            empty_msg,
+        )
 
     summary = detail.get("summary", {})
     result_meta = detail.get("result", {})
@@ -1525,6 +1604,12 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
         result_meta,
         loc,
         locale_data=locale_data,
+    )
+
+    quality_panel = _build_dta_quality_card(detail, result_meta, loc)
+    raw_metadata_panel = _build_dta_raw_metadata_panel(
+        (dataset_detail or {}).get("metadata"),
+        loc,
     )
 
     peak_count, exo_count, endo_count = _derive_event_metrics(summary, rows)
@@ -1550,7 +1635,7 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
 
     method_context = processing.get("method_context", {})
     na = translate_ui(loc, "dash.analysis.na")
-    proc_view = processing_details_section(
+    proc_inner = processing_details_section(
         processing,
         extra_lines=[
             html.P(translate_ui(loc, "dash.analysis.dta.baseline", detail=processing.get("signal_pipeline", {}).get("baseline", {}))),
@@ -1559,8 +1644,18 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
         ],
         locale_data=locale_data,
     )
+    proc_view = _wrap_dta_processing_details(proc_inner, processing, loc)
 
-    return dataset_summary_panel, metrics, peak_cards, figure_area, table_area, proc_view
+    return (
+        dataset_summary_panel,
+        metrics,
+        quality_panel,
+        raw_metadata_panel,
+        figure_area,
+        peak_cards,
+        table_area,
+        proc_view,
+    )
 
 
 def _format_dataset_metadata_value(value: Any) -> str | None:
@@ -1658,6 +1753,168 @@ def _build_dta_dataset_summary(
             html.Dl(rows, className="row mb-0", id="dta-dataset-summary-dl"),
         ],
         id="dta-dataset-summary-body",
+    )
+
+
+def _build_dta_quality_card(
+    detail: dict,
+    result_meta: dict,
+    loc: str,
+) -> html.Div:
+    """Surface validation status and warning/issue counts (Phase 4)."""
+    validation = detail.get("validation") if isinstance(detail.get("validation"), dict) else {}
+    status_raw = validation.get("status")
+    if status_raw in (None, ""):
+        status_raw = result_meta.get("validation_status")
+    status_display = _format_dataset_metadata_value(status_raw) or translate_ui(loc, "dash.analysis.na")
+
+    warnings_list = validation.get("warnings")
+    if not isinstance(warnings_list, list):
+        warnings_list = []
+    issues_list = validation.get("issues")
+    if not isinstance(issues_list, list):
+        issues_list = []
+
+    wc = validation.get("warning_count")
+    if wc is None:
+        wc = result_meta.get("warning_count")
+    if wc is None:
+        wc = len(warnings_list)
+    try:
+        wc = int(wc)
+    except (TypeError, ValueError):
+        wc = len(warnings_list)
+
+    ic = validation.get("issue_count")
+    if ic is None:
+        ic = result_meta.get("issue_count")
+    if ic is None:
+        ic = len(issues_list)
+    try:
+        ic = int(ic)
+    except (TypeError, ValueError):
+        ic = len(issues_list)
+
+    st_lower = str(status_raw or "").lower()
+    if ic > 0 or "fail" in st_lower or "error" in st_lower or "invalid" in st_lower:
+        alert_color = "danger"
+    elif wc > 0 or "warn" in st_lower:
+        alert_color = "warning"
+    else:
+        alert_color = "success"
+
+    body_children: list[Any] = [
+        html.P(
+            [
+                html.Strong(translate_ui(loc, "dash.analysis.dta.quality.status_label")),
+                " ",
+                status_display,
+            ],
+            className="mb-2",
+        ),
+        html.P(
+            [
+                html.Strong(translate_ui(loc, "dash.analysis.dta.quality.warnings_label")),
+                f" {wc}",
+            ],
+            className="mb-2",
+        ),
+        html.P(
+            [
+                html.Strong(translate_ui(loc, "dash.analysis.dta.quality.issues_label")),
+                f" {ic}",
+            ],
+            className="mb-0",
+        ),
+    ]
+    if warnings_list:
+        body_children.append(
+            html.Ul([html.Li(str(w)) for w in warnings_list[:12]], className="small mb-0 mt-2")
+        )
+    if issues_list:
+        body_children.append(
+            html.Ul([html.Li(str(w)) for w in issues_list[:12]], className="small mb-0 mt-2")
+        )
+
+    inner = dbc.Alert(body_children, color=alert_color, className="mb-0 ta-quality-alert")
+    return _dta_collapsible_section(loc, "dash.analysis.dta.quality.card_title", inner, open=False)
+
+
+def _build_dta_raw_metadata_panel(metadata: dict | None, loc: str) -> html.Details:
+    """Full ``dataset.metadata`` key/value list for the raw-metadata card (Phase 4)."""
+    meta = metadata if isinstance(metadata, dict) else {}
+    if not meta:
+        inner = html.P(translate_ui(loc, "dash.analysis.dta.raw_metadata.empty"), className="text-muted mb-0")
+    else:
+        rows: list[Any] = []
+        for key in sorted(meta.keys(), key=lambda k: str(k).lower()):
+            val = meta[key]
+            if isinstance(val, (dict, list)):
+                text = json.dumps(val, ensure_ascii=False, indent=2)
+            else:
+                fv = _format_dataset_metadata_value(val)
+                text = fv if fv is not None else str(val)
+            rows.extend(
+                [
+                    html.Dt(str(key), className="col-sm-4 text-muted small"),
+                    html.Dd(
+                        html.Pre(text, className="small mb-0 ta-code-block p-2 rounded"),
+                        className="col-sm-8 mb-2",
+                    ),
+                ]
+            )
+        inner = html.Dl(rows, className="row mb-0", id="dta-raw-metadata-dl")
+
+    return _dta_collapsible_section(loc, "dash.analysis.dta.raw_metadata.card_title", inner, open=False)
+
+
+def _build_dta_processing_expansion_blocks(processing: dict, loc: str) -> html.Div:
+    """Per-step JSON snapshots for the expandable processing section (Phase 4)."""
+    sp = processing.get("signal_pipeline") or {}
+    asteps = processing.get("analysis_steps") or {}
+    blocks: list[Any] = []
+    pairs = [
+        ("dash.analysis.dta.processing.block_smoothing", sp.get("smoothing")),
+        ("dash.analysis.dta.processing.block_baseline", sp.get("baseline")),
+        ("dash.analysis.dta.processing.block_peaks", asteps.get("peak_detection")),
+    ]
+    for title_key, data in pairs:
+        if not isinstance(data, dict) or not data:
+            continue
+        blocks.append(
+            html.H6(translate_ui(loc, title_key), className="mt-2 small text-muted mb-1"),
+        )
+        blocks.append(
+            html.Pre(
+                json.dumps(data, indent=2, ensure_ascii=False),
+                className="small ta-code-block p-2 rounded mb-0",
+            )
+        )
+    if not blocks:
+        return html.Div()
+    return html.Div(blocks, className="mt-3 pt-2 border-top")
+
+
+def _wrap_dta_processing_details(inner: html.Div, processing: dict, loc: str) -> html.Div:
+    """Wrap shared processing details + expansion in a ``<details>`` element."""
+    expansion = _build_dta_processing_expansion_blocks(processing, loc)
+    return html.Div(
+        [
+            html.Details(
+                [
+                    html.Summary(
+                        [
+                            html.Span(className="ta-details-chevron"),
+                            html.Span(translate_ui(loc, "dash.analysis.dta.processing.expand_summary"), className="ms-1"),
+                        ],
+                        className="ta-details-summary",
+                    ),
+                    html.Div([inner, expansion], className="ta-details-body mt-2"),
+                ],
+                className="ta-ms-details mb-0",
+                open=False,
+            )
+        ]
     )
 
 
