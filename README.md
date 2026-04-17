@@ -4,11 +4,14 @@ MaterialScope is a desktop analysis platform for thermal and broader materials c
 
 The product is designed so users stay inside MaterialScope instead of switching between vendor software, spreadsheet cleanup, library viewers, and separate reporting tools.
 
+The current primary application surface is a Dash + Plotly UI mounted into FastAPI (`python -m dash_app.server`). The Streamlit entrypoint remains available as a legacy/transition path during migration.
+
 ---
 
 ## What MaterialScope Covers
 
 ### Stable workflows
+
 - DSC
 - TGA
 - DTA
@@ -17,9 +20,10 @@ The product is designed so users stay inside MaterialScope instead of switching 
 - XRD
 - Compare workspace
 - Report/export center
-- Project save/load with `.thermozip`
+- Project save/load with `.scopezip` (legacy `.thermozip` still imports)
 
 ### Preview workflows
+
 - Kinetics
 - Peak deconvolution
 
@@ -27,7 +31,9 @@ The product is designed so users stay inside MaterialScope instead of switching 
 
 ## Product Direction
 
-- Thin-client desktop application with a Python analysis and backend layer
+- Dash + Plotly frontend mounted on FastAPI as the primary app stack
+- Thin-client desktop application with an Electron wrapper and Python backend
+- Streamlit retained as a legacy/transition surface while modality migration completes
 - Cloud-first library access for FTIR, Raman, and XRD
 - Limited local fallback cache for degraded operation
 - No full provider-scale libraries shipped permanently to the client
@@ -35,9 +41,18 @@ The product is designed so users stay inside MaterialScope instead of switching 
 
 ---
 
+## Dash Migration Status (2026-04)
+
+- Dash is the default target surface for ongoing modality migration slices.
+- DTA has shipped Phase 4 polish on Dash: quality and raw-metadata cards, expandable processing summary, preset apply/save tab auto-advance, and keyboard shortcuts.
+- Migration remains modality-by-modality to keep blast radius small and verification explicit.
+
+---
+
 ## Core Capabilities
 
 ### Import and preprocessing
+
 - CSV, TXT, TSV, XLSX, and XLS import
 - Automatic delimiter, decimal, header-row, and column-role inference
 - Ambiguity-aware import confidence and review prompts
@@ -45,13 +60,15 @@ The product is designed so users stay inside MaterialScope instead of switching 
 - XRD-specific import handling for axis role, unit, and wavelength provenance
 
 ### Analysis workflows
+
 - DSC: baseline correction, peak detection, Tg handling, enthalpy, sign-aware interpretation
 - TGA: DTG, step detection, residue and mass-loss interpretation, class-aware reasoning
-- DTA: stable report/export path aligned with the main product surface
+- DTA: Dash Phase 4 polish shipped (quality + raw metadata cards, expandable processing summary, keyboard shortcuts, and preset-to-run tab flow)
 - FTIR and Raman: cloud-backed qualitative library search with provider provenance
 - XRD: qualitative phase screening with cloud-backed candidate ranking, scientific naming, reference dossiers, and caution-safe no-match handling
 
 ### Reporting and traceability
+
 - DOCX, PDF, XLSX, and CSV outputs
 - Compact report-style main body with appendix-level technical evidence
 - Scientific reasoning sections by modality
@@ -60,9 +77,10 @@ The product is designed so users stay inside MaterialScope instead of switching 
 - Preserved validation warnings, processing context, and provenance metadata
 
 ### Project workflow
+
 - Compare workspace for cross-run review
 - Batch-oriented stable analysis flows
-- Session persistence plus `.thermozip` project archives
+- Session persistence plus `.scopezip` project archives (legacy `.thermozip` import supported)
 
 ---
 
@@ -76,6 +94,7 @@ MaterialScope uses a managed cloud-library architecture:
 - fallback mode is explicitly reduced-capability and not equivalent to cloud full access
 
 ### Current provider direction
+
 - FTIR: OpenSpecy
 - Raman: OpenSpecy + ROD
 - XRD: COD + Materials Project
@@ -109,14 +128,15 @@ XRD is handled as qualitative phase screening, not definitive phase confirmation
 ## Installation
 
 ### Prerequisites
+
 - Python 3.8+
 - `pip`
 
 ### Setup
 
 ```bash
-git clone https://github.com/utkuvibing/thermoanalyzer.git
-cd thermoanalyzer
+git clone https://github.com/utkuvibing/MaterialScope-web-dash-plotly-migration.git
+cd MaterialScope-web-dash-plotly-migration
 
 python -m venv venv
 source venv/bin/activate    # Linux/macOS
@@ -129,15 +149,23 @@ pip install -r requirements.txt
 
 ## Running
 
-### Streamlit UI
+### Dash + FastAPI (Primary)
 
 ```bash
-streamlit run app.py
+python -m dash_app.server
 ```
 
-Default URL: `http://localhost:8501`
+Default URL: `http://127.0.0.1:8050`
 
-### Backend API
+Optional run flags:
+
+```bash
+python -m dash_app.server --host 0.0.0.0 --port 8050 --token <api-token>
+```
+
+This starts a combined FastAPI app with Dash mounted at `/` and backend routes served from the same process.
+
+### Backend API (standalone)
 
 ```bash
 python -m backend.main
@@ -145,18 +173,30 @@ python -m backend.main
 
 Default URL: `http://localhost:8000`
 
-For local development, start the backend before using library-backed workflows if you expect `cloud_full_access`.
+### Streamlit UI (Legacy / Transition)
+
+```bash
+streamlit run app.py
+```
+
+Default URL: `http://localhost:8501`
+
+For local development, start the backend before using Streamlit workflows that require `cloud_full_access`.
 
 ### Docker / Coolify deployment
 
 This repo includes a production `Dockerfile` for Coolify-style deployments.
 
-The container starts:
+The current container profile starts:
+
 - the FastAPI backend on `127.0.0.1:8000`
-- the Streamlit UI on `0.0.0.0:8501`
+- the Streamlit UI (legacy path) on `0.0.0.0:8501`
 - Streamlit waits for backend health before the UI process starts
 
+Dash-first container startup is a forward-looking follow-up as migration hardens.
+
 For web deployment:
+
 - deploy with `Dockerfile`
 - expose port `8501`
 - set runtime secrets in Coolify instead of committing `.env`
@@ -164,9 +204,9 @@ For web deployment:
 Recommended runtime environment variables:
 
 ```dotenv
-THERMOANALYZER_LIBRARY_CLOUD_URL=http://127.0.0.1:8000
-THERMOANALYZER_LIBRARY_CLOUD_ENABLED=true
-THERMOANALYZER_LIBRARY_ALLOW_FULL_PROVIDER_SYNC=false
+MATERIALSCOPE_LIBRARY_CLOUD_URL=http://127.0.0.1:8000
+MATERIALSCOPE_LIBRARY_CLOUD_ENABLED=true
+MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC=false
 MATERIALSCOPE_ENABLE_PREVIEW_MODULES=false
 MATERIALSCOPE_OPENALEX_EMAIL=
 MATERIALSCOPE_OPENALEX_API_KEY=
@@ -184,20 +224,21 @@ BACKEND_STARTUP_TIMEOUT_SECONDS=30
 
 ## Local Cloud-Library Development
 
-Use the same repo-root `.env` for both Streamlit (`app.py`) and the backend (`backend/app.py`).
+Use the same repo-root `.env` for Dash (`dash_app/server.py`), Streamlit (`app.py`), and backend (`backend/app.py`).
 
 ```dotenv
-THERMOANALYZER_LIBRARY_CLOUD_URL=http://127.0.0.1:8000
-THERMOANALYZER_LIBRARY_CLOUD_ENABLED=true
-THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH=true
-THERMOANALYZER_LIBRARY_MIRROR_ROOT=C:\thermoanalyzer\build\reference_library_mirror_live
-THERMOANALYZER_LIBRARY_HOSTED_ROOT=C:\thermoanalyzer\build\reference_library_hosted
-THERMOANALYZER_LIBRARY_ALLOW_FULL_PROVIDER_SYNC=false
+MATERIALSCOPE_LIBRARY_CLOUD_URL=http://127.0.0.1:8000
+MATERIALSCOPE_LIBRARY_CLOUD_ENABLED=true
+MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH=true
+MATERIALSCOPE_LIBRARY_MIRROR_ROOT=C:\materialscope\build\reference_library_mirror_live
+MATERIALSCOPE_LIBRARY_HOSTED_ROOT=C:\materialscope\build\reference_library_hosted
+MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC=false
 ```
 
 Notes:
-- `THERMOANALYZER_LIBRARY_ALLOW_FULL_PROVIDER_SYNC=false` preserves the limited-fallback policy.
-- `THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH=true` is a dev-only shortcut for local cloud testing.
+
+- `MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC=false` preserves the limited-fallback policy.
+- `MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH=true` is a dev-only shortcut for local cloud testing.
 - hosted XRD coverage warnings remain visible even when the cloud path is healthy.
 
 ### Publish hosted library data locally
@@ -213,6 +254,7 @@ python tools/library_cloud_smoke.py --base-url http://127.0.0.1:8000
 ```
 
 Expected local/dev result:
+
 - `Library Mode = Cloud Full Access`
 - `Cloud Access = Enabled`
 
@@ -225,17 +267,18 @@ Expected local/dev result:
 3. Run the relevant workflow: DSC, TGA, DTA, FTIR, Raman, or XRD.
 4. Use Compare Workspace for cross-run review when needed.
 5. Export results or generate a report.
-6. Save the session as a `.thermozip` project archive.
+6. Save the session as a `.scopezip` project archive.
 
 ---
 
 ## Repository Layout
 
 ```text
-thermoanalyzer/
-├── app.py
+MaterialScope/
+├── app.py                    # Streamlit legacy entrypoint
+├── dash_app/                 # primary Dash + Plotly frontend and combined server
 ├── core/                    # analysis engine, scientific/report logic, library handling
-├── ui/                      # Streamlit pages and shared UI components
+├── ui/                      # Streamlit pages/components kept during migration
 ├── backend/                 # FastAPI backend and managed cloud-library routes
 ├── desktop/                 # desktop wrapper and bundling assets
 ├── tools/                   # ingest, publish, smoke, packaging helpers
@@ -246,7 +289,18 @@ thermoanalyzer/
 ```
 
 Local Windows release notes:
+
 - [Local Windows Release Prep](packaging/windows/RELEASE_PREP_LOCAL.md)
+
+---
+
+## Forward-Looking Futures (Dash-First)
+
+- Migrate the next non-DTA modality slice (starting with DSC) using the same Dash result-surface patterns.
+- Reuse DTA's quality/raw-metadata/expandable-processing card architecture across modalities.
+- Continue converging desktop and deployment flows toward Dash-first runtime defaults.
+- Keep Streamlit compatibility until parity and operational confidence are complete.
+- Expand provider coverage and provenance quality in managed cloud-library workflows.
 
 ---
 
