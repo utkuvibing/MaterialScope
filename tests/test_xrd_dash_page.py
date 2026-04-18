@@ -85,6 +85,7 @@ def test_layout_contains_key_div_ids():
         "xrd-result-processing",
         "xrd-refresh",
         "xrd-latest-result-id",
+        "xrd-figure-captured",
     ]
     for div_id in expected_ids:
         assert div_id in layout_str, f"Missing layout element: {div_id}"

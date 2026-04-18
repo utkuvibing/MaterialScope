@@ -11,6 +11,7 @@ import plotly.graph_objects as go
 
 from dash_app.components.analysis_page import (
     analysis_page_stores,
+    capture_result_figure_from_layout,
     dataset_selection_card,
     dataset_selector_block,
     eligible_datasets,
@@ -166,6 +167,7 @@ def _match_card(row: dict, idx: int, loc: str = "en") -> dbc.Card:
 layout = html.Div(
     analysis_page_stores("xrd-refresh", "xrd-latest-result-id")
     + [
+        dcc.Store(id="xrd-figure-captured", data={}),
         html.Div(id="xrd-hero-slot"),
         dbc.Row(
             [
@@ -402,6 +404,24 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
 
     proc_view = processing_details_section(processing, extra_lines=proc_extra, locale_data=locale_data)
     return metrics, candidate_cards, figure_area, table_area, proc_view
+
+
+@callback(
+    Output("xrd-figure-captured", "data"),
+    Input("xrd-latest-result-id", "data"),
+    Input("project-id", "data"),
+    Input("xrd-result-figure", "children"),
+    State("xrd-figure-captured", "data"),
+    prevent_initial_call=True,
+)
+def capture_xrd_figure(result_id, project_id, figure_children, captured):
+    return capture_result_figure_from_layout(
+        result_id=result_id,
+        project_id=project_id,
+        figure_children=figure_children,
+        captured=captured,
+        analysis_type="XRD",
+    )
 
 
 def _build_match_cards(rows: list, summary: dict, loc: str = "en") -> html.Div:

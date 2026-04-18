@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import dash_bootstrap_components as dbc
-from dash import html
+from dash import dcc, html
+import plotly.graph_objects as go
 
+import dash_app.components.analysis_page as analysis_page_mod
 from dash_app.components.analysis_page import (
+    capture_result_figure_from_layout,
     dataset_options,
     dataset_selector_block,
     eligible_datasets,
@@ -277,3 +280,95 @@ def test_resolve_sample_name_prefers_display_name_over_key():
                                {"dataset_key": "raw_data.csv"},
                                fallback_display_name="Calcium Oxalate")
     assert name == "Calcium Oxalate"
+
+
+# ---------------------------------------------------------------------------
+# figure capture helper
+# ---------------------------------------------------------------------------
+
+def test_capture_result_figure_from_layout_registers_primary_figure(monkeypatch):
+    import dash_app.api_client as api_client
+
+    register_calls: list[dict] = []
+
+    monkeypatch.setattr(analysis_page_mod.pio, "to_image", lambda _fig, **_k: b"\x89PNG\r\n\x1a\nFAKE")
+    monkeypatch.setattr(
+        api_client,
+        "workspace_result_detail",
+        lambda *_a, **_k: {"result": {"dataset_key": "synthetic_dsc"}},
+    )
+    monkeypatch.setattr(
+        api_client,
+        "register_result_figure",
+        lambda pid, rid, png_bytes, *, label, replace=False: register_calls.append(
+            {"pid": pid, "rid": rid, "bytes": bytes(png_bytes), "label": label, "replace": replace}
+        )
+        or {"figure_key": label, "figure_keys": [label]},
+    )
+
+    children = html.Div(
+        dcc.Graph(
+            figure=go.Figure(
+                data=[go.Scatter(x=[100.0, 200.0], y=[0.1, -0.2], mode="lines", name="Corrected")]
+            )
+        )
+    )
+    captured = capture_result_figure_from_layout(
+        result_id="dsc_result_1",
+        project_id="proj-1",
+        figure_children=children,
+        captured={},
+        analysis_type="DSC",
+    )
+
+    assert captured["dsc_result_1"]["status"] == "ok"
+    assert captured["dsc_result_1"]["label"] == "DSC Analysis - synthetic_dsc"
+    assert register_calls == [
+        {
+            "pid": "proj-1",
+            "rid": "dsc_result_1",
+            "bytes": b"\x89PNG\r\n\x1a\nFAKE",
+            "label": "DSC Analysis - synthetic_dsc",
+            "replace": True,
+        }
+    ]
+
+
+def test_capture_result_figure_from_layout_reads_serialized_children(monkeypatch):
+    import dash_app.api_client as api_client
+
+    monkeypatch.setattr(analysis_page_mod.pio, "to_image", lambda _fig, **_k: b"PNG")
+    monkeypatch.setattr(
+        api_client,
+        "workspace_result_detail",
+        lambda *_a, **_k: {"result": {"dataset_key": "serialized_source"}},
+    )
+    monkeypatch.setattr(
+        api_client,
+        "register_result_figure",
+        lambda _pid, _rid, _png_bytes, *, label, replace=False: {"figure_key": label, "figure_keys": [label]},
+    )
+
+    serialized_children = {
+        "props": {
+            "children": [
+                {
+                    "props": {
+                        "figure": {
+                            "data": [{"type": "scatter", "mode": "lines", "x": [1, 2], "y": [3, 4]}],
+                            "layout": {},
+                        }
+                    }
+                }
+            ]
+        }
+    }
+    captured = capture_result_figure_from_layout(
+        result_id="ftir_result_1",
+        project_id="proj-2",
+        figure_children=serialized_children,
+        captured={},
+        analysis_type="FTIR",
+    )
+    assert captured["ftir_result_1"]["status"] == "ok"
+    assert captured["ftir_result_1"]["label"] == "FTIR Analysis - serialized_source"

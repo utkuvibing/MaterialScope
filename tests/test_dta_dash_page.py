@@ -1517,6 +1517,18 @@ def test_backend_register_figure_writes_state_and_artifacts():
     assert body["figure_key"] == f"DTA Analysis - {dataset_key}"
     assert body["figure_keys"] == [f"DTA Analysis - {dataset_key}"]
 
+    import io
+    import json
+    import zipfile
+
+    archive_b64 = client.post("/project/save", json={"project_id": project_id}).json()["archive_base64"]
+    archive_bytes = _b64.b64decode(archive_b64.encode("ascii"))
+    with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as archive:
+        persisted_results = json.loads(archive.read("results.json").decode("utf-8"))
+    artifacts = persisted_results[result_id]["artifacts"]
+    assert artifacts["figure_keys"] == [f"DTA Analysis - {dataset_key}"]
+    assert artifacts["report_figure_key"] == f"DTA Analysis - {dataset_key}"
+
     summary = client.get(f"/workspace/{project_id}").json()
     assert summary["summary"]["figure_count"] == 1
 

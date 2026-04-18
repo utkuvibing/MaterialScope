@@ -18,6 +18,7 @@ import plotly.graph_objects as go
 
 from dash_app.components.analysis_page import (
     analysis_page_stores,
+    capture_result_figure_from_layout,
     dataset_selection_card,
     dataset_selector_block,
     eligible_datasets,
@@ -180,6 +181,7 @@ def _peak_card(row: dict, idx: int, loc: str) -> dbc.Card:
 layout = html.Div(
     analysis_page_stores("dsc-refresh", "dsc-latest-result-id")
     + [
+        dcc.Store(id="dsc-figure-captured", data={}),
         html.Div(id="dsc-hero-slot"),
         dbc.Row(
             [
@@ -412,6 +414,24 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
     )
 
     return metrics, tg_cards, figure_area, table_area, proc_view
+
+
+@callback(
+    Output("dsc-figure-captured", "data"),
+    Input("dsc-latest-result-id", "data"),
+    Input("project-id", "data"),
+    Input("dsc-result-figure", "children"),
+    State("dsc-figure-captured", "data"),
+    prevent_initial_call=True,
+)
+def capture_dsc_figure(result_id, project_id, figure_children, captured):
+    return capture_result_figure_from_layout(
+        result_id=result_id,
+        project_id=project_id,
+        figure_children=figure_children,
+        captured=captured,
+        analysis_type="DSC",
+    )
 
 
 # ---------------------------------------------------------------------------

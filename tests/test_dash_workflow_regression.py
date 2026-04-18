@@ -283,6 +283,55 @@ def test_project_save_load_preserves_results_and_compare():
     assert len(cmp.get("selected_datasets") or []) == 2
 
 
+def test_project_roundtrip_preserves_registered_result_figure():
+    import io
+    import json
+    import zipfile
+
+    client = _client()
+    ws = client.post("/workspace/new")
+    project_id = ws.json()["project_id"]
+
+    raw, name, dt = _b64_file("load-sample-dsc")
+    dataset_key = _import_dataset(client, project_id, file_bytes=raw, file_name=name, data_type=dt)
+    run = _run_analysis(client, project_id, dataset_key, "DSC", "dsc.general")
+    result_id = run["result_id"]
+
+    figure_label = f"DSC Analysis - {dataset_key}"
+    png_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+tmwAAAABJRU5ErkJggg=="
+    )
+    register = client.post(
+        f"/workspace/{project_id}/results/{result_id}/figure",
+        json={
+            "figure_png_base64": base64.b64encode(png_bytes).decode("ascii"),
+            "figure_label": figure_label,
+            "replace": True,
+        },
+    )
+    assert register.status_code == 200
+
+    save_r = client.post("/project/save", json={"project_id": project_id})
+    assert save_r.status_code == 200
+    archive_b64 = save_r.json()["archive_base64"]
+
+    load_r = client.post("/project/load", json={"archive_base64": archive_b64})
+    assert load_r.status_code == 200
+    loaded_id = load_r.json()["project_id"]
+
+    re_saved = client.post("/project/save", json={"project_id": loaded_id})
+    assert re_saved.status_code == 200
+    archive_bytes = base64.b64decode(re_saved.json()["archive_base64"].encode("ascii"))
+    with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as archive:
+        persisted_results = json.loads(archive.read("results.json").decode("utf-8"))
+    artifacts = persisted_results[result_id]["artifacts"]
+    assert artifacts["figure_keys"] == [figure_label]
+    assert artifacts["report_figure_key"] == figure_label
+
+    summary = client.get(f"/workspace/{loaded_id}").json()["summary"]
+    assert summary["figure_count"] >= 1
+
+
 def test_export_preparation_empty_workspace_structure():
     client = _client()
     ws = client.post("/workspace/new")

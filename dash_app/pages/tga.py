@@ -19,6 +19,7 @@ import plotly.graph_objects as go
 
 from dash_app.components.analysis_page import (
     analysis_page_stores,
+    capture_result_figure_from_layout,
     dataset_selection_card,
     dataset_selector_block,
     eligible_datasets,
@@ -132,6 +133,7 @@ def _unit_mode_card() -> dbc.Card:
 layout = html.Div(
     analysis_page_stores("tga-refresh", "tga-latest-result-id")
     + [
+        dcc.Store(id="tga-figure-captured", data={}),
         html.Div(id="tga-hero-slot"),
         dbc.Row(
             [
@@ -382,6 +384,24 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
     )
 
     return metrics, step_cards, figure_area, table_area, proc_view
+
+
+@callback(
+    Output("tga-figure-captured", "data"),
+    Input("tga-latest-result-id", "data"),
+    Input("project-id", "data"),
+    Input("tga-result-figure", "children"),
+    State("tga-figure-captured", "data"),
+    prevent_initial_call=True,
+)
+def capture_tga_figure(result_id, project_id, figure_children, captured):
+    return capture_result_figure_from_layout(
+        result_id=result_id,
+        project_id=project_id,
+        figure_children=figure_children,
+        captured=captured,
+        analysis_type="TGA",
+    )
 
 
 def _build_step_cards(rows: list, loc: str) -> html.Div:

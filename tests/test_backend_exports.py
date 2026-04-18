@@ -8,7 +8,12 @@ import pandas as pd
 from fastapi.testclient import TestClient
 
 from backend.app import create_app
-from backend.exports import build_export_preparation, generate_report_docx_artifact, generate_results_csv_artifact
+from backend.exports import (
+    build_export_preparation,
+    generate_report_docx_artifact,
+    generate_report_pdf_artifact,
+    generate_results_csv_artifact,
+)
 from core.data_io import ThermalDataset
 from core.processing_schema import ensure_processing_payload, update_method_context, update_processing_step
 from core.result_serialization import serialize_spectral_result, serialize_xrd_result
@@ -150,6 +155,37 @@ def test_export_report_pdf_generation_returns_pdf_bytes(thermal_dataset):
     assert payload["included_result_ids"] == [result_id]
     pdf_bytes = base64.b64decode(payload["artifact_base64"].encode("ascii"))
     assert pdf_bytes[:4] == b"%PDF"
+
+
+def test_report_exports_include_saved_figure_payloads(monkeypatch):
+    import backend.exports as exports_module
+
+    state, result_id = _build_spectral_export_state()
+    figure_key = "FTIR Analysis - ftir_export_seed"
+    figure_bytes = b"\x89PNG\r\n\x1a\nSAVED"
+    state["results"][result_id]["artifacts"] = {"figure_keys": [figure_key]}
+    state["figures"] = {figure_key: figure_bytes}
+
+    observed: dict[str, dict[str, bytes] | None] = {}
+
+    def _fake_docx_report(**kwargs):
+        observed["docx"] = kwargs.get("figures")
+        return b"DOCX-BYTES"
+
+    def _fake_pdf_report(**kwargs):
+        observed["pdf"] = kwargs.get("figures")
+        return b"%PDF-1.4\nFAKE"
+
+    monkeypatch.setattr(exports_module, "generate_docx_report", _fake_docx_report)
+    monkeypatch.setattr(exports_module, "generate_pdf_report", _fake_pdf_report)
+
+    docx_artifact = generate_report_docx_artifact(state, selected_result_ids=[result_id], include_figures=True)
+    pdf_artifact = generate_report_pdf_artifact(state, selected_result_ids=[result_id], include_figures=True)
+
+    assert observed["docx"] == {figure_key: figure_bytes}
+    assert observed["pdf"] == {figure_key: figure_bytes}
+    assert base64.b64decode(docx_artifact["artifact_base64"].encode("ascii")) == b"DOCX-BYTES"
+    assert base64.b64decode(pdf_artifact["artifact_base64"].encode("ascii")) == b"%PDF-1.4\nFAKE"
 
 
 def test_export_docx_generation_keeps_dta_in_stable_partition(thermal_dataset):

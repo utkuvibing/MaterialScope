@@ -11,6 +11,8 @@ from typing import Any
 
 import dash_bootstrap_components as dbc
 from dash import dcc, html
+import plotly.graph_objects as go
+import plotly.io as pio
 
 from utils.i18n import normalize_ui_locale, translate_ui
 
@@ -197,6 +199,102 @@ def analysis_page_stores(refresh_id: str, latest_result_id: str) -> list[dcc.Sto
         dcc.Store(id=refresh_id, data=0),
         dcc.Store(id=latest_result_id),
     ]
+
+
+def _extract_graph_figure_payload(node: Any) -> Any:
+    """Return the first Plotly figure payload found in a component tree."""
+    stack: list[Any] = [node]
+    while stack:
+        current = stack.pop()
+        if current is None:
+            continue
+        if isinstance(current, (list, tuple)):
+            stack.extend(current)
+            continue
+        if isinstance(current, dict):
+            props = current.get("props")
+            if isinstance(props, dict):
+                figure_payload = props.get("figure")
+                if figure_payload is not None:
+                    return figure_payload
+                children = props.get("children")
+                if children is not None:
+                    stack.append(children)
+            children = current.get("children")
+            if children is not None:
+                stack.append(children)
+            continue
+        if hasattr(current, "figure"):
+            figure_payload = getattr(current, "figure")
+            if figure_payload is not None:
+                return figure_payload
+        children = getattr(current, "children", None)
+        if children is not None:
+            stack.append(children)
+    return None
+
+
+def capture_result_figure_from_layout(
+    *,
+    result_id: str | None,
+    project_id: str | None,
+    figure_children: Any,
+    captured: dict | None,
+    analysis_type: str,
+) -> dict[str, dict[str, str]]:
+    """Capture and register a rendered result figure for a saved analysis result.
+
+    This helper centralizes the Dash-side figure persistence pipeline used by all
+    stable modality pages. It extracts the first ``dcc.Graph`` figure from the
+    result-figure container, renders it to PNG via kaleido, and registers it in
+    the backend result artifact store.
+    """
+    captured_state = dict(captured or {})
+    if not result_id or not project_id:
+        return captured_state
+
+    prior = captured_state.get(result_id)
+    if isinstance(prior, dict) and prior.get("status") in {"ok", "skipped"}:
+        return captured_state
+
+    figure_payload = _extract_graph_figure_payload(figure_children)
+    if figure_payload is None:
+        # Figure area may not be hydrated yet; keep waiting.
+        return captured_state
+
+    try:
+        fig = figure_payload if isinstance(figure_payload, go.Figure) else go.Figure(figure_payload)
+    except Exception as exc:
+        captured_state[result_id] = {"status": "skipped", "reason": f"invalid_figure_payload: {exc}"}
+        return captured_state
+
+    try:
+        png_bytes = pio.to_image(fig, format="png", engine="kaleido")
+    except Exception as exc:
+        captured_state[result_id] = {"status": "skipped", "reason": str(exc)}
+        return captured_state
+
+    from dash_app.api_client import register_result_figure, workspace_result_detail
+
+    try:
+        detail = workspace_result_detail(project_id, result_id)
+    except Exception as exc:
+        captured_state[result_id] = {"status": "skipped", "reason": f"detail_load_failed: {exc}"}
+        return captured_state
+
+    result_meta = (detail or {}).get("result") or {}
+    dataset_key = str(result_meta.get("dataset_key") or "").strip() or str(result_id)
+    label = f"{str(analysis_type or 'ANALYSIS').upper()} Analysis - {dataset_key}"
+
+    try:
+        response = register_result_figure(project_id, result_id, png_bytes, label=label, replace=True)
+    except Exception as exc:
+        captured_state[result_id] = {"status": "skipped", "label": label, "reason": f"register_failed: {exc}"}
+        return captured_state
+
+    persisted_label = str((response or {}).get("figure_key") or label)
+    captured_state[result_id] = {"status": "ok", "label": persisted_label}
+    return captured_state
 
 
 # ---------------------------------------------------------------------------

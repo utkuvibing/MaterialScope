@@ -20,6 +20,7 @@ import plotly.graph_objects as go
 
 from dash_app.components.analysis_page import (
     analysis_page_stores,
+    capture_result_figure_from_layout,
     dataset_selection_card,
     dataset_selector_block,
     eligible_datasets,
@@ -151,6 +152,7 @@ def _match_card(row: dict, idx: int, loc: str) -> dbc.Card:
 layout = html.Div(
     analysis_page_stores("ftir-refresh", "ftir-latest-result-id")
     + [
+        dcc.Store(id="ftir-figure-captured", data={}),
         html.Div(id="ftir-hero-slot"),
         dbc.Row(
             [
@@ -371,6 +373,24 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
     )
 
     return metrics, match_cards, figure_area, table_area, proc_view
+
+
+@callback(
+    Output("ftir-figure-captured", "data"),
+    Input("ftir-latest-result-id", "data"),
+    Input("project-id", "data"),
+    Input("ftir-result-figure", "children"),
+    State("ftir-figure-captured", "data"),
+    prevent_initial_call=True,
+)
+def capture_ftir_figure(result_id, project_id, figure_children, captured):
+    return capture_result_figure_from_layout(
+        result_id=result_id,
+        project_id=project_id,
+        figure_children=figure_children,
+        captured=captured,
+        analysis_type="FTIR",
+    )
 
 
 def _build_match_cards(rows: list, top_match_name: str | None, loc: str) -> html.Div:

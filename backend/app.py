@@ -787,6 +787,9 @@ def create_app(
         if label not in keys:
             keys.append(label)
         artifacts["figure_keys"] = keys
+        current_primary = artifacts.get("report_figure_key")
+        if request.replace or not (isinstance(current_primary, str) and current_primary):
+            artifacts["report_figure_key"] = label
         record = dict(record)
         record["artifacts"] = artifacts
         state.setdefault("results", {})[result_id] = record
