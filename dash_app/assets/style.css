@@ -1550,3 +1550,95 @@ html[data-theme="dark"] .main-content .dta-results-surface .dta-debug-shell {
     min-height: 500px;
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* DSC results surface v2 (scoped visual hierarchy polish)                    */
+/* -------------------------------------------------------------------------- */
+
+.main-content .dsc-results-surface {
+  display: flex;
+  flex-direction: column;
+}
+
+.main-content .dsc-results-surface .dsc-result-section {
+  margin-bottom: 1rem;
+}
+
+.main-content .dsc-results-surface .dsc-result-section:last-child {
+  margin-bottom: 0;
+}
+
+.main-content .dsc-results-surface .dsc-result-section > .card {
+  margin-bottom: 0 !important;
+  border-radius: 0.45rem;
+}
+
+.main-content .dsc-results-surface .dsc-result-section .card-body {
+  padding: 1.05rem 1.15rem;
+}
+
+.main-content .dsc-results-surface .dsc-result-section h5 {
+  font-size: 1.01rem;
+  line-height: 1.25;
+  letter-spacing: 0.01em;
+}
+
+.main-content .dsc-results-surface .dsc-result-context > .card,
+.main-content .dsc-results-surface .dsc-result-support > .card {
+  border-color: var(--ta-border);
+}
+
+.main-content .dsc-results-surface .dsc-result-hero > .card {
+  border-color: rgba(102, 100, 94, 0.26);
+}
+
+html[data-theme="dark"] .main-content .dsc-results-surface .dsc-result-hero > .card {
+  border-color: rgba(158, 154, 147, 0.36);
+}
+
+.main-content .dsc-results-surface .dsc-result-figure-shell {
+  border: 1px solid var(--ta-border);
+  border-radius: 0.5rem;
+  background: var(--ta-panel);
+  padding: 0.65rem 0.78rem 0.32rem;
+  box-shadow: 0 1px 2px rgba(28, 26, 26, 0.035);
+}
+
+html[data-theme="dark"] .main-content .dsc-results-surface .dsc-result-figure-shell {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+}
+
+.main-content .dsc-results-surface .dsc-result-graph {
+  min-height: 560px;
+}
+
+.main-content .dsc-results-surface .dsc-meta-term {
+  font-size: 0.79rem;
+  letter-spacing: 0.015em;
+}
+
+.main-content .dsc-results-surface .dsc-meta-def {
+  margin-bottom: 0.55rem !important;
+}
+
+.main-content .dsc-results-surface .dsc-meta-value {
+  display: inline-block;
+  max-width: 100%;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (max-width: 991.98px) {
+  .main-content .dsc-results-surface .dsc-result-section .card-body {
+    padding: 0.9rem 1rem;
+  }
+
+  .main-content .dsc-results-surface .dsc-result-figure-shell {
+    padding: 0.55rem 0.55rem 0.2rem;
+  }
+
+  .main-content .dsc-results-surface .dsc-result-graph {
+    min-height: 500px;
+  }
+}

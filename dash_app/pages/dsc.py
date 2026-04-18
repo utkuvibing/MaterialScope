@@ -11,6 +11,11 @@ Lets the user:
 
 from __future__ import annotations
 
+import copy
+import json
+import math
+from typing import Any
+
 import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
@@ -34,7 +39,7 @@ from dash_app.components.analysis_page import (
 )
 from dash_app.components.chrome import page_header
 from dash_app.components.data_preview import dataset_table
-from dash_app.theme import apply_figure_theme
+from dash_app.theme import apply_figure_theme, normalize_ui_theme
 from utils.i18n import normalize_ui_locale, translate_ui
 
 dash.register_page(__name__, path="/dsc", title="DSC Analysis - MaterialScope")
@@ -57,6 +62,186 @@ _PEAK_TYPE_ICONS = {
     "exotherm": "bi-arrow-up-circle",
     "step": "bi-arrow-right-circle",
 }
+_DSC_RESULT_CARD_ROLES = {
+    "context": "dsc-result-context",
+    "hero": "dsc-result-hero",
+    "support": "dsc-result-support",
+}
+
+_SMOOTH_METHODS = ("savgol", "moving_average", "gaussian")
+_DSC_SMOOTHING_DEFAULTS: dict[str, dict] = {
+    "savgol": {"method": "savgol", "window_length": 11, "polyorder": 3},
+    "moving_average": {"method": "moving_average", "window_length": 11},
+    "gaussian": {"method": "gaussian", "sigma": 2.0},
+}
+_BASELINE_METHODS = ("asls", "linear", "rubberband")
+_DSC_BASELINE_DEFAULTS: dict[str, dict] = {
+    "asls": {"method": "asls", "lam": 1e6, "p": 0.01},
+    "linear": {"method": "linear"},
+    "rubberband": {"method": "rubberband"},
+}
+_DSC_PEAK_DETECTION_DEFAULTS: dict = {
+    "direction": "both",
+    "prominence": 0.0,
+    "distance": 1,
+}
+_DSC_GLASS_TRANSITION_DEFAULTS: dict = {
+    "mode": "auto",
+    "region": None,
+}
+_UNDO_STACK_LIMIT = 32
+_ANNOTATION_MIN_SEP = 15.0
+
+
+def _default_processing_draft() -> dict:
+    return {
+        "smoothing": copy.deepcopy(_DSC_SMOOTHING_DEFAULTS["savgol"]),
+        "baseline": copy.deepcopy(_DSC_BASELINE_DEFAULTS["asls"]),
+        "peak_detection": copy.deepcopy(_DSC_PEAK_DETECTION_DEFAULTS),
+        "glass_transition": copy.deepcopy(_DSC_GLASS_TRANSITION_DEFAULTS),
+    }
+
+
+def _coerce_int_positive(value, *, default: int, minimum: int) -> int:
+    try:
+        if value in (None, ""):
+            return max(default, minimum)
+        parsed = int(float(value))
+    except (TypeError, ValueError):
+        return max(default, minimum)
+    return max(parsed, minimum)
+
+
+def _coerce_float_positive(value, *, default: float, minimum: float) -> float:
+    try:
+        if value in (None, ""):
+            return max(default, minimum)
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return max(default, minimum)
+    if not math.isfinite(parsed):
+        return max(default, minimum)
+    return max(parsed, minimum)
+
+
+def _coerce_float_non_negative(value, *, default: float) -> float:
+    try:
+        if value in (None, ""):
+            return max(default, 0.0)
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return max(default, 0.0)
+    if not math.isfinite(parsed) or parsed < 0:
+        return max(default, 0.0)
+    return parsed
+
+
+def _normalize_smoothing_values(method: str | None, window_length, polyorder, sigma) -> dict:
+    token = str(method or "savgol").strip().lower()
+    if token not in _SMOOTH_METHODS:
+        token = "savgol"
+    if token == "savgol":
+        wl = _coerce_int_positive(window_length, default=11, minimum=5)
+        if wl % 2 == 0:
+            wl += 1
+        po = _coerce_int_positive(polyorder, default=3, minimum=1)
+        po = min(po, max(wl - 2, 1))
+        return {"method": "savgol", "window_length": wl, "polyorder": po}
+    if token == "moving_average":
+        wl = _coerce_int_positive(window_length, default=11, minimum=3)
+        if wl % 2 == 0:
+            wl += 1
+        return {"method": "moving_average", "window_length": wl}
+    sg = _coerce_float_positive(sigma, default=2.0, minimum=0.1)
+    return {"method": "gaussian", "sigma": sg}
+
+
+def _normalize_baseline_values(method: str | None, lam, p) -> dict:
+    token = str(method or "asls").strip().lower()
+    if token not in _BASELINE_METHODS:
+        token = "asls"
+    if token == "asls":
+        lam_value = _coerce_float_positive(lam, default=1e6, minimum=1e-3)
+        p_value = _coerce_float_positive(p, default=0.01, minimum=1e-4)
+        p_value = min(p_value, 0.5)
+        return {"method": "asls", "lam": lam_value, "p": p_value}
+    return {"method": token}
+
+
+def _normalize_peak_detection_values(direction: str | None, prominence, distance) -> dict:
+    dir_token = str(direction or "both").strip().lower()
+    if dir_token not in {"both", "up", "down"}:
+        dir_token = "both"
+    return {
+        "direction": dir_token,
+        "prominence": _coerce_float_non_negative(prominence, default=0.0),
+        "distance": _coerce_int_positive(distance, default=1, minimum=1),
+    }
+
+
+def _normalize_glass_transition_values(enabled, rmin, rmax) -> dict:
+    if not enabled:
+        return {"mode": "auto", "region": None}
+    try:
+        lower = float(rmin)
+        upper = float(rmax)
+    except (TypeError, ValueError):
+        return {"mode": "auto", "region": None}
+    if not math.isfinite(lower) or not math.isfinite(upper) or lower >= upper:
+        return {"mode": "auto", "region": None}
+    return {"mode": "auto", "region": [lower, upper]}
+
+
+def _apply_draft_section(draft: dict | None, section: str, values: dict) -> dict:
+    next_draft = copy.deepcopy(draft or {})
+    next_draft[section] = copy.deepcopy(values)
+    return next_draft
+
+
+def _push_undo(undo: list | None, snapshot: dict | None) -> list:
+    stack = list(undo or [])
+    stack.append(copy.deepcopy(snapshot or {}))
+    if len(stack) > _UNDO_STACK_LIMIT:
+        stack = stack[-_UNDO_STACK_LIMIT:]
+    return stack
+
+
+def _do_undo(draft: dict, undo: list | None, redo: list | None) -> tuple[dict, list, list]:
+    undo_stack = list(undo or [])
+    redo_stack = list(redo or [])
+    if not undo_stack:
+        return copy.deepcopy(draft or {}), undo_stack, redo_stack
+    previous = undo_stack.pop()
+    redo_stack.append(copy.deepcopy(draft or {}))
+    return copy.deepcopy(previous), undo_stack, redo_stack
+
+
+def _do_redo(draft: dict, undo: list | None, redo: list | None) -> tuple[dict, list, list]:
+    undo_stack = list(undo or [])
+    redo_stack = list(redo or [])
+    if not redo_stack:
+        return copy.deepcopy(draft or {}), undo_stack, redo_stack
+    following = redo_stack.pop()
+    undo_stack.append(copy.deepcopy(draft or {}))
+    return copy.deepcopy(following), undo_stack, redo_stack
+
+
+def _do_reset(draft: dict, undo: list | None, redo: list | None, defaults: dict | None) -> tuple[dict, list, list]:
+    reset_target = copy.deepcopy(defaults or _default_processing_draft())
+    if (draft or {}) == reset_target:
+        return reset_target, list(undo or []), list(redo or [])
+    undo_stack = _push_undo(undo, draft)
+    return reset_target, undo_stack, []
+
+
+def _overrides_from_draft(draft: dict | None) -> dict:
+    draft_payload = dict(draft or {})
+    combined: dict[str, dict] = {}
+    for section in ("smoothing", "baseline", "peak_detection", "glass_transition"):
+        values = draft_payload.get(section)
+        if isinstance(values, dict):
+            combined[section] = copy.deepcopy(values)
+    return combined
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +290,336 @@ def _tg_card(midpoint: float, onset: float, endset: float, delta_cp: float, idx:
         ),
         className="mb-2",
     )
+
+
+def _processing_draft_stores() -> list:
+    defaults = _default_processing_draft()
+    return [
+        dcc.Store(id="dsc-processing-default", data=defaults),
+        dcc.Store(id="dsc-processing-draft", data=copy.deepcopy(defaults)),
+        dcc.Store(id="dsc-processing-undo", data=[]),
+        dcc.Store(id="dsc-processing-redo", data=[]),
+        dcc.Store(id="dsc-figure-captured", data={}),
+        dcc.Store(id="dsc-preset-refresh", data=0),
+    ]
+
+
+_DSC_PRESET_ANALYSIS_TYPE = "DSC"
+
+
+def _preset_controls_card() -> dbc.Card:
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H5(id="dsc-preset-card-title", className="card-title mb-1"),
+                html.Small(id="dsc-preset-help", className="form-text text-muted d-block mb-2"),
+                html.Div(id="dsc-preset-caption", className="small text-muted mb-2"),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dsc-preset-select-label", html_for="dsc-preset-select"),
+                                dbc.Select(id="dsc-preset-select", options=[], value=None),
+                            ],
+                            md=12,
+                        ),
+                    ],
+                    className="mb-2",
+                ),
+                dbc.ButtonGroup(
+                    [
+                        dbc.Button(id="dsc-preset-apply-btn", color="primary", size="sm", disabled=True),
+                        dbc.Button(id="dsc-preset-delete-btn", color="secondary", size="sm", outline=True, disabled=True),
+                    ],
+                    className="mb-3",
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dsc-preset-save-name-label", html_for="dsc-preset-save-name"),
+                                dbc.Input(id="dsc-preset-save-name", type="text", value="", maxLength=80),
+                            ],
+                            md=12,
+                        ),
+                    ],
+                    className="mb-2",
+                ),
+                dbc.Button(id="dsc-preset-save-btn", color="primary", size="sm", className="mb-2"),
+                html.Div(id="dsc-preset-status", className="small text-muted"),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
+def _smoothing_controls_card() -> dbc.Card:
+    method_options = [
+        {"label": "Savitzky-Golay", "value": "savgol"},
+        {"label": "Moving Average", "value": "moving_average"},
+        {"label": "Gaussian", "value": "gaussian"},
+    ]
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H5(id="dsc-smoothing-card-title", className="card-title mb-3"),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dsc-smooth-method-label", html_for="dsc-smooth-method"),
+                                dbc.Select(id="dsc-smooth-method", options=method_options, value="savgol"),
+                                html.Small(id="dsc-smooth-method-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=12,
+                        ),
+                    ],
+                    className="mb-2",
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dsc-smooth-window-label", html_for="dsc-smooth-window"),
+                                dbc.Input(id="dsc-smooth-window", type="number", min=3, max=51, step=2, value=11),
+                                html.Small(id="dsc-smooth-window-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=4,
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dsc-smooth-polyorder-label", html_for="dsc-smooth-polyorder"),
+                                dbc.Input(id="dsc-smooth-polyorder", type="number", min=1, max=7, step=1, value=3),
+                                html.Small(id="dsc-smooth-polyorder-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=4,
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dsc-smooth-sigma-label", html_for="dsc-smooth-sigma"),
+                                dbc.Input(id="dsc-smooth-sigma", type="number", min=0.1, max=10.0, step=0.1, value=2.0, disabled=True),
+                                html.Small(id="dsc-smooth-sigma-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=4,
+                        ),
+                    ],
+                    className="g-2 mb-2",
+                ),
+                dbc.ButtonGroup(
+                    [
+                        dbc.Button(id="dsc-smooth-apply-btn", color="primary", size="sm"),
+                        dbc.Button(id="dsc-undo-btn", color="secondary", size="sm", outline=True),
+                        dbc.Button(id="dsc-redo-btn", color="secondary", size="sm", outline=True),
+                        dbc.Button(id="dsc-reset-btn", color="secondary", size="sm", outline=True),
+                    ],
+                    className="mb-2",
+                ),
+                html.Div(id="dsc-smooth-status", className="small text-muted"),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
+def _baseline_controls_card() -> dbc.Card:
+    method_options = [
+        {"label": "AsLS", "value": "asls"},
+        {"label": "Linear", "value": "linear"},
+        {"label": "Rubberband", "value": "rubberband"},
+    ]
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H5(id="dsc-baseline-card-title", className="card-title mb-3"),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dsc-baseline-method-label", html_for="dsc-baseline-method"),
+                                dbc.Select(id="dsc-baseline-method", options=method_options, value="asls"),
+                                html.Small(id="dsc-baseline-method-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=12,
+                        ),
+                    ],
+                    className="mb-2",
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dsc-baseline-lam-label", html_for="dsc-baseline-lam"),
+                                dbc.Input(id="dsc-baseline-lam", type="number", min=1e-3, step=1e5, value=1e6),
+                                html.Small(id="dsc-baseline-lam-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=6,
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dsc-baseline-p-label", html_for="dsc-baseline-p"),
+                                dbc.Input(id="dsc-baseline-p", type="number", min=1e-4, max=0.5, step=0.005, value=0.01),
+                                html.Small(id="dsc-baseline-p-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=6,
+                        ),
+                    ],
+                    className="g-2 mb-2",
+                ),
+                dbc.Button(id="dsc-baseline-apply-btn", color="primary", size="sm", className="mb-2"),
+                html.Div(id="dsc-baseline-status", className="small text-muted"),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
+def _peak_controls_card() -> dbc.Card:
+    direction_options = [
+        {"label": "Both", "value": "both"},
+        {"label": "Upward (Exotherm)", "value": "up"},
+        {"label": "Downward (Endotherm)", "value": "down"},
+    ]
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H5(id="dsc-peak-card-title", className="card-title mb-3"),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dsc-peak-direction-label", html_for="dsc-peak-direction"),
+                                dbc.Select(id="dsc-peak-direction", options=direction_options, value="both"),
+                                html.Small(id="dsc-peak-direction-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=12,
+                        ),
+                    ],
+                    className="mb-2",
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dsc-peak-prominence-label", html_for="dsc-peak-prominence"),
+                                dbc.Input(id="dsc-peak-prominence", type="number", min=0.0, step=0.005, value=0.0),
+                                html.Small(id="dsc-peak-prominence-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=6,
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dsc-peak-distance-label", html_for="dsc-peak-distance"),
+                                dbc.Input(id="dsc-peak-distance", type="number", min=1, step=1, value=1),
+                                html.Small(id="dsc-peak-distance-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=6,
+                        ),
+                    ],
+                    className="g-2 mb-2",
+                ),
+                dbc.Button(id="dsc-peak-apply-btn", color="primary", size="sm", className="mb-2"),
+                html.Div(id="dsc-peak-status", className="small text-muted"),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
+def _tg_controls_card() -> dbc.Card:
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H5(id="dsc-tg-card-title", className="card-title mb-3"),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Checkbox(id="dsc-tg-region-enabled", value=False, label=" "),
+                                html.Small(id="dsc-tg-region-enable-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=12,
+                        ),
+                    ],
+                    className="mb-2",
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dsc-tg-region-min-label", html_for="dsc-tg-region-min"),
+                                dbc.Input(id="dsc-tg-region-min", type="number", value=None),
+                                html.Small(id="dsc-tg-region-min-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=6,
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dsc-tg-region-max-label", html_for="dsc-tg-region-max"),
+                                dbc.Input(id="dsc-tg-region-max", type="number", value=None),
+                                html.Small(id="dsc-tg-region-max-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=6,
+                        ),
+                    ],
+                    className="g-2 mb-2",
+                ),
+                dbc.Button(id="dsc-tg-apply-btn", color="primary", size="sm", className="mb-2"),
+                html.Div(id="dsc-tg-status", className="small text-muted"),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
+def _dsc_left_column_tabs() -> dbc.Tabs:
+    return dbc.Tabs(
+        [
+            dbc.Tab(
+                [
+                    dataset_selection_card("dsc-dataset-selector-area", card_title_id="dsc-dataset-card-title"),
+                    workflow_template_card(
+                        "dsc-template-select",
+                        "dsc-template-description",
+                        [],
+                        "dsc.general",
+                        card_title_id="dsc-workflow-card-title",
+                    ),
+                ],
+                tab_id="dsc-tab-setup",
+                label_class_name="ta-tab-label",
+                id="dsc-tab-setup-shell",
+            ),
+            dbc.Tab(
+                [
+                    _preset_controls_card(),
+                    _smoothing_controls_card(),
+                    _baseline_controls_card(),
+                    _peak_controls_card(),
+                    _tg_controls_card(),
+                ],
+                tab_id="dsc-tab-processing",
+                label_class_name="ta-tab-label",
+                id="dsc-tab-processing-shell",
+            ),
+            dbc.Tab(
+                [
+                    execute_card("dsc-run-status", "dsc-run-btn", card_title_id="dsc-execute-card-title"),
+                    html.Small(id="dsc-run-shortcut-hints", className="text-muted d-block mt-2"),
+                ],
+                tab_id="dsc-tab-run",
+                label_class_name="ta-tab-label",
+                id="dsc-tab-run-shell",
+            ),
+        ],
+        id="dsc-left-tabs",
+        active_tab="dsc-tab-setup",
+        className="mb-3",
+    )
+
+
+def _dsc_result_section(child: Any, *, role: str = "support") -> html.Div:
+    role_class = _DSC_RESULT_CARD_ROLES.get(role, _DSC_RESULT_CARD_ROLES["support"])
+    return html.Div(child, className=f"dsc-result-section {role_class}")
 
 
 def _peak_card(row: dict, idx: int, loc: str) -> dbc.Card:
@@ -180,34 +695,25 @@ def _peak_card(row: dict, idx: int, loc: str) -> dbc.Card:
 
 layout = html.Div(
     analysis_page_stores("dsc-refresh", "dsc-latest-result-id")
+    + _processing_draft_stores()
     + [
-        dcc.Store(id="dsc-figure-captured", data={}),
         html.Div(id="dsc-hero-slot"),
         dbc.Row(
             [
+                dbc.Col([_dsc_left_column_tabs()], md=4),
                 dbc.Col(
                     [
-                        dataset_selection_card("dsc-dataset-selector-area", card_title_id="dsc-dataset-card-title"),
-                        workflow_template_card(
-                            "dsc-template-select",
-                            "dsc-template-description",
-                            [],
-                            "dsc.general",
-                            card_title_id="dsc-workflow-card-title",
-                        ),
-                        execute_card("dsc-run-status", "dsc-run-btn", card_title_id="dsc-execute-card-title"),
-                    ],
-                    md=4,
-                ),
-                dbc.Col(
-                    [
-                        result_placeholder_card("dsc-result-metrics"),
-                        result_placeholder_card("dsc-result-tg-cards"),
-                        result_placeholder_card("dsc-result-figure"),
-                        result_placeholder_card("dsc-result-table"),
-                        result_placeholder_card("dsc-result-processing"),
+                        _dsc_result_section(result_placeholder_card("dsc-result-dataset-summary"), role="context"),
+                        _dsc_result_section(result_placeholder_card("dsc-result-metrics"), role="context"),
+                        _dsc_result_section(result_placeholder_card("dsc-result-quality"), role="support"),
+                        _dsc_result_section(result_placeholder_card("dsc-result-raw-metadata"), role="support"),
+                        _dsc_result_section(result_placeholder_card("dsc-result-figure"), role="hero"),
+                        _dsc_result_section(result_placeholder_card("dsc-result-event-cards"), role="support"),
+                        _dsc_result_section(result_placeholder_card("dsc-result-table"), role="support"),
+                        _dsc_result_section(result_placeholder_card("dsc-result-processing"), role="support"),
                     ],
                     md=8,
+                    className="dsc-results-surface",
                 ),
             ]
         ),
@@ -256,6 +762,176 @@ def render_dsc_locale_chrome(locale_data, template_id):
 
 
 @callback(
+    Output("dsc-tab-setup-shell", "label"),
+    Output("dsc-tab-processing-shell", "label"),
+    Output("dsc-tab-run-shell", "label"),
+    Input("ui-locale", "data"),
+)
+def render_dsc_tab_chrome(locale_data):
+    loc = _loc(locale_data)
+    return (
+        translate_ui(loc, "dash.analysis.dsc.tab.setup"),
+        translate_ui(loc, "dash.analysis.dsc.tab.processing"),
+        translate_ui(loc, "dash.analysis.dsc.tab.run"),
+    )
+
+
+@callback(
+    Output("dsc-run-shortcut-hints", "children"),
+    Input("ui-locale", "data"),
+)
+def render_dsc_run_shortcut_hints(locale_data):
+    loc = _loc(locale_data)
+    return html.Span(
+        [
+            translate_ui(loc, "dash.analysis.dsc.shortcuts.hint_undo"),
+            html.Br(),
+            translate_ui(loc, "dash.analysis.dsc.shortcuts.hint_redo"),
+            html.Br(),
+            translate_ui(loc, "dash.analysis.dsc.shortcuts.hint_run"),
+        ],
+        className="d-block",
+    )
+
+
+@callback(
+    Output("dsc-preset-card-title", "children"),
+    Output("dsc-preset-select-label", "children"),
+    Output("dsc-preset-select", "placeholder"),
+    Output("dsc-preset-apply-btn", "children"),
+    Output("dsc-preset-delete-btn", "children"),
+    Output("dsc-preset-save-name-label", "children"),
+    Output("dsc-preset-save-name", "placeholder"),
+    Output("dsc-preset-save-btn", "children"),
+    Output("dsc-preset-help", "children"),
+    Input("ui-locale", "data"),
+)
+def render_dsc_preset_chrome(locale_data):
+    loc = _loc(locale_data)
+    return (
+        translate_ui(loc, "dash.analysis.dsc.presets.title"),
+        translate_ui(loc, "dash.analysis.dsc.presets.select_label"),
+        translate_ui(loc, "dash.analysis.dsc.presets.select_placeholder"),
+        translate_ui(loc, "dash.analysis.dsc.presets.apply_btn"),
+        translate_ui(loc, "dash.analysis.dsc.presets.delete_btn"),
+        translate_ui(loc, "dash.analysis.dsc.presets.save_name_label"),
+        translate_ui(loc, "dash.analysis.dsc.presets.save_name_placeholder"),
+        translate_ui(loc, "dash.analysis.dsc.presets.save_btn"),
+        translate_ui(loc, "dash.analysis.dsc.presets.help.overview"),
+    )
+
+
+@callback(
+    Output("dsc-smoothing-card-title", "children"),
+    Output("dsc-smooth-method-label", "children"),
+    Output("dsc-smooth-window-label", "children"),
+    Output("dsc-smooth-polyorder-label", "children"),
+    Output("dsc-smooth-sigma-label", "children"),
+    Output("dsc-smooth-apply-btn", "children"),
+    Output("dsc-undo-btn", "children"),
+    Output("dsc-redo-btn", "children"),
+    Output("dsc-reset-btn", "children"),
+    Output("dsc-smooth-method-hint", "children"),
+    Output("dsc-smooth-window-hint", "children"),
+    Output("dsc-smooth-polyorder-hint", "children"),
+    Output("dsc-smooth-sigma-hint", "children"),
+    Input("ui-locale", "data"),
+)
+def render_dsc_smoothing_chrome(locale_data):
+    loc = _loc(locale_data)
+    return (
+        translate_ui(loc, "dash.analysis.dsc.smoothing.title"),
+        translate_ui(loc, "dash.analysis.dsc.smoothing.method"),
+        translate_ui(loc, "dash.analysis.dsc.smoothing.window"),
+        translate_ui(loc, "dash.analysis.dsc.smoothing.polyorder"),
+        translate_ui(loc, "dash.analysis.dsc.smoothing.sigma"),
+        translate_ui(loc, "dash.analysis.dsc.smoothing.apply_btn"),
+        translate_ui(loc, "dash.analysis.dsc.undo_btn"),
+        translate_ui(loc, "dash.analysis.dsc.redo_btn"),
+        translate_ui(loc, "dash.analysis.dsc.reset_btn"),
+        translate_ui(loc, "dash.analysis.dsc.smoothing.help.method"),
+        translate_ui(loc, "dash.analysis.dsc.smoothing.help.window"),
+        translate_ui(loc, "dash.analysis.dsc.smoothing.help.polyorder"),
+        translate_ui(loc, "dash.analysis.dsc.smoothing.help.sigma"),
+    )
+
+
+@callback(
+    Output("dsc-baseline-card-title", "children"),
+    Output("dsc-baseline-method-label", "children"),
+    Output("dsc-baseline-lam-label", "children"),
+    Output("dsc-baseline-p-label", "children"),
+    Output("dsc-baseline-apply-btn", "children"),
+    Output("dsc-baseline-method-hint", "children"),
+    Output("dsc-baseline-lam-hint", "children"),
+    Output("dsc-baseline-p-hint", "children"),
+    Input("ui-locale", "data"),
+)
+def render_dsc_baseline_chrome(locale_data):
+    loc = _loc(locale_data)
+    return (
+        translate_ui(loc, "dash.analysis.dsc.baseline.title"),
+        translate_ui(loc, "dash.analysis.dsc.baseline.method"),
+        translate_ui(loc, "dash.analysis.dsc.baseline.lam"),
+        translate_ui(loc, "dash.analysis.dsc.baseline.p"),
+        translate_ui(loc, "dash.analysis.dsc.baseline.apply_btn"),
+        translate_ui(loc, "dash.analysis.dsc.baseline.help.method"),
+        translate_ui(loc, "dash.analysis.dsc.baseline.help.lam"),
+        translate_ui(loc, "dash.analysis.dsc.baseline.help.p"),
+    )
+
+
+@callback(
+    Output("dsc-peak-card-title", "children"),
+    Output("dsc-peak-direction-label", "children"),
+    Output("dsc-peak-prominence-label", "children"),
+    Output("dsc-peak-distance-label", "children"),
+    Output("dsc-peak-apply-btn", "children"),
+    Output("dsc-peak-direction-hint", "children"),
+    Output("dsc-peak-prominence-hint", "children"),
+    Output("dsc-peak-distance-hint", "children"),
+    Input("ui-locale", "data"),
+)
+def render_dsc_peak_chrome(locale_data):
+    loc = _loc(locale_data)
+    return (
+        translate_ui(loc, "dash.analysis.dsc.peaks.title"),
+        translate_ui(loc, "dash.analysis.dsc.peaks.direction"),
+        translate_ui(loc, "dash.analysis.dsc.peaks.prominence"),
+        translate_ui(loc, "dash.analysis.dsc.peaks.distance"),
+        translate_ui(loc, "dash.analysis.dsc.peaks.apply_btn"),
+        translate_ui(loc, "dash.analysis.dsc.peaks.help.direction"),
+        translate_ui(loc, "dash.analysis.dsc.peaks.help.prominence"),
+        translate_ui(loc, "dash.analysis.dsc.peaks.help.distance"),
+    )
+
+
+@callback(
+    Output("dsc-tg-card-title", "children"),
+    Output("dsc-tg-region-enabled", "label"),
+    Output("dsc-tg-region-min-label", "children"),
+    Output("dsc-tg-region-max-label", "children"),
+    Output("dsc-tg-apply-btn", "children"),
+    Output("dsc-tg-region-enable-hint", "children"),
+    Output("dsc-tg-region-min-hint", "children"),
+    Output("dsc-tg-region-max-hint", "children"),
+    Input("ui-locale", "data"),
+)
+def render_dsc_tg_chrome(locale_data):
+    loc = _loc(locale_data)
+    return (
+        translate_ui(loc, "dash.analysis.dsc.tg.title"),
+        translate_ui(loc, "dash.analysis.dsc.tg.enable_region"),
+        translate_ui(loc, "dash.analysis.dsc.tg.region_min"),
+        translate_ui(loc, "dash.analysis.dsc.tg.region_max"),
+        translate_ui(loc, "dash.analysis.dsc.tg.apply_btn"),
+        translate_ui(loc, "dash.analysis.dsc.tg.help.enable_region"),
+        translate_ui(loc, "dash.analysis.dsc.tg.help.region_min"),
+        translate_ui(loc, "dash.analysis.dsc.tg.help.region_max"),
+    )
+
+
+@callback(
     Output("dsc-dataset-selector-area", "children"),
     Output("dsc-run-btn", "disabled"),
     Input("project-id", "data"),
@@ -287,6 +963,488 @@ def load_eligible_datasets(project_id, _refresh, locale_data):
 
 
 @callback(
+    Output("dsc-preset-select", "options"),
+    Output("dsc-preset-caption", "children"),
+    Input("dsc-preset-refresh", "data"),
+    Input("ui-locale", "data"),
+)
+def refresh_dsc_preset_options(_refresh_token, locale_data):
+    from dash_app import api_client
+
+    loc = _loc(locale_data)
+    try:
+        payload = api_client.list_analysis_presets(_DSC_PRESET_ANALYSIS_TYPE)
+    except Exception as exc:
+        message = translate_ui(loc, "dash.analysis.dsc.presets.list_failed").format(error=str(exc))
+        return [], message
+
+    presets = payload.get("presets") or []
+    options = [
+        {"label": item.get("preset_name", ""), "value": item.get("preset_name", "")}
+        for item in presets
+        if isinstance(item, dict) and item.get("preset_name")
+    ]
+    caption = translate_ui(loc, "dash.analysis.dsc.presets.caption").format(
+        analysis_type=payload.get("analysis_type", _DSC_PRESET_ANALYSIS_TYPE),
+        count=int(payload.get("count", len(options)) or 0),
+        max_count=int(payload.get("max_count", 10) or 10),
+    )
+    return options, caption
+
+
+@callback(
+    Output("dsc-preset-apply-btn", "disabled"),
+    Output("dsc-preset-delete-btn", "disabled"),
+    Input("dsc-preset-select", "value"),
+)
+def toggle_dsc_preset_action_buttons(selected_name):
+    has_selection = bool(str(selected_name or "").strip())
+    return (not has_selection, not has_selection)
+
+
+@callback(
+    Output("dsc-processing-draft", "data", allow_duplicate=True),
+    Output("dsc-processing-undo", "data", allow_duplicate=True),
+    Output("dsc-processing-redo", "data", allow_duplicate=True),
+    Output("dsc-template-select", "value", allow_duplicate=True),
+    Output("dsc-preset-status", "children", allow_duplicate=True),
+    Output("dsc-left-tabs", "active_tab", allow_duplicate=True),
+    Input("dsc-preset-apply-btn", "n_clicks"),
+    State("dsc-preset-select", "value"),
+    State("dsc-processing-draft", "data"),
+    State("dsc-processing-undo", "data"),
+    State("ui-locale", "data"),
+    prevent_initial_call=True,
+)
+def apply_dsc_preset(n_clicks, selected_name, draft, undo, locale_data):
+    from dash_app import api_client
+
+    loc = _loc(locale_data)
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    name = str(selected_name or "").strip()
+    if not name:
+        return (
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            translate_ui(loc, "dash.analysis.dsc.presets.select_required"),
+            dash.no_update,
+        )
+    try:
+        payload = api_client.load_analysis_preset(_DSC_PRESET_ANALYSIS_TYPE, name)
+    except Exception as exc:
+        return (
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            translate_ui(loc, "dash.analysis.dsc.presets.apply_failed").format(error=str(exc)),
+            dash.no_update,
+        )
+
+    processing = dict(payload.get("processing") or {})
+    next_draft = copy.deepcopy(draft or _default_processing_draft())
+    for section in ("smoothing", "baseline", "peak_detection", "glass_transition"):
+        values = processing.get(section)
+        if isinstance(values, dict):
+            next_draft[section] = copy.deepcopy(values)
+
+    template_id_raw = str(payload.get("workflow_template_id") or "").strip()
+    template_output = template_id_raw if template_id_raw in _DSC_TEMPLATE_IDS else dash.no_update
+    next_undo = _push_undo(undo, draft)
+    status = translate_ui(loc, "dash.analysis.dsc.presets.applied").format(preset=name)
+    return next_draft, next_undo, [], template_output, status, "dsc-tab-run"
+
+
+@callback(
+    Output("dsc-preset-refresh", "data", allow_duplicate=True),
+    Output("dsc-preset-save-name", "value", allow_duplicate=True),
+    Output("dsc-preset-status", "children", allow_duplicate=True),
+    Output("dsc-left-tabs", "active_tab", allow_duplicate=True),
+    Input("dsc-preset-save-btn", "n_clicks"),
+    State("dsc-preset-save-name", "value"),
+    State("dsc-processing-draft", "data"),
+    State("dsc-template-select", "value"),
+    State("dsc-preset-refresh", "data"),
+    State("ui-locale", "data"),
+    prevent_initial_call=True,
+)
+def save_dsc_preset(n_clicks, save_name, draft, template_id, refresh_token, locale_data):
+    from dash_app import api_client
+
+    loc = _loc(locale_data)
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    name = str(save_name or "").strip()
+    if not name:
+        return (
+            dash.no_update,
+            dash.no_update,
+            translate_ui(loc, "dash.analysis.dsc.presets.save_name_required"),
+            dash.no_update,
+        )
+    try:
+        response = api_client.save_analysis_preset(
+            _DSC_PRESET_ANALYSIS_TYPE,
+            name,
+            workflow_template_id=str(template_id or "").strip() or None,
+            processing=_overrides_from_draft(draft or {}),
+        )
+    except Exception as exc:
+        return (
+            dash.no_update,
+            dash.no_update,
+            translate_ui(loc, "dash.analysis.dsc.presets.save_failed").format(error=str(exc)),
+            dash.no_update,
+        )
+    resolved_template = str(response.get("workflow_template_id") or template_id or "")
+    status = translate_ui(loc, "dash.analysis.dsc.presets.saved").format(preset=name, template=resolved_template)
+    return int(refresh_token or 0) + 1, "", status, "dsc-tab-run"
+
+
+@callback(
+    Output("dsc-preset-refresh", "data", allow_duplicate=True),
+    Output("dsc-preset-select", "value", allow_duplicate=True),
+    Output("dsc-preset-status", "children", allow_duplicate=True),
+    Input("dsc-preset-delete-btn", "n_clicks"),
+    State("dsc-preset-select", "value"),
+    State("dsc-preset-refresh", "data"),
+    State("ui-locale", "data"),
+    prevent_initial_call=True,
+)
+def delete_dsc_preset(n_clicks, selected_name, refresh_token, locale_data):
+    from dash_app import api_client
+
+    loc = _loc(locale_data)
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    name = str(selected_name or "").strip()
+    if not name:
+        return dash.no_update, dash.no_update, translate_ui(loc, "dash.analysis.dsc.presets.select_required")
+    try:
+        api_client.delete_analysis_preset(_DSC_PRESET_ANALYSIS_TYPE, name)
+    except Exception as exc:
+        return (
+            dash.no_update,
+            dash.no_update,
+            translate_ui(loc, "dash.analysis.dsc.presets.delete_failed").format(error=str(exc)),
+        )
+    status = translate_ui(loc, "dash.analysis.dsc.presets.deleted").format(preset=name)
+    return int(refresh_token or 0) + 1, None, status
+
+
+@callback(
+    Output("dsc-smooth-window", "disabled"),
+    Output("dsc-smooth-polyorder", "disabled"),
+    Output("dsc-smooth-sigma", "disabled"),
+    Input("dsc-smooth-method", "value"),
+)
+def toggle_smoothing_inputs(method):
+    token = str(method or "savgol").strip().lower()
+    if token == "savgol":
+        return False, False, True
+    if token == "moving_average":
+        return False, True, True
+    return True, True, False
+
+
+@callback(
+    Output("dsc-baseline-lam", "disabled"),
+    Output("dsc-baseline-p", "disabled"),
+    Input("dsc-baseline-method", "value"),
+)
+def toggle_baseline_inputs(method):
+    token = str(method or "asls").strip().lower()
+    if token == "asls":
+        return False, False
+    return True, True
+
+
+@callback(
+    Output("dsc-tg-region-min", "disabled"),
+    Output("dsc-tg-region-max", "disabled"),
+    Input("dsc-tg-region-enabled", "value"),
+)
+def toggle_tg_region_inputs(enabled):
+    return (not bool(enabled), not bool(enabled))
+
+
+@callback(
+    Output("dsc-processing-draft", "data", allow_duplicate=True),
+    Output("dsc-processing-undo", "data", allow_duplicate=True),
+    Output("dsc-processing-redo", "data", allow_duplicate=True),
+    Input("dsc-smooth-apply-btn", "n_clicks"),
+    State("dsc-smooth-method", "value"),
+    State("dsc-smooth-window", "value"),
+    State("dsc-smooth-polyorder", "value"),
+    State("dsc-smooth-sigma", "value"),
+    State("dsc-processing-draft", "data"),
+    State("dsc-processing-undo", "data"),
+    prevent_initial_call=True,
+)
+def apply_smoothing(n_clicks, method, window, polyorder, sigma, draft, undo):
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    values = _normalize_smoothing_values(method, window, polyorder, sigma)
+    next_undo = _push_undo(undo, draft)
+    next_draft = _apply_draft_section(draft, "smoothing", values)
+    return next_draft, next_undo, []
+
+
+@callback(
+    Output("dsc-processing-draft", "data", allow_duplicate=True),
+    Output("dsc-processing-undo", "data", allow_duplicate=True),
+    Output("dsc-processing-redo", "data", allow_duplicate=True),
+    Input("dsc-baseline-apply-btn", "n_clicks"),
+    State("dsc-baseline-method", "value"),
+    State("dsc-baseline-lam", "value"),
+    State("dsc-baseline-p", "value"),
+    State("dsc-processing-draft", "data"),
+    State("dsc-processing-undo", "data"),
+    prevent_initial_call=True,
+)
+def apply_baseline(n_clicks, method, lam, p, draft, undo):
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    values = _normalize_baseline_values(method, lam, p)
+    next_undo = _push_undo(undo, draft)
+    next_draft = _apply_draft_section(draft, "baseline", values)
+    return next_draft, next_undo, []
+
+
+@callback(
+    Output("dsc-processing-draft", "data", allow_duplicate=True),
+    Output("dsc-processing-undo", "data", allow_duplicate=True),
+    Output("dsc-processing-redo", "data", allow_duplicate=True),
+    Input("dsc-peak-apply-btn", "n_clicks"),
+    State("dsc-peak-direction", "value"),
+    State("dsc-peak-prominence", "value"),
+    State("dsc-peak-distance", "value"),
+    State("dsc-processing-draft", "data"),
+    State("dsc-processing-undo", "data"),
+    prevent_initial_call=True,
+)
+def apply_peak_detection(n_clicks, direction, prominence, distance, draft, undo):
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    values = _normalize_peak_detection_values(direction, prominence, distance)
+    next_undo = _push_undo(undo, draft)
+    next_draft = _apply_draft_section(draft, "peak_detection", values)
+    return next_draft, next_undo, []
+
+
+@callback(
+    Output("dsc-processing-draft", "data", allow_duplicate=True),
+    Output("dsc-processing-undo", "data", allow_duplicate=True),
+    Output("dsc-processing-redo", "data", allow_duplicate=True),
+    Input("dsc-tg-apply-btn", "n_clicks"),
+    State("dsc-tg-region-enabled", "value"),
+    State("dsc-tg-region-min", "value"),
+    State("dsc-tg-region-max", "value"),
+    State("dsc-processing-draft", "data"),
+    State("dsc-processing-undo", "data"),
+    prevent_initial_call=True,
+)
+def apply_glass_transition(n_clicks, enabled, region_min, region_max, draft, undo):
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    values = _normalize_glass_transition_values(enabled, region_min, region_max)
+    next_undo = _push_undo(undo, draft)
+    next_draft = _apply_draft_section(draft, "glass_transition", values)
+    return next_draft, next_undo, []
+
+
+@callback(
+    Output("dsc-processing-draft", "data", allow_duplicate=True),
+    Output("dsc-processing-undo", "data", allow_duplicate=True),
+    Output("dsc-processing-redo", "data", allow_duplicate=True),
+    Input("dsc-undo-btn", "n_clicks"),
+    State("dsc-processing-draft", "data"),
+    State("dsc-processing-undo", "data"),
+    State("dsc-processing-redo", "data"),
+    prevent_initial_call=True,
+)
+def undo_processing(n_clicks, draft, undo, redo):
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    next_draft, next_undo, next_redo = _do_undo(draft or {}, undo, redo)
+    return next_draft, next_undo, next_redo
+
+
+@callback(
+    Output("dsc-processing-draft", "data", allow_duplicate=True),
+    Output("dsc-processing-undo", "data", allow_duplicate=True),
+    Output("dsc-processing-redo", "data", allow_duplicate=True),
+    Input("dsc-redo-btn", "n_clicks"),
+    State("dsc-processing-draft", "data"),
+    State("dsc-processing-undo", "data"),
+    State("dsc-processing-redo", "data"),
+    prevent_initial_call=True,
+)
+def redo_processing(n_clicks, draft, undo, redo):
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    next_draft, next_undo, next_redo = _do_redo(draft or {}, undo, redo)
+    return next_draft, next_undo, next_redo
+
+
+@callback(
+    Output("dsc-processing-draft", "data", allow_duplicate=True),
+    Output("dsc-processing-undo", "data", allow_duplicate=True),
+    Output("dsc-processing-redo", "data", allow_duplicate=True),
+    Input("dsc-reset-btn", "n_clicks"),
+    State("dsc-processing-draft", "data"),
+    State("dsc-processing-undo", "data"),
+    State("dsc-processing-redo", "data"),
+    State("dsc-processing-default", "data"),
+    prevent_initial_call=True,
+)
+def reset_processing(n_clicks, draft, undo, redo, defaults):
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    next_draft, next_undo, next_redo = _do_reset(draft or {}, undo, redo, defaults)
+    return next_draft, next_undo, next_redo
+
+
+def _smoothing_status_text(draft: dict | None, loc: str) -> str:
+    values = (draft or {}).get("smoothing") or {}
+    method = str(values.get("method") or "savgol")
+    method_label = {"savgol": "Savitzky-Golay", "moving_average": "Moving Average", "gaussian": "Gaussian"}.get(method, method)
+    parts = [method_label]
+    if "window_length" in values:
+        parts.append(f"window={values['window_length']}")
+    if "polyorder" in values:
+        parts.append(f"polyorder={values['polyorder']}")
+    if "sigma" in values:
+        parts.append(f"sigma={values['sigma']}")
+    applied = translate_ui(loc, "dash.analysis.dsc.smoothing.applied")
+    return f"{applied}: {' - '.join(parts)}"
+
+
+def _baseline_status_text(draft: dict | None, loc: str) -> str:
+    values = (draft or {}).get("baseline") or {}
+    method = str(values.get("method") or "asls")
+    method_label = {"asls": "AsLS", "linear": "Linear", "rubberband": "Rubberband"}.get(method, method)
+    parts = [method_label]
+    if method == "asls":
+        if "lam" in values:
+            parts.append(f"lam={values['lam']:g}")
+        if "p" in values:
+            parts.append(f"p={values['p']:g}")
+    applied = translate_ui(loc, "dash.analysis.dsc.baseline.applied")
+    return f"{applied}: {' - '.join(parts)}"
+
+
+def _peak_status_text(draft: dict | None, loc: str) -> str:
+    values = (draft or {}).get("peak_detection") or {}
+    direction = str(values.get("direction") or "both")
+    parts = [f"direction={direction}"]
+    prominence = values.get("prominence")
+    if prominence is not None:
+        parts.append("prominence=auto" if float(prominence) == 0.0 else f"prominence={prominence:g}")
+    distance = values.get("distance")
+    if distance is not None:
+        parts.append(f"distance={int(distance)}")
+    applied = translate_ui(loc, "dash.analysis.dsc.peaks.applied")
+    return f"{applied}: {' - '.join(parts)}"
+
+
+def _tg_status_text(draft: dict | None, loc: str) -> str:
+    values = (draft or {}).get("glass_transition") or {}
+    region = values.get("region")
+    applied = translate_ui(loc, "dash.analysis.dsc.tg.applied")
+    if isinstance(region, (list, tuple)) and len(region) == 2:
+        return f"{applied}: {translate_ui(loc, 'dash.analysis.dsc.tg.region_custom').format(tmin=region[0], tmax=region[1])}"
+    return f"{applied}: {translate_ui(loc, 'dash.analysis.dsc.tg.region_auto')}"
+
+
+@callback(
+    Output("dsc-smooth-method", "value"),
+    Output("dsc-smooth-window", "value"),
+    Output("dsc-smooth-polyorder", "value"),
+    Output("dsc-smooth-sigma", "value"),
+    Output("dsc-smooth-status", "children"),
+    Output("dsc-undo-btn", "disabled"),
+    Output("dsc-redo-btn", "disabled"),
+    Output("dsc-reset-btn", "disabled"),
+    Input("dsc-processing-draft", "data"),
+    Input("dsc-processing-undo", "data"),
+    Input("dsc-processing-redo", "data"),
+    Input("dsc-processing-default", "data"),
+    Input("ui-locale", "data"),
+)
+def sync_smoothing_controls(draft, undo, redo, defaults, locale_data):
+    loc = _loc(locale_data)
+    values = (draft or {}).get("smoothing") or {}
+    method = str(values.get("method") or "savgol")
+    window_length = values.get("window_length", 11)
+    polyorder = values.get("polyorder", 3)
+    sigma = values.get("sigma", 2.0)
+    status = _smoothing_status_text(draft, loc)
+    undo_disabled = not bool(undo)
+    redo_disabled = not bool(redo)
+    reset_disabled = (draft or {}) == (defaults or {})
+    return method, window_length, polyorder, sigma, status, undo_disabled, redo_disabled, reset_disabled
+
+
+@callback(
+    Output("dsc-baseline-method", "value"),
+    Output("dsc-baseline-lam", "value"),
+    Output("dsc-baseline-p", "value"),
+    Output("dsc-baseline-status", "children"),
+    Input("dsc-processing-draft", "data"),
+    Input("ui-locale", "data"),
+)
+def sync_baseline_controls(draft, locale_data):
+    loc = _loc(locale_data)
+    values = (draft or {}).get("baseline") or {}
+    method = str(values.get("method") or "asls")
+    lam = values.get("lam", 1e6)
+    p = values.get("p", 0.01)
+    status = _baseline_status_text(draft, loc)
+    return method, lam, p, status
+
+
+@callback(
+    Output("dsc-peak-direction", "value"),
+    Output("dsc-peak-prominence", "value"),
+    Output("dsc-peak-distance", "value"),
+    Output("dsc-peak-status", "children"),
+    Input("dsc-processing-draft", "data"),
+    Input("ui-locale", "data"),
+)
+def sync_peak_controls(draft, locale_data):
+    loc = _loc(locale_data)
+    values = (draft or {}).get("peak_detection") or {}
+    direction = str(values.get("direction") or "both")
+    prominence = values.get("prominence", 0.0)
+    distance = values.get("distance", 1)
+    status = _peak_status_text(draft, loc)
+    return direction, prominence, distance, status
+
+
+@callback(
+    Output("dsc-tg-region-enabled", "value"),
+    Output("dsc-tg-region-min", "value"),
+    Output("dsc-tg-region-max", "value"),
+    Output("dsc-tg-status", "children"),
+    Input("dsc-processing-draft", "data"),
+    Input("ui-locale", "data"),
+)
+def sync_tg_controls(draft, locale_data):
+    loc = _loc(locale_data)
+    values = (draft or {}).get("glass_transition") or {}
+    region = values.get("region")
+    enabled = isinstance(region, (list, tuple)) and len(region) == 2
+    region_min = region[0] if enabled else None
+    region_max = region[1] if enabled else None
+    status = _tg_status_text(draft, loc)
+    return bool(enabled), region_min, region_max, status
+
+
+@callback(
     Output("dsc-run-status", "children"),
     Output("dsc-refresh", "data", allow_duplicate=True),
     Output("dsc-latest-result-id", "data", allow_duplicate=True),
@@ -298,21 +1456,33 @@ def load_eligible_datasets(project_id, _refresh, locale_data):
     State("dsc-refresh", "data"),
     State("workspace-refresh", "data"),
     State("ui-locale", "data"),
+    State("dsc-processing-draft", "data"),
     prevent_initial_call=True,
 )
-def run_dsc_analysis(n_clicks, project_id, dataset_key, template_id, refresh_val, global_refresh, locale_data):
+def run_dsc_analysis(
+    n_clicks,
+    project_id,
+    dataset_key,
+    template_id,
+    refresh_val,
+    global_refresh,
+    locale_data,
+    processing_draft,
+):
     loc = _loc(locale_data)
     if not n_clicks or not project_id or not dataset_key:
         raise dash.exceptions.PreventUpdate
 
     from dash_app.api_client import analysis_run
 
+    overrides = _overrides_from_draft(processing_draft) or None
     try:
         result = analysis_run(
             project_id=project_id,
             dataset_key=dataset_key,
             analysis_type="DSC",
             workflow_template_id=template_id,
+            processing_overrides=overrides,
         )
     except Exception as exc:
         return dbc.Alert(translate_ui(loc, "dash.analysis.analysis_failed", error=str(exc)), color="danger"), dash.no_update, dash.no_update, dash.no_update
@@ -325,9 +1495,12 @@ def run_dsc_analysis(n_clicks, project_id, dataset_key, template_id, refresh_val
 
 
 @callback(
+    Output("dsc-result-dataset-summary", "children"),
     Output("dsc-result-metrics", "children"),
-    Output("dsc-result-tg-cards", "children"),
+    Output("dsc-result-quality", "children"),
+    Output("dsc-result-raw-metadata", "children"),
     Output("dsc-result-figure", "children"),
+    Output("dsc-result-event-cards", "children"),
     Output("dsc-result-table", "children"),
     Output("dsc-result-processing", "children"),
     Input("dsc-latest-result-id", "data"),
@@ -339,26 +1512,57 @@ def run_dsc_analysis(n_clicks, project_id, dataset_key, template_id, refresh_val
 def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
     loc = _loc(locale_data)
     empty_msg = empty_result_msg(locale_data=locale_data)
+    summary_empty = html.P(translate_ui(loc, "dash.analysis.dsc.summary.empty"), className="text-muted")
+    quality_empty = _dsc_collapsible_section(
+        loc,
+        "dash.analysis.dsc.quality.card_title",
+        html.P(translate_ui(loc, "dash.analysis.dsc.quality.empty"), className="text-muted mb-0"),
+        open=False,
+    )
+    raw_meta_empty = _dsc_collapsible_section(
+        loc,
+        "dash.analysis.dsc.raw_metadata.card_title",
+        html.P(translate_ui(loc, "dash.analysis.dsc.raw_metadata.empty"), className="text-muted mb-0"),
+        open=False,
+    )
     if not result_id or not project_id:
-        return empty_msg, empty_msg, empty_msg, empty_msg, empty_msg
+        return summary_empty, empty_msg, quality_empty, raw_meta_empty, empty_msg, empty_msg, empty_msg, empty_msg
 
-    from dash_app.api_client import workspace_result_detail
+    from dash_app.api_client import workspace_dataset_detail, workspace_result_detail
 
     try:
         detail = workspace_result_detail(project_id, result_id)
     except Exception as exc:
         err = dbc.Alert(translate_ui(loc, "dash.analysis.error_loading_result", error=str(exc)), color="danger")
-        return err, empty_msg, empty_msg, empty_msg, empty_msg
+        return summary_empty, err, quality_empty, raw_meta_empty, empty_msg, empty_msg, empty_msg, empty_msg
 
     summary = detail.get("summary", {})
     result_meta = detail.get("result", {})
     processing = detail.get("processing", {})
-    rows = detail.get("rows_preview", [])
+    rows = _event_rows(detail.get("rows") or detail.get("rows_preview") or [])
+    dataset_key = result_meta.get("dataset_key")
 
-    # --- Metrics row ---
-    peak_count = summary.get("peak_count", 0)
-    tg_count = summary.get("glass_transition_count", 0)
-    sample_name = resolve_sample_name(summary, result_meta, locale_data=locale_data)
+    dataset_detail = {}
+    if dataset_key:
+        try:
+            dataset_detail = workspace_dataset_detail(project_id, dataset_key)
+        except Exception:
+            dataset_detail = {}
+
+    dataset_summary_panel = _build_dsc_dataset_summary(
+        dataset_detail,
+        summary,
+        result_meta,
+        loc,
+        locale_data=locale_data,
+    )
+    quality_panel = _build_dsc_quality_card(detail, result_meta, loc)
+    raw_metadata_panel = _build_dsc_raw_metadata_panel((dataset_detail or {}).get("metadata"), loc)
+
+    peak_count = int(summary.get("peak_count") or len(rows) or 0)
+    tg_count = int(summary.get("glass_transition_count") or 0)
+    fallback_display_name = _format_dataset_metadata_value(((dataset_detail or {}).get("dataset") or {}).get("display_name"))
+    sample_name = resolve_sample_name(summary, result_meta, fallback_display_name=fallback_display_name, locale_data=locale_data)
     na = translate_ui(loc, "dash.analysis.na")
     metrics = metrics_row(
         [
@@ -370,19 +1574,13 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
         locale_data=locale_data,
     )
 
-    # --- Tg metric cards ---
-    tg_cards = _build_tg_cards(summary, loc)
-
-    # --- Figure with smoothed/baseline/corrected overlay ---
-    dataset_key = result_meta.get("dataset_key")
     figure_area = empty_msg
     if dataset_key:
-        figure_area = _build_figure(project_id, dataset_key, summary, rows, ui_theme, loc)
+        figure_area = _build_figure(project_id, dataset_key, summary, rows, ui_theme, loc, locale_data=locale_data)
 
-    # --- Peak cards + table ---
-    table_area = _build_peak_section(rows, loc)
+    event_cards = _build_event_cards(summary, rows, loc)
+    table_area = _build_peak_table(rows, loc)
 
-    # --- Processing info ---
     proc_view = processing_details_section(
         processing,
         extra_lines=[
@@ -412,8 +1610,35 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
         ],
         locale_data=locale_data,
     )
+    proc_view = _wrap_dsc_processing_details(proc_view, processing, loc)
 
-    return metrics, tg_cards, figure_area, table_area, proc_view
+    return (
+        dataset_summary_panel,
+        metrics,
+        quality_panel,
+        raw_metadata_panel,
+        figure_area,
+        event_cards,
+        table_area,
+        proc_view,
+    )
+
+
+def _dsc_collapsible_section(loc: str, title_key: str, body: Any, *, open: bool = False) -> html.Details:
+    return html.Details(
+        [
+            html.Summary(
+                [
+                    html.Span(className="ta-details-chevron"),
+                    html.Span(translate_ui(loc, title_key), className="ms-1"),
+                ],
+                className="ta-details-summary",
+            ),
+            html.Div(body, className="ta-details-body mt-2"),
+        ],
+        className="ta-ms-details mb-0",
+        open=open,
+    )
 
 
 @callback(
@@ -438,31 +1663,393 @@ def capture_dsc_figure(result_id, project_id, figure_children, captured):
 # DSC-specific builders
 # ---------------------------------------------------------------------------
 
-def _build_tg_cards(summary: dict, loc: str) -> html.Div:
-    tg_mid = summary.get("tg_midpoint")
-    tg_onset = summary.get("tg_onset")
-    tg_endset = summary.get("tg_endset")
-    delta_cp = summary.get("delta_cp")
-    tg_count = summary.get("glass_transition_count", 0)
+def _coerce_float(value) -> float | None:
+    try:
+        if value in (None, ""):
+            return None
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _format_dataset_metadata_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, float):
+        if value != value:
+            return None
+        text = f"{value:g}"
+    else:
+        text = str(value).strip()
+    return text or None
+
+
+def _series_for_temperature(series: list | tuple, temperature: list[float]) -> list[float]:
+    if not isinstance(series, (list, tuple)) or len(series) != len(temperature):
+        return []
+    values: list[float] = []
+    for item in series:
+        parsed = _coerce_float(item)
+        if parsed is None:
+            return []
+        values.append(parsed)
+    return values
+
+
+def _format_temp_c(value: float | None) -> str:
+    if value is None:
+        return "--"
+    return f"{value:.1f} °C"
+
+
+def _format_numeric(value: float | None, *, digits: int = 3) -> str:
+    if value is None:
+        return "--"
+    return f"{value:.{digits}f}"
+
+
+def _peak_type_label(peak_type: str | None, loc: str) -> str:
+    token = str(peak_type or "").strip().lower()
+    if token.startswith("endo"):
+        return translate_ui(loc, "dash.analysis.dsc.peak_type.endotherm")
+    if token.startswith("exo"):
+        return translate_ui(loc, "dash.analysis.dsc.peak_type.exotherm")
+    if token == "step":
+        return translate_ui(loc, "dash.analysis.dsc.peak_type.step")
+    return translate_ui(loc, "dash.analysis.dsc.peak_type.unknown")
+
+
+def _event_rows(rows: list) -> list[dict]:
+    clean = [dict(item) for item in rows if isinstance(item, dict)]
+    return _sort_events_by_temperature(clean)
+
+
+def _sort_events_by_temperature(rows: list[dict]) -> list[dict]:
+    return sorted(rows, key=lambda row: _coerce_float(row.get("peak_temperature")) or float("inf"))
+
+
+def _event_score(row: dict) -> float:
+    area = abs(_coerce_float(row.get("area")) or 0.0)
+    if area > 0:
+        return area
+    return abs(_coerce_float(row.get("height")) or 0.0)
+
+
+def _split_primary_events(rows: list[dict], *, limit: int = 4) -> tuple[list[dict], list[dict]]:
+    if len(rows) <= limit:
+        return rows, []
+    indexed = list(enumerate(rows))
+    ranked = sorted(
+        indexed,
+        key=lambda item: (
+            -_event_score(item[1]),
+            _coerce_float(item[1].get("peak_temperature")) or float("inf"),
+            item[0],
+        ),
+    )
+    primary_idx = {idx for idx, _ in ranked[:limit]}
+    primary = _sort_events_by_temperature([row for idx, row in indexed if idx in primary_idx])
+    secondary = _sort_events_by_temperature([row for idx, row in indexed if idx not in primary_idx])
+    return primary, secondary
+
+
+def _trace_hover_template(trace_name: str, loc: str) -> str:
+    return (
+        f"<b>{trace_name}</b><br>"
+        f"{translate_ui(loc, 'dash.analysis.dsc.figure.hover.temperature')}: %{{x:.2f}} °C<br>"
+        f"{translate_ui(loc, 'dash.analysis.dsc.figure.hover.signal')}: %{{y:.5g}}"
+        "<extra></extra>"
+    )
+
+
+def _event_hover_html(row: dict, y_value: float | None, loc: str) -> str:
+    peak_type_label = _peak_type_label(row.get("peak_type"), loc)
+    peak_temperature = _coerce_float(row.get("peak_temperature"))
+    onset = _coerce_float(row.get("onset_temperature"))
+    endset = _coerce_float(row.get("endset_temperature"))
+    area = _coerce_float(row.get("area"))
+    height = _coerce_float(row.get("height"))
+    return (
+        f"<b>{peak_type_label}</b><br>"
+        f"{translate_ui(loc, 'dash.analysis.dsc.figure.hover.temperature')}: {_format_temp_c(peak_temperature)}<br>"
+        f"{translate_ui(loc, 'dash.analysis.dsc.figure.hover.signal')}: {_format_numeric(y_value, digits=4)}<br>"
+        f"{translate_ui(loc, 'dash.analysis.label.onset')}: {_format_temp_c(onset)}<br>"
+        f"{translate_ui(loc, 'dash.analysis.label.endset')}: {_format_temp_c(endset)}<br>"
+        f"{translate_ui(loc, 'dash.analysis.label.area')}: {_format_numeric(area)}<br>"
+        f"{translate_ui(loc, 'dash.analysis.label.height')}: {_format_numeric(height)}"
+        "<extra></extra>"
+    )
+
+
+def _build_tg_cards(summary: dict, loc: str) -> list[Any]:
+    tg_mid = _coerce_float(summary.get("tg_midpoint"))
+    tg_onset = _coerce_float(summary.get("tg_onset"))
+    tg_endset = _coerce_float(summary.get("tg_endset"))
+    delta_cp = _coerce_float(summary.get("delta_cp"))
+    tg_count = int(summary.get("glass_transition_count") or (1 if tg_mid is not None else 0) or 0)
 
     if tg_count == 0 or tg_mid is None:
-        return html.Div(
-            [
-                html.H5(translate_ui(loc, "dash.analysis.section.glass_transitions"), className="mb-3"),
-                html.P(translate_ui(loc, "dash.analysis.state.not_detected"), className="text-muted"),
-            ]
-        )
+        return [html.P(translate_ui(loc, "dash.analysis.state.not_detected"), className="text-muted mb-0")]
 
-    cards = [html.H5(translate_ui(loc, "dash.analysis.section.glass_transitions"), className="mb-3")]
-    cards.append(_tg_card(tg_mid, tg_onset, tg_endset, delta_cp, idx=0, loc=loc))
+    cards: list[Any] = [
+        _tg_card(
+            tg_mid,
+            tg_onset if tg_onset is not None else tg_mid,
+            tg_endset if tg_endset is not None else tg_mid,
+            delta_cp if delta_cp is not None else 0.0,
+            idx=0,
+            loc=loc,
+        )
+    ]
     if tg_count > 1:
+        cards.append(html.P(translate_ui(loc, "dash.analysis.state.more_transitions", n=tg_count - 1), className="text-muted small mb-0"))
+    return cards
+
+
+def _build_event_cards(summary: dict, rows: list[dict], loc: str) -> html.Div:
+    tg_cards = _build_tg_cards(summary, loc)
+    primary_rows, secondary_rows = _split_primary_events(rows, limit=4)
+
+    cards: list[Any] = [
+        html.H5(translate_ui(loc, "dash.analysis.section.key_thermal_events"), className="mb-2"),
+        html.H6(translate_ui(loc, "dash.analysis.section.glass_transitions"), className="mb-2 mt-1"),
+        *tg_cards,
+        html.Hr(className="my-3"),
+        html.H6(translate_ui(loc, "dash.analysis.section.detected_peaks"), className="mb-2"),
+    ]
+
+    if not rows:
+        cards.append(html.P(translate_ui(loc, "dash.analysis.state.no_peaks"), className="text-muted mb-0"))
+        if not summary.get("glass_transition_count"):
+            cards.append(html.P(translate_ui(loc, "dash.analysis.dsc.events.empty"), className="text-muted small mt-2 mb-0"))
+        return html.Div(cards)
+
+    cards.append(
+        html.P(
+            translate_ui(loc, "dash.analysis.dsc.events_cards_intro", shown=len(primary_rows), total=len(rows)),
+            className="text-muted small mb-3",
+        )
+    )
+    cards.append(dbc.Row([dbc.Col(_peak_card(row, idx, loc), md=6) for idx, row in enumerate(primary_rows)], className="g-3"))
+
+    if secondary_rows:
         cards.append(
-            html.P(translate_ui(loc, "dash.analysis.state.more_transitions", n=tg_count - 1), className="text-muted small")
+            html.Details(
+                [
+                    html.Summary(translate_ui(loc, "dash.analysis.dsc.show_more_events", n=len(secondary_rows)), className="small"),
+                    html.Div(
+                        dataset_table(
+                            secondary_rows,
+                            ["peak_type", "peak_temperature", "onset_temperature", "endset_temperature", "area", "height"],
+                            table_id="dsc-secondary-events-table",
+                        ),
+                        className="mt-3",
+                    ),
+                ],
+                className="mt-3",
+            )
         )
     return html.Div(cards)
 
 
-def _build_figure(project_id: str, dataset_key: str, summary: dict, peak_rows: list, ui_theme: str | None, loc: str) -> html.Div:
+def _build_peak_table(rows: list[dict], loc: str) -> html.Div:
+    if not rows:
+        return html.Div(
+            [
+                html.H5(translate_ui(loc, "dash.analysis.section.all_event_details"), className="mb-3"),
+                html.P(translate_ui(loc, "dash.analysis.state.no_event_data"), className="text-muted"),
+            ]
+        )
+    columns = ["peak_type", "peak_temperature", "onset_temperature", "endset_temperature", "area", "fwhm", "height"]
+    return html.Div(
+        [
+            html.H5(translate_ui(loc, "dash.analysis.section.all_event_details"), className="mb-3"),
+            dataset_table(rows, columns, table_id="dsc-peaks-table"),
+        ]
+    )
+
+
+def _build_dsc_dataset_summary(
+    dataset_detail: dict,
+    summary: dict,
+    result_meta: dict,
+    loc: str,
+    *,
+    locale_data: str | None = None,
+) -> html.Div:
+    metadata = (dataset_detail or {}).get("metadata") or {}
+    dataset_summary = (dataset_detail or {}).get("dataset") or {}
+    na = translate_ui(loc, "dash.analysis.na")
+
+    dataset_label = (
+        _format_dataset_metadata_value(metadata.get("file_name"))
+        or _format_dataset_metadata_value(dataset_summary.get("display_name"))
+        or _format_dataset_metadata_value(result_meta.get("dataset_key"))
+        or na
+    )
+    fallback_display_name = _format_dataset_metadata_value(dataset_summary.get("display_name"))
+    sample_label = resolve_sample_name(
+        summary or {},
+        result_meta or {},
+        fallback_display_name=fallback_display_name,
+        locale_data=locale_data,
+    ) or na
+
+    sample_mass = _format_dataset_metadata_value(summary.get("sample_mass")) or _format_dataset_metadata_value(metadata.get("sample_mass"))
+    if sample_mass:
+        sample_mass = f"{sample_mass} {translate_ui(loc, 'dash.analysis.dsc.summary.mass_unit')}"
+    else:
+        sample_mass = na
+
+    heating_rate = _format_dataset_metadata_value(summary.get("heating_rate")) or _format_dataset_metadata_value(metadata.get("heating_rate"))
+    if heating_rate:
+        heating_rate = f"{heating_rate} {translate_ui(loc, 'dash.analysis.dsc.summary.heating_rate_unit')}"
+    else:
+        heating_rate = na
+
+    def _meta_value(value: str) -> html.Span:
+        return html.Span(value, className="dsc-meta-value", title=value)
+
+    rows: list[Any] = [
+        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.dataset_label"), className="col-sm-4 text-muted dsc-meta-term"),
+        html.Dd(_meta_value(dataset_label), className="col-sm-8 dsc-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.sample_label"), className="col-sm-4 text-muted dsc-meta-term"),
+        html.Dd(_meta_value(sample_label), className="col-sm-8 dsc-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.mass_label"), className="col-sm-4 text-muted dsc-meta-term"),
+        html.Dd(_meta_value(sample_mass), className="col-sm-8 dsc-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.heating_rate_label"), className="col-sm-4 text-muted dsc-meta-term"),
+        html.Dd(_meta_value(heating_rate), className="col-sm-8 dsc-meta-def"),
+    ]
+    return html.Div(
+        [
+            html.H5(translate_ui(loc, "dash.analysis.dsc.summary.card_title"), className="mb-3"),
+            html.Dl(rows, className="row mb-0"),
+        ]
+    )
+
+
+def _build_dsc_quality_card(detail: dict, result_meta: dict, loc: str) -> html.Details:
+    validation = detail.get("validation") if isinstance(detail.get("validation"), dict) else {}
+    status = str(validation.get("status") or result_meta.get("validation_status") or "unknown")
+    warnings_list = validation.get("warnings") if isinstance(validation.get("warnings"), list) else []
+    issues_list = validation.get("issues") if isinstance(validation.get("issues"), list) else []
+    wc = int(validation.get("warning_count", len(warnings_list)) or 0)
+    ic = int(validation.get("issue_count", len(issues_list)) or 0)
+
+    status_token = status.strip().lower()
+    if status_token in {"ok", "pass", "valid"} and wc == 0 and ic == 0:
+        alert_color = "success"
+    elif ic == 0:
+        alert_color = "warning"
+    else:
+        alert_color = "danger"
+
+    body_children: list[Any] = [
+        html.P(
+            [
+                html.Strong(translate_ui(loc, "dash.analysis.dsc.quality.status_label")),
+                f" {status}",
+            ],
+            className="mb-2",
+        ),
+        html.P(
+            [
+                html.Strong(translate_ui(loc, "dash.analysis.dsc.quality.warnings_label")),
+                f" {wc}",
+            ],
+            className="mb-2",
+        ),
+        html.P(
+            [
+                html.Strong(translate_ui(loc, "dash.analysis.dsc.quality.issues_label")),
+                f" {ic}",
+            ],
+            className="mb-0",
+        ),
+    ]
+    if warnings_list:
+        body_children.append(html.Ul([html.Li(str(w)) for w in warnings_list[:12]], className="small mb-0 mt-2"))
+    if issues_list:
+        body_children.append(html.Ul([html.Li(str(w)) for w in issues_list[:12]], className="small mb-0 mt-2"))
+
+    inner = dbc.Alert(body_children, color=alert_color, className="mb-0 ta-quality-alert")
+    return _dsc_collapsible_section(loc, "dash.analysis.dsc.quality.card_title", inner, open=False)
+
+
+def _build_dsc_raw_metadata_panel(metadata: dict | None, loc: str) -> html.Details:
+    meta = metadata if isinstance(metadata, dict) else {}
+    if not meta:
+        inner = html.P(translate_ui(loc, "dash.analysis.dsc.raw_metadata.empty"), className="text-muted mb-0")
+    else:
+        rows: list[Any] = []
+        for key in sorted(meta.keys(), key=lambda k: str(k).lower()):
+            value = meta[key]
+            if isinstance(value, (dict, list)):
+                text = json.dumps(value, ensure_ascii=False, indent=2)
+            else:
+                fv = _format_dataset_metadata_value(value)
+                text = fv if fv is not None else str(value)
+            rows.extend(
+                [
+                    html.Dt(str(key), className="col-sm-4 text-muted small"),
+                    html.Dd(html.Pre(text, className="small mb-0 ta-code-block p-2 rounded"), className="col-sm-8 mb-2"),
+                ]
+            )
+        inner = html.Dl(rows, className="row mb-0", id="dsc-raw-metadata-dl")
+    return _dsc_collapsible_section(loc, "dash.analysis.dsc.raw_metadata.card_title", inner, open=False)
+
+
+def _build_dsc_processing_expansion_blocks(processing: dict, loc: str) -> html.Div:
+    sp = processing.get("signal_pipeline") or {}
+    asteps = processing.get("analysis_steps") or {}
+    blocks: list[Any] = []
+    pairs = [
+        ("dash.analysis.dsc.processing.block_smoothing", sp.get("smoothing")),
+        ("dash.analysis.dsc.processing.block_baseline", sp.get("baseline")),
+        ("dash.analysis.dsc.processing.block_peaks", asteps.get("peak_detection")),
+        ("dash.analysis.dsc.processing.block_tg", asteps.get("glass_transition")),
+    ]
+    for title_key, data in pairs:
+        if not isinstance(data, dict) or not data:
+            continue
+        blocks.append(html.H6(translate_ui(loc, title_key), className="mt-2 small text-muted mb-1"))
+        blocks.append(html.Pre(json.dumps(data, indent=2, ensure_ascii=False), className="small ta-code-block p-2 rounded mb-0"))
+    if not blocks:
+        return html.Div()
+    return html.Div(blocks, className="mt-3 pt-2 border-top")
+
+
+def _wrap_dsc_processing_details(inner: html.Div, processing: dict, loc: str) -> html.Div:
+    expansion = _build_dsc_processing_expansion_blocks(processing, loc)
+    return html.Div(
+        [
+            html.Details(
+                [
+                    html.Summary(
+                        [
+                            html.Span(className="ta-details-chevron"),
+                            html.Span(translate_ui(loc, "dash.analysis.dsc.processing.expand_summary"), className="ms-1"),
+                        ],
+                        className="ta-details-summary",
+                    ),
+                    html.Div([inner, expansion], className="ta-details-body mt-2"),
+                ],
+                className="ta-ms-details mb-0",
+                open=False,
+            )
+        ]
+    )
+
+
+def _build_dsc_go_figure(
+    project_id: str,
+    dataset_key: str,
+    summary: dict,
+    peak_rows: list[dict],
+    ui_theme: str | None,
+    loc: str,
+) -> go.Figure | None:
     from dash_app.api_client import analysis_state_curves
 
     try:
@@ -470,101 +2057,88 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, peak_rows: l
     except Exception:
         curves = {}
 
-    temperature = curves.get("temperature", [])
-    raw_signal = curves.get("raw_signal", [])
-    smoothed = curves.get("smoothed", [])
-    baseline = curves.get("baseline", [])
-    corrected = curves.get("corrected", [])
-    has_overlay = curves.get("has_smoothed") or curves.get("has_baseline") or curves.get("has_corrected")
+    raw_temperature = curves.get("temperature") or []
+    if not raw_temperature:
+        return None
+    temperature: list[float] = []
+    for item in raw_temperature:
+        parsed = _coerce_float(item)
+        if parsed is None:
+            return None
+        temperature.append(parsed)
 
-    if not temperature:
-        return no_data_figure_msg(locale_data=loc)
+    raw_signal = _series_for_temperature(curves.get("raw_signal", []), temperature)
+    smoothed = _series_for_temperature(curves.get("smoothed", []), temperature)
+    baseline = _series_for_temperature(curves.get("baseline", []), temperature)
+    corrected = _series_for_temperature(curves.get("corrected", []), temperature)
+    primary_signal = corrected or smoothed or raw_signal
+    if not primary_signal:
+        return None
 
-    tg_midpoint = summary.get("tg_midpoint")
-    tg_onset = summary.get("tg_onset")
-    tg_endset = summary.get("tg_endset")
-    tg_count = summary.get("glass_transition_count", 0)
-    sample_name = resolve_sample_name(summary, {}, fallback_display_name=dataset_key, locale_data=loc)
-
+    is_dark = normalize_ui_theme(ui_theme) == "dark"
     fig = go.Figure()
 
-    raw_alpha = 0.35 if has_overlay else 1.0
-    raw_width = 1.0 if has_overlay else 1.5
-    fig.add_trace(
-        go.Scatter(
-            x=temperature,
-            y=raw_signal,
-            mode="lines",
-            name=translate_ui(loc, "dash.analysis.figure.legend_raw_signal"),
-            line=dict(color="#94A3B8", width=raw_width),
-            opacity=raw_alpha,
-        )
-    )
+    legend_raw = translate_ui(loc, "dash.analysis.figure.legend_raw_signal")
+    legend_smooth = translate_ui(loc, "dash.analysis.figure.legend_smoothed")
+    legend_base = translate_ui(loc, "dash.analysis.figure.legend_baseline")
+    legend_corrected = translate_ui(loc, "dash.analysis.figure.legend_corrected")
 
-    if smoothed and len(smoothed) == len(temperature):
+    primary_key = "corrected" if corrected else "smoothed" if smoothed else "raw"
+
+    if raw_signal:
+        fig.add_trace(
+            go.Scatter(
+                x=temperature,
+                y=raw_signal,
+                mode="lines",
+                name=legend_raw,
+                line=dict(color="#94A3B8", width=2.8 if primary_key == "raw" else 1.0),
+                opacity=0.95 if primary_key == "raw" else 0.26,
+                hovertemplate=_trace_hover_template(legend_raw, loc),
+            )
+        )
+    if smoothed:
         fig.add_trace(
             go.Scatter(
                 x=temperature,
                 y=smoothed,
                 mode="lines",
-                name=translate_ui(loc, "dash.analysis.figure.legend_smoothed"),
-                line=dict(color="#0E7490", width=1.5),
+                name=legend_smooth,
+                line=dict(color="#0E7490", width=2.8 if primary_key == "smoothed" else 1.5),
+                opacity=0.98 if primary_key == "smoothed" else 0.64,
+                hovertemplate=_trace_hover_template(legend_smooth, loc),
             )
         )
-
-    if baseline and len(baseline) == len(temperature):
+    if baseline:
         fig.add_trace(
             go.Scatter(
                 x=temperature,
                 y=baseline,
                 mode="lines",
-                name=translate_ui(loc, "dash.analysis.figure.legend_baseline"),
-                line=dict(color="#6B7280", width=1, dash="dash"),
+                name=legend_base,
+                line=dict(color="#64748B", width=1.0, dash="dot"),
+                opacity=0.42,
+                hovertemplate=_trace_hover_template(legend_base, loc),
             )
         )
-
-    if corrected and len(corrected) == len(temperature):
+    if corrected:
         fig.add_trace(
             go.Scatter(
                 x=temperature,
                 y=corrected,
                 mode="lines",
-                name=translate_ui(loc, "dash.analysis.figure.legend_corrected"),
-                line=dict(color="#059669", width=1.5),
+                name=legend_corrected,
+                line=dict(color="#047857", width=3.0 if primary_key == "corrected" else 1.8),
+                opacity=1.0 if primary_key == "corrected" else 0.72,
+                hovertemplate=_trace_hover_template(legend_corrected, loc),
             )
         )
 
-    # Collect peak temperatures to detect label overlaps with Tg lines
-    _ANNOTATION_MIN_SEP = 15.0  # C -- suppress label if closer than this to another
     annotated_temps: list[float] = []
-
-    for row in peak_rows:
-        pt = row.get("peak_temperature")
-        if pt is None:
-            continue
-        peak_type = str(row.get("peak_type", "unknown")).lower()
-        color = _PEAK_TYPE_COLORS.get(peak_type, "#B45309")
-        idx = min(range(len(temperature)), key=lambda i: abs(temperature[i] - pt)) if temperature else None
-        if idx is not None:
-            # Only show text label if not too close to an already-annotated temp
-            too_close = any(abs(pt - t) < _ANNOTATION_MIN_SEP for t in annotated_temps)
-            text_str = f"{pt:.1f}" if not too_close else ""
-            fig.add_trace(
-                go.Scatter(
-                    x=[temperature[idx]], y=[raw_signal[idx]], mode="markers+text",
-                    marker=dict(size=10, color=color, symbol="diamond"),
-                    text=[text_str], textposition="bottom center",
-                    textfont=dict(size=9, color=color),
-                    name=f"{peak_type.title()} {pt:.1f} °C",
-                    showlegend=False,
-                )
-            )
-            if text_str:
-                annotated_temps.append(pt)
-
-    # Tg vertical lines -- always show midpoint; onset/endset only when
-    # far enough apart to avoid overlapping annotations
-    if tg_count > 0 and tg_midpoint is not None:
+    tg_midpoint = _coerce_float(summary.get("tg_midpoint"))
+    tg_onset = _coerce_float(summary.get("tg_onset"))
+    tg_endset = _coerce_float(summary.get("tg_endset"))
+    if tg_midpoint is not None:
         fig.add_vline(
             x=tg_midpoint,
             line=dict(color="#EF4444", width=2, dash="dash"),
@@ -572,53 +2146,136 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, peak_rows: l
             annotation_position="top left",
         )
         annotated_temps.append(tg_midpoint)
+    if tg_onset is not None and all(abs(tg_onset - value) >= _ANNOTATION_MIN_SEP for value in annotated_temps):
+        fig.add_vline(
+            x=tg_onset,
+            line=dict(color="#F59E0B", width=1, dash="dot"),
+            annotation_text=translate_ui(loc, "dash.analysis.figure.annot_on", v=f"{tg_onset:.1f}"),
+            annotation_position="top left",
+        )
+        annotated_temps.append(tg_onset)
+    if tg_endset is not None and all(abs(tg_endset - value) >= _ANNOTATION_MIN_SEP for value in annotated_temps):
+        fig.add_vline(
+            x=tg_endset,
+            line=dict(color="#F59E0B", width=1, dash="dot"),
+            annotation_text=translate_ui(loc, "dash.analysis.figure.annot_end", v=f"{tg_endset:.1f}"),
+            annotation_position="top left",
+        )
+        annotated_temps.append(tg_endset)
 
-        if tg_onset is not None and all(abs(tg_onset - t) >= _ANNOTATION_MIN_SEP for t in annotated_temps):
-            fig.add_vline(
-                x=tg_onset,
-                line=dict(color="#F59E0B", width=1, dash="dot"),
-                annotation_text=translate_ui(loc, "dash.analysis.figure.annot_on", v=f"{tg_onset:.1f}"),
-                annotation_position="top left",
+    for row in _sort_events_by_temperature(peak_rows):
+        peak_temperature = _coerce_float(row.get("peak_temperature"))
+        if peak_temperature is None:
+            continue
+        idx = min(range(len(temperature)), key=lambda i: abs(temperature[i] - peak_temperature))
+        peak_type = str(row.get("peak_type", "unknown")).strip().lower()
+        color = _PEAK_TYPE_COLORS.get(peak_type, "#B45309")
+        too_close = any(abs(peak_temperature - value) < _ANNOTATION_MIN_SEP for value in annotated_temps)
+        label = "" if too_close else f"{peak_temperature:.1f}°C"
+        fig.add_trace(
+            go.Scatter(
+                x=[temperature[idx]],
+                y=[primary_signal[idx]],
+                mode="markers+text",
+                marker=dict(size=8, color=color, symbol="diamond", line=dict(color="white", width=1.0)),
+                text=[label],
+                textposition="top center",
+                textfont=dict(size=8, color=color),
+                name=f"{_peak_type_label(peak_type, loc)} {_format_temp_c(peak_temperature)}",
+                showlegend=False,
+                hovertemplate=_event_hover_html(row, _coerce_float(primary_signal[idx]), loc),
             )
-            annotated_temps.append(tg_onset)
+        )
+        if label:
+            annotated_temps.append(peak_temperature)
 
-        if tg_endset is not None and all(abs(tg_endset - t) >= _ANNOTATION_MIN_SEP for t in annotated_temps):
-            fig.add_vline(
-                x=tg_endset,
-                line=dict(color="#F59E0B", width=1, dash="dot"),
-                annotation_text=translate_ui(loc, "dash.analysis.figure.annot_end", v=f"{tg_endset:.1f}"),
-                annotation_position="top left",
-            )
+    sample_name = resolve_sample_name(summary, {"dataset_key": dataset_key}, fallback_display_name=dataset_key, locale_data=loc)
+    y_grid_color = "rgba(61, 59, 56, 0.34)" if is_dark else "rgba(224, 221, 214, 0.52)"
+    x_grid_color = "rgba(61, 59, 56, 0.26)" if is_dark else "rgba(224, 221, 214, 0.36)"
+    axis_line_color = "rgba(61, 59, 56, 0.84)" if is_dark else "rgba(183, 177, 168, 0.9)"
+    tick_color = "rgba(238, 237, 234, 0.9)" if is_dark else "rgba(28, 26, 26, 0.78)"
 
     fig.update_layout(
-        title=translate_ui(loc, "dash.analysis.figure.title_dsc", name=sample_name),
+        title=dict(
+            text=translate_ui(loc, "dash.analysis.figure.title_dsc", name=sample_name),
+            x=0.01,
+            xanchor="left",
+            y=0.985,
+            yanchor="top",
+            font=dict(size=17),
+        ),
         xaxis_title=translate_ui(loc, "dash.analysis.figure.axis_temperature_c"),
         yaxis_title=translate_ui(loc, "dash.analysis.figure.axis_heat_flow"),
-        margin=dict(l=56, r=24, t=56, b=48),
-        height=480,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        hovermode="x unified",
+        margin=dict(l=70, r=34, t=86, b=62),
+        height=600,
+        hoverlabel=dict(namelength=-1),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.015,
+            xanchor="right",
+            x=1.0,
+            traceorder="normal",
+            itemclick="toggleothers",
+            itemdoubleclick="toggle",
+            font=dict(size=11),
+            itemsizing="constant",
+        ),
     )
     apply_figure_theme(fig, ui_theme)
-    return dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True}, className="ta-plot")
+    fig.update_xaxes(
+        gridcolor=x_grid_color,
+        showgrid=False,
+        showline=True,
+        linewidth=1,
+        linecolor=axis_line_color,
+        ticks="outside",
+        ticklen=4,
+        tickcolor=axis_line_color,
+        tickfont=dict(size=12, color=tick_color),
+        title_standoff=12,
+    )
+    fig.update_yaxes(
+        gridcolor=y_grid_color,
+        showgrid=True,
+        showline=True,
+        linewidth=1,
+        linecolor=axis_line_color,
+        ticks="outside",
+        ticklen=4,
+        tickcolor=axis_line_color,
+        tickfont=dict(size=12, color=tick_color),
+        title_standoff=12,
+    )
+    return fig
 
 
-def _build_peak_section(rows: list, loc: str) -> html.Div:
-    if not rows:
-        return html.Div(
-            [
-                html.H5(translate_ui(loc, "dash.analysis.section.detected_peaks"), className="mb-3"),
-                html.P(translate_ui(loc, "dash.analysis.state.no_peaks"), className="text-muted"),
-            ]
-        )
+def _dsc_graph_config() -> dict[str, Any]:
+    return {
+        "displaylogo": False,
+        "responsive": True,
+        "modeBarButtonsToRemove": ["lasso2d", "select2d", "toggleSpikelines", "hoverCompareCartesian"],
+        "toImageButtonOptions": {
+            "format": "png",
+            "filename": "dsc-analysis",
+            "scale": 2,
+        },
+    }
 
-    cards = [html.H5(translate_ui(loc, "dash.analysis.section.detected_peaks"), className="mb-3")]
-    for idx, row in enumerate(rows):
-        cards.append(_peak_card(row, idx, loc))
 
-    cards.append(html.Hr(className="my-3"))
-    cards.append(dataset_table(
-        rows,
-        ["peak_type", "peak_temperature", "onset_temperature", "endset_temperature", "area", "fwhm", "height"],
-        table_id="dsc-peaks-table",
-    ))
-    return html.Div(cards)
+def _build_figure(
+    project_id: str,
+    dataset_key: str,
+    summary: dict,
+    peak_rows: list[dict],
+    ui_theme: str | None,
+    loc: str,
+    locale_data: str | None = None,
+) -> html.Div:
+    _ld = locale_data if locale_data is not None else loc
+    fig = _build_dsc_go_figure(project_id, dataset_key, summary, peak_rows, ui_theme, loc)
+    if fig is None:
+        return no_data_figure_msg(text=translate_ui(loc, "dash.analysis.dsc.no_plot_signal"), locale_data=_ld)
+    graph = dcc.Graph(figure=fig, config=_dsc_graph_config(), className="ta-plot dsc-result-graph")
+    return html.Div(graph, className="dsc-result-figure-shell")
