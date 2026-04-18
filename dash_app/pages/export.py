@@ -36,6 +36,18 @@ def _write_enabled() -> bool:
     return license_allows_write(load_license_state(app_version=APP_VERSION))
 
 
+def _pending_logo_label(loc: str, name: str) -> str:
+    if str(loc).lower().startswith("tr"):
+        return f"Seçilen logo (kaydedilmedi): {name}"
+    return f"Selected logo (not saved yet): {name}"
+
+
+def _invalid_logo_label(loc: str) -> str:
+    if str(loc).lower().startswith("tr"):
+        return "Seçilen dosya önizlenemedi. Lütfen geçerli bir görsel yükleyin."
+    return "Selected file could not be previewed. Please upload a valid image."
+
+
 def _batch_summary_display_rows(filtered_rows: list[dict], loc: str) -> tuple[list[dict], list[str]]:
     if not filtered_rows:
         return [], []
@@ -241,6 +253,7 @@ def _build_branding_card(loc: str) -> dbc.Card:
                     ),
                     className="upload-zone",
                 ),
+                html.Div(id="branding-logo-selection", className="mt-2"),
                 dbc.Button(
                     translate_ui(loc, "dash.export.btn_save_branding"),
                     id="save-branding-btn",
@@ -817,6 +830,30 @@ def load_branding(project_id, _refresh, _global_refresh, locale_data):
         payload.get("analyst_name") or "",
         payload.get("report_notes") or "",
         logo_preview,
+    )
+
+
+@callback(
+    Output("branding-logo-selection", "children"),
+    Input("branding-logo-upload", "contents"),
+    State("branding-logo-upload", "filename"),
+    State("ui-locale", "data"),
+)
+def preview_branding_logo_selection(logo_contents, logo_name, locale_data):
+    loc = _loc(locale_data)
+    if not logo_contents:
+        return ""
+
+    label = (logo_name or "branding_logo").strip() or "branding_logo"
+    if not str(logo_contents).startswith("data:image/"):
+        return dbc.Alert(_invalid_logo_label(loc), color="warning", className="py-2 mb-0")
+
+    return html.Div(
+        [
+            html.Img(src=logo_contents, style={"maxWidth": "100%", "maxHeight": "180px"}),
+            html.Div(_pending_logo_label(loc, label), className="small text-muted mt-2"),
+        ],
+        className="border rounded p-2 bg-light-subtle",
     )
 
 

@@ -1610,7 +1610,7 @@ def test_backend_register_figure_rejects_invalid_inputs():
 
 
 def test_capture_dta_figure_posts_png_once_per_result(monkeypatch):
-    """capture_dta_figure renders PNG via plotly.io.to_image and calls register_result_figure once."""
+    """capture_dta_figure renders PNG and calls register_result_figure once."""
     mod = _import_dta_page()
     import dash_app.api_client as api_client
 
@@ -1654,9 +1654,7 @@ def test_capture_dta_figure_posts_png_once_per_result(monkeypatch):
         or {"figure_key": label, "figure_keys": [label]},
     )
 
-    import plotly.io as pio
-
-    monkeypatch.setattr(pio, "to_image", lambda *_a, **_k: b"FAKE-PNG")
+    monkeypatch.setattr(mod, "render_plotly_figure_png", lambda *_a, **_k: (b"FAKE-PNG", None))
 
     captured_first = mod.capture_dta_figure("dta_fake_id", "proj-1", {}, "light", "en")
     assert captured_first["dta_fake_id"]["status"] == "ok"
@@ -1677,7 +1675,7 @@ def test_capture_dta_figure_posts_png_once_per_result(monkeypatch):
 
 
 def test_capture_dta_figure_degrades_when_kaleido_missing(monkeypatch):
-    """If plotly.io.to_image raises, capture must record the failure without calling register."""
+    """If figure rendering fails, capture must record the failure without calling register."""
     mod = _import_dta_page()
     import dash_app.api_client as api_client
 
@@ -1706,12 +1704,7 @@ def test_capture_dta_figure_degrades_when_kaleido_missing(monkeypatch):
         lambda *_a, **_k: register_calls.append(_k) or {},
     )
 
-    import plotly.io as pio
-
-    def _raise(*_a, **_k):
-        raise RuntimeError("kaleido missing")
-
-    monkeypatch.setattr(pio, "to_image", _raise)
+    monkeypatch.setattr(mod, "render_plotly_figure_png", lambda *_a, **_k: (None, "kaleido missing"))
 
     result = mod.capture_dta_figure("dta_q", "proj-1", {}, "light", "en")
     assert result["dta_q"]["status"] == "skipped"

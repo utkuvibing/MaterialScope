@@ -22,6 +22,7 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
 import plotly.graph_objects as go
 
+from core.figure_render import render_plotly_figure_png
 from dash_app.components.analysis_page import (
     analysis_page_stores,
     dataset_selection_card,
@@ -3469,20 +3470,12 @@ def _capture_dta_figure_png(
     loc: str,
     view_mode: str = "result",
 ) -> bytes | None:
-    """Build the DTA figure as PNG bytes; return None on any failure.
-
-    Uses ``plotly.io.to_image`` (kaleido) and swallows errors so the capture
-    callback never breaks the rest of the UI if kaleido is unavailable.
-    """
+    """Build the DTA figure as PNG bytes; return None on any failure."""
     fig = _build_dta_go_figure(project_id, dataset_key, sample_name, peak_rows, ui_theme, loc, view_mode=view_mode)
     if fig is None:
         return None
-    try:
-        import plotly.io as pio
-
-        return pio.to_image(fig, format="png", engine="kaleido")
-    except Exception:
-        return None
+    png_bytes, _render_meta = render_plotly_figure_png(fig)
+    return png_bytes
 
 
 @callback(

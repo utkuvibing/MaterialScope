@@ -11,6 +11,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 import httpx
+import plotly.graph_objects as go
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import Response
@@ -105,6 +106,7 @@ from core.execution_engine import run_batch_analysis, run_single_analysis
 from core.modalities import analysis_state_key, stable_analysis_types
 from core.literature_compare import attach_literature_package, compare_result_to_literature
 from core.processing_schema import update_method_context, update_processing_step
+from core.figure_render import render_plotly_figure_png
 from core.literature_provider import (
     LiteratureProvider,
     MultiLiteratureProviderAggregator,
@@ -157,6 +159,225 @@ def _normalize_stable_analysis_error(detail: str) -> str:
     if token.startswith("Unsupported stable analysis_type:"):
         return f"analysis_type must be one of: {', '.join(stable_analysis_types())}."
     return token
+
+
+def _finite_float_list(values: Any) -> list[float]:
+    if values is None:
+        return []
+    out: list[float] = []
+    for item in list(values):
+        try:
+            parsed = float(item)
+        except (TypeError, ValueError):
+            return []
+        if parsed != parsed or parsed in (float("inf"), float("-inf")):
+            return []
+        out.append(parsed)
+    return out
+
+
+def _dataset_axis_and_signal(dataset: Any) -> tuple[list[float], list[float]]:
+    frame = getattr(dataset, "data", None)
+    if frame is None or "temperature" not in frame.columns or "signal" not in frame.columns:
+        return [], []
+    try:
+        import numpy as np
+
+        axis = np.asarray(frame["temperature"], dtype=float)
+        signal = np.asarray(frame["signal"], dtype=float)
+    except Exception:
+        return [], []
+    if axis.size == 0 or signal.size == 0:
+        return [], []
+    finite_mask = np.isfinite(axis) & np.isfinite(signal)
+    axis = axis[finite_mask]
+    signal = signal[finite_mask]
+    if axis.size == 0:
+        return [], []
+    order = np.argsort(axis)
+    axis = axis[order]
+    signal = signal[order]
+    unique_axis, unique_idx = np.unique(axis, return_index=True)
+    return unique_axis.tolist(), signal[unique_idx].tolist()
+
+
+def _axis_title_for_analysis(analysis_type: str) -> str:
+    token = str(analysis_type or "").strip().upper()
+    if token == "XRD":
+        return "2theta (deg)"
+    if token == "FTIR":
+        return "Wavenumber"
+    if token == "RAMAN":
+        return "Raman Shift"
+    return "Temperature (°C)"
+
+
+def _y_title_for_analysis(analysis_type: str) -> str:
+    token = str(analysis_type or "").strip().upper()
+    if token == "XRD":
+        return "Intensity (a.u.)"
+    return "Signal (a.u.)"
+
+
+def _build_result_snapshot_figure(
+    *,
+    analysis_type: str,
+    dataset_key: str,
+    dataset: Any,
+    state_payload: dict[str, Any],
+) -> go.Figure | None:
+    state_axis = _finite_float_list((state_payload or {}).get("axis"))
+    raw_axis, raw_signal = _dataset_axis_and_signal(dataset)
+    axis = state_axis or raw_axis
+    if not axis:
+        return None
+
+    def _series(name: str) -> list[float]:
+        values = _finite_float_list((state_payload or {}).get(name))
+        if values and len(values) == len(axis):
+            return values
+        return []
+
+    smoothed = _series("smoothed")
+    baseline = _series("baseline")
+    corrected = _series("corrected")
+    dtg = _series("dtg")
+    if raw_signal and len(raw_signal) != len(axis):
+        raw_signal = []
+
+    primary = corrected or smoothed or raw_signal
+    if not primary:
+        return None
+
+    fig = go.Figure()
+    has_overlay = bool(corrected or smoothed)
+    if raw_signal:
+        fig.add_trace(
+            go.Scatter(
+                x=axis,
+                y=raw_signal,
+                mode="lines",
+                name="Raw Signal",
+                line=dict(color="#9CA3AF", width=1.2),
+                opacity=0.32 if has_overlay else 0.9,
+            )
+        )
+    if smoothed:
+        fig.add_trace(
+            go.Scatter(
+                x=axis,
+                y=smoothed,
+                mode="lines",
+                name="Smoothed",
+                line=dict(color="#2563EB", width=1.8),
+                opacity=0.9 if corrected else 1.0,
+            )
+        )
+    if baseline:
+        fig.add_trace(
+            go.Scatter(
+                x=axis,
+                y=baseline,
+                mode="lines",
+                name="Baseline",
+                line=dict(color="#64748B", width=1.1, dash="dash"),
+                opacity=0.75,
+            )
+        )
+    if corrected:
+        fig.add_trace(
+            go.Scatter(
+                x=axis,
+                y=corrected,
+                mode="lines",
+                name="Corrected",
+                line=dict(color="#111827", width=2.6),
+            )
+        )
+    if dtg:
+        fig.add_trace(
+            go.Scatter(
+                x=axis,
+                y=dtg,
+                mode="lines",
+                name="DTG",
+                line=dict(color="#059669", width=1.4, dash="dot"),
+                opacity=0.8,
+            )
+        )
+
+    fig.update_layout(
+        title=f"{str(analysis_type or '').upper()} Analysis - {dataset_key}",
+        xaxis_title=_axis_title_for_analysis(analysis_type),
+        yaxis_title=_y_title_for_analysis(analysis_type),
+        template="plotly_white",
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        margin=dict(l=64, r=28, t=72, b=58),
+        width=1200,
+        height=620,
+    )
+    return fig
+
+
+def _auto_register_result_snapshot(
+    state: dict[str, Any],
+    *,
+    result_id: str,
+    record: dict[str, Any],
+    state_payload: dict[str, Any],
+    analysis_type: str,
+) -> dict[str, Any] | None:
+    dataset_key = str(record.get("dataset_key") or "").strip()
+    if not dataset_key:
+        return None
+    datasets = state.get("datasets") or {}
+    dataset = datasets.get(dataset_key)
+    if dataset is None:
+        return None
+
+    figures = state.setdefault("figures", {})
+    artifacts = dict(record.get("artifacts") or {})
+
+    existing_keys = artifacts.get("figure_keys")
+    keys: list[str] = []
+    if isinstance(existing_keys, list):
+        for item in existing_keys:
+            if isinstance(item, str) and item and item not in keys:
+                keys.append(item)
+    for key in keys:
+        if key in figures:
+            if not artifacts.get("report_figure_key"):
+                artifacts["report_figure_key"] = key
+                patched = dict(record)
+                patched["artifacts"] = artifacts
+                state.setdefault("results", {})[result_id] = patched
+            return {"figure_key": key, "reused": True}
+
+    label = f"{str(analysis_type or '').upper()} Analysis - {dataset_key}"
+    figure = _build_result_snapshot_figure(
+        analysis_type=analysis_type,
+        dataset_key=dataset_key,
+        dataset=dataset,
+        state_payload=state_payload,
+    )
+    if figure is None:
+        return None
+
+    png_bytes, render_meta = render_plotly_figure_png(figure, width=1200, height=620)
+    if not png_bytes:
+        return None
+
+    figures[label] = png_bytes
+    if label not in keys:
+        keys.append(label)
+    artifacts["figure_keys"] = keys
+    artifacts["report_figure_key"] = label
+
+    patched = dict(record)
+    patched["artifacts"] = artifacts
+    state.setdefault("results", {})[result_id] = patched
+    return {"figure_key": label, "render_mode": render_meta or "kaleido"}
 
 
 def _require_project_state(project_store: ProjectStore, project_id: str) -> dict:
@@ -1019,6 +1240,27 @@ def create_app(
         outcomes = execution["outcomes"]
         saved_result_ids = execution["saved_result_ids"]
 
+        if saved_result_ids:
+            for saved_result_id in saved_result_ids:
+                record = (state.get("results") or {}).get(saved_result_id)
+                if not isinstance(record, dict):
+                    continue
+                dataset_key = str(record.get("dataset_key") or "").strip()
+                if not dataset_key:
+                    continue
+                state_payload = state.get(analysis_state_key(analysis_type, dataset_key)) or {}
+                try:
+                    _auto_register_result_snapshot(
+                        state,
+                        result_id=saved_result_id,
+                        record=record,
+                        state_payload=state_payload if isinstance(state_payload, dict) else {},
+                        analysis_type=analysis_type,
+                    )
+                except Exception:
+                    # Figure capture is best-effort; batch persistence must not fail on render issues.
+                    pass
+
         completed_at = datetime.now().isoformat(timespec="seconds")
 
         compare_workspace = state.setdefault("comparison_workspace", {})
@@ -1314,10 +1556,22 @@ def create_app(
         validation = execution["validation"]
         record = execution["record"] or {}
         state_key = execution["state_key"]
+        state_payload = execution["state_payload"] or {}
 
         if execution_status == "saved" and result_id:
             state.setdefault("results", {})[result_id] = record
-            state[state_key] = execution["state_payload"] or {}
+            state[state_key] = state_payload
+            try:
+                _auto_register_result_snapshot(
+                    state,
+                    result_id=result_id,
+                    record=record,
+                    state_payload=state_payload if isinstance(state_payload, dict) else {},
+                    analysis_type=analysis_type,
+                )
+            except Exception:
+                # Figure capture is best-effort; analysis save should still succeed.
+                pass
             add_history_event(
                 state,
                 action="Analysis Saved",

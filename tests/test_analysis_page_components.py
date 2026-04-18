@@ -291,7 +291,11 @@ def test_capture_result_figure_from_layout_registers_primary_figure(monkeypatch)
 
     register_calls: list[dict] = []
 
-    monkeypatch.setattr(analysis_page_mod.pio, "to_image", lambda _fig, **_k: b"\x89PNG\r\n\x1a\nFAKE")
+    monkeypatch.setattr(
+        analysis_page_mod,
+        "render_plotly_figure_png",
+        lambda _fig, **_k: (b"\x89PNG\r\n\x1a\nFAKE", None),
+    )
     monkeypatch.setattr(
         api_client,
         "workspace_result_detail",
@@ -337,7 +341,7 @@ def test_capture_result_figure_from_layout_registers_primary_figure(monkeypatch)
 def test_capture_result_figure_from_layout_reads_serialized_children(monkeypatch):
     import dash_app.api_client as api_client
 
-    monkeypatch.setattr(analysis_page_mod.pio, "to_image", lambda _fig, **_k: b"PNG")
+    monkeypatch.setattr(analysis_page_mod, "render_plotly_figure_png", lambda _fig, **_k: (b"PNG", None))
     monkeypatch.setattr(
         api_client,
         "workspace_result_detail",

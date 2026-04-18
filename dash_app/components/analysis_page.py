@@ -12,8 +12,8 @@ from typing import Any
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 import plotly.graph_objects as go
-import plotly.io as pio
 
+from core.figure_render import render_plotly_figure_png
 from utils.i18n import normalize_ui_locale, translate_ui
 
 
@@ -268,10 +268,9 @@ def capture_result_figure_from_layout(
         captured_state[result_id] = {"status": "skipped", "reason": f"invalid_figure_payload: {exc}"}
         return captured_state
 
-    try:
-        png_bytes = pio.to_image(fig, format="png", engine="kaleido")
-    except Exception as exc:
-        captured_state[result_id] = {"status": "skipped", "reason": str(exc)}
+    png_bytes, render_meta = render_plotly_figure_png(fig)
+    if not png_bytes:
+        captured_state[result_id] = {"status": "skipped", "reason": str(render_meta or "render_failed")}
         return captured_state
 
     from dash_app.api_client import register_result_figure, workspace_result_detail
@@ -293,7 +292,10 @@ def capture_result_figure_from_layout(
         return captured_state
 
     persisted_label = str((response or {}).get("figure_key") or label)
-    captured_state[result_id] = {"status": "ok", "label": persisted_label}
+    item = {"status": "ok", "label": persisted_label}
+    if render_meta:
+        item["render_mode"] = str(render_meta)
+    captured_state[result_id] = item
     return captured_state
 
 
