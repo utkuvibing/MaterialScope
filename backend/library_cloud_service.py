@@ -33,9 +33,12 @@ from utils.license_manager import APP_VERSION, get_storage_dir, validate_encoded
 
 _TOKEN_TTL_SECONDS = 15 * 60
 _DEFAULT_RATE_LIMIT_PER_MINUTE = 60
-_TOKEN_SECRET_ENV = "THERMOANALYZER_LIBRARY_CLOUD_TOKEN_SECRET"
-_TOKEN_TTL_ENV = "THERMOANALYZER_LIBRARY_CLOUD_TOKEN_TTL_SECONDS"
-_RATE_LIMIT_ENV = "THERMOANALYZER_LIBRARY_CLOUD_RATE_LIMIT_PER_MINUTE"
+_TOKEN_SECRET_ENV = "MATERIALSCOPE_LIBRARY_CLOUD_TOKEN_SECRET"
+_TOKEN_SECRET_ENV_LEGACY = "THERMOANALYZER_LIBRARY_CLOUD_TOKEN_SECRET"
+_TOKEN_TTL_ENV = "MATERIALSCOPE_LIBRARY_CLOUD_TOKEN_TTL_SECONDS"
+_TOKEN_TTL_ENV_LEGACY = "THERMOANALYZER_LIBRARY_CLOUD_TOKEN_TTL_SECONDS"
+_RATE_LIMIT_ENV = "MATERIALSCOPE_LIBRARY_CLOUD_RATE_LIMIT_PER_MINUTE"
+_RATE_LIMIT_ENV_LEGACY = "THERMOANALYZER_LIBRARY_CLOUD_RATE_LIMIT_PER_MINUTE"
 _AUDIT_FILE_NAME = "cloud_library_audit.jsonl"
 _ALLOWED_STATUSES = {"trial", "activated"}
 _REQUIRED_CLOUD_MODALITIES = ("FTIR", "RAMAN", "XRD")
@@ -66,12 +69,16 @@ def _b64url_decode(token: str) -> bytes:
 
 
 def _token_secret() -> bytes:
-    secret = str(os.getenv(_TOKEN_SECRET_ENV, "thermoanalyzer-cloud-dev-secret")).strip()
+    secret = str(
+        os.getenv(_TOKEN_SECRET_ENV, "")
+        or os.getenv(_TOKEN_SECRET_ENV_LEGACY, "")
+        or "materialscope-cloud-dev-secret"
+    ).strip()
     return secret.encode("utf-8")
 
 
 def _token_ttl_seconds() -> int:
-    raw = str(os.getenv(_TOKEN_TTL_ENV, _TOKEN_TTL_SECONDS)).strip()
+    raw = str(os.getenv(_TOKEN_TTL_ENV, "") or os.getenv(_TOKEN_TTL_ENV_LEGACY, _TOKEN_TTL_SECONDS)).strip()
     try:
         return max(60, int(raw))
     except (TypeError, ValueError):
@@ -79,7 +86,10 @@ def _token_ttl_seconds() -> int:
 
 
 def _rate_limit_per_minute() -> int:
-    raw = str(os.getenv(_RATE_LIMIT_ENV, _DEFAULT_RATE_LIMIT_PER_MINUTE)).strip()
+    raw = str(
+        os.getenv(_RATE_LIMIT_ENV, "")
+        or os.getenv(_RATE_LIMIT_ENV_LEGACY, _DEFAULT_RATE_LIMIT_PER_MINUTE)
+    ).strip()
     try:
         return max(1, int(raw))
     except (TypeError, ValueError):
@@ -115,7 +125,10 @@ class ManagedLibraryCloudService:
         self.manager = manager or get_reference_library_manager()
         if hosted_catalog is None:
             bootstrap_status = ensure_local_dev_hosted_catalog(
-                dev_mode=_truthy(os.getenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", "")),
+                dev_mode=_truthy(
+                    os.getenv("MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH", "")
+                    or os.getenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", "")
+                ),
             )
             self.hosted_catalog = HostedLibraryCatalog()
             if str(bootstrap_status.get("state")) in {"upgraded", "published"}:
@@ -176,7 +189,10 @@ class ManagedLibraryCloudService:
 
     def issue_token(self, *, x_ta_license: str | None) -> dict[str, Any]:
         if not x_ta_license:
-            raise HTTPException(status_code=401, detail="Missing X-TA-License header.")
+            raise HTTPException(
+                status_code=401,
+                detail="Missing X-MaterialScope-License (or legacy X-TA-License) header.",
+            )
         try:
             state = validate_encoded_license_key(
                 x_ta_license,

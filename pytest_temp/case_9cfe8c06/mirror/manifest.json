@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-03-14T00:00:00Z",
+  "providers": [
+    {
+      "provider_id": "openspecy",
+      "name": "OpenSpecy",
+      "modalities": [
+        "FTIR"
+      ],
+      "source_url": "https://example.invalid/openspecy/legacy",
+      "license_name": "CC-BY-4.0",
+      "license_text": "",
+      "attribution": "Legacy fallback fixture."
+    }
+  ],
+  "packages": [
+    {
+      "package_id": "legacy_ftir_fixture",
+      "analysis_type": "FTIR",
+      "provider": "OpenSpecy",
+      "version": "2026.03.fixture",
+      "archive_name": "legacy_ftir_fixture-2026.03.fixture.zip",
+      "sha256": "93cb426591d9fe347962f20decaf8c9f64e2d20f0635d4b65687dab6373725ef",
+      "entry_count": 1,
+      "source_url": "https://example.invalid/openspecy/legacy",
+      "license_name": "CC-BY-4.0",
+      "license_text": "",
+      "attribution": "Legacy fallback fixture.",
+      "priority": 100,
+      "published_at": "2026-03-14T00:00:00Z",
+      "generated_at": "2026-03-14T00:00:00Z",
+      "provider_dataset_version": "",
+      "builder_version": "",
+      "normalized_schema_version": 1
+    }
+  ],
+  "etag": "d37bb49d004ed6dd25059c8425652102d3ce03a0294fff669426c84e086f9d7d"
+}

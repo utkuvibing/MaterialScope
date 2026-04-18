@@ -1,9 +1,9 @@
 # Windows Setup Packaging (Local-First)
 
-This folder defines the primary Windows distribution flow for ThermoAnalyzer:
+This folder defines the primary Windows distribution flow for MaterialScope:
 
 1. Build locally on Windows.
-2. Produce one installer: `ThermoAnalyzer_Setup_<APP_VERSION>.exe`.
+2. Produce one installer: `MaterialScope_Setup_<APP_VERSION>.exe`.
 3. Upload that `.exe` to GitHub Releases.
 4. End users only download and run `Setup.exe`.
 
@@ -46,7 +46,7 @@ Optional flags:
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging\windows\build_beta_installer.ps1 -IsccPath "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 powershell -ExecutionPolicy Bypass -File packaging\windows\build_beta_installer.ps1 -VcRedistPath "C:\installers\vc_redist.x64.exe"
-powershell -ExecutionPolicy Bypass -File packaging\windows\build_beta_installer.ps1 -SetupBaseName "ThermoAnalyzer_Setup"
+powershell -ExecutionPolicy Bypass -File packaging\windows\build_beta_installer.ps1 -SetupBaseName "MaterialScope_Setup"
 ```
 
 ## Expected output
@@ -54,13 +54,13 @@ powershell -ExecutionPolicy Bypass -File packaging\windows\build_beta_installer.
 Final installer:
 
 ```text
-release\ThermoAnalyzer_Setup_<APP_VERSION>.exe
+release\MaterialScope_Setup_<APP_VERSION>.exe
 ```
 
 Example:
 
 ```text
-release\ThermoAnalyzer_Setup_2.0.exe
+release\MaterialScope_Setup_2.0.exe
 ```
 
 Intermediate build folders:
@@ -74,13 +74,13 @@ packaging\windows\build\
 
 1. Open GitHub repository -> **Releases** -> **Draft a new release**.
 2. Tag/version the release (for example `v2.0.0-beta1`).
-3. Upload `release\ThermoAnalyzer_Setup_<APP_VERSION>.exe` as asset.
+3. Upload `release\MaterialScope_Setup_<APP_VERSION>.exe` as asset.
 4. Publish release.
 
 Professor/end user path is then:
 
 - Release page
-- Download `ThermoAnalyzer_Setup_<APP_VERSION>.exe`
+- Download `MaterialScope_Setup_<APP_VERSION>.exe`
 - Double-click -> `Next` -> `Install` -> `Finish`
 
 ## Optional: Actions path (secondary only)

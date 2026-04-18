@@ -10,7 +10,7 @@ from backend.app import create_app
 
 
 def _headers() -> dict[str, str]:
-    return {"X-TA-Token": "batch-token"}
+    return {"X-MaterialScope-Token": "batch-token"}
 
 
 def _as_b64(raw: bytes) -> str:

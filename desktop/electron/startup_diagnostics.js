@@ -32,8 +32,8 @@ function createStartupDiagnostics(options) {
     fs.appendFileSync(logPath, `${line}${os.EOL}`, "utf8");
   }
 
-  appendLine("ThermoAnalyzer Desktop startup diagnostics");
-  appendLine(`app_name=${options.appName || "ThermoAnalyzer Desktop"}`);
+  appendLine("MaterialScope Desktop startup diagnostics");
+  appendLine(`app_name=${options.appName || "MaterialScope Desktop"}`);
   appendLine(`app_version=${options.appVersion || "unknown"}`);
   appendLine(`mode=${options.isPackaged ? "packaged" : "development"}`);
   appendLine(`platform=${options.platform || process.platform}`);

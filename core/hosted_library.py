@@ -11,7 +11,8 @@ from typing import Any, Mapping
 
 import numpy as np
 
-LIBRARY_ENV_HOSTED_ROOT = "THERMOANALYZER_LIBRARY_HOSTED_ROOT"
+LIBRARY_ENV_HOSTED_ROOT = "MATERIALSCOPE_LIBRARY_HOSTED_ROOT"
+LIBRARY_ENV_HOSTED_ROOT_LEGACY = "THERMOANALYZER_LIBRARY_HOSTED_ROOT"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_HOSTED_ROOT = PROJECT_ROOT / "build" / "reference_library_hosted"
 HOSTED_MANIFEST_FILE = "manifest.json"
@@ -28,7 +29,11 @@ def utcnow_iso() -> str:
 
 
 def resolve_hosted_root(root: str | Path | None = None) -> Path:
-    configured = str(root or os.getenv(LIBRARY_ENV_HOSTED_ROOT, "")).strip()
+    configured = str(
+        root
+        or os.getenv(LIBRARY_ENV_HOSTED_ROOT, "")
+        or os.getenv(LIBRARY_ENV_HOSTED_ROOT_LEGACY, "")
+    ).strip()
     return Path(configured or DEFAULT_HOSTED_ROOT).resolve()
 
 

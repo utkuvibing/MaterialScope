@@ -1,0 +1,14 @@
+[
+  {
+    "material_id": "mp-22862",
+    "formula_pretty": "NaCl",
+    "structure_cif_path": "C:\\MaterialScope-web-dash-plotly-migration\\tests\\fixtures\\reference_library_ingest\\materials_project\\mp_22862_nacl.cif",
+    "last_updated": "2026-03-10T00:00:00Z"
+  },
+  {
+    "material_id": "mp-149",
+    "formula_pretty": "Si",
+    "structure_cif_path": "C:\\MaterialScope-web-dash-plotly-migration\\tests\\fixtures\\reference_library_ingest\\materials_project\\mp_149_si.cif",
+    "last_updated": "2026-03-11T00:00:00Z"
+  }
+]

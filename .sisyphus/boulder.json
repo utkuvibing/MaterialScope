@@ -1,0 +1,23 @@
+{
+  "active_plan": "C:\\MaterialScope-web-dash-plotly-migration\\.sisyphus\\plans\\dta-dash-graph-polish-refactor.md",
+  "started_at": "2026-04-17T22:14:43.367Z",
+  "session_ids": [
+    "ses_262dca457ffe69hCJx5sJ75eCV"
+  ],
+  "session_origins": {
+    "ses_262dca457ffe69hCJx5sJ75eCV": "direct"
+  },
+  "plan_name": "dta-dash-graph-polish-refactor",
+  "agent": "atlas",
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "Define explicit DTA figure mode contract in Dash builder",
+      "session_id": "ses_262741b30ffebTNjPbg5KRNyJr",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-04-17T22:54:45.221Z"
+    }
+  }
+}

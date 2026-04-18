@@ -8,7 +8,7 @@ import socket
 import subprocess
 import sys
 import time
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -27,7 +27,7 @@ from utils.license_manager import APP_VERSION, create_signed_license, encode_lic
 
 
 def _auth_headers() -> dict[str, str]:
-    return {"X-TA-Token": "test-token"}
+    return {"X-MaterialScope-Token": "test-token"}
 
 
 def _as_b64(raw: bytes) -> str:
@@ -53,17 +53,18 @@ def _project_file(path: str) -> str:
 
 
 def _cloud_license_header() -> dict[str, str]:
+    now = datetime.now(UTC)
     payload = create_signed_license(
         customer_name="Cloud Test User",
         company_name="Cloud QA",
         sku="TRIAL",
         seat_count=1,
-        issued_at=datetime.fromisoformat("2026-03-14T00:00:00+00:00"),
-        expires_at=datetime.fromisoformat("2026-04-14T00:00:00+00:00"),
+        issued_at=now - timedelta(days=1),
+        expires_at=now + timedelta(days=30),
         allowed_major_version=2,
         machine_fingerprint="cloud-test-client",
     )
-    return {"X-TA-License": encode_license_key(payload)}
+    return {"X-MaterialScope-License": encode_license_key(payload)}
 
 
 def _cloud_bearer_header(client: TestClient) -> dict[str, str]:
@@ -577,8 +578,8 @@ def test_health_and_version_endpoints():
 def test_cloud_library_auth_and_search_endpoints(tmp_path, monkeypatch):
     hosted_root = tmp_path / "reference_library_hosted"
     _write_hosted_root(hosted_root)
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_HOSTED_ROOT", str(hosted_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", "false")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_HOSTED_ROOT", str(hosted_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH", "false")
     app = create_app(api_token="test-token")
     client = TestClient(app)
     bearer = _cloud_bearer_header(client)
@@ -599,10 +600,10 @@ def test_cloud_library_search_requires_bearer_token():
 def test_library_status_reports_limited_fallback_when_cloud_url_missing(tmp_path, monkeypatch):
     home_root = tmp_path / "home"
     mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", str(mirror_root))
-    monkeypatch.delenv("THERMOANALYZER_LIBRARY_CLOUD_URL", raising=False)
-    monkeypatch.delenv("THERMOANALYZER_LIBRARY_CLOUD_ENABLED", raising=False)
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    monkeypatch.delenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", raising=False)
+    monkeypatch.delenv("MATERIALSCOPE_LIBRARY_CLOUD_ENABLED", raising=False)
 
     client = TestClient(create_app(api_token="test-token"))
     sync_response = client.post("/library/sync", headers=_auth_headers(), json={"force": True})
@@ -622,13 +623,13 @@ def test_library_status_reports_cloud_full_access_after_successful_cloud_calls(t
     mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
     hosted_root = tmp_path / "reference_library_hosted"
     _write_hosted_root(hosted_root)
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", str(mirror_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_ENABLED", "true")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_ALLOW_FULL_PROVIDER_SYNC", "false")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_HOSTED_ROOT", str(hosted_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", "false")
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_ENABLED", "true")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC", "false")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_HOSTED_ROOT", str(hosted_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH", "false")
 
     client = TestClient(create_app(api_token="test-token"))
     sync_response = client.post("/library/sync", headers=_auth_headers(), json={"force": True})
@@ -664,12 +665,12 @@ def test_library_status_stays_limited_when_hosted_catalog_is_empty(tmp_path, mon
     mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
     hosted_root = tmp_path / "reference_library_hosted"
     hosted_root.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", str(mirror_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_ENABLED", "true")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_HOSTED_ROOT", str(hosted_root))
-    monkeypatch.delenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", raising=False)
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_ENABLED", "true")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_HOSTED_ROOT", str(hosted_root))
+    monkeypatch.delenv("MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH", raising=False)
 
     client = TestClient(create_app(api_token="test-token"))
     sync_response = client.post("/library/sync", headers=_auth_headers(), json={"force": True})
@@ -697,12 +698,12 @@ def test_local_dev_bootstraps_hosted_catalog_from_live_ingest_sibling(tmp_path, 
     hosted_root = tmp_path / "reference_library_hosted"
     normalized_live_root = tmp_path / "reference_library_ingest_live"
     _write_normalized_root(normalized_live_root)
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", str(mirror_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_ENABLED", "true")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_HOSTED_ROOT", str(hosted_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", "1")
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_ENABLED", "true")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_HOSTED_ROOT", str(hosted_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH", "1")
 
     client = TestClient(create_app(api_token="test-token"))
     assert (hosted_root / "manifest.json").exists()
@@ -745,12 +746,12 @@ def test_local_dev_bootstrap_prefers_expanded_sample_data_xrd_corpus(tmp_path, m
     home_root = tmp_path / "home"
     mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
     hosted_root = tmp_path / "reference_library_hosted"
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", str(mirror_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_ENABLED", "true")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_HOSTED_ROOT", str(hosted_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", "1")
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_ENABLED", "true")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_HOSTED_ROOT", str(hosted_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH", "1")
 
     app = create_app(api_token="test-token")
     client = TestClient(app)
@@ -792,12 +793,12 @@ def test_local_dev_bootstrap_upgrades_stale_seed_manifest_to_expanded_runtime(tm
     mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
     hosted_root = tmp_path / "reference_library_hosted"
     _write_seed_xrd_manifest(hosted_root)
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", str(mirror_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_ENABLED", "true")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_HOSTED_ROOT", str(hosted_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", "1")
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_ENABLED", "true")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_HOSTED_ROOT", str(hosted_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH", "1")
 
     app = create_app(api_token="test-token")
     client = TestClient(app)
@@ -841,12 +842,12 @@ def test_local_dev_bootstrap_upgrades_stale_seed_manifest_to_expanded_runtime(tm
 def test_runtime_cloud_client_stays_strict_without_dev_override(tmp_path, monkeypatch):
     home_root = tmp_path / "home"
     mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", str(mirror_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_ENABLED", "true")
-    monkeypatch.delenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", raising=False)
-    monkeypatch.delenv("THERMOANALYZER_COMMERCIAL_MODE", raising=False)
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_ENABLED", "true")
+    monkeypatch.delenv("MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH", raising=False)
+    monkeypatch.delenv("MATERIALSCOPE_COMMERCIAL_MODE", raising=False)
 
     client = TestClient(create_app(api_token="test-token"))
     sync_response = client.post("/library/sync", headers=_auth_headers(), json={"force": True})
@@ -864,7 +865,7 @@ def test_runtime_cloud_client_stays_strict_without_dev_override(tmp_path, monkey
     assert cloud_client.coverage() is None
     assert auth_attempts == []
     assert "Cloud library access requires trial or activated license status." in cloud_client.last_error
-    assert "THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH=1" in cloud_client.last_error
+    assert "MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH=1" in cloud_client.last_error
 
     manager = get_reference_library_manager()
     manager.record_cloud_lookup(success=False, error=cloud_client.last_error)
@@ -880,9 +881,9 @@ def test_runtime_cloud_client_stays_strict_without_dev_override(tmp_path, monkey
 def test_runtime_cloud_client_reports_connection_refused_precisely(monkeypatch):
     port = _find_free_port()
     base_url = f"http://127.0.0.1:{port}"
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_URL", base_url)
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_ENABLED", "true")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", "1")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", base_url)
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_ENABLED", "true")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH", "1")
 
     cloud_client = ManagedLibraryCloudClient(base_url=base_url, timeout_seconds=1.0)
     probe = cloud_client.health_probe()
@@ -899,14 +900,14 @@ def test_runtime_cloud_client_dev_override_enables_real_cloud_full_access(tmp_pa
     mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
     hosted_root = tmp_path / "reference_library_hosted"
     _write_hosted_root(hosted_root)
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", str(mirror_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_HOSTED_ROOT", str(hosted_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_ENABLED", "true")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", "1")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_ALLOW_FULL_PROVIDER_SYNC", "false")
-    monkeypatch.delenv("THERMOANALYZER_COMMERCIAL_MODE", raising=False)
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_HOSTED_ROOT", str(hosted_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_ENABLED", "true")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH", "1")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC", "false")
+    monkeypatch.delenv("MATERIALSCOPE_COMMERCIAL_MODE", raising=False)
 
     client = TestClient(create_app(api_token="test-token"))
     sync_response = client.post("/library/sync", headers=_auth_headers(), json={"force": True})
@@ -987,12 +988,12 @@ def test_backend_main_starts_and_runtime_client_reaches_cloud_chain(tmp_path, mo
     port = _find_free_port()
     base_url = f"http://127.0.0.1:{port}"
 
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", str(mirror_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_HOSTED_ROOT", str(hosted_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_URL", base_url)
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_ENABLED", "true")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", "1")
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_HOSTED_ROOT", str(hosted_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", base_url)
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_ENABLED", "true")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH", "1")
 
     env = os.environ.copy()
     repo_root = Path(__file__).resolve().parents[1]
@@ -1038,9 +1039,9 @@ def test_backend_main_starts_and_runtime_client_reaches_cloud_chain(tmp_path, mo
 
 
 def test_runtime_cloud_client_production_error_remains_strict_without_dev_hint(tmp_path, monkeypatch):
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(tmp_path / "home"))
-    monkeypatch.setenv("THERMOANALYZER_COMMERCIAL_MODE", "1")
-    monkeypatch.delenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", raising=False)
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("MATERIALSCOPE_COMMERCIAL_MODE", "1")
+    monkeypatch.delenv("MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH", raising=False)
 
     auth_attempts: list[str] = []
 
@@ -1050,7 +1051,7 @@ def test_runtime_cloud_client_production_error_remains_strict_without_dev_hint(t
 
     monkeypatch.setattr("core.library_cloud_client.httpx.post", _unexpected_post)
 
-    cloud_client = ManagedLibraryCloudClient(base_url="https://cloud.thermoanalyzer.example")
+    cloud_client = ManagedLibraryCloudClient(base_url="https://cloud.materialscope.example")
     assert cloud_client._acquire_token() is None
     assert auth_attempts == []
     assert cloud_client.last_error == "Cloud library access requires trial or activated license status."

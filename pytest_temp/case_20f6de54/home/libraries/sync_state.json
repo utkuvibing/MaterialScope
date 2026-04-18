@@ -1,0 +1,37 @@
+{
+  "manifest_etag": "29e9594a5bbbef33c75005004a1258d44677ee13b761dbee02110f984925477c",
+  "manifest_checked_at": "2026-04-16T01:10:00.735196+00:00",
+  "last_sync_at": "2026-04-16T01:10:00.740195+00:00",
+  "sync_mode": "online_sync",
+  "cache_status": "warm",
+  "last_error": "",
+  "feed_source": "file:///C:/MaterialScope-web-dash-plotly-migration/pytest_temp/case_20f6de54/mirror",
+  "installed_packages": {
+    "openspecy_ftir_core": {
+      "package_id": "openspecy_ftir_core",
+      "analysis_type": "FTIR",
+      "provider": "OpenSpecy",
+      "version": "2026.03-test",
+      "archive_path": "C:\\MaterialScope-web-dash-plotly-migration\\pytest_temp\\case_20f6de54\\home\\libraries\\packages\\openspecy_ftir_core-2026.03-test.zip",
+      "extract_path": "C:\\MaterialScope-web-dash-plotly-migration\\pytest_temp\\case_20f6de54\\home\\libraries\\installed\\openspecy_ftir_core\\2026.03-test",
+      "entry_count": 2,
+      "installed_at": "2026-04-16T01:10:00.740195+00:00",
+      "source_url": "https://example.invalid/openspecy",
+      "license_name": "CC-BY-4.0",
+      "license_text": "Attribution required.",
+      "attribution": "Synthetic OpenSpecy-compatible FTIR seed.",
+      "priority": 100,
+      "update_available": false,
+      "published_at": "2026-03-14T00:00:00Z",
+      "generated_at": "2026-03-14T00:00:00Z",
+      "provider_dataset_version": "2026.03.14",
+      "builder_version": "b1",
+      "normalized_schema_version": 1,
+      "delivery_tier": "full_provider"
+    }
+  },
+  "cloud_access_enabled": false,
+  "cloud_provider_count": 0,
+  "last_cloud_lookup_at": "",
+  "last_cloud_error": ""
+}

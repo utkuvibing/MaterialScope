@@ -1483,12 +1483,12 @@ html[data-theme="dark"] .main-content .dta-results-surface .dta-result-hero > .c
   border: 1px solid var(--ta-border);
   border-radius: 0.5rem;
   background: var(--ta-panel);
-  padding: 0.7rem 0.8rem 0.35rem;
-  box-shadow: 0 2px 5px rgba(28, 26, 26, 0.05);
+  padding: 0.65rem 0.78rem 0.32rem;
+  box-shadow: 0 1px 2px rgba(28, 26, 26, 0.035);
 }
 
 html[data-theme="dark"] .main-content .dta-results-surface .dta-result-figure-shell {
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
 }
 
 .main-content .dta-results-surface .dta-result-graph {
@@ -1503,6 +1503,11 @@ html[data-theme="dark"] .main-content .dta-results-surface .dta-result-figure-sh
   border-style: dashed;
   background: var(--ta-panel-strong);
   padding: 0.55rem 0.8rem;
+  border-color: rgba(102, 100, 94, 0.34);
+}
+
+html[data-theme="dark"] .main-content .dta-results-surface .dta-debug-shell {
+  border-color: rgba(158, 154, 147, 0.32);
 }
 
 .main-content .dta-results-surface .dta-debug-shell > .ta-details-summary {
@@ -1512,7 +1517,7 @@ html[data-theme="dark"] .main-content .dta-results-surface .dta-result-figure-sh
 }
 
 .main-content .dta-results-surface .dta-debug-graph {
-  opacity: 0.95;
+  opacity: 0.92;
 }
 
 .main-content .dta-results-surface .dta-meta-term {

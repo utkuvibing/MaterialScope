@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-03-14T00:00:00Z",
+  "etag": "ddabb228ed85e04093c9df50037ec3dc613cbda903ba6566635687f3a40aff63",
+  "providers": [
+    {
+      "provider_id": "openspecy",
+      "name": "OpenSpecy",
+      "modalities": [
+        "FTIR"
+      ],
+      "source_url": "https://example.invalid/openspecy",
+      "license_name": "CC-BY-4.0",
+      "license_text": "Attribution required.",
+      "attribution": "Synthetic OpenSpecy-compatible FTIR seed."
+    }
+  ],
+  "packages": [
+    {
+      "package_id": "openspecy_ftir_core",
+      "analysis_type": "FTIR",
+      "provider": "OpenSpecy",
+      "version": "2026.03-test",
+      "archive_name": "openspecy_ftir_core-2026.03-test.zip",
+      "sha256": "44753ad243e80956a42c806febf986940ee1269acf6fe815dc5ee93d09cc6b50",
+      "entry_count": 2,
+      "source_url": "https://example.invalid/openspecy",
+      "license_name": "CC-BY-4.0",
+      "license_text": "Attribution required.",
+      "attribution": "Synthetic OpenSpecy-compatible FTIR seed.",
+      "priority": 100,
+      "published_at": "2026-03-14T00:00:00Z",
+      "generated_at": "2026-03-14T00:00:00Z",
+      "provider_dataset_version": "2026.03.14",
+      "builder_version": "b1",
+      "normalized_schema_version": 1,
+      "delivery_tier": "limited_fallback"
+    }
+  ]
+}

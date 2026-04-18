@@ -1,0 +1,16 @@
+{
+  "package_id": "cod_xrd_0002",
+  "analysis_type": "XRD",
+  "provider": "COD",
+  "version": "2026.03.fixture-b1",
+  "source_url": "https://www.crystallography.net/cod/",
+  "license_name": "CC0-1.0",
+  "license_text": "",
+  "attribution": "Powder-pattern references derived from COD crystal structures.",
+  "priority": 100,
+  "published_at": "2026-03-14T00:00:00Z",
+  "generated_at": "2026-03-14T00:00:00Z",
+  "provider_dataset_version": "2026.03.fixture",
+  "builder_version": "b1",
+  "normalized_schema_version": 1
+}

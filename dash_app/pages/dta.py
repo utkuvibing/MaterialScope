@@ -593,33 +593,23 @@ def _build_event_guides(fig: go.Figure, rows: list[dict], *, loc: str, mode: str
     if mode == "result":
         return
 
-    placed_annotations: list[float] = []
-    annotation_min_sep = _ANNOTATION_MIN_SEP
     for row in sorted_rows:
         direction = _normalize_direction(row.get("direction", row.get("peak_type")))
         guide_color = _DIRECTION_GUIDE_COLORS.get(direction, "rgba(100, 116, 139, 0.18)")
         onset = _coerce_float(row.get("onset_temperature"))
         endset = _coerce_float(row.get("endset_temperature"))
         if onset is not None:
-            show_onset_label = all(abs(onset - t) >= annotation_min_sep for t in placed_annotations)
             fig.add_vline(
                 x=onset,
                 line=dict(color=guide_color, width=1, dash="dot"),
-                annotation_text=translate_ui(loc, "dash.analysis.figure.annot_on", v=f"{onset:.1f}") if show_onset_label else None,
-                annotation_position="top left",
+                layer="below",
             )
-            if show_onset_label:
-                placed_annotations.append(onset)
         if endset is not None:
-            show_endset_label = all(abs(endset - t) >= annotation_min_sep for t in placed_annotations)
             fig.add_vline(
                 x=endset,
                 line=dict(color=guide_color, width=1, dash="dot"),
-                annotation_text=translate_ui(loc, "dash.analysis.figure.annot_end", v=f"{endset:.1f}") if show_endset_label else None,
-                annotation_position="top left",
+                layer="below",
             )
-            if show_endset_label:
-                placed_annotations.append(endset)
 
 
 def _peak_card(row: dict, idx: int, loc: str = "en") -> dbc.Card:
@@ -2138,6 +2128,10 @@ def _build_dta_go_figure(
 
     is_result = view_mode == "result"
     is_dark = normalize_ui_theme(ui_theme) == "dark"
+    result_title_size = 17
+    debug_title_size = 15
+    result_height = 600
+    debug_height = 520
     fig = go.Figure()
     primary_name, primary_color = _primary_trace_name(corrected, smoothed, raw_signal, loc)
     y_range = _compute_y_axis_range(primary_signal, baseline, smoothed if corrected else [], raw_signal if not (corrected or smoothed) else [])
@@ -2155,7 +2149,7 @@ def _build_dta_go_figure(
                 mode="lines",
                 name=legend_raw,
                 line=dict(color="#94A3B8", width=0.95 if primary_name != legend_raw else 1.9),
-                opacity=0.2 if (is_result and primary_name != legend_raw) else (0.88 if primary_name == legend_raw else 0.34),
+                opacity=0.18 if (is_result and primary_name != legend_raw) else (0.88 if primary_name == legend_raw else 0.34),
                 hovertemplate=_trace_hover_template(legend_raw, loc),
             )
         )
@@ -2168,7 +2162,7 @@ def _build_dta_go_figure(
                 mode="lines",
                 name=legend_smooth,
                 line=dict(color="#0891B2", width=1.4 if is_result else 1.6),
-                opacity=0.66 if is_result else 0.88,
+                opacity=0.62 if is_result else 0.84,
                 hovertemplate=_trace_hover_template(legend_smooth, loc),
             )
         )
@@ -2181,7 +2175,7 @@ def _build_dta_go_figure(
                 mode="lines",
                 name=legend_base,
                 line=dict(color="#64748B", width=1.0 if is_result else 1.1, dash="dot"),
-                opacity=0.44 if is_result else 0.72,
+                opacity=0.38 if is_result else 0.66,
                 hovertemplate=_trace_hover_template(legend_base, loc),
             )
         )
@@ -2192,7 +2186,7 @@ def _build_dta_go_figure(
             y=primary_signal,
             mode="lines",
             name=primary_name,
-            line=dict(color=primary_color, width=3.1 if is_result else 2.8),
+            line=dict(color=primary_color, width=3.0 if is_result else 2.8),
             opacity=1.0,
             hovertemplate=_trace_hover_template(primary_name, loc),
         )
@@ -2229,14 +2223,14 @@ def _build_dta_go_figure(
                 y=[primary_signal[idx]],
                 mode="markers+text",
                 marker=dict(
-                    size=10 if (is_result and is_primary) else (8 if is_result else (11 if is_primary else 8)),
+                    size=9 if (is_result and is_primary) else (7 if is_result else (10 if is_primary else 8)),
                     color=color,
                     symbol="diamond",
                     line=dict(color="white", width=1.1),
                 ),
                 text=[text_str],
                 textposition="top center",
-                textfont=dict(size=9 if is_result else 8, color=color),
+                textfont=dict(size=8 if is_result else 8, color=color),
                 name=f"{direction_label} {_format_temp_c(pt)}",
                 showlegend=False,
                 hovertemplate=marker_hover,
@@ -2245,60 +2239,78 @@ def _build_dta_go_figure(
         if text_str:
             annotated_temps.append(pt)
 
-    grid_color = "rgba(61, 59, 56, 0.42)" if is_dark else "rgba(224, 221, 214, 0.72)"
-    axis_line_color = "rgba(61, 59, 56, 0.9)" if is_dark else "rgba(183, 177, 168, 0.95)"
+    y_grid_color = "rgba(61, 59, 56, 0.34)" if is_dark else "rgba(224, 221, 214, 0.52)"
+    x_grid_color = "rgba(61, 59, 56, 0.26)" if is_dark else "rgba(224, 221, 214, 0.36)"
+    axis_line_color = "rgba(61, 59, 56, 0.84)" if is_dark else "rgba(183, 177, 168, 0.9)"
     tick_color = "rgba(238, 237, 234, 0.9)" if is_dark else "rgba(28, 26, 26, 0.78)"
-    title_size = 19 if is_result else 16
+    title_size = result_title_size if is_result else debug_title_size
+    if is_result:
+        legend = dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.015,
+            xanchor="right",
+            x=1.0,
+            traceorder="normal",
+            itemclick="toggleothers",
+            itemdoubleclick="toggle",
+            font=dict(size=11),
+            itemsizing="constant",
+        )
+    else:
+        legend = dict(
+            orientation="v",
+            yanchor="top",
+            y=0.99,
+            xanchor="right",
+            x=1.0,
+            traceorder="normal",
+            itemclick="toggle",
+            font=dict(size=11),
+        )
+
     fig.update_layout(
         title=dict(
             text=translate_ui(loc, "dash.analysis.figure.title_dta", name=sample_name),
             x=0.01,
             xanchor="left",
-            y=0.98,
+            y=0.985,
             yanchor="top",
             font=dict(size=title_size),
         ),
         xaxis_title=translate_ui(loc, "dash.analysis.figure.axis_temperature_c"),
         yaxis_title=translate_ui(loc, "dash.analysis.figure.axis_delta_t"),
         hovermode="x unified",
-        margin=dict(l=70, r=34, t=96 if is_result else 74, b=64 if is_result else 56),
-        height=620 if is_result else 540,
+        margin=dict(l=70, r=34, t=86 if is_result else 66, b=62 if is_result else 54),
+        height=result_height if is_result else debug_height,
         hoverlabel=dict(namelength=-1),
-        legend=dict(
-            orientation="v" if view_mode == "debug" else "h",
-            yanchor="bottom" if view_mode != "debug" else "top",
-            y=1.03 if view_mode != "debug" else 1.0,
-            xanchor="left" if view_mode != "debug" else "right",
-            x=0.0 if view_mode != "debug" else 1.0,
-            traceorder="normal",
-            itemclick="toggleothers" if is_result else "toggle",
-        ),
+        legend=legend,
     )
     apply_figure_theme(fig, ui_theme)
     fig.update_xaxes(
-        gridcolor=grid_color,
-        showgrid=True,
+        gridcolor=x_grid_color,
+        showgrid=not is_result,
         showline=True,
         linewidth=1,
         linecolor=axis_line_color,
         ticks="outside",
-        ticklen=5,
+        ticklen=4,
         tickcolor=axis_line_color,
         tickfont=dict(size=12, color=tick_color),
-        title_standoff=14,
+        title_standoff=12,
     )
     fig.update_yaxes(
         range=y_range,
-        gridcolor=grid_color,
+        gridcolor=y_grid_color,
         showgrid=True,
         showline=True,
         linewidth=1,
         linecolor=axis_line_color,
         ticks="outside",
-        ticklen=5,
+        ticklen=4,
         tickcolor=axis_line_color,
         tickfont=dict(size=12, color=tick_color),
-        title_standoff=14,
+        title_standoff=12,
     )
     return fig
 

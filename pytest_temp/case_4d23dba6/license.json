@@ -1,0 +1,13 @@
+{
+  "allowed_major_version": 2,
+  "company_name": "Acme Lab",
+  "customer_name": "Ada Lovelace",
+  "expires_at": "2027-03-07T00:00:00+00:00",
+  "issued_at": "2026-03-07T00:00:00+00:00",
+  "license_key": "TA-20260307-33DEC0A5",
+  "machine_fingerprint": "",
+  "offline_grace_days": 30,
+  "seat_count": 1,
+  "signature": "edc5c63c94f1e38312dcd896f0508fe0a5407ca749af69bd39080db2b3105d9f",
+  "sku": "PROFESSIONAL"
+}

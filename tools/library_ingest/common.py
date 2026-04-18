@@ -27,7 +27,7 @@ JOB_STATE_ROOT = Path("build") / "reference_library_jobs"
 BUILDER_VERSION = "b1"
 NORMALIZED_SCHEMA_VERSION = 1
 PROVIDER_SOURCE_FILE = Path(__file__).with_name("provider_sources.json")
-USER_AGENT = "ThermoAnalyzer-Ingest/1"
+USER_AGENT = "MaterialScope-Ingest/1"
 
 
 def utcnow_iso() -> str:

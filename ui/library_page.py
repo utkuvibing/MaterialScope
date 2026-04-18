@@ -224,8 +224,8 @@ def render() -> None:
         else:
             st.warning(
                 tx(
-                    "Fallback feed yapılandırılmamış. Sync için `THERMOANALYZER_LIBRARY_FEED_URL` veya `THERMOANALYZER_LIBRARY_MIRROR_ROOT` ayarla.",
-                    "Fallback feed is not configured. Set `THERMOANALYZER_LIBRARY_FEED_URL` or `THERMOANALYZER_LIBRARY_MIRROR_ROOT` for sync.",
+                    "Fallback feed yapılandırılmamış. Sync için `MATERIALSCOPE_LIBRARY_FEED_URL` veya `MATERIALSCOPE_LIBRARY_MIRROR_ROOT` ayarla (legacy `THERMOANALYZER_*` değişkenleri de kabul edilir).",
+                    "Fallback feed is not configured. Set `MATERIALSCOPE_LIBRARY_FEED_URL` or `MATERIALSCOPE_LIBRARY_MIRROR_ROOT` for sync (legacy `THERMOANALYZER_*` variables are still accepted).",
                 )
             )
     elif status.get("cache_status") == "cold":

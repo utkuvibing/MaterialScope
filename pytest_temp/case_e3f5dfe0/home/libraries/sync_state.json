@@ -1,0 +1,14 @@
+{
+  "manifest_etag": "4c87d6d1d3479bca4c86c21fa08a73f8af8e6b0e03738730bc3a204643dc108b",
+  "manifest_checked_at": "2026-04-16T01:08:34.865341+00:00",
+  "last_sync_at": "2026-04-16T01:08:34.868344+00:00",
+  "sync_mode": "online_sync",
+  "cache_status": "cold",
+  "last_error": "Some packages were skipped by delivery-tier policy: openspecy_ftir_core",
+  "feed_source": "file:///C:/MaterialScope-web-dash-plotly-migration/pytest_temp/case_e3f5dfe0/mirror",
+  "installed_packages": {},
+  "cloud_access_enabled": false,
+  "cloud_provider_count": 0,
+  "last_cloud_lookup_at": "",
+  "last_cloud_error": ""
+}

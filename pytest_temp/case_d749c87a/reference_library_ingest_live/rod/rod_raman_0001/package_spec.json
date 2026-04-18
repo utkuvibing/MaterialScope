@@ -1,0 +1,16 @@
+{
+  "package_id": "rod_raman_0001",
+  "analysis_type": "RAMAN",
+  "provider": "ROD",
+  "version": "2026.03.fixture-b1",
+  "source_url": "https://example.invalid/ROD",
+  "license_name": "Fixture License",
+  "license_text": "Fixture License Text",
+  "attribution": "ROD fixture",
+  "priority": 1,
+  "published_at": "2026-03-14T00:00:00Z",
+  "generated_at": "2026-03-14T00:00:00Z",
+  "provider_dataset_version": "2026.03.fixture",
+  "builder_version": "b1",
+  "normalized_schema_version": 1
+}

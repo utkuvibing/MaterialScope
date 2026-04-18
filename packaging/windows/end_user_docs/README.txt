@@ -1,8 +1,8 @@
-ThermoAnalyzer Hızlı Yardım
+MaterialScope Hızlı Yardım
 ===========================
 
 1. Programı nasıl açarım?
-- Başlat Menüsü'nden veya masaüstü kısayolundan ThermoAnalyzer Beta'yı açın.
+- Başlat Menüsü'nden veya masaüstü kısayolundan MaterialScope Beta'yı açın.
 - Program tarayıcıda açılır. Bu normaldir.
 - Uygulama bulutta değil, kendi bilgisayarınızda çalışır.
 
@@ -12,7 +12,7 @@ ThermoAnalyzer Hızlı Yardım
 - Karşılaştırma Alanı
 - Toplu Şablon Uygulayıcı
 - Rapor / dışa aktarma
-- .thermozip proje kaydetme ve yeniden açma
+- .scopezip proje kaydetme ve yeniden açma (legacy .thermozip açma desteklenir)
 
 3. Önizleme alanları
 - DTA
@@ -37,12 +37,12 @@ Bu önizleme alanlarını kararlı çıktı gibi değerlendirmeyin.
 6. Rapor ve proje alma
 - Rapor Merkezi sayfasından DOCX / PDF rapor alabilirsiniz.
 - CSV / XLSX dışa aktarma alabilirsiniz.
-- Çalışmayı daha sonra açmak için .thermozip proje arşivi kaydedebilirsiniz.
+- Çalışmayı daha sonra açmak için .scopezip proje arşivi kaydedebilirsiniz.
 
 7. Sorun bildirirken ne göndermeliyim?
 - Mümkünse giriş dosyası
 - Ekran görüntüsü
-- İlgili .thermozip dosyası
+- İlgili .scopezip dosyası (veya legacy .thermozip)
 - Destek tanılama çıktısı
 
 Destek tanılama çıktısını Rapor Merkezi içindeki destek alanından dışa aktarabilirsiniz.

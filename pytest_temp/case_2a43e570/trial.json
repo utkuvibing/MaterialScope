@@ -1,0 +1,13 @@
+{
+  "license_key": "TRIAL-20260307-9247A6",
+  "customer_name": "Trial User",
+  "company_name": "Evaluation",
+  "sku": "TRIAL",
+  "seat_count": 1,
+  "issued_at": "2026-03-07T00:00:00+00:00",
+  "expires_at": "2026-03-21T00:00:00+00:00",
+  "allowed_major_version": 2,
+  "offline_grace_days": 14,
+  "machine_fingerprint": "2907ea1ab44f7fb7",
+  "signature": "18b7c86c62ae4c5d92880a131e30e2617096495fb784e8e60709147f48ba1414"
+}

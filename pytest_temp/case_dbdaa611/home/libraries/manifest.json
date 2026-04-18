@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-03-14T00:00:00Z",
+  "etag": "67756fdd654f14c24e514199a19804b84e445d37fd9bd07cddc2e85ad772cedb",
+  "providers": [
+    {
+      "provider_id": "cod",
+      "name": "COD",
+      "modalities": [
+        "XRD"
+      ],
+      "source_url": "https://example.invalid/cod",
+      "license_name": "CC0-1.0",
+      "license_text": "",
+      "attribution": "Synthetic COD-compatible XRD seed."
+    }
+  ],
+  "packages": [
+    {
+      "package_id": "cod_xrd_core",
+      "analysis_type": "XRD",
+      "provider": "COD",
+      "version": "2026.03-test",
+      "archive_name": "cod_xrd_core-2026.03-test.zip",
+      "sha256": "b1c76ee6eb289c1e692c7bc778499bac39ef5a95b909fecda50237a815881d23",
+      "entry_count": 1,
+      "source_url": "https://example.invalid/cod",
+      "license_name": "CC0-1.0",
+      "license_text": "",
+      "attribution": "Synthetic COD-compatible XRD seed.",
+      "priority": 100,
+      "published_at": "2026-03-14T00:00:00Z",
+      "generated_at": "2026-03-13T21:45:00Z",
+      "provider_dataset_version": "2026.03-curated",
+      "builder_version": "m003-test",
+      "normalized_schema_version": 2,
+      "delivery_tier": "limited_fallback"
+    }
+  ]
+}

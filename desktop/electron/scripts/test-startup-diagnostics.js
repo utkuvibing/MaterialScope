@@ -8,7 +8,7 @@ function run() {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "ta-startup-diag-"));
   try {
     const diagnostics = createStartupDiagnostics({
-      appName: "ThermoAnalyzer Desktop",
+      appName: "MaterialScope Desktop",
       appVersion: "0.1.0-test",
       isPackaged: true,
       platform: "win32",
@@ -24,7 +24,7 @@ function run() {
     assert.ok(fs.existsSync(diagnostics.logPath), "diagnostics log should be created");
 
     const content = fs.readFileSync(diagnostics.logPath, "utf8");
-    assert.match(content, /ThermoAnalyzer Desktop startup diagnostics/);
+    assert.match(content, /MaterialScope Desktop startup diagnostics/);
     assert.match(content, /custom_message=true/);
     assert.match(content, /backend_stdout: line-1/);
     assert.match(content, /backend_stdout: line-2/);

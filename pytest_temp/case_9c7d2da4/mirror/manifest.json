@@ -1,0 +1,187 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-03-14T00:00:00Z",
+  "providers": [
+    {
+      "provider_id": "cod",
+      "name": "COD",
+      "modalities": [
+        "XRD"
+      ],
+      "source_url": "https://www.crystallography.net/cod/",
+      "license_name": "CC0-1.0",
+      "license_text": "",
+      "attribution": "Powder-pattern references derived from COD crystal structures."
+    },
+    {
+      "provider_id": "materials_project",
+      "name": "Materials Project",
+      "modalities": [
+        "XRD"
+      ],
+      "source_url": "https://materialsproject.org/",
+      "license_name": "Materials Project Terms of Use",
+      "license_text": "",
+      "attribution": "Powder-pattern references derived from Materials Project crystal structures."
+    },
+    {
+      "provider_id": "openspecy",
+      "name": "OpenSpecy",
+      "modalities": [
+        "FTIR",
+        "RAMAN"
+      ],
+      "source_url": "https://github.com/wincowgerDEV/OpenSpecy-package",
+      "license_name": "CC-BY-4.0",
+      "license_text": "",
+      "attribution": "Spectral references normalized from OpenSpecy-compatible sources."
+    },
+    {
+      "provider_id": "rod",
+      "name": "ROD",
+      "modalities": [
+        "RAMAN"
+      ],
+      "source_url": "https://solsa.crystallography.net/rod/new.html",
+      "license_name": "CC0-1.0",
+      "license_text": "",
+      "attribution": "Spectral references normalized from ROD mineral library records."
+    }
+  ],
+  "packages": [
+    {
+      "package_id": "cod_xrd_0001",
+      "analysis_type": "XRD",
+      "provider": "COD",
+      "version": "2026.03.fixture-b1",
+      "archive_name": "cod_xrd_0001-2026.03.fixture-b1.zip",
+      "sha256": "c9f0b0cedc959d5ecad951e5c7532262791a076b01ddf816a8b2ff61eb1e81f0",
+      "entry_count": 1,
+      "source_url": "https://www.crystallography.net/cod/",
+      "license_name": "CC0-1.0",
+      "license_text": "",
+      "attribution": "Powder-pattern references derived from COD crystal structures.",
+      "priority": 100,
+      "published_at": "2026-03-14T00:00:00Z",
+      "generated_at": "2026-03-14T00:00:00Z",
+      "provider_dataset_version": "2026.03.fixture",
+      "builder_version": "b1",
+      "normalized_schema_version": 1
+    },
+    {
+      "package_id": "cod_xrd_0002",
+      "analysis_type": "XRD",
+      "provider": "COD",
+      "version": "2026.03.fixture-b1",
+      "archive_name": "cod_xrd_0002-2026.03.fixture-b1.zip",
+      "sha256": "e185fa8a750c073f969b71e6fd843ed822bcc2d3e58466dca6e98df58b8f1850",
+      "entry_count": 1,
+      "source_url": "https://www.crystallography.net/cod/",
+      "license_name": "CC0-1.0",
+      "license_text": "",
+      "attribution": "Powder-pattern references derived from COD crystal structures.",
+      "priority": 100,
+      "published_at": "2026-03-14T00:00:00Z",
+      "generated_at": "2026-03-14T00:00:00Z",
+      "provider_dataset_version": "2026.03.fixture",
+      "builder_version": "b1",
+      "normalized_schema_version": 1
+    },
+    {
+      "package_id": "materials_project_xrd_0001",
+      "analysis_type": "XRD",
+      "provider": "Materials Project",
+      "version": "2026.03.fixture-b1",
+      "archive_name": "materials_project_xrd_0001-2026.03.fixture-b1.zip",
+      "sha256": "b7587941537d6f113900aaae27b20e0eb8dfb633a03c7ca99de3dbdee12f53c3",
+      "entry_count": 1,
+      "source_url": "https://materialsproject.org/",
+      "license_name": "Materials Project Terms of Use",
+      "license_text": "",
+      "attribution": "Powder-pattern references derived from Materials Project crystal structures.",
+      "priority": 70,
+      "published_at": "2026-03-14T00:00:00Z",
+      "generated_at": "2026-03-14T00:00:00Z",
+      "provider_dataset_version": "2026.03.fixture",
+      "builder_version": "b1",
+      "normalized_schema_version": 1
+    },
+    {
+      "package_id": "materials_project_xrd_0002",
+      "analysis_type": "XRD",
+      "provider": "Materials Project",
+      "version": "2026.03.fixture-b1",
+      "archive_name": "materials_project_xrd_0002-2026.03.fixture-b1.zip",
+      "sha256": "a33377ee97bc43015edb038b33802203bc48a5e57a2e7a7ed45529c63fb2b958",
+      "entry_count": 1,
+      "source_url": "https://materialsproject.org/",
+      "license_name": "Materials Project Terms of Use",
+      "license_text": "",
+      "attribution": "Powder-pattern references derived from Materials Project crystal structures.",
+      "priority": 70,
+      "published_at": "2026-03-14T00:00:00Z",
+      "generated_at": "2026-03-14T00:00:00Z",
+      "provider_dataset_version": "2026.03.fixture",
+      "builder_version": "b1",
+      "normalized_schema_version": 1
+    },
+    {
+      "package_id": "openspecy_ftir_0001",
+      "analysis_type": "FTIR",
+      "provider": "OpenSpecy",
+      "version": "2026.03.fixture-b1",
+      "archive_name": "openspecy_ftir_0001-2026.03.fixture-b1.zip",
+      "sha256": "75519d0d3ee46df22137babf752e673aa20f8c4acd7d9a29ad9dd8791b9732c2",
+      "entry_count": 2,
+      "source_url": "https://github.com/wincowgerDEV/OpenSpecy-package",
+      "license_name": "CC-BY-4.0",
+      "license_text": "",
+      "attribution": "Spectral references normalized from OpenSpecy-compatible sources.",
+      "priority": 100,
+      "published_at": "2026-03-14T00:00:00Z",
+      "generated_at": "2026-03-14T00:00:00Z",
+      "provider_dataset_version": "2026.03.fixture",
+      "builder_version": "b1",
+      "normalized_schema_version": 1
+    },
+    {
+      "package_id": "openspecy_raman_0001",
+      "analysis_type": "RAMAN",
+      "provider": "OpenSpecy",
+      "version": "2026.03.fixture-b1",
+      "archive_name": "openspecy_raman_0001-2026.03.fixture-b1.zip",
+      "sha256": "854b9666ad7bd1335588fe905f22912de5584d9c3961004555af50a7b617805d",
+      "entry_count": 1,
+      "source_url": "https://github.com/wincowgerDEV/OpenSpecy-package",
+      "license_name": "CC-BY-4.0",
+      "license_text": "",
+      "attribution": "Spectral references normalized from OpenSpecy-compatible sources.",
+      "priority": 100,
+      "published_at": "2026-03-14T00:00:00Z",
+      "generated_at": "2026-03-14T00:00:00Z",
+      "provider_dataset_version": "2026.03.fixture",
+      "builder_version": "b1",
+      "normalized_schema_version": 1
+    },
+    {
+      "package_id": "rod_raman_0001",
+      "analysis_type": "RAMAN",
+      "provider": "ROD",
+      "version": "2026.03.fixture-b1",
+      "archive_name": "rod_raman_0001-2026.03.fixture-b1.zip",
+      "sha256": "33ec802d3e49627cfdb5b5563f0169050b0713add25eab66d4511b4677302cf4",
+      "entry_count": 1,
+      "source_url": "https://solsa.crystallography.net/rod/new.html",
+      "license_name": "CC0-1.0",
+      "license_text": "",
+      "attribution": "Spectral references normalized from ROD mineral library records.",
+      "priority": 80,
+      "published_at": "2026-03-14T00:00:00Z",
+      "generated_at": "2026-03-14T00:00:00Z",
+      "provider_dataset_version": "2026.03.fixture",
+      "builder_version": "b1",
+      "normalized_schema_version": 1
+    }
+  ],
+  "etag": "0c820911e515237451bb484e0e649b59425b651c926718db0482a5d3032fac33"
+}

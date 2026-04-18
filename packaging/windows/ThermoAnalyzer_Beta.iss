@@ -1,13 +1,13 @@
-#define MyAppName "ThermoAnalyzer Beta"
+#define MyAppName "MaterialScope Beta"
 #define MyAppPublisher "Utku Sahin"
-#define MyAppExeName "ThermoAnalyzerLauncher.exe"
+#define MyAppExeName "MaterialScopeLauncher.exe"
 
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0"
 #endif
 
 #ifndef MySourceDist
-  #error "MySourceDist must point to the PyInstaller dist\\ThermoAnalyzerLauncher folder."
+  #error "MySourceDist must point to the PyInstaller dist\\MaterialScopeLauncher folder."
 #endif
 
 #ifndef MyRepoRoot
@@ -19,7 +19,7 @@
 #endif
 
 #ifndef MySetupBaseName
-  #define MySetupBaseName "ThermoAnalyzer_Setup"
+  #define MySetupBaseName "MaterialScope_Setup"
 #endif
 
 [Setup]
@@ -27,7 +27,7 @@ AppId={{A1F0F66E-37BF-4F0D-B4CF-6C87601A5D6D}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={localappdata}\Programs\ThermoAnalyzer Beta
+DefaultDirName={localappdata}\Programs\MaterialScope Beta
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -59,13 +59,13 @@ Source: "{#MyRepoRoot}\README.md"; DestDir: "{app}\docs"; Flags: ignoreversion
 Source: "{#MyVcRedistPath}"; Flags: dontcopy
 
 [Icons]
-Name: "{group}\ThermoAnalyzer Beta"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
+Name: "{group}\MaterialScope Beta"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
 Name: "{group}\Yardim"; Filename: "{app}\docs\HELP.html"
 Name: "{group}\Hizli Baslangic"; Filename: "{app}\docs\README.txt"
-Name: "{autodesktop}\ThermoAnalyzer Beta"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autodesktop}\MaterialScope Beta"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,ThermoAnalyzer Beta}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,MaterialScope Beta}"; Flags: nowait postinstall skipifsilent
 
 [Code]
 const
@@ -81,7 +81,7 @@ var
 
 function GetUserRuntimeRoot: String;
 begin
-  Result := ExpandConstant('{localappdata}\ThermoAnalyzer Beta');
+  Result := ExpandConstant('{localappdata}\MaterialScope Beta');
 end;
 
 function EnsureFreeSpace(TargetPath: String; RequiredMB: Cardinal; LabelText: String): String;
@@ -121,8 +121,8 @@ begin
     end;
   end;
 
-  ProbeFile := AddBackslash(TargetPath) + 'thermoanalyzer_write_probe.tmp';
-  if not SaveStringToFile(ProbeFile, 'ThermoAnalyzer write test', False) then
+  ProbeFile := AddBackslash(TargetPath) + 'materialscope_write_probe.tmp';
+  if not SaveStringToFile(ProbeFile, 'MaterialScope write test', False) then
   begin
     Result := 'Setup could not write to ' + LabelText + ' at:' + #13#10 + TargetPath;
     exit;
@@ -160,7 +160,7 @@ begin
   VcRedistAttempted := True;
   ExtractTemporaryFile('vc_redist.x64.exe');
   RedistExe := ExpandConstant('{tmp}\vc_redist.x64.exe');
-  Parameters := '/install /quiet /norestart /log "' + ExpandConstant('{tmp}\thermoanalyzer_vcredist.log') + '"';
+  Parameters := '/install /quiet /norestart /log "' + ExpandConstant('{tmp}\materialscope_vcredist.log') + '"';
 
   if not ShellExec('open', RedistExe, Parameters, '', SW_SHOWNORMAL, ewWaitUntilTerminated, ResultCode) then
   begin
@@ -183,11 +183,11 @@ begin
   if Result <> '' then
     exit;
 
-  Result := EnsureFreeSpace(ExpandConstant('{localappdata}'), RequiredRuntimeFreeMB, 'the ThermoAnalyzer user runtime area');
+  Result := EnsureFreeSpace(ExpandConstant('{localappdata}'), RequiredRuntimeFreeMB, 'the MaterialScope user runtime area');
   if Result <> '' then
     exit;
 
-  Result := EnsureWritableDirectory(GetUserRuntimeRoot, 'the ThermoAnalyzer user runtime area');
+  Result := EnsureWritableDirectory(GetUserRuntimeRoot, 'the MaterialScope user runtime area');
   if Result <> '' then
     exit;
 
@@ -204,16 +204,16 @@ begin
   if VcRedistInstallFailed then
   begin
     MessageText :=
-      'ThermoAnalyzer Beta could not install the Microsoft Visual C++ compatibility package automatically.' + #13#10#13#10 +
+      'MaterialScope Beta could not install the Microsoft Visual C++ compatibility package automatically.' + #13#10#13#10 +
       'The application was still installed because the packaged runtime already includes Python and the app dependencies.' + #13#10 +
-      'If ThermoAnalyzer does not start on this machine, rerun Setup with administrator approval or contact support.' + #13#10#13#10 +
+      'If MaterialScope does not start on this machine, rerun Setup with administrator approval or contact support.' + #13#10#13#10 +
       'VC++ installer exit code: ' + IntToStr(VcRedistExitCode);
     SuppressibleMsgBox(MessageText, mbInformation, MB_OK, IDOK);
   end
   else if VcRedistAttempted and VcRedistRestartRecommended then
   begin
     MessageText :=
-      'ThermoAnalyzer Beta installed the Microsoft Visual C++ compatibility package.' + #13#10#13#10 +
+      'MaterialScope Beta installed the Microsoft Visual C++ compatibility package.' + #13#10#13#10 +
       'Windows reported that a restart may be recommended before the packaged app is used for the first time.';
     SuppressibleMsgBox(MessageText, mbInformation, MB_OK, IDOK);
   end;

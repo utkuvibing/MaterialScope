@@ -1,0 +1,14 @@
+{
+  "manifest_etag": "",
+  "manifest_checked_at": "",
+  "last_sync_at": "",
+  "sync_mode": "not_synced",
+  "cache_status": "cold",
+  "last_error": "",
+  "feed_source": "file:///C:/MaterialScope-web-dash-plotly-migration/sample_data/reference_library_mirror",
+  "installed_packages": {},
+  "cloud_access_enabled": true,
+  "cloud_provider_count": 1,
+  "last_cloud_lookup_at": "2026-04-16T12:18:50.763871+00:00",
+  "last_cloud_error": ""
+}

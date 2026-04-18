@@ -1,0 +1,20 @@
+{
+  "provider_id": "rod",
+  "provider_dataset_version": "2026.03.fixture",
+  "cursor": 1,
+  "processed_count": 1,
+  "failed_count": 0,
+  "last_successful_ingest_at": "2026-04-16T10:25:16+00:00",
+  "sampled_failures": [],
+  "next_chunk_index_by_analysis_type": {
+    "RAMAN": 2
+  },
+  "pending_entries_by_analysis_type": {
+    "RAMAN": []
+  },
+  "emitted_package_ids": [
+    "rod_raman_0001"
+  ],
+  "completed": true,
+  "completed_at": "2026-04-16T10:25:16+00:00"
+}

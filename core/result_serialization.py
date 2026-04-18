@@ -1,4 +1,4 @@
-"""Serializable result helpers for ThermoAnalyzer analysis outputs."""
+"""Serializable result helpers for MaterialScope analysis outputs."""
 
 from __future__ import annotations
 

@@ -1,32 +1,27 @@
-# Active task — MaterialScope
+# Task — MaterialScope
 
 **Purpose:** One active migration slice — scope, goal, and acceptance only.
 
-## Status (2026-04-17): Thermal literature search semantics (backend) — implemented
+## Status (2026-04-18): DTA Dash Graph Polish & Refactor — in progress
 
-**Goal:** Introduce explicit thermal search semantics for DSC/DTA/TGA with `known_material` vs `behavior_first` mode branching, conservative subject trust inference, and explainable evidence-scope metadata for UI/report layers.
+**Goal:** Refactor Dash DTA plotting into explicit `result` and `debug` figure modes, defaulting all saved/exported/report figures to polished `result` mode while preserving rich analysis detail in `debug` mode.
 
 **In scope**
 
-- `[core/thermal_literature_query_builder.py](core/thermal_literature_query_builder.py)`: add `_infer_subject_trust` (`trusted|low_trust|absent`) + `_infer_search_mode` (`known_material|behavior_first`); branch DSC/DTA/TGA query construction by mode; include `search_mode` + `subject_trust` in payload and `evidence_snapshot`.
-- `[core/literature_compare.py](core/literature_compare.py)`: propagate `search_mode`/`subject_trust` into `literature_context`; classify per-comparison thermal evidence scope (`material_specific|behavior_level|generic_context`) and emit `evidence_scope_summary` at context level.
-- `[core/literature_models.py](core/literature_models.py)`: extend normalized models with `search_mode`, `subject_trust`, `evidence_scope_summary`, and per-row `evidence_scope`.
-- `[tests/test_literature_compare.py](tests/test_literature_compare.py)`: focused coverage for mode/trust inference, behavior-first query anchoring, known-material anchoring, and metadata exposure.
+- `dash_app/pages/dta.py`: add `view_mode` contract to `_build_dta_go_figure` and `_build_figure`; implement result-mode trace hierarchy; implement debug-mode overlays; add `dta-figure-view-mode` UI selector; force result mode in capture path; reduce annotation clutter in result mode; add hover detail.
+- `tests/test_dta_dash_page.py`: add mode matrix tests, annotation anti-clutter tests, capture result-mode enforcement tests.
+- `utils/i18n.py`: add TR/EN keys for figure view mode labels.
 
 **Out of scope**
 
-- Provider/env registry refactors; broad score/threshold retuning; non-thermal modalities (XRD/generic); Dash layout changes.
+- `ui/components/plot_builder.py`, `ui/dta_page.py` (Streamlit surface).
+- DTA analysis algorithms, result schema, literature compare semantics, report artifact keys.
+- Generic cross-modality plotting framework.
+- Broad visual experimentation outside hierarchy/readability goals.
 
 **Acceptance**
 
-- DSC/DTA/TGA query payload exposes `search_mode` and `subject_trust`.
-- `behavior_first` mode does not use low-trust labels as primary query anchors.
-- `known_material` mode preserves trusted subject/material anchoring.
-- `literature_context` includes `search_mode`, `subject_trust`, `evidence_scope_summary`.
-- Thermal `literature_comparisons` include per-row `evidence_scope`.
-- Thermal-focused tests pass without broad scoring rewrites.
-
-**Verification (recorded)**
-
-- `python -m pytest tests/test_literature_compare.py -q` → **63 passed**
-- `python -m pytest tests/test_backend_details.py tests/test_literature_compare_panel.py -q` → **47 passed** (3 warnings)
+- `python -m pytest tests/test_dta_dash_page.py -q` passes.
+- `python -m pytest tests/test_dash_workflow_regression.py -q` passes.
+- `python -m pytest tests/test_report_generator.py -k dta -q` passes.
+- DTA result figure tests prove: result/debug mode behavior differs as defined; capture uses result mode.

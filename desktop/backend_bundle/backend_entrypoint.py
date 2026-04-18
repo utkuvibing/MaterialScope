@@ -1,4 +1,4 @@
-"""PyInstaller entrypoint for ThermoAnalyzer desktop backend."""
+"""PyInstaller entrypoint for MaterialScope desktop backend."""
 
 from backend.main import main
 

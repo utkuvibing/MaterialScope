@@ -1,9 +1,9 @@
 {
-  "name": "thermoanalyzer-desktop",
+  "name": "materialscope-desktop",
   "version": "0.1.0",
   "private": true,
-  "author": "ThermoAnalyzer Team",
-  "description": "ThermoAnalyzer desktop app with bundled Python backend runtime",
+  "author": "MaterialScope Team",
+  "description": "MaterialScope desktop app with bundled Python backend runtime",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -19,8 +19,8 @@
     "electron-builder": "^24.13.3"
   },
   "build": {
-    "appId": "com.thermoanalyzer.desktop",
-    "productName": "ThermoAnalyzer Desktop",
+    "appId": "com.materialscope.desktop",
+    "productName": "MaterialScope Desktop",
     "directories": {
       "output": "../../release/electron"
     },
@@ -36,7 +36,7 @@
     ],
     "extraResources": [
       {
-        "from": "../backend_bundle/dist/thermoanalyzer_backend",
+        "from": "../backend_bundle/dist/materialscope_backend",
         "to": "backend",
         "filter": [
           "**/*"
@@ -44,7 +44,7 @@
       }
     ],
     "win": {
-      "icon": "assets/thermoanalyzer.ico",
+      "icon": "assets/materialscope.ico",
       "target": [
         {
           "target": "nsis",
@@ -53,7 +53,7 @@
           ]
         }
       ],
-      "artifactName": "ThermoAnalyzer-Setup-${version}-${arch}.${ext}"
+      "artifactName": "MaterialScope-Setup-${version}-${arch}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -61,10 +61,10 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "ThermoAnalyzer Desktop",
-      "installerIcon": "assets/thermoanalyzer.ico",
-      "uninstallerIcon": "assets/thermoanalyzer.ico",
-      "installerHeaderIcon": "assets/thermoanalyzer.ico"
+      "shortcutName": "MaterialScope Desktop",
+      "installerIcon": "assets/materialscope.ico",
+      "uninstallerIcon": "assets/materialscope.ico",
+      "installerHeaderIcon": "assets/materialscope.ico"
     }
   }
 }

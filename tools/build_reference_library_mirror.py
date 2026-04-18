@@ -23,7 +23,7 @@ DEFAULT_OUTPUT_ROOT = Path("build") / "reference_library_mirror"
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build ThermoAnalyzer reference-library mirror packages.")
+    parser = argparse.ArgumentParser(description="Build MaterialScope reference-library mirror packages.")
     parser.add_argument(
         "--normalized-root",
         default=str(DEFAULT_NORMALIZED_ROOT),

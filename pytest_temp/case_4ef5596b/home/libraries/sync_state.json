@@ -1,0 +1,37 @@
+{
+  "manifest_etag": "f2d77aaaa53f4fe578d529c4cc04320a1be555f6bf589cd36a1ad9d0fe96170d",
+  "manifest_checked_at": "2026-04-16T10:35:35.051294+00:00",
+  "last_sync_at": "2026-04-16T10:35:35.061409+00:00",
+  "sync_mode": "online_sync",
+  "cache_status": "warm",
+  "last_error": "",
+  "feed_source": "file:///C:/MaterialScope-web-dash-plotly-migration/pytest_temp/case_4ef5596b/mirror",
+  "installed_packages": {
+    "cod_xrd_core": {
+      "package_id": "cod_xrd_core",
+      "analysis_type": "XRD",
+      "provider": "COD",
+      "version": "2026.03-test",
+      "archive_path": "C:\\MaterialScope-web-dash-plotly-migration\\pytest_temp\\case_4ef5596b\\home\\libraries\\packages\\cod_xrd_core-2026.03-test.zip",
+      "extract_path": "C:\\MaterialScope-web-dash-plotly-migration\\pytest_temp\\case_4ef5596b\\home\\libraries\\installed\\cod_xrd_core\\2026.03-test",
+      "entry_count": 1,
+      "installed_at": "2026-04-16T10:35:35.061409+00:00",
+      "source_url": "https://example.invalid/cod",
+      "license_name": "CC0-1.0",
+      "license_text": "",
+      "attribution": "Synthetic COD-compatible XRD seed.",
+      "priority": 100,
+      "update_available": false,
+      "published_at": "2026-03-14T00:00:00Z",
+      "generated_at": "2026-03-13T21:45:00Z",
+      "provider_dataset_version": "2026.03-curated",
+      "builder_version": "m003-test",
+      "normalized_schema_version": 2,
+      "delivery_tier": "limited_fallback"
+    }
+  },
+  "cloud_access_enabled": false,
+  "cloud_provider_count": 0,
+  "last_cloud_lookup_at": "",
+  "last_cloud_error": ""
+}

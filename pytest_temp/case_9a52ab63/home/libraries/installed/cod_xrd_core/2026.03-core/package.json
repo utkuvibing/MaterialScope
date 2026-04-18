@@ -1,0 +1,12 @@
+{
+  "package_id": "cod_xrd_core",
+  "analysis_type": "XRD",
+  "provider": "COD",
+  "version": "2026.03-core",
+  "source_url": "https://www.crystallography.net/cod/",
+  "license_name": "CC0-1.0",
+  "license_text": "",
+  "attribution": "Starter qualitative phase fingerprints derived from COD-compatible open crystal references.",
+  "priority": 100,
+  "published_at": "2026-03-14T00:00:00Z"
+}

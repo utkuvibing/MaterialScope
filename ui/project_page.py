@@ -24,7 +24,13 @@ def _prepare_project_archive(lang: str, datasets: dict) -> bool:
     try:
         st.session_state["project_archive_bytes"] = save_project_archive(st.session_state)
         st.session_state["project_archive_ready"] = True
-        st.success(_tx(lang, "Proje arşivi hazırlandı.", "Project archive prepared."))
+        st.success(
+            _tx(
+                lang,
+                "MaterialScope `.scopezip` proje arşivi hazırlandı.",
+                "MaterialScope `.scopezip` project archive prepared.",
+            )
+        )
         return True
     except Exception as exc:
         error_id = record_exception(
@@ -108,8 +114,8 @@ def render():
                 st.caption(
                     _tx(
                         lang,
-                        "En az bir analiz sonucu varsa indirilebilir arşiv hazırla.",
-                        "Prepare a downloadable archive once at least one analysis result exists.",
+                        "En az bir analiz sonucu varsa MaterialScope `.scopezip` arşivini hazırla.",
+                        "Prepare a downloadable MaterialScope `.scopezip` archive once at least one analysis result exists.",
                     )
                 )
                 if st.button(
@@ -127,7 +133,13 @@ def render():
 
         with download_card_col:
             with st.container(border=True):
-                st.caption(_tx(lang, "Hazır arşivi indir ve oturumu dışa aktar.", "Download the prepared archive and export the session."))
+                st.caption(
+                    _tx(
+                        lang,
+                        "Hazır MaterialScope `.scopezip` arşivini indir ve oturumu dışa aktar.",
+                        "Download the prepared MaterialScope `.scopezip` archive and export the session.",
+                    )
+                )
                 st.download_button(
                     t("sidebar.project.download"),
                     data=st.session_state.get("project_archive_bytes") or b"",
@@ -151,7 +163,11 @@ def render():
                 st.markdown(f"**{label}:** {value}")
 
         next_step_message = (
-            _tx(lang, "Önce Veri Al sayfasından koşu yükle.", "Start by loading runs from Import Runs.")
+            _tx(
+                lang,
+                "Önce Veri Al sayfasından MaterialScope çalışma alanına koşu yükle.",
+                "Start by loading runs into your MaterialScope workspace from Import Runs.",
+            )
             if not datasets
             else _tx(lang, "Sıradaki doğru adım: analiz sayfalarından en az bir sonucu kaydet.", "Next step: save at least one result from the analysis pages.")
             if not valid_results
@@ -166,8 +182,8 @@ def render():
                 st.warning(
                     _tx(
                         lang,
-                        "Mevcut çalışma alanı üzerine yazılacak. İstersen önce arşiv hazırla, sonra temizle.",
-                        "The current workspace will be overwritten. Prepare an archive first if you need to keep it.",
+                        "Mevcut çalışma alanı üzerine yazılacak. İstersen önce MaterialScope `.scopezip` arşivini hazırla, sonra temizle.",
+                        "The current workspace will be overwritten. Prepare a MaterialScope `.scopezip` archive first if you need to keep it.",
                     )
                 )
                 clear_action_col, save_first_col, cancel_clear_col = st.columns(3, gap="small")
@@ -195,15 +211,17 @@ def render():
             st.caption(
                 _tx(
                     lang,
-                    "Arşivi sürükle-bırak ya da seç, sonra mevcut çalışma alanına uygula.",
-                    "Drag and drop an archive or browse for it, then apply it to the current workspace.",
+                    "MaterialScope `.scopezip` veya eski `.thermozip` arşivini sürükle-bırak ya da seç; sonra mevcut çalışma alanına uygula.",
+                    "Drag and drop or browse for a MaterialScope `.scopezip` or legacy `.thermozip` archive, then apply it to the current workspace.",
                 )
             )
             uploaded_project = st.file_uploader(
                 t("sidebar.project.load"),
-                type=[PROJECT_EXTENSION.lstrip(".")],
+                type=[PROJECT_EXTENSION.lstrip("."), "thermozip"],
                 key="project_loader_page",
-                help="Load a previously saved MaterialScope project archive.",
+                help=(
+                    "Load a previously saved MaterialScope project archive: `.scopezip` (current) or legacy `.thermozip`."
+                ),
             )
             incoming_name = getattr(uploaded_project, "name", None) or _tx(lang, "Dosya seçilmedi", "No file selected")
             st.markdown(f"**{_tx(lang, 'Seçilen arşiv', 'Selected archive')}:** {incoming_name}")

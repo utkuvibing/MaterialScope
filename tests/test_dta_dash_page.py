@@ -386,7 +386,7 @@ def test_build_figure_uses_corrected_as_primary_trace(monkeypatch):
     raw_trace = next(trace for trace in graph.figure.data if trace.name == "Raw Signal")
     assert corrected_trace.line.width >= 3.0
     assert raw_trace.opacity <= 0.22
-    assert graph.figure.layout.height == 620
+    assert graph.figure.layout.height == 600
     assert graph.figure.layout.yaxis.range is not None
     assert graph.figure.layout.shapes in ((), None)
     assert graph.figure.layout.legend.orientation == "h"
@@ -554,7 +554,7 @@ def test_build_dta_go_figure_result_mode_suppresses_guide_annotation_text(monkey
     layout_json = fig.to_plotly_json().get("layout", {})
     annotations = layout_json.get("annotations") or []
     assert annotations == []
-    assert layout_json.get("height") == 620
+    assert layout_json.get("height") == 600
 
 
 def test_build_dta_go_figure_event_marker_labels_are_clean_and_use_degree_symbol(monkeypatch):
@@ -688,8 +688,8 @@ def test_build_dta_go_figure_debug_mode_adds_restrained_guides(monkeypatch):
     debug_annotations = debug_layout.get("annotations") or []
     assert result_shapes == []
     assert len(debug_shapes) >= 2
-    assert len(debug_annotations) <= 4
-    assert debug_layout.get("height") == 540
+    assert debug_annotations == []
+    assert debug_layout.get("height") == 520
     assert debug_layout.get("legend", {}).get("orientation") == "v"
 
 

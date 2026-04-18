@@ -1,4 +1,4 @@
-"""Report generation for normalized ThermoAnalyzer result records."""
+"""Report generation for normalized MaterialScope result records."""
 
 from __future__ import annotations
 
@@ -1980,8 +1980,8 @@ def _citation_lookup(record: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
 
 def _literature_demo_enabled() -> bool:
     token = (
-        os.getenv("THERMOANALYZER_INCLUDE_DEMO_LITERATURE")
-        or os.getenv("MATERIALSCOPE_INCLUDE_DEMO_LITERATURE")
+        os.getenv("MATERIALSCOPE_INCLUDE_DEMO_LITERATURE")
+        or os.getenv("THERMOANALYZER_INCLUDE_DEMO_LITERATURE")
         or ""
     )
     return token.strip().lower() in {"1", "true", "yes", "on"}

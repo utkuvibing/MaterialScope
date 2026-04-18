@@ -9,7 +9,7 @@ from backend.app import create_app
 
 
 def _headers() -> dict[str, str]:
-    return {"X-TA-Token": "parity-token"}
+    return {"X-MaterialScope-Token": "parity-token"}
 
 
 def _as_b64(raw: bytes) -> str:

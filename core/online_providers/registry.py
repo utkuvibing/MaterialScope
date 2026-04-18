@@ -16,7 +16,10 @@ _ENGINE_INSTANCE: OnlineLibraryEngine | None = None
 
 def online_search_enabled() -> bool:
     """Check if online search is enabled via environment variable."""
-    return os.getenv("THERMOANALYZER_ONLINE_SEARCH", "true").strip().lower() in {"true", "1", "yes", "on"}
+    return (
+        os.getenv("MATERIALSCOPE_ONLINE_SEARCH")
+        or os.getenv("THERMOANALYZER_ONLINE_SEARCH", "true")
+    ).strip().lower() in {"true", "1", "yes", "on"}
 
 
 def register_provider(provider: OnlineProvider) -> None:

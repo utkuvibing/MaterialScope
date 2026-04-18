@@ -215,7 +215,7 @@ def _seed_spectral_result_store(analysis_type: str) -> tuple[ProjectStore, str, 
 
 
 def _headers() -> dict[str, str]:
-    return {"X-TA-Token": "details-token"}
+    return {"X-MaterialScope-Token": "details-token"}
 
 
 def _as_b64(raw: bytes) -> str:
@@ -491,9 +491,7 @@ def test_result_literature_compare_endpoint_persists_payload():
 def test_result_literature_compare_endpoint_persists_safe_context_when_no_real_results_exist(monkeypatch):
     for name in (
         "MATERIALSCOPE_OPENALEX_EMAIL",
-        "THERMOANALYZER_OPENALEX_EMAIL",
         "MATERIALSCOPE_OPENALEX_API_KEY",
-        "THERMOANALYZER_OPENALEX_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
     store, project_id, result_id = _seed_xrd_result_store()

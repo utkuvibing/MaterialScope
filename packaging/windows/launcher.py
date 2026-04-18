@@ -1,4 +1,4 @@
-"""Windows launcher for packaged ThermoAnalyzer beta builds.
+"""Windows launcher for packaged MaterialScope beta builds.
 
 This keeps the current Streamlit architecture intact:
 - start the app locally
@@ -18,8 +18,8 @@ from pathlib import Path
 import streamlit.web.bootstrap as bootstrap
 
 
-APP_NAME = "ThermoAnalyzer Beta"
-APP_EXE_NAME = "ThermoAnalyzerLauncher"
+APP_NAME = "MaterialScope Beta"
+APP_EXE_NAME = "MaterialScopeLauncher"
 PREFERRED_PORT = 8501
 MAX_PORT_ATTEMPTS = 25
 
@@ -49,7 +49,7 @@ def _show_startup_error(message: str) -> None:
 
 def _assert_writable_directory(path: Path) -> None:
     """Fail early with a clear message if the runtime path is not writable."""
-    probe = path / ".thermoanalyzer_write_probe"
+    probe = path / ".materialscope_write_probe"
     probe.write_text("ok", encoding="utf-8")
     probe.unlink(missing_ok=True)
 
@@ -69,6 +69,7 @@ def _ensure_user_runtime(resource_root: Path, user_root: Path) -> None:
     if bundled_config.exists() and not target_config.exists():
         shutil.copy2(bundled_config, target_config)
 
+    os.environ.setdefault("MATERIALSCOPE_HOME", str(user_root))
     os.environ.setdefault("THERMOANALYZER_HOME", str(user_root))
     os.environ.setdefault("STREAMLIT_BROWSER_GATHER_USAGE_STATS", "false")
 
@@ -83,7 +84,7 @@ def _pick_available_port(preferred_port: int = PREFERRED_PORT, attempts: int = M
                 return port
             except OSError:
                 continue
-    raise RuntimeError("No free localhost port was available for the packaged ThermoAnalyzer beta.")
+    raise RuntimeError("No free localhost port was available for the packaged MaterialScope beta.")
 
 
 def main() -> None:

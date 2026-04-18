@@ -15,7 +15,7 @@ from core.result_serialization import serialize_spectral_result, serialize_xrd_r
 
 
 def _headers() -> dict[str, str]:
-    return {"X-TA-Token": "exports-token"}
+    return {"X-MaterialScope-Token": "exports-token"}
 
 
 def _as_b64(raw: bytes) -> str:

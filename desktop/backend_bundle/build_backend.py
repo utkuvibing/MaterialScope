@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build ThermoAnalyzer desktop backend executable.")
+    parser = argparse.ArgumentParser(description="Build MaterialScope desktop backend executable.")
     parser.add_argument("--clean", action="store_true", help="Clean previous build/dist outputs before building.")
     return parser.parse_args()
 
@@ -55,7 +55,7 @@ def main() -> None:
         "--clean",
         "--onedir",
         "--name",
-        "thermoanalyzer_backend",
+        "materialscope_backend",
         "--distpath",
         str(dist_dir),
         "--workpath",
@@ -80,8 +80,8 @@ def main() -> None:
     ]
     run_command(command, cwd=repo_root)
 
-    exe_name = "thermoanalyzer_backend.exe" if sys.platform.startswith("win") else "thermoanalyzer_backend"
-    built_exe = dist_dir / "thermoanalyzer_backend" / exe_name
+    exe_name = "materialscope_backend.exe" if sys.platform.startswith("win") else "materialscope_backend"
+    built_exe = dist_dir / "materialscope_backend" / exe_name
     if not built_exe.exists():  # pragma: no cover - environment dependent
         raise RuntimeError(f"Backend build did not produce expected executable: {built_exe}")
 

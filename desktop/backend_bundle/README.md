@@ -16,7 +16,7 @@ python .\desktop\backend_bundle\build_backend.py --clean
 
 Expected output:
 
-- `desktop/backend_bundle/dist/thermoanalyzer_backend/thermoanalyzer_backend.exe`
+- `desktop/backend_bundle/dist/materialscope_backend/materialscope_backend.exe`
 
 ## Notes
 

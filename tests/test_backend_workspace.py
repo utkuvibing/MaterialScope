@@ -8,7 +8,7 @@ from backend.app import create_app
 
 
 def _headers() -> dict[str, str]:
-    return {"X-TA-Token": "workspace-token"}
+    return {"X-MaterialScope-Token": "workspace-token"}
 
 
 def _as_b64(raw: bytes) -> str:

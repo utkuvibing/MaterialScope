@@ -670,7 +670,7 @@ def test_execute_xrd_batch_template_blocks_stable_match_when_axis_mapping_requir
 
 def test_execute_batch_template_uses_installed_global_reference_libraries(monkeypatch):
     mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
     manager = get_reference_library_manager()
     manager.sync(force=True, package_ids=["openspecy_ftir_core", "cod_xrd_core"])
 

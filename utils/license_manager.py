@@ -18,7 +18,8 @@ from typing import Any
 APP_VERSION = "2.0"
 TRIAL_DAYS = 14
 LICENSE_PREFIX = "TAPRO-"
-COMMERCIAL_MODE_ENV = "THERMOANALYZER_COMMERCIAL_MODE"
+COMMERCIAL_MODE_ENV = "MATERIALSCOPE_COMMERCIAL_MODE"
+COMMERCIAL_MODE_ENV_LEGACY = "THERMOANALYZER_COMMERCIAL_MODE"
 LICENSE_REQUIRED_FIELDS = {
     "license_key",
     "customer_name",
@@ -33,21 +34,21 @@ LICENSE_REQUIRED_FIELDS = {
 }
 
 # Demo-only signing secret. Commercial builds should override this via env var.
-DEFAULT_LICENSE_SECRET = "thermoanalyzer-professional-demo-secret"
+DEFAULT_LICENSE_SECRET = "materialscope-professional-demo-secret"
 
 
 def commercial_mode_enabled() -> bool:
     """Return whether license enforcement is enabled for this runtime."""
-    raw = os.getenv(COMMERCIAL_MODE_ENV, "").strip().lower()
+    raw = str(os.getenv(COMMERCIAL_MODE_ENV, "") or os.getenv(COMMERCIAL_MODE_ENV_LEGACY, "")).strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 
 def get_storage_dir() -> Path:
     """Return the local storage directory used for license payloads."""
-    root = os.getenv("THERMOANALYZER_HOME")
+    root = os.getenv("MATERIALSCOPE_HOME") or os.getenv("THERMOANALYZER_HOME")
     if root:
         return Path(root)
-    return Path.home() / ".thermoanalyzer"
+    return Path.home() / ".materialscope"
 
 
 def get_machine_fingerprint() -> str:
@@ -115,7 +116,12 @@ def create_trial_payload(
 
 def sign_license_payload(payload: dict[str, Any], secret: str | None = None) -> str:
     """Return HMAC signature for a license payload."""
-    secret_bytes = (secret or os.getenv("THERMOANALYZER_LICENSE_SECRET") or DEFAULT_LICENSE_SECRET).encode("utf-8")
+    secret_bytes = (
+        secret
+        or os.getenv("MATERIALSCOPE_LICENSE_SECRET")
+        or os.getenv("THERMOANALYZER_LICENSE_SECRET")
+        or DEFAULT_LICENSE_SECRET
+    ).encode("utf-8")
     message = json.dumps(_canonical_payload(payload), sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return hmac.new(secret_bytes, message, hashlib.sha256).hexdigest()
 

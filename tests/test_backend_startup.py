@@ -67,10 +67,10 @@ def test_backend_process_startup_smoke():
         _wait_for_health(base_url)
         version = _http_get_json(
             f"{base_url}/version",
-            headers={"X-TA-Token": token},
+            headers={"X-MaterialScope-Token": token},
         )
         assert "app_version" in version
-        assert version["project_extension"] == ".thermozip"
+        assert version["project_extension"] == ".scopezip"
     finally:
         process.terminate()
         try:

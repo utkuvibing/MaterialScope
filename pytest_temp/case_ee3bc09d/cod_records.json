@@ -1,0 +1,14 @@
+[
+  {
+    "source_id": "1002",
+    "candidate_name": "Sodium Chloride",
+    "formula": "NaCl",
+    "cif_path": "C:\\MaterialScope-web-dash-plotly-migration\\tests\\fixtures\\reference_library_ingest\\cod\\cod_nacl.cif"
+  },
+  {
+    "source_id": "1001",
+    "candidate_name": "Silicon",
+    "formula": "Si",
+    "cif_path": "C:\\MaterialScope-web-dash-plotly-migration\\tests\\fixtures\\reference_library_ingest\\cod\\cod_si.cif"
+  }
+]

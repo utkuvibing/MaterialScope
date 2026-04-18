@@ -5,7 +5,7 @@ function _defaultPython(platform) {
 }
 
 function _backendExecutableName(platform) {
-  return platform === "win32" ? "thermoanalyzer_backend.exe" : "thermoanalyzer_backend";
+  return platform === "win32" ? "materialscope_backend.exe" : "materialscope_backend";
 }
 
 function resolveBackendLaunch(options) {
@@ -36,7 +36,7 @@ function resolveBackendLaunch(options) {
     candidates.push(env.TA_BACKEND_EXE.trim());
   } else {
     candidates.push(path.join(resourcesPath, "backend", exeName));
-    candidates.push(path.join(resourcesPath, "backend", "thermoanalyzer_backend", exeName));
+    candidates.push(path.join(resourcesPath, "backend", "materialscope_backend", exeName));
   }
 
   const check = typeof existsSync === "function" ? existsSync : () => true;

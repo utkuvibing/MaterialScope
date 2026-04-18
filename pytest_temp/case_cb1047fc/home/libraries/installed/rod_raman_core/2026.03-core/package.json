@@ -1,0 +1,12 @@
+{
+  "package_id": "rod_raman_core",
+  "analysis_type": "RAMAN",
+  "provider": "ROD",
+  "version": "2026.03-core",
+  "source_url": "https://solsa.crystallography.net/rod/new.html",
+  "license_name": "CC0-1.0",
+  "license_text": "",
+  "attribution": "Supplemental Raman references modeled after ROD-style open mineral fingerprints.",
+  "priority": 80,
+  "published_at": "2026-03-14T00:00:00Z"
+}

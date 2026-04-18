@@ -15,7 +15,7 @@ from typing import Any, Mapping, MutableMapping
 from core.result_serialization import split_valid_results
 
 
-LOGGER_NAME = "thermoanalyzer.diagnostics"
+LOGGER_NAME = "materialscope.diagnostics"
 MAX_SUPPORT_EVENTS = 100
 AREA_CODES = {
     "import": "IMPORT",
@@ -29,7 +29,7 @@ AREA_CODES = {
 
 def get_default_log_dir() -> Path:
     """Return the default support-log directory for the current runtime."""
-    root = os.getenv("THERMOANALYZER_HOME")
+    root = os.getenv("MATERIALSCOPE_HOME") or os.getenv("THERMOANALYZER_HOME")
     if root:
         return Path(root) / "support_logs"
     return Path.cwd() / "support_logs"
@@ -37,7 +37,7 @@ def get_default_log_dir() -> Path:
 
 def get_default_log_file() -> Path:
     """Return the default support-log file for the current runtime."""
-    return get_default_log_dir() / "thermoanalyzer_support.log"
+    return get_default_log_dir() / "materialscope_support.log"
 
 
 def configure_diagnostics_logger(log_file: str | Path | None = None) -> str:

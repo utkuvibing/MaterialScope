@@ -20,9 +20,9 @@ def test_make_error_id_uses_stable_area_prefix():
     assert error_id.startswith("TA-REPORT-")
 
 
-def test_default_log_file_uses_thermoanalyzer_home_when_set(monkeypatch, tmp_path):
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(tmp_path))
-    assert get_default_log_file() == Path(tmp_path) / "support_logs" / "thermoanalyzer_support.log"
+def test_default_log_file_uses_materialscope_home_when_set(monkeypatch, tmp_path):
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(tmp_path))
+    assert get_default_log_file() == Path(tmp_path) / "support_logs" / "materialscope_support.log"
 
 
 def test_serialize_support_snapshot_includes_recent_support_events_and_results(thermal_dataset, tmp_path):

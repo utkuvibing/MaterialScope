@@ -3,15 +3,23 @@ param(
     [string]$IsccPath = "",
     [string]$VcRedistPath = "",
     [string]$VcRedistUrl = "https://aka.ms/vs/17/release/vc_redist.x64.exe",
-    [string]$SetupBaseName = "ThermoAnalyzer_Setup"
+    [string]$SetupBaseName = "MaterialScope_Setup"
 )
 
 $ErrorActionPreference = "Stop"
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Resolve-Path (Join-Path $scriptRoot "..\..")
-$specPath = Join-Path $scriptRoot "ThermoAnalyzerLauncher.spec"
-$issPath = Join-Path $scriptRoot "ThermoAnalyzer_Beta.iss"
+$specPath = Join-Path $scriptRoot "MaterialScopeLauncher.spec"
+if (-not (Test-Path $specPath)) {
+    # Legacy fallback for existing packaging file names.
+    $specPath = Join-Path $scriptRoot "ThermoAnalyzerLauncher.spec"
+}
+$issPath = Join-Path $scriptRoot "MaterialScope_Beta.iss"
+if (-not (Test-Path $issPath)) {
+    # Legacy fallback for existing packaging file names.
+    $issPath = Join-Path $scriptRoot "ThermoAnalyzer_Beta.iss"
+}
 $distRoot = Join-Path $scriptRoot "dist"
 $buildRoot = Join-Path $scriptRoot "build"
 $releaseRoot = Join-Path $repoRoot "release"
@@ -93,7 +101,7 @@ function Assert-PackagedRuntime {
     param([string]$SourceDistRoot)
 
     $required = @(
-        "ThermoAnalyzerLauncher.exe",
+        "MaterialScopeLauncher.exe",
         "_internal\\app.py",
         "_internal\\.streamlit\\config.toml"
     )
@@ -106,7 +114,7 @@ function Assert-PackagedRuntime {
     }
 }
 
-Write-Host "==> ThermoAnalyzer Windows beta build"
+Write-Host "==> MaterialScope Windows beta build"
 Write-Host "Repo root: $repoRoot"
 
 $pyInstallerPresent = (& $PythonExe -c "import importlib.util; print('1' if importlib.util.find_spec('PyInstaller') else '0')" 2>$null | Out-String).Trim()
@@ -148,8 +156,8 @@ if ($LASTEXITCODE -ne 0) {
     throw "PyInstaller build failed."
 }
 
-$sourceDist = Join-Path $distRoot "ThermoAnalyzerLauncher"
-if (-not (Test-Path (Join-Path $sourceDist "ThermoAnalyzerLauncher.exe"))) {
+$sourceDist = Join-Path $distRoot "MaterialScopeLauncher"
+if (-not (Test-Path (Join-Path $sourceDist "MaterialScopeLauncher.exe"))) {
     throw "PyInstaller output was not created at $sourceDist"
 }
 Assert-PackagedRuntime -SourceDistRoot $sourceDist
