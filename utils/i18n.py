@@ -1392,6 +1392,159 @@ TRANSLATIONS = {
     "dash.analysis.tga.unit.percent.label": {"tr": "Yüzde (%)", "en": "Percent (%)"},
     "dash.analysis.tga.unit.absolute_mass.label": {"tr": "Mutlak kütle (mg)", "en": "Absolute Mass (mg)"},
     "dash.analysis.tga.mass_loss_mg": {"tr": "Kütle kaybı: {v:.3f} mg", "en": "Mass loss: {v:.3f} mg"},
+    "dash.analysis.tga.summary.card_title": {"tr": "Analiz özeti", "en": "Analysis summary"},
+    "dash.analysis.tga.summary.empty": {
+        "tr": "Sonuç seçildiğinde analiz özeti burada görünür.",
+        "en": "Analysis summary appears here when a result is selected.",
+    },
+    "dash.analysis.tga.summary.unit_mode_label": {"tr": "Çözümlenen birim modu", "en": "Resolved unit mode"},
+    "dash.analysis.tga.summary.unit_inference_label": {"tr": "Birim çıkarım temeli", "en": "Unit inference basis"},
+    "dash.analysis.tga.quality.major_warnings_heading": {"tr": "Önemli uyarılar", "en": "Major warnings"},
+    "dash.analysis.tga.quality.calibration_reference_heading": {"tr": "Kalibrasyon ve referans bağlamı", "en": "Calibration and reference context"},
+    "dash.analysis.tga.quality.calibration_label": {"tr": "Kalibrasyon:", "en": "Calibration:"},
+    "dash.analysis.tga.quality.reference_label": {"tr": "Referans:", "en": "Reference:"},
+    "dash.analysis.tga.quality.context_na": {"tr": "Kayıtlı değil", "en": "Not recorded"},
+    "dash.analysis.tga.quality.import_checks_heading": {"tr": "İçe aktarma ve çıkarım denetimleri", "en": "Import and inference checks"},
+    "dash.analysis.tga.dtg.card_title": {"tr": "DTG önizlemesi", "en": "DTG preview"},
+    "dash.analysis.tga.dtg.caption": {
+        "tr": "Kütle kaybının sıcaklığa göre türevi (DTG); ana kütle eğrisinden ayrı gösterilir.",
+        "en": "Derivative of mass with respect to temperature (DTG); shown separately from the main mass trace.",
+    },
+    "dash.analysis.tga.dtg.title": {"tr": "TGA DTG", "en": "TGA DTG"},
+    "dash.analysis.tga.dtg.trace_name": {"tr": "DTG", "en": "DTG"},
+    "dash.analysis.tga.figure.section_title": {"tr": "TGA kütle eğrisi", "en": "TGA mass trace"},
+    "dash.analysis.section.tga_key_steps": {"tr": "Önemli kütle kaybı adımları", "en": "Key mass-loss steps"},
+    "dash.analysis.tga.literature.title": {"tr": "Literatür karşılaştırma", "en": "Literature Compare"},
+    "dash.analysis.tga.literature.ready": {
+        "tr": "Kaydedilmiş TGA sonucunu literatür kaynaklarıyla karşılaştırın.",
+        "en": "Compare the saved TGA result to literature sources.",
+    },
+    "dash.analysis.tga.literature.empty": {
+        "tr": "Literatür karşılaştırmasını etkinleştirmek için önce bir TGA analizi çalıştırın.",
+        "en": "Run a TGA analysis first to enable literature comparison.",
+    },
+    "dash.analysis.tga.literature.max_claims": {"tr": "Maks. iddia sayısı", "en": "Max Claims"},
+    "dash.analysis.tga.literature.persist": {"tr": "Projeye kaydet", "en": "Persist to project"},
+    "dash.analysis.tga.literature.compare_btn": {"tr": "Karşılaştır", "en": "Compare"},
+    "dash.analysis.tga.literature.missing_result": {
+        "tr": "Önce bir TGA analizi çalıştırın.",
+        "en": "Run a TGA analysis first.",
+    },
+    "dash.analysis.tga.literature.error": {
+        "tr": "Literatür karşılaştırması başarısız: {error}",
+        "en": "Literature compare failed: {error}",
+    },
+    "dash.analysis.tga.literature.status.evidence_found": {
+        "tr": "Kalıcı literatür kanıtı bulundu.",
+        "en": "Retained literature evidence was found.",
+    },
+    "dash.analysis.tga.literature.status.evidence_found_detail": {
+        "tr": "Kalıcı kaynakları bu yorum için bağlamsal destek olarak kullanın.",
+        "en": "Use retained references as contextual support for this interpretation.",
+    },
+    "dash.analysis.tga.literature.status.limited_evidence": {
+        "tr": "Kalıcı literatür kanıtı sınırlı.",
+        "en": "Retained literature evidence is limited.",
+    },
+    "dash.analysis.tga.literature.status.limited_evidence_detail": {
+        "tr": "Kalıcı kaynaklar bulundu, ancak kanıtlar temkinli bağlamsal destek olarak yorumlanmalıdır.",
+        "en": "Retained references were found, but the evidence should be treated as cautious contextual support.",
+    },
+    "dash.analysis.tga.literature.status.claims_without_evidence": {
+        "tr": "Yorum iddiaları üretildi, ancak kalıcı literatür kanıtı bulunamadı.",
+        "en": "Interpretation claims were generated, but no retained literature evidence was found.",
+    },
+    "dash.analysis.tga.literature.status.no_evidence": {
+        "tr": "Kalıcı literatür kanıtı bulunamadı.",
+        "en": "No retained literature evidence was found.",
+    },
+    "dash.analysis.tga.literature.status.reason.provider_unavailable": {
+        "tr": "Canlı literatür araması sağlayıcı kullanılamadığı için tamamlanamadı.",
+        "en": "Live literature search could not complete because the provider was unavailable.",
+    },
+    "dash.analysis.tga.literature.status.reason.request_failed": {
+        "tr": "Sağlayıcı isteği bu çalıştırma için kullanılabilir bir literatür yanıtı döndürmedi.",
+        "en": "The provider request did not return a usable literature response for this run.",
+    },
+    "dash.analysis.tga.literature.status.reason.not_configured": {
+        "tr": "Bu ortamda canlı literatür araması yapılandırılmadı.",
+        "en": "Live literature search is not configured in this environment.",
+    },
+    "dash.analysis.tga.literature.status.not_configured_setup_hint": {
+        "tr": "Canlı arama için sunucu ortamına MATERIALSCOPE_OPENALEX_EMAIL (önerilir) veya MATERIALSCOPE_OPENALEX_API_KEY ekleyin; "
+        "veya demo için MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK=1 kullanın. Ortam değişkenlerinden sonra uygulamayı yeniden başlatın.",
+        "en": "To enable live search, set MATERIALSCOPE_OPENALEX_EMAIL (recommended) or MATERIALSCOPE_OPENALEX_API_KEY in the server environment, "
+        "or set MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK=1 for bundled demo fixtures. Restart the app after changing environment variables.",
+    },
+    "dash.analysis.tga.literature.status.reason.query_too_narrow": {
+        "tr": "Mevcut literatür sorgusu, kullanılabilir kaynakları elde tutmak için çok dardı.",
+        "en": "The current literature query was too narrow to retain usable references.",
+    },
+    "dash.analysis.tga.literature.status.reason.no_retained": {
+        "tr": "Bu yorum için mevcut çalıştırmada elde tutulabilir literatür kanıtı bulunamadı.",
+        "en": "No retainable literature evidence was found for this interpretation in the current run.",
+    },
+    "dash.analysis.tga.literature.claims_generated": {
+        "tr": "Üretilen yorum iddiaları",
+        "en": "Generated interpretation claims",
+    },
+    "dash.analysis.tga.literature.claims_note": {
+        "tr": "Bu iddialar analiz yorumundan üretilir; tek başına kalıcı dış literatür kanıtı sayılmaz.",
+        "en": "These claims are generated from the analysis interpretation and are not retained external literature evidence on their own.",
+    },
+    "dash.analysis.tga.literature.retained_evidence_title": {
+        "tr": "Kalıcı literatür kanıtı",
+        "en": "Retained literature evidence",
+    },
+    "dash.analysis.tga.literature.relevant_references": {
+        "tr": "İlgili kalıcı kaynaklar",
+        "en": "Relevant retained references",
+    },
+    "dash.analysis.tga.literature.relevant_references_empty": {
+        "tr": "İlgili kalıcı kaynak bulunamadı.",
+        "en": "No relevant retained references were found.",
+    },
+    "dash.analysis.tga.literature.alternative_references": {
+        "tr": "Alternatif veya doğrulayıcı olmayan kaynaklar",
+        "en": "Alternative or non-validating references",
+    },
+    "dash.analysis.tga.literature.alternative_references_empty": {
+        "tr": "Alternatif veya doğrulayıcı olmayan kalıcı kaynak bulunamadı.",
+        "en": "No alternative or non-validating references were retained.",
+    },
+    "dash.analysis.tga.literature.no_evidence_title": {
+        "tr": "Kalıcı literatür kanıtı yok",
+        "en": "No retained literature evidence",
+    },
+    "dash.analysis.tga.literature.follow_up.refine_query": {
+        "tr": "Kalıcı kanıt kalitesini artırmak için numune/olay ifadesini daha seçici hale getirin.",
+        "en": "Try a narrower sample/event phrasing to improve retained evidence quality.",
+    },
+    "dash.analysis.tga.literature.follow_up.retry_provider": {
+        "tr": "Bu ortamda canlı sağlayıcı erişimi hazır olduğunda yeniden deneyin.",
+        "en": "Retry when live provider access is available for this environment.",
+    },
+    "dash.analysis.tga.literature.follow_up.add_accessible_sources": {
+        "tr": "Mümkünse kalıcı kanıtı güçlendirmek için erişilebilir destekleyici dokümanlar ekleyin.",
+        "en": "If possible, include accessible supporting documents to strengthen retained evidence.",
+    },
+    "dash.analysis.tga.literature.technical_details_title": {
+        "tr": "Teknik arama ayrıntıları",
+        "en": "Technical search details",
+    },
+    "dash.analysis.tga.literature.technical.provider_status": {"tr": "Sağlayıcı durumu", "en": "Provider status"},
+    "dash.analysis.tga.literature.technical.no_results_reason": {"tr": "Sonuç alınamama nedeni", "en": "No-results reason"},
+    "dash.analysis.tga.literature.technical.source_count": {"tr": "Kaynak sayısı", "en": "Source count"},
+    "dash.analysis.tga.literature.technical.citation_count": {"tr": "Atıf sayısı", "en": "Citation count"},
+    "dash.analysis.tga.literature.technical.provider_note": {"tr": "Sağlayıcı notu", "en": "Provider note"},
+    "dash.analysis.tga.literature.technical.query": {"tr": "Teknik sorgu", "en": "Technical query"},
+    "dash.analysis.tga.literature.technical.search_mode": {"tr": "Arama modu", "en": "Search mode"},
+    "dash.analysis.tga.literature.technical.subject_trust": {"tr": "Konu güveni", "en": "Subject trust"},
+    "dash.analysis.tga.literature.technical.display_terms": {"tr": "Görünen terimler", "en": "Display terms"},
+    "dash.analysis.tga.literature.technical.fallback_queries": {"tr": "Yedek sorgular", "en": "Fallback queries"},
+    "dash.analysis.tga.literature.evidence.provider_prefix": {"tr": "Kaynak: {source}", "en": "Source: {source}"},
+    "dash.analysis.tga.literature.evidence.citations_prefix": {"tr": "Bağlı atıflar: {titles}", "en": "Linked citations: {titles}"},
+    "dash.analysis.tga.literature.evidence.generic_title": {"tr": "Kalıcı literatür kaynağı", "en": "Retained literature reference"},
     "dash.analysis.dta.title": {"tr": "DTA analizi", "en": "DTA Analysis"},
     "dash.analysis.dta.caption": {
         "tr": "DTA uyumlu veri seti seçin, şablonu seçin ve diferansiyel termal analizi çalıştırın.",

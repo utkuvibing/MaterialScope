@@ -6,20 +6,22 @@
 
 - **Project:** MaterialScope
 - **Branch:** `web-dash-plotly-migration`
-- **Last slice:** Literature provider wiring — OpenAlex `not_configured` root cause, opt-in fixture fallback, stronger Dash unavailable copy, tests.
+- **Last slice:** TGA Dash page — DSC-order layout, analysis summary, validation/quality, raw metadata, literature compare, DTG card, main figure cleanup, tests + TGA export/figure workflow.
 
 ## What was done this session
 
-1. Documented and fixed **provider path**: default `openalex_like_provider` requires OpenAlex env; optional `MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK=1` merges `fixture_provider` when live client is absent.
-2. UI: danger alert + setup hint for `not_configured` (DSC/DTA i18n).
-3. Tests: env helpers, backend fixture fallback + user-doc + not_configured, DSC status alert.
+1. **TGA results column:** `dsc-results-surface` + section order aligned with DSC; new placeholders and literature card (`tga-literature-*`).
+2. **Panels:** analysis summary (dataset, sample, mass, heating rate, unit mode, inference basis), validation/quality (DSC base + calibration/reference + `validation.checks`), raw metadata (same user/technical split as DSC), DTG preview card via `analysis_state_curves`.
+3. **Main figure:** mass traces only; DTG removed from overlay; fewer `vline`s when step count is high (see `tga.py`).
+4. **Tests:** `tests/test_tga_dash_page.py`; TGA DOCX embed + `collect_figure_export_warnings` coverage for TGA.
 
 ## What was verified
 
-- `.venv/bin/python -m pytest tests/test_backend_details.py tests/test_literature_compare.py tests/test_dsc_dash_page.py` — **110 passed**, 1 skipped.
+- `uv run pytest tests/test_tga_dash_page.py` — **8 passed**.
+- `uv run pytest tests/test_backend_workflow.py::test_analysis_run_auto_registers_figure_for_tga_and_persists_into_exports_and_project` and `tests/test_backend_exports.py` collect-warning tests — **pass**.
 
 ## Next step
 
-- Full suite if desired; optional `.env.example` mirror for new vars (file may be permission-gated locally).
+- Merge PR after review; optional full `uv run pytest` on CI or locally before release.
 
 **Process defaults:** **`00-workflow.mdc`**.

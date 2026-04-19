@@ -160,18 +160,41 @@ def test_export_report_pdf_generation_returns_pdf_bytes(thermal_dataset):
 
 
 def test_collect_figure_export_warnings_surface_failed_capture_and_missing_bytes():
-    rid = "dsc_res_1"
-    label = "DSC Analysis - seed_ds"
+    for analysis_type in ("DSC", "TGA"):
+        rid = f"{analysis_type.lower()}_res_1"
+        label = f"{analysis_type} Analysis - seed_ds"
+        state: dict = {"figures": {}}
+        selected = {
+            rid: {
+                "id": rid,
+                "analysis_type": analysis_type,
+                "artifacts": {
+                    "report_figure_key": label,
+                    "report_figure_status": "failed",
+                    "report_figure_error": "png_render_failed:kaleido_missing",
+                },
+            }
+        }
+        warnings = collect_figure_export_warnings(
+            state,
+            selected,
+            include_figures=True,
+            figures_bundle={},
+        )
+        assert any("png_render_failed:kaleido_missing" in w for w in warnings)
+        assert any(label in w for w in warnings)
+        assert any(analysis_type in w for w in warnings)
+
+
+def test_collect_figure_export_warnings_tga_missing_png_bytes_in_workspace():
+    rid = "tga_res_missing_png"
+    label = "TGA Analysis - seed_tga_ds"
     state: dict = {"figures": {}}
     selected = {
         rid: {
             "id": rid,
-            "analysis_type": "DSC",
-            "artifacts": {
-                "report_figure_key": label,
-                "report_figure_status": "failed",
-                "report_figure_error": "png_render_failed:kaleido_missing",
-            },
+            "analysis_type": "TGA",
+            "artifacts": {"report_figure_key": label, "report_figure_status": "captured"},
         }
     }
     warnings = collect_figure_export_warnings(
@@ -180,7 +203,8 @@ def test_collect_figure_export_warnings_surface_failed_capture_and_missing_bytes
         include_figures=True,
         figures_bundle={},
     )
-    assert any("png_render_failed:kaleido_missing" in w for w in warnings)
+    assert warnings
+    assert any("TGA" in w for w in warnings)
     assert any(label in w for w in warnings)
 
 
