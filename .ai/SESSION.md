@@ -19,6 +19,7 @@
 
 - `uv run pytest tests/test_tga_dash_page.py` — **8 passed**.
 - `uv run pytest tests/test_backend_workflow.py::test_analysis_run_auto_registers_figure_for_tga_and_persists_into_exports_and_project` and `tests/test_backend_exports.py` collect-warning tests — **pass**.
+- Changes **committed and pushed** to `origin/web-dash-plotly-migration`.
 
 ## Next step
 
