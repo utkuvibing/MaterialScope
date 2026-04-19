@@ -4,14 +4,14 @@
 
 ## Carryover
 
-- **Project:** MaterialScope
-- **Branch:** `web-dash-plotly-migration`.
-- **Completed slice:** DSC Dash P0/P1 maturity (literature compare, capture tests, prerun dataset info, baseline window + `dtg` derivative helper, event interpretation polish).
-- **Touched (high level):** `dash_app/pages/dsc.py`, `dash_app/pages/dta.py`, `dash_app/components/literature_compare_ui.py`, `core/batch_runner.py`, `utils/i18n.py`, `dash_app/assets/style.css`, `tests/test_dsc_dash_page.py`, `tests/test_batch_runner.py`.
+- **Project:** MaterialScope  
+- **Branch:** `web-dash-plotly-migration` (in sync with `origin` for the DSC maturity work).  
+- **Last closed slice:** DSC Dash P0/P1 maturity — merged to branch as **`0ff062c`** (literature compare, shared `literature_compare_ui`, prerun dataset info, baseline window + `dtg`, interpretation polish, tests).  
+- **No open blockers** from that slice.
 
 ## Next step
 
-1. Optional: commit/push branch; run broader `pytest` if CI differs from local venv.
-2. Continue next product slice per backlog.
+1. Pick the next backlog slice when ready (TASK empty until a new slice is started).  
+2. Optional hygiene: ignore or clean local `pytest_temp/` if those dirs accumulate from test runs.
 
-**Process defaults:** single thread, small safe diffs, explicit verification—see **`00-workflow.mdc`**.
+**Process defaults:** **`00-workflow.mdc`**.

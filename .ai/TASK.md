@@ -2,19 +2,27 @@
 
 **Purpose:** One active migration slice — scope, goal, and acceptance only.
 
-## Status (2026-04-19): DSC Dash P0/P1 maturity — implemented
+## Status: no active slice (2026-04-19)
+
+The **DSC Dash P0/P1 maturity** slice is **complete** and **pushed** (`0ff062c` on `web-dash-plotly-migration`).
+
+When starting new work, replace this file with the new slice goal, in/out of scope, and acceptance criteria.
+
+---
+
+### Archived: DSC Dash P0/P1 maturity (done)
 
 **Goal:** Bring Dash DSC to DTA-level maturity: literature compare, reliable figure capture path, pre-run dataset info, baseline temperature window + derivative preview, interpretation polish.
 
-**In scope (done)**
+**Delivered**
 
-- Literature compare panel + callbacks + i18n (`dash.analysis.dsc.literature.*`); shared `literature_compare_ui` with DTA refactor.
-- DSC `dtg` in analysis state from `core/batch_runner.py` (`compute_derivative` on corrected signal); optional derivative helper card (not a second “hero” figure).
-- Setup tab: prerun dataset card from `workspace_dataset_detail` + validation `checks`.
-- Processing: baseline region controls threaded into draft overrides (`baseline.region`).
-- Event cards: concise Tg one-liner + lighter section chrome; primary peaks unchanged.
+- Literature compare + i18n; shared `literature_compare_ui` with DTA refactor.  
+- DSC `dtg` in analysis state; optional derivative helper card.  
+- Setup: prerun dataset card from `workspace_dataset_detail` + validation `checks`.  
+- Processing: baseline region in draft → `processing_overrides`.  
+- Event area: concise Tg one-liner; peaks/table unchanged.
 
-**Verification**
+**Verification (at completion)**
 
-- `.venv/bin/python -m pytest tests/test_dsc_dash_page.py tests/test_batch_runner.py::test_execute_dsc_batch_template_saves_normalized_record -q` — passed (19 tests in DSC file + 1 batch).
-- `tests/test_dta_dash_page.py` — passed (DTA unaffected by literature refactor).
+- `pytest tests/test_dsc_dash_page.py` and targeted `test_batch_runner` DSC test passed locally.  
+- `pytest tests/test_dta_dash_page.py` passed after DTA literature refactor.
