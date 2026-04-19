@@ -1182,6 +1182,7 @@ def _compare_thermal_result_to_literature(
         low_specificity_retrieval=low_specificity_retrieval,
         surfaced_comparison_count=len(comparisons),
         evidence_specificity_summary=evidence_specificity,
+        executed_queries=executed_queries,
         shared_peak_count_snapshot=_clean_int(evidence_snapshot.get("peak_count") or evidence_snapshot.get("step_count")),
         coverage_ratio_snapshot=_clean_float(evidence_snapshot.get("total_mass_loss_percent")),
         weighted_overlap_score_snapshot=_clean_float(

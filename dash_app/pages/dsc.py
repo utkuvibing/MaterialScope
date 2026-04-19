@@ -89,13 +89,23 @@ _DSC_BASELINE_DEFAULTS: dict[str, dict] = {
 }
 _DSC_PEAK_DETECTION_DEFAULTS: dict = {
     "direction": "both",
-    "prominence": 0.0,
-    "distance": 1,
+    "prominence": None,
+    "distance": None,
 }
 _DSC_GLASS_TRANSITION_DEFAULTS: dict = {
     "mode": "auto",
     "region": None,
 }
+_DSC_USER_FACING_METADATA_KEYS: frozenset[str] = frozenset({
+    "sample_name",
+    "display_name",
+    "sample_mass",
+    "heating_rate",
+    "instrument",
+    "vendor",
+    "file_name",
+    "source_data_hash",
+})
 _UNDO_STACK_LIMIT = 32
 _ANNOTATION_MIN_SEP = 15.0
 
@@ -193,10 +203,12 @@ def _normalize_peak_detection_values(direction: str | None, prominence, distance
     dir_token = str(direction or "both").strip().lower()
     if dir_token not in {"both", "up", "down"}:
         dir_token = "both"
+    prom = _coerce_float_non_negative(prominence, default=0.0)
+    dist = _coerce_int_positive(distance, default=1, minimum=1)
     return {
         "direction": dir_token,
-        "prominence": _coerce_float_non_negative(prominence, default=0.0),
-        "distance": _coerce_int_positive(distance, default=1, minimum=1),
+        "prominence": None if prom in (0.0, 0) else prom,
+        "distance": None if dist <= 1 else dist,
     }
 
 
@@ -779,12 +791,12 @@ layout = html.Div(
                         _dsc_result_section(result_placeholder_card("dsc-result-dataset-summary"), role="context"),
                         _dsc_result_section(result_placeholder_card("dsc-result-metrics"), role="context"),
                         _dsc_result_section(result_placeholder_card("dsc-result-quality"), role="support"),
-                        _dsc_result_section(result_placeholder_card("dsc-result-raw-metadata"), role="support"),
                         _dsc_result_section(result_placeholder_card("dsc-result-figure"), role="hero"),
                         _dsc_result_section(result_placeholder_card("dsc-result-derivative"), role="support"),
                         _dsc_result_section(result_placeholder_card("dsc-result-event-cards"), role="support"),
                         _dsc_result_section(result_placeholder_card("dsc-result-table"), role="support"),
                         _dsc_result_section(result_placeholder_card("dsc-result-processing"), role="support"),
+                        _dsc_result_section(result_placeholder_card("dsc-result-raw-metadata"), role="support"),
                         _dsc_result_section(_literature_compare_card(), role="secondary"),
                     ],
                     md=8,
@@ -1695,12 +1707,12 @@ def run_dsc_analysis(
     Output("dsc-result-dataset-summary", "children"),
     Output("dsc-result-metrics", "children"),
     Output("dsc-result-quality", "children"),
-    Output("dsc-result-raw-metadata", "children"),
     Output("dsc-result-figure", "children"),
     Output("dsc-result-derivative", "children"),
     Output("dsc-result-event-cards", "children"),
     Output("dsc-result-table", "children"),
     Output("dsc-result-processing", "children"),
+    Output("dsc-result-raw-metadata", "children"),
     Input("dsc-latest-result-id", "data"),
     Input("dsc-refresh", "data"),
     Input("ui-theme", "data"),
@@ -1724,7 +1736,7 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
         open=False,
     )
     if not result_id or not project_id:
-        return summary_empty, empty_msg, quality_empty, raw_meta_empty, empty_msg, empty_msg, empty_msg, empty_msg, empty_msg
+        return summary_empty, empty_msg, quality_empty, empty_msg, empty_msg, empty_msg, empty_msg, empty_msg, raw_meta_empty
 
     from dash_app.api_client import workspace_dataset_detail, workspace_result_detail
 
@@ -1732,7 +1744,7 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
         detail = workspace_result_detail(project_id, result_id)
     except Exception as exc:
         err = dbc.Alert(translate_ui(loc, "dash.analysis.error_loading_result", error=str(exc)), color="danger")
-        return summary_empty, err, quality_empty, raw_meta_empty, empty_msg, empty_msg, empty_msg, empty_msg, empty_msg
+        return summary_empty, err, quality_empty, empty_msg, empty_msg, empty_msg, empty_msg, empty_msg, raw_meta_empty
 
     summary = detail.get("summary", {})
     result_meta = detail.get("result", {})
@@ -1816,12 +1828,12 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
         dataset_summary_panel,
         metrics,
         quality_panel,
-        raw_metadata_panel,
         figure_area,
         derivative_area,
         event_cards,
         table_area,
         proc_view,
+        raw_metadata_panel,
     )
 
 
@@ -2286,21 +2298,56 @@ def _build_dsc_raw_metadata_panel(metadata: dict | None, loc: str) -> html.Detai
     if not meta:
         inner = html.P(translate_ui(loc, "dash.analysis.dsc.raw_metadata.empty"), className="text-muted mb-0")
     else:
-        rows: list[Any] = []
-        for key in sorted(meta.keys(), key=lambda k: str(k).lower()):
-            value = meta[key]
-            if isinstance(value, (dict, list)):
-                text = json.dumps(value, ensure_ascii=False, indent=2)
-            else:
-                fv = _format_dataset_metadata_value(value)
-                text = fv if fv is not None else str(value)
-            rows.extend(
+        user_keys = sorted(
+            [k for k in meta if k in _DSC_USER_FACING_METADATA_KEYS],
+            key=lambda k: str(k).lower(),
+        )
+        tech_keys = sorted(
+            [k for k in meta if k not in _DSC_USER_FACING_METADATA_KEYS],
+            key=lambda k: str(k).lower(),
+        )
+
+        def _make_rows(keys: list[str]) -> list[Any]:
+            rows: list[Any] = []
+            for key in keys:
+                value = meta[key]
+                if isinstance(value, (dict, list)):
+                    text = json.dumps(value, ensure_ascii=False, indent=2)
+                else:
+                    fv = _format_dataset_metadata_value(value)
+                    text = fv if fv is not None else str(value)
+                rows.extend(
+                    [
+                        html.Dt(str(key), className="col-sm-4 text-muted small"),
+                        html.Dd(html.Pre(text, className="small mb-0 ta-code-block p-2 rounded"), className="col-sm-8 mb-2"),
+                    ]
+                )
+            return rows
+
+        body_parts: list[Any] = []
+        if user_keys:
+            body_parts.append(html.Dl(_make_rows(user_keys), className="row mb-0"))
+
+        if tech_keys:
+            tech_collapsible = html.Details(
                 [
-                    html.Dt(str(key), className="col-sm-4 text-muted small"),
-                    html.Dd(html.Pre(text, className="small mb-0 ta-code-block p-2 rounded"), className="col-sm-8 mb-2"),
-                ]
+                    html.Summary(
+                        [
+                            html.Span(className="ta-details-chevron"),
+                            html.Span(translate_ui(loc, "dash.analysis.dsc.raw_metadata.technical_details") or "Technical details", className="ms-1"),
+                        ],
+                        className="ta-details-summary",
+                    ),
+                    html.Div(html.Dl(_make_rows(tech_keys), className="row mb-0"), className="ta-details-body mt-2"),
+                ],
+                className="ta-ms-details mb-0",
+                open=False,
             )
-        inner = html.Dl(rows, className="row mb-0", id="dsc-raw-metadata-dl")
+            body_parts.append(html.Div(tech_collapsible, className="mt-2"))
+
+        inner = html.Div(body_parts) if body_parts else html.P(
+            translate_ui(loc, "dash.analysis.dsc.raw_metadata.empty"), className="text-muted mb-0"
+        )
     return _dsc_collapsible_section(loc, "dash.analysis.dsc.raw_metadata.card_title", inner, open=False)
 
 

@@ -535,6 +535,37 @@ def test_dta_compare_modality_only_abstract_is_contextual_not_related_support():
     assert comp["support_label"] == "related_but_inconclusive"
 
 
+def test_dsc_behavior_first_fallback_queries_have_broad_vocabulary():
+    record = _thermal_record("DSC")
+    record["summary"]["sample_name"] = ""
+    record["metadata"]["sample_name"] = ""
+    record["metadata"]["display_name"] = ""
+    record["summary"]["tg_midpoint"] = None
+    record["summary"]["glass_transition_count"] = 0
+
+    payload = build_dsc_literature_query(record)
+
+    all_queries = [payload["query_text"]] + payload["fallback_queries"]
+    combined = " ".join(all_queries).lower()
+
+    assert "calorimetry" in combined
+    assert "thermal" in combined
+    assert len(payload["fallback_queries"]) >= 3
+
+
+def test_dsc_behavior_first_tg_branch_includes_differential_scanning_variant():
+    record = _thermal_record("DSC")
+    record["summary"]["sample_name"] = ""
+    record["metadata"]["sample_name"] = ""
+    record["metadata"]["display_name"] = ""
+
+    payload = build_dsc_literature_query(record)
+
+    all_queries = [payload["query_text"]] + payload["fallback_queries"]
+    combined = " ".join(all_queries).lower()
+    assert "differential scanning calorimetry" in combined or "glass transition" in combined
+
+
 def test_dta_compare_prefers_entity_and_temperature_anchored_paper_over_modality_only():
     record = _thermal_record("DTA")
     provider = StubProvider(

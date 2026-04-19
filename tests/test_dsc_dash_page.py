@@ -100,7 +100,8 @@ def test_default_processing_draft_has_all_sections():
     assert defaults["baseline"]["method"] == "asls"
     assert defaults["baseline"].get("region") is None
     assert defaults["peak_detection"]["direction"] == "both"
-    assert defaults["peak_detection"]["distance"] == 1
+    assert defaults["peak_detection"]["prominence"] is None
+    assert defaults["peak_detection"]["distance"] is None
     assert defaults["glass_transition"] == {"mode": "auto", "region": None}
 
 
@@ -108,7 +109,7 @@ def test_normalize_peak_detection_values_sanitizes_direction_and_distance():
     mod = _import_dsc_page()
 
     normalized = mod._normalize_peak_detection_values("nonsense", prominence=-3, distance=0)
-    assert normalized == {"direction": "both", "prominence": 0.0, "distance": 1}
+    assert normalized == {"direction": "both", "prominence": None, "distance": None}
 
     up = mod._normalize_peak_detection_values("up", prominence=0.12, distance=8)
     assert up == {"direction": "up", "prominence": 0.12, "distance": 8}
@@ -440,3 +441,101 @@ def test_display_result_returns_new_surface_sections(monkeypatch):
     assert len(outputs) == 9
     for item in outputs:
         assert item is not None
+
+
+def test_layout_places_figure_before_raw_metadata():
+    mod = _import_dsc_page()
+    layout_str = str(mod.layout)
+    assert layout_str.index("dsc-result-figure") < layout_str.index("dsc-result-raw-metadata")
+
+
+def test_build_dsc_raw_metadata_panel_splits_user_and_technical_keys():
+    mod = _import_dsc_page()
+    metadata = {
+        "sample_name": "Polymer A",
+        "sample_mass": 12.5,
+        "heating_rate": 10,
+        "import_method": "auto",
+        "import_confidence": "medium",
+        "source_data_hash": "abc123",
+        "inferred_analysis_type": "DSC",
+    }
+    panel = mod._build_dsc_raw_metadata_panel(metadata, "en")
+    panel_html = str(panel)
+
+    assert "sample_name" in panel_html
+    assert "sample_mass" in panel_html
+    assert "import_method" in panel_html
+    assert "inferred_analysis_type" in panel_html
+    assert panel_html.count("Details(") >= 2
+
+
+def test_build_dsc_raw_metadata_panel_empty_metadata():
+    mod = _import_dsc_page()
+    panel = mod._build_dsc_raw_metadata_panel(None, "en")
+    panel_html = str(panel)
+    assert "dsc-raw-metadata" not in panel_html.lower() or "empty" in panel_html.lower() or "text-muted" in panel_html
+
+
+def test_normalize_peak_detection_values_maps_explicit_zero_to_none():
+    mod = _import_dsc_page()
+    normalized = mod._normalize_peak_detection_values("both", prominence=0.0, distance=1)
+    assert normalized["prominence"] is None
+    assert normalized["distance"] is None
+
+    explicit = mod._normalize_peak_detection_values("both", prominence=0.12, distance=8)
+    assert explicit["prominence"] == 0.12
+    assert explicit["distance"] == 8
+
+
+def test_literature_diagnostics_show_search_mode_and_trust():
+    from dash_app.components.literature_compare_ui import render_literature_output
+
+    payload = {
+        "literature_claims": [],
+        "literature_comparisons": [],
+        "citations": [],
+        "literature_context": {
+            "provider_query_status": "no_results",
+            "no_results_reason": "no_real_results",
+            "source_count": 0,
+            "citation_count": 0,
+            "query_text": "DSC thermal event calorimetry",
+            "search_mode": "behavior_first",
+            "subject_trust": "low_trust",
+        },
+    }
+    output = render_literature_output(payload, "en", i18n_prefix="dash.analysis.dsc.literature")
+    output_html = str(output)
+
+    assert "behavior_first" in output_html
+    assert "low_trust" in output_html
+
+
+def test_literature_diagnostics_show_fallback_queries():
+    from dash_app.components.literature_compare_ui import render_literature_output
+
+    payload = {
+        "literature_claims": [],
+        "literature_comparisons": [],
+        "citations": [],
+        "literature_context": {
+            "provider_query_status": "no_results",
+            "no_results_reason": "query_too_narrow",
+            "source_count": 0,
+            "citation_count": 0,
+            "query_text": "DSC glass transition calorimetry",
+            "search_mode": "behavior_first",
+            "subject_trust": "low_trust",
+            "executed_queries": [
+                "DSC glass transition calorimetry",
+                "thermal analysis glass transition polymer",
+                "differential scanning calorimetry glass transition",
+            ],
+        },
+    }
+    output = render_literature_output(payload, "en", i18n_prefix="dash.analysis.dsc.literature")
+    output_html = str(output)
+
+    assert "thermal analysis glass transition polymer" in output_html
+    assert "differential scanning calorimetry glass transition" in output_html

@@ -322,6 +322,15 @@ def render_literature_output(payload: dict, loc: str, *, i18n_prefix: str) -> ht
         _technical_line("technical.citation_count", "Citation count", context.get("citation_count"))
     _technical_line("technical.provider_note", "Provider note", context.get("provider_error_message"))
     _technical_line("technical.query", "Technical query", context.get("query_text"))
+    _technical_line("technical.search_mode", "Search mode", context.get("search_mode"))
+    _technical_line("technical.subject_trust", "Subject trust", context.get("subject_trust"))
+    display_terms = context.get("query_display_terms")
+    if display_terms:
+        _technical_line("technical.display_terms", "Display terms", ", ".join(str(t) for t in display_terms if t))
+    executed_queries_list = context.get("executed_queries") or []
+    if len(executed_queries_list) > 1:
+        fallback_text = "; ".join(executed_queries_list[1:])
+        _technical_line("technical.fallback_queries", "Fallback queries", fallback_text)
 
     if technical_rows:
         children.append(

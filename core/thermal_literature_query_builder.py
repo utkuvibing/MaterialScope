@@ -365,9 +365,11 @@ def build_dsc_literature_query(record: Mapping[str, Any]) -> dict[str, Any]:
             fallback_queries = [
                 "DSC glass transition calorimetry",
                 "thermal analysis glass transition polymer",
+                "differential scanning calorimetry glass transition",
             ]
             if subject_label:
                 fallback_queries.append(_generic_subject_query(subject, analysis_type="DSC", fallback_label="glass transition"))
+            fallback_queries.append(f"DSC glass transition {tg_midpoint} C polymer")
             rationale = f"The DSC literature search uses behavior-first semantics centered on a glass-transition signal near {tg_midpoint} C."
         display_title = subject_label or "DSC glass transition"
         display_terms = ["glass transition", "calorimetry", "thermal event"]
@@ -391,10 +393,19 @@ def build_dsc_literature_query(record: Mapping[str, Any]) -> dict[str, Any]:
             )
             fallback_queries = [
                 "DSC endothermic exothermic event calorimetry",
-                _generic_subject_query(subject, analysis_type="thermal analysis", fallback_label=event_label),
+                "differential scanning calorimetry thermal analysis",
             ]
+            if peak_type in ("endo", "endotherm", "endothermic"):
+                fallback_queries.append("DSC endotherm endothermic peak calorimetry")
+            elif peak_type in ("exo", "exotherm", "exothermic"):
+                fallback_queries.append("DSC exotherm exothermic peak crystallization calorimetry")
+            else:
+                fallback_queries.append("DSC endothermic exothermic thermal event")
             if subject_label:
-                fallback_queries.append(_generic_subject_query(subject, analysis_type="DSC", fallback_label="thermal event"))
+                fallback_queries.append(_generic_subject_query(subject, analysis_type="DSC", fallback_label=event_label))
+            fallback_queries.append(_generic_subject_query(subject, analysis_type="thermal analysis", fallback_label=event_label))
+            if peak_temp is not None:
+                fallback_queries.append(f"DSC thermal event {peak_temp} C")
             rationale = f"The DSC literature search uses behavior-first semantics centered on the leading {event_label} event" + (
                 f" near {peak_temp} C." if peak_temp is not None else "."
             )

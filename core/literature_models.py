@@ -304,6 +304,7 @@ class LiteratureContext:
     low_specificity_retrieval: bool = False
     surfaced_comparison_count: int = 0
     evidence_specificity_summary: str = ""
+    executed_queries: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)

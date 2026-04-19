@@ -330,6 +330,10 @@ def _execute_dsc_batch(
     baseline = copy.deepcopy((processing.get("signal_pipeline") or {}).get("baseline") or {})
     peak_detection = copy.deepcopy((processing.get("analysis_steps") or {}).get("peak_detection") or {})
     glass_transition = copy.deepcopy((processing.get("analysis_steps") or {}).get("glass_transition") or {})
+    if peak_detection.get("prominence") in ("", 0, 0.0, None):
+        peak_detection["prominence"] = None
+    if peak_detection.get("distance") in ("", 0, 0.0, None):
+        peak_detection["distance"] = None
 
     processor = DSCProcessor(
         temperature,
