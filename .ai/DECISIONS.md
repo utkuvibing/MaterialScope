@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-04-19 — Literature: opt-in fixture fallback when OpenAlex env is missing
+
+**Decision:** When the default provider list is only `openalex_like_provider` and `build_openalex_like_client_from_env()` would return `None`, optionally expand to `["openalex_like_provider", "fixture_provider"]` if `MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK` (or `THERMOANALYZER_LITERATURE_FIXTURE_FALLBACK`) is truthy (`1`/`true`/`yes`/`on`), and set `filters["allow_fixture_fallback"] = True` for traceability.
+
+**Reason:** Recall/query improvements do not help if the live HTTP client is never configured; local dev and demos need an explicit, safe path without silently pretending fixture data is live OpenAlex.
+
+**Consequence / future:** Production should set `MATERIALSCOPE_OPENALEX_EMAIL` or API key; fixture mode remains dev/demo-only and must stay opt-in.
+
+---
+
 ## 2026-04-19 — DSC peak detection defaults use auto-derivation (None) instead of explicit 0.0/1
 
 **Decision:** Set `_DSC_PEAK_DETECTION_DEFAULTS` to `prominence=None, distance=None` and convert user-input 0.0/1 to `None` in `_normalize_peak_detection_values`. Add a batch_runner guard for the DSC path (same pattern as DTA at lines 624-627).

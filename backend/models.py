@@ -480,6 +480,7 @@ class ExportArtifactResponse(BaseModel):
     included_result_ids: list[str]
     skipped_record_issues: list[str]
     artifact_base64: str
+    export_warnings: list[str] = Field(default_factory=list)
 
 
 class WorkspaceContextResponse(BaseModel):

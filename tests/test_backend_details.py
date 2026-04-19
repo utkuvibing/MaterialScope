@@ -494,6 +494,7 @@ def test_result_literature_compare_endpoint_persists_safe_context_when_no_real_r
         "MATERIALSCOPE_OPENALEX_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK", raising=False)
     store, project_id, result_id = _seed_xrd_result_store()
     client = TestClient(create_app(api_token="details-token", store=store))
 
@@ -511,6 +512,67 @@ def test_result_literature_compare_endpoint_persists_safe_context_when_no_real_r
     assert payload["literature_context"]["real_literature_available"] is False
     assert payload["literature_context"]["provider_query_status"] == "not_configured"
     assert payload["literature_context"]["no_results_reason"] == "not_configured"
+
+
+def test_result_literature_compare_fixture_fallback_when_openalex_unconfigured(monkeypatch):
+    for name in (
+        "MATERIALSCOPE_OPENALEX_EMAIL",
+        "MATERIALSCOPE_OPENALEX_API_KEY",
+        "MATERIALSCOPE_OPENALEX_BASE_URL",
+        "THERMOANALYZER_OPENALEX_EMAIL",
+        "THERMOANALYZER_OPENALEX_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK", "1")
+    store, project_id, result_id = _seed_xrd_result_store()
+    client = TestClient(create_app(api_token="details-token", store=store))
+
+    response = client.post(
+        f"/workspace/{project_id}/results/{result_id}/literature/compare",
+        headers=_headers(),
+        json={"persist": False},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["literature_context"]["provider_scope"] == ["openalex_like_provider", "fixture_provider"]
+    assert payload["literature_context"]["provider_query_status"] == "success"
+    assert payload["literature_context"]["fixture_fallback_allowed"] is True
+    assert payload["literature_context"]["fixture_fallback_used"] is True
+    assert payload["literature_comparisons"]
+
+
+def test_result_literature_compare_user_documents_when_openalex_unconfigured(monkeypatch):
+    for name in (
+        "MATERIALSCOPE_OPENALEX_EMAIL",
+        "MATERIALSCOPE_OPENALEX_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK", raising=False)
+    store, project_id, result_id = _seed_xrd_result_store()
+    client = TestClient(create_app(api_token="details-token", store=store))
+
+    response = client.post(
+        f"/workspace/{project_id}/results/{result_id}/literature/compare",
+        headers=_headers(),
+        json={
+            "persist": False,
+            "provider_ids": ["openalex_like_provider"],
+            "user_documents": [
+                {
+                    "document_id": "user_note_phase_alpha",
+                    "title": "Internal screening note",
+                    "text": "Qualitative agreement with Phase Alpha under the same measurement conditions.",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["literature_context"]["provider_query_status"] == "not_configured"
+    assert payload["literature_comparisons"]
+    assert payload["literature_context"]["source_count"] >= 1
 
 
 def test_result_literature_compare_endpoint_defaults_live_provider_for_thermal_results():

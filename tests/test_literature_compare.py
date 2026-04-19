@@ -18,6 +18,8 @@ from core.literature_provider import (
     OpenAlexLikeLiteratureProvider,
     build_openalex_like_client_from_env,
     default_literature_provider_registry,
+    literature_fixture_fallback_enabled,
+    openalex_literature_env_configured,
     resolve_literature_provider,
     resolve_literature_providers,
 )
@@ -1027,6 +1029,23 @@ def test_build_openalex_like_client_from_env_requires_explicit_config(monkeypatc
     monkeypatch.delenv("MATERIALSCOPE_OPENALEX_BASE_URL", raising=False)
 
     assert build_openalex_like_client_from_env() is None
+
+
+def test_openalex_literature_env_configured_tracks_client_builder(monkeypatch):
+    monkeypatch.delenv("MATERIALSCOPE_OPENALEX_EMAIL", raising=False)
+    monkeypatch.delenv("MATERIALSCOPE_OPENALEX_API_KEY", raising=False)
+    monkeypatch.delenv("MATERIALSCOPE_OPENALEX_BASE_URL", raising=False)
+    assert openalex_literature_env_configured() is False
+    monkeypatch.setenv("MATERIALSCOPE_OPENALEX_EMAIL", "research@example.test")
+    assert openalex_literature_env_configured() is True
+
+
+def test_literature_fixture_fallback_enabled_reads_flag(monkeypatch):
+    monkeypatch.delenv("MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK", raising=False)
+    monkeypatch.delenv("THERMOANALYZER_LITERATURE_FIXTURE_FALLBACK", raising=False)
+    assert literature_fixture_fallback_enabled() is False
+    monkeypatch.setenv("MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK", "1")
+    assert literature_fixture_fallback_enabled() is True
 
 
 def test_default_registry_builds_env_backed_openalex_provider(monkeypatch):

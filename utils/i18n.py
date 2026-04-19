@@ -1264,6 +1264,12 @@ TRANSLATIONS = {
         "tr": "Bu ortamda canlı literatür araması yapılandırılmadı.",
         "en": "Live literature search is not configured in this environment.",
     },
+    "dash.analysis.dsc.literature.status.not_configured_setup_hint": {
+        "tr": "Canlı arama için sunucu ortamına MATERIALSCOPE_OPENALEX_EMAIL (önerilir) veya MATERIALSCOPE_OPENALEX_API_KEY ekleyin; "
+        "veya demo için MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK=1 kullanın. Ortam değişkenlerinden sonra uygulamayı yeniden başlatın.",
+        "en": "To enable live search, set MATERIALSCOPE_OPENALEX_EMAIL (recommended) or MATERIALSCOPE_OPENALEX_API_KEY in the server environment, "
+        "or set MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK=1 for bundled demo fixtures. Restart the app after changing environment variables.",
+    },
     "dash.analysis.dsc.literature.status.reason.query_too_narrow": {
         "tr": "Mevcut literatür sorgusu, kullanılabilir kaynakları elde tutmak için çok dardı.",
         "en": "The current literature query was too narrow to retain usable references.",
@@ -1636,6 +1642,12 @@ TRANSLATIONS = {
     "dash.analysis.dta.literature.status.reason.not_configured": {
         "tr": "Bu ortamda canlı literatür araması yapılandırılmadı.",
         "en": "Live literature search is not configured in this environment.",
+    },
+    "dash.analysis.dta.literature.status.not_configured_setup_hint": {
+        "tr": "Canlı arama için sunucu ortamına MATERIALSCOPE_OPENALEX_EMAIL (önerilir) veya MATERIALSCOPE_OPENALEX_API_KEY ekleyin; "
+        "veya demo için MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK=1 kullanın. Ortam değişkenlerinden sonra uygulamayı yeniden başlatın.",
+        "en": "To enable live search, set MATERIALSCOPE_OPENALEX_EMAIL (recommended) or MATERIALSCOPE_OPENALEX_API_KEY in the server environment, "
+        "or set MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK=1 for bundled demo fixtures. Restart the app after changing environment variables.",
     },
     "dash.analysis.dta.literature.status.reason.query_too_narrow": {
         "tr": "Mevcut literatür sorgusu, kullanılabilir kaynakları elde tutmak için çok dardı.",

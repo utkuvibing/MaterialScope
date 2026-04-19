@@ -210,7 +210,11 @@ MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC=false
 MATERIALSCOPE_ENABLE_PREVIEW_MODULES=false
 MATERIALSCOPE_OPENALEX_EMAIL=
 MATERIALSCOPE_OPENALEX_API_KEY=
+# Optional: when live OpenAlex is not configured, also search bundled demo fixtures (dev/demo only).
+# MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK=1
 ```
+
+Live literature compare (DSC, DTA, TGA, FTIR, XRD) uses the OpenAlex-backed provider by default. Set at least `MATERIALSCOPE_OPENALEX_EMAIL` (OpenAlex polite-pool `mailto`) or `MATERIALSCOPE_OPENALEX_API_KEY` so the backend can run real metadata queries. Without that, the API reports `provider_query_status=not_configured` unless `MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK=1` is enabled to merge the local fixture catalog.
 
 Set `MATERIALSCOPE_ENABLE_PREVIEW_MODULES=true` only in builds where kinetics and deconvolution should be exposed.
 

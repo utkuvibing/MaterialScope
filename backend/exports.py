@@ -153,6 +153,35 @@ def _selected_figures(
     return figures or None
 
 
+def collect_figure_export_warnings(
+    state: dict[str, Any],
+    selected_results: dict[str, dict[str, Any]],
+    *,
+    include_figures: bool,
+    figures_bundle: dict[str, bytes] | None,
+) -> list[str]:
+    """Surface missing PNG bytes or failed server-side figure capture for exports."""
+    warnings: list[str] = []
+    if not include_figures:
+        return warnings
+    bundle = figures_bundle or {}
+    stored = state.get("figures") or {}
+    for rid, rec in selected_results.items():
+        art = rec.get("artifacts") or {}
+        atype = str(rec.get("analysis_type") or "").upper()
+        primary = art.get("report_figure_key")
+        status = art.get("report_figure_status")
+        err = str(art.get("report_figure_error") or "").strip()
+        if status == "failed" and err:
+            warnings.append(f"{atype} result {rid}: figure capture failed ({err}).")
+        if primary and primary not in bundle:
+            where = "project workspace" if primary not in stored else "export selection"
+            warnings.append(
+                f"{atype} result {rid}: primary figure '{primary}' was not embedded ({where} missing PNG bytes)."
+            )
+    return warnings
+
+
 def generate_report_docx_artifact(
     state: dict[str, Any],
     *,
@@ -166,13 +195,21 @@ def generate_report_docx_artifact(
         comparison_workspace = normalized_workspace.model_dump()
     else:  # pragma: no cover - pydantic v1 compatibility
         comparison_workspace = normalized_workspace.dict()
+    figures = _selected_figures(state, selected, include_figures=include_figures)
+    export_warnings = collect_figure_export_warnings(
+        state,
+        selected,
+        include_figures=include_figures,
+        figures_bundle=figures,
+    )
     docx_bytes = generate_docx_report(
         results=selected,
         datasets=state.get("datasets") or {},
-        figures=_selected_figures(state, selected, include_figures=include_figures),
+        figures=figures,
         branding=state.get("branding") or {},
         comparison_workspace=comparison_workspace,
         license_state=state.get("license_state") or {},
+        figure_export_warnings=export_warnings,
     )
     docx_base64 = base64.b64encode(docx_bytes).decode("ascii")
     return {
@@ -182,6 +219,7 @@ def generate_report_docx_artifact(
         "included_result_ids": list(selected.keys()),
         "skipped_record_issues": issues,
         "artifact_base64": docx_base64,
+        "export_warnings": export_warnings,
     }
 
 
@@ -198,13 +236,21 @@ def generate_report_pdf_artifact(
         comparison_workspace = normalized_workspace.model_dump()
     else:  # pragma: no cover - pydantic v1 compatibility
         comparison_workspace = normalized_workspace.dict()
+    figures = _selected_figures(state, selected, include_figures=include_figures)
+    export_warnings = collect_figure_export_warnings(
+        state,
+        selected,
+        include_figures=include_figures,
+        figures_bundle=figures,
+    )
     pdf_bytes = generate_pdf_report(
         results=selected,
         datasets=state.get("datasets") or {},
-        figures=_selected_figures(state, selected, include_figures=include_figures),
+        figures=figures,
         branding=state.get("branding") or {},
         comparison_workspace=comparison_workspace,
         license_state=state.get("license_state") or {},
+        figure_export_warnings=export_warnings,
     )
     pdf_base64 = base64.b64encode(pdf_bytes).decode("ascii")
     return {
@@ -214,4 +260,5 @@ def generate_report_pdf_artifact(
         "included_result_ids": list(selected.keys()),
         "skipped_record_issues": issues,
         "artifact_base64": pdf_base64,
+        "export_warnings": export_warnings,
     }

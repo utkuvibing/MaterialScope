@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from backend.app import create_app
 from backend.exports import (
     build_export_preparation,
+    collect_figure_export_warnings,
     generate_report_docx_artifact,
     generate_report_pdf_artifact,
     generate_results_csv_artifact,
@@ -112,6 +113,7 @@ def test_export_docx_generation_returns_docx_bytes(thermal_dataset):
     payload = docx_export.json()
     assert payload["output_type"] == "report_docx"
     assert payload["included_result_ids"] == [result_id]
+    assert isinstance(payload.get("export_warnings"), list)
     assert payload["file_name"].endswith(".docx")
     docx_bytes = base64.b64decode(payload["artifact_base64"].encode("ascii"))
     assert docx_bytes[:4] == b"PK\x03\x04"
@@ -155,6 +157,31 @@ def test_export_report_pdf_generation_returns_pdf_bytes(thermal_dataset):
     assert payload["included_result_ids"] == [result_id]
     pdf_bytes = base64.b64decode(payload["artifact_base64"].encode("ascii"))
     assert pdf_bytes[:4] == b"%PDF"
+
+
+def test_collect_figure_export_warnings_surface_failed_capture_and_missing_bytes():
+    rid = "dsc_res_1"
+    label = "DSC Analysis - seed_ds"
+    state: dict = {"figures": {}}
+    selected = {
+        rid: {
+            "id": rid,
+            "analysis_type": "DSC",
+            "artifacts": {
+                "report_figure_key": label,
+                "report_figure_status": "failed",
+                "report_figure_error": "png_render_failed:kaleido_missing",
+            },
+        }
+    }
+    warnings = collect_figure_export_warnings(
+        state,
+        selected,
+        include_figures=True,
+        figures_bundle={},
+    )
+    assert any("png_render_failed:kaleido_missing" in w for w in warnings)
+    assert any(label in w for w in warnings)
 
 
 def test_report_exports_include_saved_figure_payloads(monkeypatch):

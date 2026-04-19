@@ -420,8 +420,24 @@ def literature_compare_status_alert(payload: dict, loc: str, *, i18n_prefix: str
         detail = reason_text
         color = "warning"
 
+    if state_token == "not_configured" and not has_retained_evidence and color == "warning":
+        color = "danger"
+
+    alert_children: list = [html.Div(html.Strong(headline)), html.Div(detail, className="small mt-1")]
+    if state_token == "not_configured":
+        setup_hint = literature_t(
+            loc,
+            _k("status.not_configured_setup_hint"),
+            "Set MATERIALSCOPE_OPENALEX_EMAIL (recommended) or MATERIALSCOPE_OPENALEX_API_KEY in the server environment, "
+            "or enable demo fixtures with MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK=1. Restart the app after changing environment variables.",
+        )
+        if setup_hint:
+            alert_children.append(
+                html.Div(setup_hint, className="small mt-2 border-start border-3 ps-2 text-body-secondary"),
+            )
+
     return dbc.Alert(
-        [html.Div(html.Strong(headline)), html.Div(detail, className="small mt-1")],
+        alert_children,
         color=color,
         className="py-2 small mb-2",
     )

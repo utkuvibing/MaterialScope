@@ -541,6 +541,24 @@ def test_literature_diagnostics_show_fallback_queries():
     assert "differential scanning calorimetry glass transition" in output_html
 
 
+def test_literature_compare_status_alert_not_configured_includes_setup_hint():
+    from dash_app.components.literature_compare_ui import literature_compare_status_alert
+
+    payload = {
+        "literature_claims": [{"claim_text": "Qualitative interpretation"}],
+        "literature_comparisons": [],
+        "citations": [],
+        "literature_context": {
+            "provider_query_status": "not_configured",
+            "no_results_reason": "not_configured",
+        },
+    }
+    alert = literature_compare_status_alert(payload, "en", i18n_prefix="dash.analysis.dsc.literature")
+    alert_html = str(alert)
+    assert "MATERIALSCOPE_OPENALEX_EMAIL" in alert_html
+    assert "MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK" in alert_html
+
+
 def test_raw_metadata_technical_details_label_does_not_leak_i18n_key():
     mod = _import_dsc_page()
     metadata = {

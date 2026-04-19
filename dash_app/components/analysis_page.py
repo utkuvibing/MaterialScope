@@ -254,7 +254,8 @@ def capture_result_figure_from_layout(
         return captured_state
 
     prior = captured_state.get(result_id)
-    if isinstance(prior, dict) and prior.get("status") in {"ok", "skipped"}:
+    # Only lock after a successful registration; "skipped" may mean the graph was not hydrated yet.
+    if isinstance(prior, dict) and prior.get("status") == "ok":
         return captured_state
 
     figure_payload = _extract_graph_figure_payload(figure_children)

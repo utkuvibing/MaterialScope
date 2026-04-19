@@ -5,14 +5,21 @@
 ## Carryover
 
 - **Project:** MaterialScope
-- **Branch:** `web-dash-plotly-migration` (ahead of `origin` by 1 commit — `7d06d7d`).
-- **Last closed slice:** DSC stabilization & literature recall — committed as **`7d06d7d`** (tighten peak detection defaults, reorder layout, metadata split, expanded literature fallbacks, diagnostics surface, tests).
-- **No open blockers** from that slice.
+- **Branch:** `web-dash-plotly-migration`
+- **Last slice:** Literature provider wiring — OpenAlex `not_configured` root cause, opt-in fixture fallback, stronger Dash unavailable copy, tests.
+
+## What was done this session
+
+1. Documented and fixed **provider path**: default `openalex_like_provider` requires OpenAlex env; optional `MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK=1` merges `fixture_provider` when live client is absent.
+2. UI: danger alert + setup hint for `not_configured` (DSC/DTA i18n).
+3. Tests: env helpers, backend fixture fallback + user-doc + not_configured, DSC status alert.
+
+## What was verified
+
+- `.venv/bin/python -m pytest tests/test_backend_details.py tests/test_literature_compare.py tests/test_dsc_dash_page.py` — **110 passed**, 1 skipped.
 
 ## Next step
 
-1. Push `7d06d7d` to `origin/web-dash-plotly-migration`.
-2. Pick the next backlog slice when ready (TASK empty until a new slice is started).
-3. Optional hygiene: clean local `pytest_temp/` (2864+ dirs from test runs).
+- Full suite if desired; optional `.env.example` mirror for new vars (file may be permission-gated locally).
 
 **Process defaults:** **`00-workflow.mdc`**.

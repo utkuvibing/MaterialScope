@@ -399,7 +399,10 @@ def _execute_dsc_batch(
         validation=validation,
         review={"commercial_scope": "stable_dsc", "batch_runner": "compare_workspace"},
     )
+    axis_list = np.asarray(temperature, dtype=float).tolist()
     state = {
+        "axis": axis_list,
+        "temperature": axis_list,
         "smoothed": smoothed_signal,
         "baseline": result.baseline,
         "corrected": corrected_signal,
@@ -508,7 +511,10 @@ def _execute_tga_batch(
         validation=validation,
         review={"commercial_scope": "stable_tga", "batch_runner": "compare_workspace"},
     )
+    axis_list = np.asarray(temperature, dtype=float).tolist()
     state = {
+        "axis": axis_list,
+        "temperature": axis_list,
         "smoothed": result.smoothed_signal,
         "dtg": result.dtg_signal,
         "tga_result": result,
@@ -678,7 +684,10 @@ def _execute_dta_batch(
         validation=validation,
         review={"commercial_scope": "stable_dta", "batch_runner": "compare_workspace"},
     )
+    axis_list = np.asarray(temperature, dtype=float).tolist()
     state = {
+        "axis": axis_list,
+        "temperature": axis_list,
         "smoothed": result.smoothed_signal,
         "baseline": result.baseline,
         "corrected": result.smoothed_signal,

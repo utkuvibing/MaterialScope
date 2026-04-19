@@ -111,6 +111,8 @@ from core.literature_provider import (
     LiteratureProvider,
     MultiLiteratureProviderAggregator,
     default_literature_provider_registry,
+    literature_fixture_fallback_enabled,
+    openalex_literature_env_configured,
     resolve_literature_providers,
 )
 from core.project_io import PROJECT_EXTENSION, load_project_archive, save_project_archive
@@ -226,7 +228,10 @@ def _build_result_snapshot_figure(
     dataset: Any,
     state_payload: dict[str, Any],
 ) -> go.Figure | None:
-    state_axis = _finite_float_list((state_payload or {}).get("axis"))
+    payload = state_payload or {}
+    state_axis = _finite_float_list(payload.get("axis"))
+    if not state_axis:
+        state_axis = _finite_float_list(payload.get("temperature"))
     raw_axis, raw_signal = _dataset_axis_and_signal(dataset)
     axis = state_axis or raw_axis
     if not axis:
@@ -320,6 +325,22 @@ def _build_result_snapshot_figure(
     return fig
 
 
+def _merge_result_artifacts(
+    state: dict[str, Any],
+    result_id: str,
+    record: dict[str, Any],
+    *,
+    artifacts_update: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge artifact fields into the saved result and persist into state."""
+    artifacts = dict(record.get("artifacts") or {})
+    artifacts.update(artifacts_update)
+    patched = dict(record)
+    patched["artifacts"] = artifacts
+    state.setdefault("results", {})[result_id] = patched
+    return patched
+
+
 def _auto_register_result_snapshot(
     state: dict[str, Any],
     *,
@@ -330,12 +351,31 @@ def _auto_register_result_snapshot(
 ) -> dict[str, Any] | None:
     dataset_key = str(record.get("dataset_key") or "").strip()
     if not dataset_key:
+        _merge_result_artifacts(
+            state,
+            result_id,
+            record,
+            artifacts_update={
+                "report_figure_status": "failed",
+                "report_figure_error": "missing_dataset_key",
+            },
+        )
         return None
     datasets = state.get("datasets") or {}
     dataset = datasets.get(dataset_key)
     if dataset is None:
+        _merge_result_artifacts(
+            state,
+            result_id,
+            record,
+            artifacts_update={
+                "report_figure_status": "failed",
+                "report_figure_error": f"dataset_not_in_workspace:{dataset_key}",
+            },
+        )
         return None
 
+    record = (state.get("results") or {}).get(result_id) or record
     figures = state.setdefault("figures", {})
     artifacts = dict(record.get("artifacts") or {})
 
@@ -349,10 +389,10 @@ def _auto_register_result_snapshot(
         if key in figures:
             if not artifacts.get("report_figure_key"):
                 artifacts["report_figure_key"] = key
-                patched = dict(record)
-                patched["artifacts"] = artifacts
-                state.setdefault("results", {})[result_id] = patched
-            return {"figure_key": key, "reused": True}
+            artifacts["report_figure_status"] = "captured"
+            artifacts["report_figure_error"] = ""
+            _merge_result_artifacts(state, result_id, record, artifacts_update=artifacts)
+            return {"figure_key": key, "reused": True, "status": "captured"}
 
     label = f"{str(analysis_type or '').upper()} Analysis - {dataset_key}"
     figure = _build_result_snapshot_figure(
@@ -362,10 +402,28 @@ def _auto_register_result_snapshot(
         state_payload=state_payload,
     )
     if figure is None:
+        _merge_result_artifacts(
+            state,
+            result_id,
+            record,
+            artifacts_update={
+                "report_figure_status": "failed",
+                "report_figure_error": "snapshot_figure_unavailable: no plottable series for axis/primary",
+            },
+        )
         return None
 
     png_bytes, render_meta = render_plotly_figure_png(figure, width=1200, height=620)
     if not png_bytes:
+        _merge_result_artifacts(
+            state,
+            result_id,
+            record,
+            artifacts_update={
+                "report_figure_status": "failed",
+                "report_figure_error": f"png_render_failed:{render_meta or 'unknown'}",
+            },
+        )
         return None
 
     figures[label] = png_bytes
@@ -373,11 +431,11 @@ def _auto_register_result_snapshot(
         keys.append(label)
     artifacts["figure_keys"] = keys
     artifacts["report_figure_key"] = label
+    artifacts["report_figure_status"] = "captured"
+    artifacts["report_figure_error"] = ""
 
-    patched = dict(record)
-    patched["artifacts"] = artifacts
-    state.setdefault("results", {})[result_id] = patched
-    return {"figure_key": label, "render_mode": render_meta or "kaleido"}
+    _merge_result_artifacts(state, result_id, record, artifacts_update=artifacts)
+    return {"figure_key": label, "render_mode": render_meta or "kaleido", "status": "captured"}
 
 
 def _require_project_state(project_store: ProjectStore, project_id: str) -> dict:
@@ -920,6 +978,16 @@ def create_app(
         provider_ids = [str(item).strip() for item in (request.provider_ids or []) if str(item).strip()]
         if not provider_ids and str(record.get("analysis_type") or "").upper() in {"XRD", "DSC", "DTA", "TGA", "FTIR"}:
             provider_ids = ["openalex_like_provider"]
+        use_fixture_fallback = (
+            provider_ids == ["openalex_like_provider"]
+            and not openalex_literature_env_configured()
+            and literature_fixture_fallback_enabled()
+        )
+        if use_fixture_fallback:
+            provider_ids = ["openalex_like_provider", "fixture_provider"]
+        compare_filters: dict[str, Any] = dict(request.filters or {})
+        if use_fixture_fallback:
+            compare_filters["allow_fixture_fallback"] = True
         try:
             providers, provider_scope = resolve_literature_providers(
                 provider_ids,
@@ -934,7 +1002,7 @@ def create_app(
             provider=provider,
             provider_scope=provider_scope,
             max_claims=request.max_claims,
-            filters=request.filters,
+            filters=compare_filters,
             user_documents=[_model_payload(item) for item in request.user_documents],
         )
 
@@ -1011,6 +1079,8 @@ def create_app(
         current_primary = artifacts.get("report_figure_key")
         if request.replace or not (isinstance(current_primary, str) and current_primary):
             artifacts["report_figure_key"] = label
+        artifacts["report_figure_status"] = "captured"
+        artifacts["report_figure_error"] = ""
         record = dict(record)
         record["artifacts"] = artifacts
         state.setdefault("results", {})[result_id] = record
@@ -1257,9 +1327,17 @@ def create_app(
                         state_payload=state_payload if isinstance(state_payload, dict) else {},
                         analysis_type=analysis_type,
                     )
-                except Exception:
-                    # Figure capture is best-effort; batch persistence must not fail on render issues.
-                    pass
+                except Exception as exc:
+                    rec = (state.get("results") or {}).get(saved_result_id) or record
+                    _merge_result_artifacts(
+                        state,
+                        saved_result_id,
+                        rec,
+                        artifacts_update={
+                            "report_figure_status": "failed",
+                            "report_figure_error": f"exception:{exc.__class__.__name__}:{exc}",
+                        },
+                    )
 
         completed_at = datetime.now().isoformat(timespec="seconds")
 
@@ -1569,9 +1647,17 @@ def create_app(
                     state_payload=state_payload if isinstance(state_payload, dict) else {},
                     analysis_type=analysis_type,
                 )
-            except Exception:
-                # Figure capture is best-effort; analysis save should still succeed.
-                pass
+            except Exception as exc:
+                rec = (state.get("results") or {}).get(result_id) or record
+                _merge_result_artifacts(
+                    state,
+                    result_id,
+                    rec,
+                    artifacts_update={
+                        "report_figure_status": "failed",
+                        "report_figure_error": f"exception:{exc.__class__.__name__}:{exc}",
+                    },
+                )
             add_history_event(
                 state,
                 action="Analysis Saved",

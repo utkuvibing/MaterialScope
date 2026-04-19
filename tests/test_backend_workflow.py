@@ -687,6 +687,7 @@ def test_analysis_run_auto_registers_figure_for_dta_and_persists_into_exports_an
     artifacts = (results_payload.get(result_id) or {}).get("artifacts") or {}
     assert artifacts.get("report_figure_key") == expected_label
     assert expected_label in (artifacts.get("figure_keys") or [])
+    assert artifacts.get("report_figure_status") == "captured"
 
     load_response = client.post(
         "/project/load",
@@ -698,6 +699,73 @@ def test_analysis_run_auto_registers_figure_for_dta_and_persists_into_exports_an
     loaded_summary = client.get(f"/workspace/{loaded_project_id}", headers=_headers())
     assert loaded_summary.status_code == 200
     assert loaded_summary.json()["summary"]["figure_count"] >= 1
+
+
+def test_analysis_run_auto_registers_figure_for_dsc_and_persists_into_exports_and_project(monkeypatch, thermal_dataset):
+    valid_png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+tmfUAAAAASUVORK5CYII=")
+    monkeypatch.setattr("backend.app.render_plotly_figure_png", lambda *_a, **_k: (valid_png, "test"))
+
+    app = create_app(api_token="workflow-token")
+    client = TestClient(app)
+
+    create_response = client.post("/workspace/new", headers=_headers())
+    assert create_response.status_code == 200
+    project_id = create_response.json()["project_id"]
+
+    csv_bytes = thermal_dataset.data.to_csv(index=False).encode("utf-8")
+    imported = client.post(
+        "/dataset/import",
+        headers=_headers(),
+        json={
+            "project_id": project_id,
+            "file_name": "auto_dsc.csv",
+            "file_base64": _to_base64(csv_bytes),
+            "data_type": "DSC",
+            "metadata": _import_metadata(thermal_dataset),
+        },
+    )
+    assert imported.status_code == 200
+    dataset_key = imported.json()["dataset"]["key"]
+
+    run_response = client.post(
+        "/analysis/run",
+        headers=_headers(),
+        json={
+            "project_id": project_id,
+            "dataset_key": dataset_key,
+            "analysis_type": "DSC",
+            "workflow_template_id": "dsc.general",
+        },
+    )
+    assert run_response.status_code == 200
+    run_payload = run_response.json()
+    result_id = run_payload["result_id"]
+    assert run_payload["execution_status"] == "saved"
+    assert run_payload["summary"]["figure_count"] >= 1
+
+    expected_label = f"DSC Analysis - {dataset_key}"
+
+    docx_export = client.post(
+        f"/workspace/{project_id}/exports/report-docx",
+        headers=_headers(),
+        json={"selected_result_ids": [result_id], "include_figures": True},
+    )
+    assert docx_export.status_code == 200
+    docx_payload = docx_export.json()
+    assert docx_payload.get("export_warnings") == []
+    docx_bytes = base64.b64decode(docx_payload["artifact_base64"].encode("ascii"))
+    with zipfile.ZipFile(io.BytesIO(docx_bytes), "r") as archive:
+        media_files = [name for name in archive.namelist() if name.startswith("word/media/")]
+    assert media_files, "DOCX export should include at least one embedded figure image."
+
+    save_response = client.post("/project/save", headers=_headers(), json={"project_id": project_id})
+    assert save_response.status_code == 200
+    archive_bytes = base64.b64decode(save_response.json()["archive_base64"].encode("ascii"))
+    with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as archive:
+        results_payload = json.loads(archive.read("results.json").decode("utf-8"))
+    artifacts = (results_payload.get(result_id) or {}).get("artifacts") or {}
+    assert artifacts.get("report_figure_key") == expected_label
+    assert artifacts.get("report_figure_status") == "captured"
 
 
 def test_analysis_run_auto_registers_figure_for_ftir(monkeypatch):
