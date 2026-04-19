@@ -61,3 +61,23 @@
 **Reason:** Overlapping onset/endset labels are the primary source of chart clutter in dense DTA results. Hover and table already carry this information. Result mode should be clean enough for publication export.
 
 **Consequence / future:** The `_ANNOTATION_MIN_SEP` and `_PRIMARY_EVENT_LIMIT` constants remain relevant for debug mode. Result mode uses a simpler threshold (primary events only, no onset/endset vlines).
+
+---
+
+## 2026-04-19 — Shared Dash literature compare rendering
+
+**Decision:** Move literature compare output + status alert rendering into `dash_app/components/literature_compare_ui.py`, parameterized by an `i18n_prefix` (e.g. `dash.analysis.dta.literature` / `dash.analysis.dsc.literature`). DTA page delegates to the shared module; DSC uses the same contract with DSC-specific keys.
+
+**Reason:** Avoid duplicating large rendering trees and keep DTA/DSC behavior aligned.
+
+**Consequence / future:** New modalities can reuse the helper by supplying a matching key namespace in `utils/i18n.py`.
+
+---
+
+## 2026-04-19 — DSC analysis state includes `dtg` (derivative) curve
+
+**Decision:** After baseline correction in `_execute_dsc_batch`, compute a first-derivative curve vs temperature with `core.preprocessing.compute_derivative` and store it in modality state as `dtg`, exposed via existing `analysis_state_curves`.
+
+**Reason:** Enables a compact derivative helper in Dash without a second full “debug” surface; aligns with backend-driven curves contract.
+
+**Consequence / future:** Downstream UIs should treat `dtg` as optional (may be empty if insufficient points).

@@ -237,6 +237,8 @@ def test_execute_dsc_batch_template_saves_normalized_record(thermal_dataset):
     assert outcome["validation"]["status"] in {"pass", "warn"}
     assert outcome["state"]["processing"]["workflow_template"] == "Polymer Tg"
     assert outcome["state"]["peaks"]
+    assert "dtg" in outcome["state"]
+    assert np.asarray(outcome["state"]["dtg"]).size > 0
     assert outcome["summary_row"]["execution_status"] == "saved"
 
 

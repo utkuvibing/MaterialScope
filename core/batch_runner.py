@@ -12,6 +12,7 @@ from core.dta_processor import DTAProcessor
 from core.dsc_processor import DSCProcessor
 from core.library_cloud_client import get_library_cloud_client
 from core.peak_analysis import characterize_peaks
+from core.preprocessing import compute_derivative
 from core.processing_schema import (
     ensure_processing_payload,
     get_workflow_templates,
@@ -346,6 +347,16 @@ def _execute_dsc_batch(
     processor.correct_baseline(method=baseline_method, **baseline)
     corrected_signal = processor.get_result().smoothed_signal.copy()
 
+    t_arr = np.asarray(temperature, dtype=float)
+    corr_arr = np.asarray(corrected_signal, dtype=float)
+    if t_arr.shape == corr_arr.shape and t_arr.size >= 3:
+        try:
+            dtg_signal = compute_derivative(t_arr, corr_arr, order=1, smooth_first=True)
+        except Exception:
+            dtg_signal = np.array([])
+    else:
+        dtg_signal = np.array([])
+
     processor.find_peaks(**peak_detection)
     tg_region = glass_transition.get("region")
     processor.detect_glass_transition(region=tuple(tg_region) if isinstance(tg_region, (list, tuple)) and len(tg_region) == 2 else None)
@@ -388,6 +399,7 @@ def _execute_dsc_batch(
         "smoothed": smoothed_signal,
         "baseline": result.baseline,
         "corrected": corrected_signal,
+        "dtg": dtg_signal,
         "peaks": result.peaks,
         "glass_transitions": result.glass_transitions,
         "processor": None,

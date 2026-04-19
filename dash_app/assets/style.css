@@ -1584,7 +1584,8 @@ html[data-theme="dark"] .main-content .dta-results-surface .dta-debug-shell {
 }
 
 .main-content .dsc-results-surface .dsc-result-context > .card,
-.main-content .dsc-results-surface .dsc-result-support > .card {
+.main-content .dsc-results-surface .dsc-result-support > .card,
+.main-content .dsc-results-surface .dsc-result-secondary > .card {
   border-color: var(--ta-border);
 }
 

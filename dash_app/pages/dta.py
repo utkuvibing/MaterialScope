@@ -40,6 +40,11 @@ from dash_app.components.analysis_page import (
 )
 from dash_app.components.chrome import page_header
 from dash_app.components.data_preview import dataset_table
+from dash_app.components.literature_compare_ui import (
+    literature_compare_status_alert,
+    literature_t,
+    render_literature_output,
+)
 from dash_app.theme import apply_figure_theme, normalize_ui_theme
 from utils.i18n import normalize_ui_locale, translate_ui
 
@@ -2831,11 +2836,6 @@ def sync_peak_controls(draft, locale_data):
 # ---------------------------------------------------------------------------
 
 
-def _literature_t(loc: str, key: str, fallback: str) -> str:
-    """Translate with a literal fallback when the key is missing from the bundle."""
-    value = translate_ui(loc, key)
-    return fallback if value == key else value
-
 
 @callback(
     Output("dta-literature-card-title", "children"),
@@ -2849,23 +2849,23 @@ def _literature_t(loc: str, key: str, fallback: str) -> str:
 def render_dta_literature_chrome(locale_data, result_id):
     loc = _loc(locale_data)
     if result_id:
-        hint = _literature_t(
+        hint = literature_t(
             loc,
             "dash.analysis.dta.literature.ready",
             "Compare the saved DTA result to literature sources.",
         )
     else:
-        hint = _literature_t(
+        hint = literature_t(
             loc,
             "dash.analysis.dta.literature.empty",
             "Run a DTA analysis first to enable literature comparison.",
         )
     return (
-        _literature_t(loc, "dash.analysis.dta.literature.title", "Literature Compare"),
+        literature_t(loc, "dash.analysis.dta.literature.title", "Literature Compare"),
         hint,
-        _literature_t(loc, "dash.analysis.dta.literature.max_claims", "Max Claims"),
-        _literature_t(loc, "dash.analysis.dta.literature.persist", "Persist to project"),
-        _literature_t(loc, "dash.analysis.dta.literature.compare_btn", "Compare"),
+        literature_t(loc, "dash.analysis.dta.literature.max_claims", "Max Claims"),
+        literature_t(loc, "dash.analysis.dta.literature.persist", "Persist to project"),
+        literature_t(loc, "dash.analysis.dta.literature.compare_btn", "Compare"),
     )
 
 
@@ -2875,425 +2875,6 @@ def render_dta_literature_chrome(locale_data, result_id):
 )
 def toggle_literature_compare_button(result_id):
     return not bool(result_id)
-
-
-def _render_literature_output(payload: dict, loc: str) -> html.Div:
-    """Render the DTA literature panel as curated product-facing sections."""
-    claims = payload.get("literature_claims") or []
-    comparisons = payload.get("literature_comparisons") or []
-    citations = payload.get("citations") or []
-    context = payload.get("literature_context") if isinstance(payload.get("literature_context"), dict) else {}
-
-    def _clean_text(value) -> str:
-        if value in (None, ""):
-            return ""
-        return str(value).strip()
-
-    def _entry_text(entry: dict) -> str:
-        text = (
-            entry.get("claim_text")
-            or entry.get("statement")
-            or entry.get("claim")
-            or entry.get("title")
-            or entry.get("summary")
-            or entry.get("comparison_note")
-            or entry.get("rationale")
-            or ""
-        )
-        return _clean_text(text)
-
-    def _is_meaningful_entry(entry: dict) -> bool:
-        if _entry_text(entry):
-            return True
-        for key in ("doi", "source", "provider", "citation_id", "paper_title", "paper_doi"):
-            if _clean_text(entry.get(key)):
-                return True
-        return False
-
-    def _context_token(key: str) -> str:
-        return _clean_text(context.get(key)).lower()
-
-    def _context_bool(key: str) -> bool:
-        return bool(context.get(key))
-
-    def _citation_title(citation: dict) -> str:
-        return _clean_text(
-            citation.get("title")
-            or citation.get("paper_title")
-            or citation.get("citation_text")
-            or citation.get("doi")
-            or citation.get("url")
-        )
-
-    def _citation_meta(citation: dict) -> str:
-        parts: list[str] = []
-        year = _clean_text(citation.get("year"))
-        journal = _clean_text(citation.get("journal"))
-        doi = _clean_text(citation.get("doi"))
-        if year:
-            parts.append(year)
-        if journal:
-            parts.append(journal)
-        if doi:
-            parts.append(f"DOI: {doi}")
-        return " | ".join(parts)
-
-    def _reason_text() -> str:
-        status_token = _context_token("provider_query_status")
-        reason_token = _context_token("no_results_reason")
-        token = reason_token or status_token
-        if token == "provider_unavailable":
-            return _literature_t(
-                loc,
-                "dash.analysis.dta.literature.status.reason.provider_unavailable",
-                "Live literature search could not complete because the provider was unavailable.",
-            )
-        if token == "request_failed":
-            return _literature_t(
-                loc,
-                "dash.analysis.dta.literature.status.reason.request_failed",
-                "The provider request did not return a usable literature response for this run.",
-            )
-        if token == "not_configured":
-            return _literature_t(
-                loc,
-                "dash.analysis.dta.literature.status.reason.not_configured",
-                "Live literature search is not configured in this environment.",
-            )
-        if token == "query_too_narrow":
-            return _literature_t(
-                loc,
-                "dash.analysis.dta.literature.status.reason.query_too_narrow",
-                "The current literature query was too narrow to retain usable references.",
-            )
-        return _literature_t(
-            loc,
-            "dash.analysis.dta.literature.status.reason.no_retained",
-            "No retainable literature evidence was found for this interpretation in the current run.",
-        )
-
-    def _comparison_citation_ids(entry: dict) -> list[str]:
-        raw_ids = entry.get("citation_ids") or []
-        if isinstance(raw_ids, str):
-            raw_ids = [raw_ids]
-        return [_clean_text(item) for item in raw_ids if _clean_text(item)]
-
-    citation_by_id: dict[str, dict] = {}
-    for entry in citations:
-        if not isinstance(entry, dict):
-            continue
-        citation_id = _clean_text(entry.get("citation_id"))
-        if citation_id and citation_id not in citation_by_id:
-            citation_by_id[citation_id] = entry
-
-    retained_rows: list[dict[str, Any]] = []
-    consumed_citation_ids: set[str] = set()
-
-    for entry in comparisons:
-        if not isinstance(entry, dict) or not _is_meaningful_entry(entry):
-            continue
-        citation_ids = _comparison_citation_ids(entry)
-        linked_citations = [citation_by_id[citation_id] for citation_id in citation_ids if citation_id in citation_by_id]
-        consumed_citation_ids.update(citation_ids)
-
-        title = _entry_text(entry)
-        if not title and linked_citations:
-            title = _citation_title(linked_citations[0])
-        if not title:
-            title = _literature_t(
-                loc,
-                "dash.analysis.dta.literature.evidence.generic_title",
-                "Retained literature reference",
-            )
-
-        provider = _clean_text(entry.get("provider") or entry.get("provider_id") or entry.get("source"))
-        rationale = _clean_text(entry.get("rationale") or entry.get("comparison_note"))
-        citation_titles = [_citation_title(item) for item in linked_citations if _citation_title(item)]
-
-        support = _clean_text(entry.get("support_label")).lower()
-        posture = _clean_text(entry.get("validation_posture")).lower()
-        is_alternative = support == "contradicts" or posture == "alternative_interpretation"
-
-        retained_rows.append(
-            {
-                "title": title,
-                "provider": provider,
-                "rationale": rationale,
-                "citation_titles": citation_titles,
-                "is_alternative": is_alternative,
-            }
-        )
-
-    for entry in citations:
-        if not isinstance(entry, dict) or not _is_meaningful_entry(entry):
-            continue
-        citation_id = _clean_text(entry.get("citation_id"))
-        if citation_id and citation_id in consumed_citation_ids:
-            continue
-        title = _citation_title(entry)
-        if not title:
-            continue
-        provider = _clean_text(entry.get("provider") or entry.get("source"))
-        provenance = entry.get("provenance")
-        if not provider and isinstance(provenance, dict):
-            provider = _clean_text(provenance.get("provider_id"))
-        retained_rows.append(
-            {
-                "title": title,
-                "provider": provider,
-                "rationale": _citation_meta(entry),
-                "citation_titles": [],
-                "is_alternative": False,
-            }
-        )
-
-    relevant_rows = [row for row in retained_rows if not row.get("is_alternative")]
-    alternative_rows = [row for row in retained_rows if row.get("is_alternative")]
-    has_retained_evidence = bool(relevant_rows or alternative_rows)
-
-    claim_items = []
-    for entry in claims:
-        if not isinstance(entry, dict):
-            continue
-        text = _entry_text(entry)
-        if text:
-            claim_items.append(html.Li(text, className="small"))
-
-    def _render_evidence_rows(rows: list[dict[str, Any]]) -> list[html.Div]:
-        rendered: list[html.Div] = []
-        for row in rows:
-            meta_parts: list[str] = []
-            if row.get("provider"):
-                meta_parts.append(
-                    _literature_t(
-                        loc,
-                        "dash.analysis.dta.literature.evidence.provider_prefix",
-                        "Source: {source}",
-                    ).replace("{source}", str(row["provider"]))
-                )
-            citation_titles = row.get("citation_titles") or []
-            if citation_titles:
-                cite_summary = ", ".join(citation_titles[:2])
-                if len(citation_titles) > 2:
-                    cite_summary += "..."
-                meta_parts.append(
-                    _literature_t(
-                        loc,
-                        "dash.analysis.dta.literature.evidence.citations_prefix",
-                        "Linked citations: {titles}",
-                    ).replace("{titles}", cite_summary)
-                )
-            rendered.append(
-                html.Div(
-                    [
-                        html.Div(row["title"], className="fw-semibold small"),
-                        html.P(row["rationale"], className="small mb-1") if row.get("rationale") else None,
-                        html.P(" | ".join(meta_parts), className="small text-muted mb-0") if meta_parts else None,
-                    ],
-                    className="border rounded p-2 mb-2",
-                )
-            )
-        return rendered
-
-    children: list[Any] = []
-
-    if claim_items:
-        children.append(
-            html.Div(
-                [
-                    html.H6(
-                        _literature_t(
-                            loc,
-                            "dash.analysis.dta.literature.claims_generated",
-                            "Generated interpretation claims",
-                        ),
-                        className="mt-2 mb-1",
-                    ),
-                    html.P(
-                        _literature_t(
-                            loc,
-                            "dash.analysis.dta.literature.claims_note",
-                            "These claims are generated from the analysis interpretation and are not retained external literature evidence on their own.",
-                        ),
-                        className="small text-muted mb-1",
-                    ),
-                    html.Ul(claim_items, className="mb-0 ps-3"),
-                ],
-                className="mb-3",
-            )
-        )
-
-    children.append(
-        html.Div(
-            [
-                html.H6(
-                    _literature_t(
-                        loc,
-                        "dash.analysis.dta.literature.retained_evidence_title",
-                        "Retained literature evidence",
-                    ),
-                    className="mt-2 mb-1",
-                ),
-                html.Div(
-                    [
-                        html.H6(
-                            _literature_t(
-                                loc,
-                                "dash.analysis.dta.literature.relevant_references",
-                                "Relevant retained references",
-                            ),
-                            className="mt-2 mb-1",
-                        ),
-                        html.Div(_render_evidence_rows(relevant_rows))
-                        if relevant_rows
-                        else html.P(
-                            _literature_t(
-                                loc,
-                                "dash.analysis.dta.literature.relevant_references_empty",
-                                "No relevant retained references were found.",
-                            ),
-                            className="small text-muted mb-1",
-                        ),
-                    ]
-                ),
-                html.Div(
-                    [
-                        html.H6(
-                            _literature_t(
-                                loc,
-                                "dash.analysis.dta.literature.alternative_references",
-                                "Alternative or non-validating references",
-                            ),
-                            className="mt-2 mb-1",
-                        ),
-                        html.Div(_render_evidence_rows(alternative_rows))
-                        if alternative_rows
-                        else html.P(
-                            _literature_t(
-                                loc,
-                                "dash.analysis.dta.literature.alternative_references_empty",
-                                "No alternative or non-validating references were retained.",
-                            ),
-                            className="small text-muted mb-1",
-                        ),
-                    ]
-                ),
-            ],
-            className="mb-2",
-        )
-    )
-
-    if not has_retained_evidence:
-        follow_up: list[str] = []
-        reason_token = _context_token("no_results_reason") or _context_token("provider_query_status")
-        if reason_token in {"query_too_narrow"} or _context_bool("low_specificity_retrieval"):
-            follow_up.append(
-                _literature_t(
-                    loc,
-                    "dash.analysis.dta.literature.follow_up.refine_query",
-                    "Try a narrower sample/event phrasing to improve retained evidence quality.",
-                )
-            )
-        if reason_token in {"provider_unavailable", "request_failed", "not_configured"}:
-            follow_up.append(
-                _literature_t(
-                    loc,
-                    "dash.analysis.dta.literature.follow_up.retry_provider",
-                    "Retry when live provider access is available for this environment.",
-                )
-            )
-        if _context_bool("metadata_only_evidence") or not _context_bool("real_literature_available"):
-            follow_up.append(
-                _literature_t(
-                    loc,
-                    "dash.analysis.dta.literature.follow_up.add_accessible_sources",
-                    "If possible, include accessible supporting documents to strengthen retained evidence.",
-                )
-            )
-        follow_up = follow_up[:2]
-        children.append(
-            html.Div(
-                [
-                    html.H6(
-                        _literature_t(
-                            loc,
-                            "dash.analysis.dta.literature.no_evidence_title",
-                            "No retained literature evidence",
-                        ),
-                        className="mt-2 mb-1",
-                    ),
-                    html.P(_reason_text(), className="small text-muted mb-1"),
-                    html.Ul([html.Li(item, className="small") for item in follow_up], className="mb-0 ps-3")
-                    if follow_up
-                    else None,
-                ],
-                className="mt-2",
-            )
-        )
-
-    technical_rows: list[Any] = []
-
-    def _technical_line(key: str, fallback: str, value) -> None:
-        text = _clean_text(value)
-        if not text:
-            return
-        technical_rows.append(
-            html.Li(
-                [
-                    html.Strong(f"{_literature_t(loc, key, fallback)}: "),
-                    text,
-                ],
-                className="small",
-            )
-        )
-
-    _technical_line(
-        "dash.analysis.dta.literature.technical.provider_status",
-        "Provider status",
-        context.get("provider_query_status"),
-    )
-    _technical_line(
-        "dash.analysis.dta.literature.technical.no_results_reason",
-        "No-results reason",
-        context.get("no_results_reason"),
-    )
-    if context.get("source_count") is not None:
-        _technical_line(
-            "dash.analysis.dta.literature.technical.source_count",
-            "Source count",
-            context.get("source_count"),
-        )
-    if context.get("citation_count") is not None:
-        _technical_line(
-            "dash.analysis.dta.literature.technical.citation_count",
-            "Citation count",
-            context.get("citation_count"),
-        )
-    _technical_line(
-        "dash.analysis.dta.literature.technical.provider_note",
-        "Provider note",
-        context.get("provider_error_message"),
-    )
-    _technical_line(
-        "dash.analysis.dta.literature.technical.query",
-        "Technical query",
-        context.get("query_text"),
-    )
-
-    if technical_rows:
-        children.append(
-            html.Div(
-                _dta_collapsible_section(
-                    loc,
-                    "dash.analysis.dta.literature.technical_details_title",
-                    html.Ul(technical_rows, className="mb-0 ps-3"),
-                    open=False,
-                ),
-                className="mt-2",
-            )
-        )
-
-    return html.Div(children)
 
 
 @callback(
@@ -3312,7 +2893,7 @@ def compare_dta_literature(n_clicks, project_id, result_id, max_claims, persist_
     if not n_clicks:
         raise dash.exceptions.PreventUpdate
     if not project_id or not result_id:
-        msg = _literature_t(
+        msg = literature_t(
             loc,
             "dash.analysis.dta.literature.missing_result",
             "Run a DTA analysis first.",
@@ -3333,7 +2914,7 @@ def compare_dta_literature(n_clicks, project_id, result_id, max_claims, persist_
         )
     except Exception as exc:
         err = dbc.Alert(
-            _literature_t(
+            literature_t(
                 loc,
                 "dash.analysis.dta.literature.error",
                 "Literature compare failed: {error}",
@@ -3343,122 +2924,11 @@ def compare_dta_literature(n_clicks, project_id, result_id, max_claims, persist_
         )
         return dash.no_update, err
 
-    def _entry_text(entry: dict) -> str:
-        text = (
-            entry.get("claim_text")
-            or entry.get("statement")
-            or entry.get("claim")
-            or entry.get("title")
-            or entry.get("summary")
-            or ""
-        )
-        return str(text).strip()
-
-    def _has_meaningful_entries(items) -> bool:
-        for item in items or []:
-            if not isinstance(item, dict):
-                continue
-            if _entry_text(item):
-                return True
-            if str(item.get("doi") or "").strip():
-                return True
-            if str(item.get("source") or "").strip():
-                return True
-            if str(item.get("provider") or "").strip():
-                return True
-        return False
-
-    context = payload.get("literature_context") if isinstance(payload.get("literature_context"), dict) else {}
-    has_claims = _has_meaningful_entries(payload.get("literature_claims"))
-    has_retained_comparisons = _has_meaningful_entries(payload.get("literature_comparisons"))
-    has_retained_citations = _has_meaningful_entries(payload.get("citations"))
-    has_retained_evidence = has_retained_comparisons or has_retained_citations
-    limited_evidence = has_retained_evidence and bool(
-        context.get("low_specificity_retrieval") or context.get("metadata_only_evidence")
+    _prefix = "dash.analysis.dta.literature"
+    return (
+        render_literature_output(payload, loc, i18n_prefix=_prefix),
+        literature_compare_status_alert(payload, loc, i18n_prefix=_prefix),
     )
-
-    status_token = str(context.get("provider_query_status") or "").strip().lower()
-    reason_token = str(context.get("no_results_reason") or "").strip().lower()
-    state_token = reason_token or status_token
-
-    if state_token == "provider_unavailable":
-        reason_text = _literature_t(
-            loc,
-            "dash.analysis.dta.literature.status.reason.provider_unavailable",
-            "Live literature search could not complete because the provider was unavailable.",
-        )
-    elif state_token == "request_failed":
-        reason_text = _literature_t(
-            loc,
-            "dash.analysis.dta.literature.status.reason.request_failed",
-            "The provider request did not return a usable literature response for this run.",
-        )
-    elif state_token == "not_configured":
-        reason_text = _literature_t(
-            loc,
-            "dash.analysis.dta.literature.status.reason.not_configured",
-            "Live literature search is not configured in this environment.",
-        )
-    elif state_token == "query_too_narrow":
-        reason_text = _literature_t(
-            loc,
-            "dash.analysis.dta.literature.status.reason.query_too_narrow",
-            "The current literature query was too narrow to retain usable references.",
-        )
-    else:
-        reason_text = _literature_t(
-            loc,
-            "dash.analysis.dta.literature.status.reason.no_retained",
-            "No retainable literature evidence was found for this interpretation in the current run.",
-        )
-
-    if has_retained_evidence and not limited_evidence:
-        headline = _literature_t(
-            loc,
-            "dash.analysis.dta.literature.status.evidence_found",
-            "Retained literature evidence was found.",
-        )
-        detail = _literature_t(
-            loc,
-            "dash.analysis.dta.literature.status.evidence_found_detail",
-            "Use retained references as contextual support for this interpretation.",
-        )
-        color = "success"
-    elif limited_evidence:
-        headline = _literature_t(
-            loc,
-            "dash.analysis.dta.literature.status.limited_evidence",
-            "Retained literature evidence is limited.",
-        )
-        detail = _literature_t(
-            loc,
-            "dash.analysis.dta.literature.status.limited_evidence_detail",
-            "Retained references were found, but the evidence should be treated as cautious contextual support.",
-        )
-        color = "info"
-    elif has_claims:
-        headline = _literature_t(
-            loc,
-            "dash.analysis.dta.literature.status.claims_without_evidence",
-            "Interpretation claims were generated, but no retained literature evidence was found.",
-        )
-        detail = reason_text
-        color = "warning"
-    else:
-        headline = _literature_t(
-            loc,
-            "dash.analysis.dta.literature.status.no_evidence",
-            "No retained literature evidence was found.",
-        )
-        detail = reason_text
-        color = "warning"
-
-    status = dbc.Alert(
-        [html.Div(html.Strong(headline)), html.Div(detail, className="small mt-1")],
-        color=color,
-        className="py-2 small mb-2",
-    )
-    return _render_literature_output(payload, loc), status
 
 
 def _capture_dta_figure_png(

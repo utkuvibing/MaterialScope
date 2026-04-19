@@ -73,9 +73,12 @@ def test_layout_contains_parity_ids_and_stores():
         "dsc-result-quality",
         "dsc-result-raw-metadata",
         "dsc-result-figure",
+        "dsc-result-derivative",
         "dsc-result-event-cards",
         "dsc-result-table",
         "dsc-result-processing",
+        "dsc-prerun-dataset-info",
+        "dsc-literature-compare-btn",
     ]
     for element_id in expected_ids:
         assert element_id in layout_str, f"Missing layout element: {element_id}"
@@ -84,7 +87,8 @@ def test_layout_contains_parity_ids_and_stores():
 def test_layout_places_figure_before_event_cards():
     mod = _import_dsc_page()
     layout_str = str(mod.layout)
-    assert layout_str.index("dsc-result-figure") < layout_str.index("dsc-result-event-cards")
+    assert layout_str.index("dsc-result-figure") < layout_str.index("dsc-result-derivative")
+    assert layout_str.index("dsc-result-derivative") < layout_str.index("dsc-result-event-cards")
 
 
 def test_default_processing_draft_has_all_sections():
@@ -94,6 +98,7 @@ def test_default_processing_draft_has_all_sections():
     assert set(defaults.keys()) == {"smoothing", "baseline", "peak_detection", "glass_transition"}
     assert defaults["smoothing"]["method"] == "savgol"
     assert defaults["baseline"]["method"] == "asls"
+    assert defaults["baseline"].get("region") is None
     assert defaults["peak_detection"]["direction"] == "both"
     assert defaults["peak_detection"]["distance"] == 1
     assert defaults["glass_transition"] == {"mode": "auto", "region": None}
@@ -138,7 +143,7 @@ def test_overrides_from_draft_includes_all_user_sections():
     overrides = mod._overrides_from_draft(
         {
             "smoothing": {"method": "savgol", "window_length": 15, "polyorder": 3},
-            "baseline": {"method": "asls", "lam": 1e6, "p": 0.01},
+            "baseline": {"method": "asls", "lam": 1e6, "p": 0.01, "region": [40.0, 200.0]},
             "peak_detection": {"direction": "down", "prominence": 0.02, "distance": 4},
             "glass_transition": {"mode": "auto", "region": [90.0, 180.0]},
             "other": {"ignored": True},
@@ -146,6 +151,51 @@ def test_overrides_from_draft_includes_all_user_sections():
     )
 
     assert set(overrides.keys()) == {"smoothing", "baseline", "peak_detection", "glass_transition"}
+    assert overrides["baseline"]["region"] == [40.0, 200.0]
+
+
+def test_normalize_baseline_values_optional_region():
+    mod = _import_dsc_page()
+
+    base = mod._normalize_baseline_values("asls", 1e6, 0.01, False, 10, 200)
+    assert base["region"] is None
+
+    restricted = mod._normalize_baseline_values("asls", 1e6, 0.01, True, 30.0, 180.0)
+    assert restricted["region"] == [30.0, 180.0]
+
+
+def test_build_derivative_panel_renders_when_dtg_present(monkeypatch):
+    mod = _import_dsc_page()
+    import dash_app.api_client as api_client
+
+    monkeypatch.setattr(
+        api_client,
+        "analysis_state_curves",
+        lambda _p, _t, _k: {
+            "temperature": [100.0, 110.0, 120.0],
+            "dtg": [0.01, 0.02, -0.01],
+            "has_dtg": True,
+        },
+    )
+
+    panel = mod._build_derivative_panel("proj", "ds", "light", "en", locale_data="en")
+    assert "dsc-derivative-helper" in str(getattr(panel, "className", "") or "")
+    assert isinstance(panel.children[2], dcc.Graph)
+
+
+def test_build_derivative_panel_hidden_without_dtg(monkeypatch):
+    mod = _import_dsc_page()
+    import dash_app.api_client as api_client
+
+    monkeypatch.setattr(
+        api_client,
+        "analysis_state_curves",
+        lambda _p, _t, _k: {"temperature": [1.0], "dtg": [], "has_dtg": False},
+    )
+
+    panel = mod._build_derivative_panel("proj", "ds", "light", "en", locale_data="en")
+    assert isinstance(panel, html.Div)
+    assert not panel.children
 
 
 def test_toggle_preset_action_buttons_requires_selection():
@@ -380,11 +430,13 @@ def test_display_result_returns_new_surface_sections(monkeypatch):
             "smoothed": [0.1, 0.7, -0.2, 0.35],
             "baseline": [0.05, 0.05, 0.05, 0.05],
             "corrected": [0.05, 0.65, -0.25, 0.3],
+            "dtg": [0.0, 0.01, -0.02, 0.0],
+            "has_dtg": True,
         },
     )
 
     outputs = mod.display_result("dsc_polymer_a", 1, "light", "en", "proj-1")
 
-    assert len(outputs) == 8
+    assert len(outputs) == 9
     for item in outputs:
         assert item is not None
