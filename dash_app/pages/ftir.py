@@ -113,9 +113,9 @@ _FTIR_NORMALIZATION_MODES = frozenset({"vector", "max", "snv"})
 _FTIR_NORMALIZATION_DEFAULTS: dict[str, Any] = {"method": "vector"}
 
 _FTIR_PEAK_DETECTION_DEFAULTS: dict[str, Any] = {
-    "prominence": 0.05,
+    "prominence": 0.035,
     "distance": 5,
-    "max_peaks": 10,
+    "max_peaks": 12,
 }
 
 _FTIR_SIMILARITY_MATCHING_DEFAULTS: dict[str, Any] = {
@@ -235,7 +235,7 @@ def _normalize_normalization_values(method: str | None) -> dict[str, Any]:
 
 
 def _normalize_peak_detection_values(prominence, distance, max_peaks) -> dict[str, Any]:
-    prom = _coerce_float_non_negative(prominence, default=0.05)
+    prom = _coerce_float_non_negative(prominence, default=0.035)
     dist = _coerce_int_positive(distance, default=5, minimum=1)
     mp = _coerce_int_positive(max_peaks, default=10, minimum=1)
     return {"prominence": prom, "distance": dist, "max_peaks": mp}
@@ -700,7 +700,7 @@ def _ftir_peak_detection_controls_card() -> dbc.Card:
                         dbc.Col(
                             [
                                 dbc.Label(id="ftir-peak-prominence-label", html_for="ftir-peak-prominence", className="mb-1"),
-                                dbc.Input(id="ftir-peak-prominence", type="number", min=0, step=0.001, value=0.05),
+                                dbc.Input(id="ftir-peak-prominence", type="number", min=0, step=0.001, value=0.035),
                             ],
                             md=4,
                         ),
@@ -1528,7 +1528,7 @@ def hydrate_ftir_processing_controls(_preset_hydrate, _history_hydrate, draft):
 
     norm_method = str(nm.get("method") or "vector")
 
-    prom = float(pk.get("prominence", 0.05))
+    prom = float(pk.get("prominence", 0.035))
     dist = int(pk.get("distance", 5))
     mp = int(pk.get("max_peaks", 10))
 
@@ -1864,7 +1864,7 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
         top_match_area = _build_top_match_panel(summary, rows, loc)
         peak_cards_area = _build_peak_cards_from_curves(project_id, dataset_key, summary, loc)
 
-    table_area = _build_match_table(rows, loc)
+    table_area = _build_match_table(rows, loc, summary=summary)
 
     proc_view = processing_details_section(
         processing,
@@ -2273,7 +2273,24 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
     corrected = curves.get("corrected", [])
     normalized = curves.get("normalized", [])
     peaks = curves.get("peaks", [])
-    has_overlay = curves.get("has_smoothed") or curves.get("has_baseline") or curves.get("has_corrected") or curves.get("has_normalized")
+    diagnostics = curves.get("diagnostics") or {}
+
+    has_corrected = bool(corrected and len(corrected) == len(wavenumber))
+    has_smoothed = bool(smoothed and len(smoothed) == len(wavenumber))
+    has_normalized_curve = bool(normalized and len(normalized) == len(wavenumber))
+    has_baseline = bool(baseline and len(baseline) == len(wavenumber))
+    plot_norm_primary = diagnostics.get("plot_normalized_primary_axis") is not False
+    show_normalized_trace = bool(has_normalized_curve and plot_norm_primary)
+    show_intermediate_smoothed = bool(has_smoothed and not has_corrected)
+    show_baseline_trace = bool(has_baseline and has_corrected)
+
+    has_overlay = bool(
+        show_baseline_trace
+        or show_intermediate_smoothed
+        or has_corrected
+        or show_normalized_trace
+        or (bool(raw_signal and len(raw_signal) == len(wavenumber)) and (has_corrected or show_intermediate_smoothed))
+    )
 
     if not wavenumber:
         return no_data_figure_msg(locale_data=loc)
@@ -2286,31 +2303,31 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
     hover_bg = "rgba(255,255,255,0.96)" if tone == "light" else "rgba(34,33,30,0.96)"
     hover_fg = "#1C1A1A" if tone == "light" else "#EEEDEA"
 
-    has_corrected = bool(corrected and len(corrected) == len(wavenumber))
-    has_smoothed = bool(smoothed and len(smoothed) == len(wavenumber))
-    has_normalized_curve = bool(normalized and len(normalized) == len(wavenumber))
-    has_baseline = bool(baseline and len(baseline) == len(wavenumber))
-
-    dominant_signal = normalized if has_normalized_curve else corrected if has_corrected else smoothed if has_smoothed else raw_signal
+    dominant_signal = corrected if has_corrected else smoothed if has_smoothed else raw_signal
     legend_query = translate_ui(loc, "dash.analysis.figure.legend_query_spectrum")
     legend_smooth = translate_ui(loc, "dash.analysis.figure.legend_smoothed_spectrum")
     legend_imported = translate_ui(loc, "dash.analysis.figure.legend_imported_spectrum")
     legend_baseline = translate_ui(loc, "dash.analysis.figure.legend_estimated_baseline")
     legend_normalized = translate_ui(loc, "dash.analysis.ftir.legend_normalized_spectrum")
 
-    diagnostics = curves.get("diagnostics") or {}
     if diagnostics.get("inverted_for_transmittance"):
         suffix = " (inverted)"
         legend_smooth += suffix
         legend_query += suffix
         legend_normalized += suffix
 
-    dominant_name = legend_query if has_normalized_curve else legend_smooth if has_smoothed else legend_imported
-    y_range = _y_axis_range(dominant_signal, raw_signal, smoothed, baseline, normalized)
+    y_series_for_range = [dominant_signal, raw_signal]
+    if show_baseline_trace:
+        y_series_for_range.append(baseline)
+    if show_intermediate_smoothed:
+        y_series_for_range.append(smoothed)
+    if show_normalized_trace:
+        y_series_for_range.append(normalized)
+    y_range = _y_axis_range(*y_series_for_range)
 
     fig = go.Figure()
 
-    if baseline and len(baseline) == len(wavenumber):
+    if show_baseline_trace:
         fig.add_trace(
             go.Scatter(
                 x=wavenumber,
@@ -2318,7 +2335,7 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
                 mode="lines",
                 name=legend_baseline,
                 line=dict(color=_FTIR_FIGURE_COLORS["baseline"], width=1.3, dash="dash"),
-                opacity=0.7,
+                opacity=0.65,
             )
         )
 
@@ -2334,7 +2351,7 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
             )
         )
 
-    if has_smoothed:
+    if show_intermediate_smoothed:
         fig.add_trace(
             go.Scatter(
                 x=wavenumber,
@@ -2342,7 +2359,7 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
                 mode="lines",
                 name=legend_smooth,
                 line=dict(color=_FTIR_FIGURE_COLORS["smoothed"], width=2.0),
-                opacity=0.9 if has_corrected or has_normalized_curve else 1.0,
+                opacity=0.95,
             )
         )
 
@@ -2354,11 +2371,11 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
                 mode="lines",
                 name=legend_query,
                 line=dict(color=_FTIR_FIGURE_COLORS["query"], width=3.2),
-                opacity=0.9 if has_normalized_curve else 1.0,
+                opacity=0.95 if show_normalized_trace else 1.0,
             )
         )
 
-    if has_normalized_curve:
+    if show_normalized_trace:
         fig.add_trace(
             go.Scatter(
                 x=wavenumber,
@@ -2369,6 +2386,15 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
             )
         )
 
+    def _peak_display_y(index: int) -> float | None:
+        if has_corrected and index < len(corrected):
+            return float(corrected[index])
+        if show_intermediate_smoothed and index < len(smoothed):
+            return float(smoothed[index])
+        if raw_signal and index < len(raw_signal):
+            return float(raw_signal[index])
+        return None
+
     # Peak annotations (top 8 only to avoid clutter)
     _ANNOTATION_MIN_SEP = 20.0
     annotated_positions: list[float] = []
@@ -2376,12 +2402,12 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
     for i, peak in enumerate(peaks[:_FTIR_MAX_PEAK_CARDS]):
         pos = peak.get("position")
         intensity = peak.get("intensity")
-        if pos is None or intensity is None or not wavenumber:
+        if pos is None or not wavenumber:
             continue
         idx = min(range(len(wavenumber)), key=lambda i: abs(wavenumber[i] - pos))
         too_close = any(abs(pos - p) < _ANNOTATION_MIN_SEP for p in annotated_positions)
         label = "" if too_close else f"{pos:.0f}"
-        y_at = dominant_signal[idx] if idx < len(dominant_signal or []) else None
+        y_at = _peak_display_y(idx)
         if y_at is None:
             continue
         fig.add_trace(
@@ -2487,10 +2513,14 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
 
 def _build_top_match_panel(summary: dict, rows: list, loc: str) -> html.Div:
     if not rows:
+        if str(summary.get("match_status") or "").lower() == "library_unavailable":
+            body = translate_ui(loc, "dash.analysis.ftir.match.library_unavailable_body")
+        else:
+            body = translate_ui(loc, "dash.analysis.state.no_library_matches")
         return html.Div(
             [
                 html.H5(translate_ui(loc, "dash.analysis.ftir.top_match.title"), className="mb-3"),
-                html.P(translate_ui(loc, "dash.analysis.state.no_library_matches"), className="text-muted"),
+                html.P(body, className="text-muted"),
             ]
         )
 
@@ -2604,12 +2634,17 @@ def _build_peak_cards_from_curves(project_id: str, dataset_key: str, summary: di
     return html.Div(cards)
 
 
-def _build_match_table(rows: list, loc: str) -> html.Div:
+def _build_match_table(rows: list, loc: str, *, summary: dict | None = None) -> html.Div:
     if not rows:
+        summary = summary or {}
+        if str(summary.get("match_status") or "").lower() == "library_unavailable":
+            body = translate_ui(loc, "dash.analysis.ftir.match.library_unavailable_body")
+        else:
+            body = translate_ui(loc, "dash.analysis.state.no_match_data")
         return html.Div(
             [
                 html.H5(translate_ui(loc, "dash.analysis.section.match_data_table"), className="mb-3"),
-                html.P(translate_ui(loc, "dash.analysis.state.no_match_data"), className="text-muted"),
+                html.P(body, className="text-muted"),
             ]
         )
 

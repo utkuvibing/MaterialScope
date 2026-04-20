@@ -1203,7 +1203,19 @@ def serialize_spectral_result(
     match_status = str(normalized_summary.get("match_status") or "").lower()
     confidence_band = str(normalized_summary.get("confidence_band") or "").lower()
     caution_payload = {}
-    if match_status == "no_match":
+    if match_status == "library_unavailable":
+        caution_payload = {
+            "code": str(normalized_summary.get("caution_code") or "spectral_library_unavailable"),
+            "message": str(
+                normalized_summary.get("caution_message")
+                or (
+                    "Reference spectral library matching was unavailable or not configured; "
+                    "absence of ranked candidates is a tooling limitation, not a spectroscopic no-match."
+                )
+            ),
+            "top_match_score": _clean_scalar(normalized_summary.get("top_match_score")),
+        }
+    elif match_status == "no_match":
         caution_payload = {
             "code": str(normalized_summary.get("caution_code") or "spectral_no_match"),
             "message": str(

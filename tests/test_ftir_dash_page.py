@@ -128,7 +128,7 @@ def test_default_processing_draft_has_all_sections():
     assert defaults["smoothing"]["method"] == "savgol"
     assert defaults["baseline"]["method"] == "asls"
     assert defaults["normalization"]["method"] == "vector"
-    assert defaults["peak_detection"]["prominence"] == 0.05
+    assert defaults["peak_detection"]["prominence"] == 0.035
     assert defaults["similarity_matching"]["top_n"] == 3
 
 
@@ -136,7 +136,7 @@ def test_normalize_peak_detection_values_sanitizes_inputs():
     mod = _import_ftir_page()
     # Negative values fall back to defaults
     normalized = mod._normalize_peak_detection_values(-3, 0, 0)
-    assert normalized["prominence"] == 0.05
+    assert normalized["prominence"] == 0.035
     assert normalized["distance"] == 1
     assert normalized["max_peaks"] == 1
 
@@ -622,7 +622,7 @@ def test_preset_dirty_flag_renders_clean_when_snapshot_matches():
         "savgol", 11, 3, 2.0,
         "asls", 1e6, 0.01, False, None, None,
         "vector",
-        0.05, 5, 10,
+        0.035, 5, 12,
         3, 0.45,
         snap,
     )
@@ -638,7 +638,7 @@ def test_preset_dirty_flag_renders_dirty_when_snapshot_differs():
         "gaussian", 11, 3, 2.0,
         "asls", 1e6, 0.01, False, None, None,
         "vector",
-        0.05, 5, 10,
+        0.035, 5, 12,
         3, 0.45,
         snap,
     )
@@ -682,3 +682,59 @@ def test_build_figure_shows_diagnostics_when_present(monkeypatch):
     assert "baseline suppressed" in s.lower()
     assert "normalization skipped" in s.lower()
     assert "no peaks detected" in s.lower()
+
+
+def test_ftir_literature_technical_collapsible_no_raw_key_leak():
+    from dash_app.components.literature_compare_ui import render_literature_output
+
+    payload = {
+        "literature_claims": [],
+        "literature_comparisons": [],
+        "citations": [],
+        "literature_context": {"provider_query_status": "ok", "query_text": "FTIR binder example query"},
+    }
+    tree = render_literature_output(
+        payload,
+        "en",
+        i18n_prefix="dash.analysis.ftir.literature",
+        evidence_preview_limit=2,
+        alternative_preview_limit=1,
+    )
+    html_s = str(tree)
+    assert "dash.analysis.ftir.literature.technical_details_title" not in html_s
+    assert "Technical search details" in html_s
+
+
+def test_build_figure_omits_normalized_when_backend_flags_shared_axis_unhelpful(monkeypatch):
+    mod = _import_ftir_page()
+    import dash_app.api_client as api_client
+    from utils.i18n import translate_ui
+
+    legend_norm = translate_ui("en", "dash.analysis.ftir.legend_normalized_spectrum")
+
+    monkeypatch.setattr(
+        api_client,
+        "analysis_state_curves",
+        lambda *_: {
+            "temperature": [4000.0, 3000.0, 2000.0, 1000.0],
+            "raw_signal": [0.1, 0.5, 0.3, 0.2],
+            "smoothed": [0.12, 0.48, 0.32, 0.18],
+            "baseline": [0.05, 0.05, 0.05, 0.05],
+            "corrected": [7.0, 9.0, 8.0, 6.0],
+            "normalized": [0.001, 0.0011, 0.001, 0.001],
+            "peaks": [],
+            "diagnostics": {"plot_normalized_primary_axis": False},
+        },
+    )
+    fig_div = mod._build_figure("proj", "ds", {}, "light", "en")
+    graph = next(c for c in fig_div.children if isinstance(c, dcc.Graph))
+    names = [tr.name for tr in graph.figure.data]
+    assert legend_norm not in names
+
+
+def test_build_match_table_library_unavailable_copy():
+    mod = _import_ftir_page()
+    table = mod._build_match_table([], "en", summary={"match_status": "library_unavailable"})
+    s = str(table)
+    assert "dash.analysis.ftir.match.library_unavailable_body" not in s
+    assert "tooling" in s.lower()

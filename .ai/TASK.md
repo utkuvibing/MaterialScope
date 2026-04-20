@@ -4,7 +4,35 @@
 
 ## Status: no active slice (2026-04-21)
 
-The **FTIR science chain stabilization** slice is **complete**. Start a new slice by replacing the status block above.
+The **FTIR follow-up pass** slice is **complete**. Start a new slice by replacing the status block above.
+
+---
+
+### Archived: FTIR follow-up pass — peaks, figure, library diagnostics, i18n (done, 2026-04-21)
+
+**Goal:** After science-chain stabilization, improve FTIR peak retention, normalized-trace and overlay clarity, library-vs-chemistry messaging, and FTIR literature technical i18n — without redesigning the FTIR page or bypassing backend truth.
+
+**In scope**
+
+- [`core/batch_runner.py`](core/batch_runner.py): adaptive spectral prominence + two-pass fallback; `ftir.general` peak defaults; analysis-state diagnostics `plot_normalized_primary_axis` / `normalized_axis_ratio_vs_corrected`; `match_status` **`library_unavailable`** when no ranked rows and library path is missing/unconfigured (vs real **`no_match`**); matching caution payload.
+- [`core/validation.py`](core/validation.py), [`core/result_serialization.py`](core/result_serialization.py): spectral validation and caution serialization for **`library_unavailable`**.
+- [`dash_app/pages/ftir.py`](dash_app/pages/ftir.py): aligned UI peak defaults; figure trace policy (hide smoothed when corrected; baseline when helpful; conditional normalized); peak marker Y from displayed query path; empty match panels use library-unavailable copy when applicable.
+- [`dash_app/components/literature_compare_ui.py`](dash_app/components/literature_compare_ui.py): collapsible titles use **`literature_t`** + fallback.
+- [`utils/i18n.py`](utils/i18n.py): `match_status.library_unavailable`, FTIR match body, FTIR literature `technical_details_title` + `technical.*` keys.
+- Tests: [`tests/test_batch_runner.py`](tests/test_batch_runner.py), [`tests/test_ftir_dash_page.py`](tests/test_ftir_dash_page.py), [`tests/test_validation.py`](tests/test_validation.py).
+
+**Acceptance**
+
+- Wide multi-feature synthetic FTIR retains multiple detected peaks (regression test).
+- Normalized trace suppressed on the main figure when backend flags shared-axis ratio too low; figure still renders with primary traces.
+- Empty library UI distinguishes **`library_unavailable`** from inconclusive chemistry **`no_match`**.
+- FTIR literature technical-details heading never shows a raw i18n key in the UI.
+- Presets, export, literature compare, and figure capture wiring unchanged by intent.
+
+**Verification**
+
+- `rtk pytest tests/test_batch_runner.py tests/test_ftir_dash_page.py tests/test_validation.py::test_enrich_ftir_result_validation_adds_library_unavailable_semantics -q` — **71 passed**.
+- Targeted: `tests/test_result_serialization.py`, `tests/test_literature_compare_panel.py`, `tests/test_literature_compare.py`, `tests/test_raman_dash_page.py`.
 
 ---
 

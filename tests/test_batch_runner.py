@@ -1016,7 +1016,7 @@ def test_ftir_peak_detection_fallback_and_zero_peaks_diagnostic():
         "analysis_type": "FTIR",
         "workflow_template_id": "ftir.general",
         "analysis_steps": {
-            "peak_detection": {"prominence": 0.5, "distance": 6, "max_peaks": 12},
+            "peak_detection": {"prominence": 25.0, "distance": 6, "max_peaks": 12},
         },
     }
     outcome = execute_batch_template(
@@ -1030,10 +1030,10 @@ def test_ftir_peak_detection_fallback_and_zero_peaks_diagnostic():
     assert outcome["status"] == "saved"
     diagnostics = outcome["state"]["diagnostics"]
     assert diagnostics.get("peak_detection_fallback") is True
-    assert "fallback" in diagnostics.get("peak_detection_reason", "").lower()
+    assert "relaxed" in diagnostics.get("peak_detection_reason", "").lower()
     assert len(outcome["state"]["peaks"]) >= 3
     warnings = outcome["validation"].get("warnings", [])
-    assert any("peak detection used fallback logic" in w.lower() for w in warnings)
+    assert any("peak detection used fallback logic" in w.lower() or "relaxed prominence" in w.lower() for w in warnings)
 
 
 def test_ftir_zero_peaks_surfaces_diagnostic_reason():
@@ -1115,5 +1115,85 @@ def test_ftir_similarity_uses_corrected_when_normalization_skipped():
     assert outcome["state"]["diagnostics"].get("normalization_skipped") is True
     assert outcome["state"]["normalized"] == []
     # Matching should have run without crashing
-    assert outcome["record"]["summary"]["match_status"] in {"matched", "no_match"}
+    assert outcome["record"]["summary"]["match_status"] in {"matched", "no_match", "library_unavailable"}
     assert outcome["record"]["summary"]["candidate_count"] >= 0
+
+
+def test_execute_ftir_batch_without_candidates_reports_library_unavailable(monkeypatch):
+    dataset = _make_spectral_dataset(analysis_type="FTIR", include_reference_library=False)
+
+    class _OffCloud:
+        configured = False
+        last_error = ""
+
+        def search(self, **kwargs):
+            return None
+
+    class _StubMgr:
+        def library_context(self, analysis_type):
+            return {
+                "analysis_type": analysis_type,
+                "reference_package_count": 0,
+                "reference_candidate_count": 0,
+                "library_sync_mode": "off",
+                "library_cache_status": "unknown",
+                "library_mode": "not_configured",
+                "cloud_url": "",
+                "cloud_enabled_by_env": False,
+                "cloud_access_enabled": False,
+                "cloud_provider_count": 0,
+                "fallback_package_count": 0,
+                "fallback_entry_count": 0,
+                "last_cloud_lookup_at": None,
+                "last_cloud_error": "",
+            }
+
+        def count_installed_candidates(self, analysis_type):
+            return 0
+
+        def load_entries(self, analysis_type):
+            return []
+
+        def record_cloud_lookup(self, **kwargs):
+            return None
+
+    monkeypatch.setattr("core.batch_runner.get_library_cloud_client", lambda: _OffCloud())
+    monkeypatch.setattr("core.batch_runner.get_reference_library_manager", lambda: _StubMgr())
+
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_no_lib",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_no_lib",
+    )
+    assert outcome["status"] == "saved"
+    assert outcome["record"]["summary"]["match_status"] == "library_unavailable"
+    assert outcome["record"]["summary"]["caution_code"] == "spectral_library_unavailable"
+    assert not outcome["record"]["rows"]
+
+
+def test_ftir_retains_multiple_visible_peaks_wide_axis():
+    axis = np.linspace(550.0, 3850.0, 1600)
+    centers = (880.0, 1180.0, 1620.0, 1745.0, 2925.0, 3350.0)
+    signal = sum(_gaussian(axis, c, 32.0, 1.12) for c in centers) + 0.012 * np.sin(axis / 90.0)
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": axis, "signal": signal}),
+        metadata={"sample_name": "WideFTIR", "display_name": "Wide FTIR", "source_data_hash": "wide-ftir-hash"},
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "absorbance"},
+        original_columns={"temperature": "wavenumber", "signal": "intensity"},
+        file_path="",
+    )
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_wide_peaks",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_wide_peaks",
+    )
+    assert outcome["status"] == "saved"
+    assert len(outcome["state"]["peaks"]) >= 5
+    diag = outcome["state"]["diagnostics"]
+    assert "plot_normalized_primary_axis" in diag
+    assert "normalized_axis_ratio_vs_corrected" in diag

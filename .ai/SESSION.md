@@ -6,32 +6,25 @@
 
 - **Project:** MaterialScope
 - **Branch:** `web-dash-plotly-migration`
-- **Last slice:** FTIR science chain stabilization — signal role, baseline, normalization, peak detection, matching, diagnostics.
+- **Last slice:** FTIR follow-up pass (peak retention, figure clarity, library diagnostics, literature i18n) — **committed**.
 
 ## What was done this session
 
-1. **Signal-role inference:** `_infer_spectral_signal_role` reads `units["signal"]` / `metadata["inferred_signal_unit"]` to classify FTIR data as *absorbance*, *transmittance*, or *unknown*.
-2. **Transmittance inversion:** `_maybe_invert_spectral_signal` reflects transmittance around its max so troughs become peaks; inversion flag stored in state diagnostics and processing context.
-3. **Real baseline estimation:** `asls` and `rubberband` now use `pybaselines` with region-weight support; graceful linear fallback on failure.
-4. **Baseline validation / rejection:** `_validate_spectral_baseline` rejects fits that increase variance >50% or collapse corrected signal to <2% of original range. Suppressed baselines do not propagate into corrected/normalized/peak-detection results; a concrete warning is surfaced.
-5. **Normalization safety:** `_normalize_spectral_signal` returns `(result, informative, reason)`. Zero-range, zero-norm, or near-flat normalized outputs are skipped with explicit diagnostics.
-6. **Robust peak detection:** Replaced hand-rolled scanner with `scipy.signal.find_peaks`. Automatic fallback to 20% prominence when strict threshold yields nothing. Zero-peak cases surface a concrete reason.
-7. **Matching basis alignment:** Similarity matching explicitly uses `normalized` if informative, otherwise `corrected`, so it never silently runs on a broken trace.
-8. **FTIR-specific diagnostics:** Warnings injected into validation for uncertain signal role, suppressed baseline, skipped normalization, fallback peak detection, and zero-peak cases. Diagnostics dict carried in analysis state and exposed via `analysis_state_curves`.
-9. **Honest figure rendering:** Dash FTIR page suppresses baseline/corrected/normalized traces when backend marks them invalid; legend labels append “(inverted)” for transmittance; diagnostic notes render below the figure.
-10. **Tests:** 8 new science-chain tests in `tests/test_batch_runner.py` + 1 UI diagnostic test in `tests/test_ftir_dash_page.py`.
+1. **Peak retention (`core/batch_runner.py`):** `_detect_spectral_peaks` blends configured prominence with a signal-range floor; second-pass prominence lowered when the first pass finds nothing; `ftir.general` defaults slightly relaxed (`prominence` 0.035, `min_distance` 5, `max_peaks` 14).
+2. **Normalized trace honesty:** Diagnostics `normalized_axis_ratio_vs_corrected` and `plot_normalized_primary_axis`; Dash FTIR figure omits normalized on the shared axis when backend marks it unhelpful; peak markers use **corrected** (then smoothed/raw) Y at the axis index.
+3. **Figure clutter:** With corrected present, **smoothed** is hidden; **baseline** only when baseline + corrected exist; Y-range from plotted series only.
+4. **Library vs chemistry:** New summary `match_status` **`library_unavailable`** when there are no ranked candidates and library access/source indicates missing/unconfigured support; distinct caution `spectral_library_unavailable`; validation + serialization updated; FTIR empty top-match / match-table copy clarified.
+5. **Literature i18n:** FTIR-prefixed technical-details keys; `_collapsible_section` uses `literature_t` + fallback so titles never leak raw keys.
+6. **Tests:** `tests/test_batch_runner.py` (wide-axis peaks, library-unavailable stub path, fallback wording), `tests/test_ftir_dash_page.py` (defaults, normalized suppression, literature title, match table), `tests/test_validation.py` (library_unavailable enrichment).
 
 ## What was verified
 
-- `rtk pytest tests/test_batch_runner.py -q` — **29 passed**.
-- `rtk pytest tests/test_ftir_dash_page.py -q` — **36 passed**.
-- `rtk pytest tests/test_dash_workflow_regression.py -q` — **76 passed**.
-- `rtk pytest tests/test_backend_api.py::test_cloud_library_auth_and_search_endpoints -q` — **1 passed**.
-- FTIR workflow regression (`load-sample-ftir`) passes end-to-end.
+- `rtk pytest tests/test_batch_runner.py tests/test_ftir_dash_page.py tests/test_validation.py::test_enrich_ftir_result_validation_adds_library_unavailable_semantics -q` — **71 passed**.
+- `rtk pytest tests/test_result_serialization.py tests/test_literature_compare_panel.py tests/test_literature_compare.py tests/test_raman_dash_page.py -q` — green on targeted runs.
 
 ## Next step
 
 - None required for this slice.
-- Optional follow-ups: expose candidate/reference signal endpoint for top-match overlay preview; add peak width / SNR threshold controls when backend detector supports them.
+- Optional: top-match spectral overlay when a candidate signal API exists.
 
 **Process defaults:** **`00-workflow.mdc`**.

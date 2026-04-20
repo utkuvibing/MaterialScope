@@ -805,6 +805,16 @@ def enrich_spectral_result_validation(
             issues.append(f"{normalized_type} matched outputs must include top_match_id.")
         if confidence_band in {"no_match", "not_recorded"}:
             issues.append(f"{normalized_type} matched outputs must include a confidence band.")
+    elif match_status == "library_unavailable":
+        checks["caution_state_output"] = "library_unavailable"
+        message = (
+            f"{normalized_type} reference library matching was unavailable or not configured; "
+            "this is not an accepted-spectrum no-match conclusion."
+        )
+        if message not in warnings:
+            warnings.append(message)
+        if not caution_code:
+            warnings.append(f"{normalized_type} library-unavailable output is missing caution_code metadata.")
     elif match_status == "no_match":
         checks["caution_state_output"] = "no_match"
         message = (

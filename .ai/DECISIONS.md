@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-04-21 — FTIR follow-up: adaptive prominence, normalized plot gating, `library_unavailable` match status
+
+**Decision:**
+
+1. **Spectral peak prominence** (`_detect_spectral_peaks`): combine the configured absolute prominence with a **data-driven floor** from `ptp(signal)` so the same nominal threshold does not over-filter when the working Y scale is smaller (e.g. normalized basis). If the first `find_peaks` pass returns nothing, a **second pass** uses a lowered prominence derived from `min(effective×fraction, ptp×fraction, cfg×fraction)` so visible features can still be retained without unbounded sensitivity on the first pass.
+2. **Normalized on the main figure:** The batch runner records **`normalized_axis_ratio_vs_corrected`** and **`plot_normalized_primary_axis`** (true only if normalization is informative *and* normalized peak-to-peak is at least ~**2.2%** of corrected peak-to-peak). The Dash FTIR figure **omits** the normalized trace when the flag is explicitly false; peak marker Y positions use the **corrected** (display) trace at the nearest wavenumber index, not the detection-basis intensity alone.
+3. **Match status vocabulary:** Add **`library_unavailable`** when **`ranked_matches` is empty** and library **source/mode** indicates the reference corpus was **not configured or unavailable** — distinct from **`no_match`**, which means candidates were ranked but none met the acceptance threshold. Serialization and validation emit **`spectral_library_unavailable`** caution semantics for the former.
+4. **Default overlays:** When **corrected** exists, **hide smoothed** on the FTIR figure (intermediate only if corrected is absent); show **baseline** only alongside corrected; keep imported + query as the primary interpretive traces.
+5. **Literature technical headings:** Collapsible section titles use **`literature_t`** with a human fallback so missing per-modality keys cannot render as raw key strings; FTIR gains explicit **`dash.analysis.ftir.literature.technical_*`** strings.
+
+**Reason:** Users saw under-detection, a flat normalized line dominating scale/marker logic, crowded overlays, “No match” read as chemistry when the library was missing, and leaked i18n keys in FTIR literature technical blocks. Backend remains source of truth; UI reflects diagnostics and summary semantics.
+
+**Consequence / future:** Raman shares `_execute_spectral_batch` and inherits prominence + normalized diagnostics; only the FTIR Dash figure policy was specialized. Reports or exports that branch on `match_status` should treat **`library_unavailable`** as a **provenance/tooling** outcome, not a spectral similarity failure.
+
+---
+
 ## 2026-04-21 — FTIR science chain: signal-role-aware pipeline with baseline validation and normalization guards
 
 **Decision:** The spectral batch runner (`core/batch_runner.py::_execute_spectral_batch`) now:

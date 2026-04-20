@@ -247,13 +247,16 @@ def literature_t(loc: str, key: str, fallback: str) -> str:
     return fallback if value == key else value
 
 
-def _collapsible_section(loc: str, title_key: str, body: Any, *, open: bool = False) -> html.Details:
+def _collapsible_section(
+    loc: str, title_key: str, body: Any, *, open: bool = False, title_fallback: str = "Details"
+) -> html.Details:
+    title_text = literature_t(loc, title_key, title_fallback)
     return html.Details(
         [
             html.Summary(
                 [
                     html.Span(className="ta-details-chevron"),
-                    html.Span(translate_ui(loc, title_key), className="ms-1"),
+                    html.Span(title_text, className="ms-1"),
                 ],
                 className="ta-details-summary",
             ),
@@ -723,6 +726,7 @@ def render_literature_output(
                     _k("technical_details_title"),
                     html.Ul(technical_rows, className="mb-0 ps-3"),
                     open=False,
+                    title_fallback="Technical search details",
                 ),
                 className="mt-2",
             )

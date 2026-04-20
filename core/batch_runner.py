@@ -97,7 +97,7 @@ _FTIR_TEMPLATE_DEFAULTS = {
         "smoothing": {"method": "moving_average", "window_length": 11},
         "baseline": {"method": "linear"},
         "normalization": {"method": "vector"},
-        "peak_detection": {"prominence": 0.05, "min_distance": 6, "max_peaks": 12},
+        "peak_detection": {"prominence": 0.035, "min_distance": 5, "max_peaks": 14},
         "similarity_matching": {"metric": "cosine", "top_n": 3, "minimum_score": 0.45},
     },
     "ftir.functional_groups": {
@@ -874,23 +874,43 @@ def _normalize_spectral_signal(signal: np.ndarray, config: Mapping[str, Any]) ->
 
 
 def _detect_spectral_peaks(axis: np.ndarray, signal: np.ndarray, config: Mapping[str, Any]) -> tuple[list[dict[str, float]], bool, str]:
-    prominence = float(config.get("prominence") or 0.05)
+    signal_arr = np.asarray(signal, dtype=float)
+    sig_ptp = float(np.ptp(signal_arr))
+    prominence_cfg = float(config.get("prominence") or 0.05)
     distance = int(config.get("distance") or config.get("min_distance") or 5)
     max_peaks = int(config.get("max_peaks") or 10)
 
-    peak_indices, properties = find_peaks(signal, prominence=prominence, distance=distance)
+    if not np.isfinite(sig_ptp) or sig_ptp <= 0:
+        return [], False, "Signal has zero or non-finite range; peak detection skipped."
+
+    # Absolute prominence from workflow, blended with a data-driven floor so units/scale changes
+    # (e.g. normalized vs corrected absorbance) do not discard visible features too aggressively.
+    relative_floor = max(sig_ptp * 0.01, 1e-9)
+    effective_prominence = min(prominence_cfg, max(relative_floor, prominence_cfg * 0.35))
+
+    peak_indices, properties = find_peaks(signal_arr, prominence=effective_prominence, distance=distance)
 
     fallback = False
     reason = ""
 
     if peak_indices.size == 0:
-        fallback_prominence = max(prominence * 0.2, 1e-6)
-        peak_indices, properties = find_peaks(signal, prominence=fallback_prominence, distance=distance)
+        fallback_prominence = max(
+            1e-9,
+            min(
+                effective_prominence * 0.25,
+                sig_ptp * 0.12,
+                max(prominence_cfg * 0.2, sig_ptp * 0.03),
+            ),
+        )
+        peak_indices, properties = find_peaks(signal_arr, prominence=fallback_prominence, distance=distance)
         if peak_indices.size == 0:
             reason = f"No peaks found with prominence down to {fallback_prominence:.6f}; signal may be too noisy or flat."
             return [], fallback, reason
         fallback = True
-        reason = f"No peaks met the original prominence ({prominence}); fallback to lower prominence ({fallback_prominence}) was used."
+        reason = (
+            f"No peaks met the configured prominence ({prominence_cfg}); "
+            f"relaxed prominence ({fallback_prominence:.6f}) was used after scaling to the signal range."
+        )
 
     prominences = np.asarray(properties.get("prominences", []), dtype=float)
     ranking = sorted(
@@ -905,7 +925,7 @@ def _detect_spectral_peaks(axis: np.ndarray, signal: np.ndarray, config: Mapping
             {
                 "rank": rank,
                 "position": float(axis[peak_index]),
-                "intensity": float(signal[peak_index]),
+                "intensity": float(signal_arr[peak_index]),
                 "prominence": float(prominences[index]) if index < len(prominences) else 0.0,
             }
         )
@@ -1355,7 +1375,17 @@ def _execute_spectral_batch(
     minimum_score = float(similarity_matching.get("minimum_score") or 0.45)
     top_match = ranked_matches[0] if ranked_matches else None
     matched = bool(top_match) and float(top_match["normalized_score"]) >= minimum_score
-    match_status = "matched" if matched else "no_match"
+    if matched:
+        match_status = "matched"
+    elif not ranked_matches:
+        if library_result_source in ("unavailable", "not_configured") or (
+            library_access_mode == "not_configured" and library_result_source != "dataset_embedded"
+        ):
+            match_status = "library_unavailable"
+        else:
+            match_status = "no_match"
+    else:
+        match_status = "no_match"
     top_score = float(top_match["normalized_score"]) if top_match else 0.0
     confidence_band = top_match["confidence_band"] if matched and top_match else "no_match"
     top_provider = str(top_match.get("library_provider") or "") if top_match else ""
@@ -1363,16 +1393,26 @@ def _execute_spectral_batch(
     top_version = str(top_match.get("library_version") or "") if top_match else ""
     cloud_caution_code = str((cloud_payload or {}).get("caution_code") or "")
     cloud_caution_message = str((cloud_payload or {}).get("caution_message") or "")
-    caution_payload = (
-        {}
-        if matched
-        else {
+    if matched:
+        caution_payload: dict[str, Any] = {}
+    elif match_status == "library_unavailable":
+        caution_payload = {
+            "code": cloud_caution_code or "spectral_library_unavailable",
+            "message": cloud_caution_message
+            or (
+                "Reference spectral library matching was unavailable or not configured for this run. "
+                "Absence of ranked candidates reflects library access limits, not a spectroscopic no-match conclusion."
+            ),
+            "minimum_score": minimum_score,
+            "top_candidate_score": round(top_score, 4),
+        }
+    else:
+        caution_payload = {
             "code": cloud_caution_code or "spectral_no_match",
             "message": cloud_caution_message or "No reference candidate met the minimum similarity threshold.",
             "minimum_score": minimum_score,
             "top_candidate_score": round(top_score, 4),
         }
-    )
 
     processing = update_method_context(
         processing,
@@ -1528,6 +1568,12 @@ def _execute_spectral_batch(
     if not observed_peaks and peak_reason:
         diagnostics["peak_detection_no_peaks"] = True
         diagnostics["peak_detection_reason"] = peak_reason
+
+    corr_ptp = float(np.ptp(corrected))
+    norm_ptp = float(np.ptp(normalized_signal)) if norm_informative else 0.0
+    norm_axis_ratio = (norm_ptp / corr_ptp) if corr_ptp > 1e-12 else 0.0
+    diagnostics["plot_normalized_primary_axis"] = bool(norm_informative and norm_axis_ratio >= 0.022)
+    diagnostics["normalized_axis_ratio_vs_corrected"] = round(float(norm_axis_ratio), 6) if norm_informative else 0.0
 
     state = {
         "axis": axis.tolist(),

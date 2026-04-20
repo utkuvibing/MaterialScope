@@ -819,6 +819,10 @@ TRANSLATIONS = {
     "dash.analysis.metric.top_candidate_score": {"tr": "En iyi aday skoru", "en": "Top Candidate Score"},
     "dash.analysis.metric.detected_peaks": {"tr": "Algılanan tepeler", "en": "Detected Peaks"},
     "dash.analysis.match_status.no_match": {"tr": "Eşleşme yok", "en": "No Match"},
+    "dash.analysis.match_status.library_unavailable": {
+        "tr": "Kütüphane eşlemesi kullanılamıyor",
+        "en": "Library matching unavailable",
+    },
     "dash.analysis.match_status.partial_match": {"tr": "Kısmi eşleşme", "en": "Partial Match"},
     "dash.analysis.match_status.matched": {"tr": "Eşleşti", "en": "Matched"},
     "dash.analysis.match_status.high_confidence": {"tr": "Yüksek güven", "en": "High Confidence"},
@@ -894,6 +898,33 @@ TRANSLATIONS = {
         "tr": "Önce bir FTIR analizi çalıştırın.",
         "en": "Run an FTIR analysis first.",
     },
+    "dash.analysis.ftir.match.library_unavailable_body": {
+        "tr": (
+            "Referans spektral kütüphanesi bu çalıştırma için yapılandırılmamış veya kullanılamıyor; "
+            "bu durum kimyasal bir 'eşleşme yok' sonucu olarak yorumlanmamalıdır."
+        ),
+        "en": (
+            "The reference spectral library was not configured or was unavailable for this run; "
+            "treat this as a tooling limitation rather than a spectroscopic 'no match' conclusion."
+        ),
+    },
+    "dash.analysis.ftir.literature.technical_details_title": {
+        "tr": "Teknik arama ayrıntıları",
+        "en": "Technical search details",
+    },
+    "dash.analysis.ftir.literature.technical.provider_status": {"tr": "Sağlayıcı durumu", "en": "Provider status"},
+    "dash.analysis.ftir.literature.technical.no_results_reason": {
+        "tr": "Sonuç alınamama nedeni",
+        "en": "No-results reason",
+    },
+    "dash.analysis.ftir.literature.technical.source_count": {"tr": "Kaynak sayısı", "en": "Source count"},
+    "dash.analysis.ftir.literature.technical.citation_count": {"tr": "Atıf sayısı", "en": "Citation count"},
+    "dash.analysis.ftir.literature.technical.provider_note": {"tr": "Sağlayıcı notu", "en": "Provider note"},
+    "dash.analysis.ftir.literature.technical.query": {"tr": "Teknik sorgu", "en": "Technical query"},
+    "dash.analysis.ftir.literature.technical.search_mode": {"tr": "Arama modu", "en": "Search mode"},
+    "dash.analysis.ftir.literature.technical.subject_trust": {"tr": "Konu güveni", "en": "Subject trust"},
+    "dash.analysis.ftir.literature.technical.display_terms": {"tr": "Görünen terimler", "en": "Display terms"},
+    "dash.analysis.ftir.literature.technical.fallback_queries": {"tr": "Yedek sorgular", "en": "Fallback queries"},
     "dash.analysis.raman.top_match": {"tr": "En iyi eşleşme: {name}", "en": "Top match: {name}"},
     "dash.analysis.raman.baseline": {"tr": "Taban çizgisi: {detail}", "en": "Baseline: {detail}"},
     "dash.analysis.raman.normalization": {"tr": "Normalizasyon: {detail}", "en": "Normalization: {detail}"},

@@ -716,6 +716,28 @@ def test_legacy_validator_surfaces_structured_failures(thermal_dataset):
     assert "strictly increasing" in message
 
 
+def test_enrich_ftir_result_validation_adds_library_unavailable_semantics():
+    validation = {"status": "pass", "issues": [], "warnings": [], "checks": {}}
+    summary = {
+        "match_status": "library_unavailable",
+        "candidate_count": 0,
+        "top_match_score": 0.0,
+        "confidence_band": "no_match",
+        "caution_code": "spectral_library_unavailable",
+    }
+
+    enriched = enrich_spectral_result_validation(
+        validation,
+        analysis_type="FTIR",
+        summary=summary,
+        rows=[],
+    )
+
+    assert enriched["checks"]["match_status"] == "library_unavailable"
+    assert enriched["checks"]["caution_state_output"] == "library_unavailable"
+    assert any("unavailable or not configured" in item.lower() for item in enriched["warnings"])
+
+
 def test_enrich_ftir_result_validation_adds_no_match_caution_semantics():
     validation = {"status": "pass", "issues": [], "warnings": [], "checks": {}}
     summary = {
