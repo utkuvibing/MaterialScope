@@ -1710,6 +1710,106 @@ TRANSLATIONS = {
     "dash.analysis.tga.literature.evidence.provider_prefix": {"tr": "Kaynak: {source}", "en": "Source: {source}"},
     "dash.analysis.tga.literature.evidence.citations_prefix": {"tr": "Bağlı atıflar: {titles}", "en": "Linked citations: {titles}"},
     "dash.analysis.tga.literature.evidence.generic_title": {"tr": "Kalıcı literatür kaynağı", "en": "Retained literature reference"},
+    "dash.analysis.tga.workflow_guide.title": {"tr": "TGA sayfası — önerilen akış", "en": "TGA page — recommended flow"},
+    "dash.analysis.tga.workflow_guide.intro": {
+        "tr": "Bu sayfa proje verisinde sunucu tarafı analiz çalıştırır. Kısa yol:",
+        "en": "This page runs server-side analysis on workspace data. Short path:",
+    },
+    "dash.analysis.tga.workflow_guide.step1": {
+        "tr": "Kurulum’da uygun TGA veri setini ve birim modunu seçin; ham kalite panelini gözden geçirin.",
+        "en": "In Setup, pick a TGA dataset and unit mode; skim the raw quality panel.",
+    },
+    "dash.analysis.tga.workflow_guide.step2": {
+        "tr": "İşleme’de yumuşatma ve adım algılamayı ayarlayın; gerektiğinde preset yükleyin veya Geri Al / İleri Al / Sıfırla kullanın.",
+        "en": "In Processing, tune smoothing and step detection; load a preset if needed, or use Undo / Redo / Reset.",
+    },
+    "dash.analysis.tga.workflow_guide.step3": {
+        "tr": "Çalıştır’da analizi başlatın; adımlar, DTG, doğrulama ve literatürü sonuç sütununda inceleyin.",
+        "en": "In Run, start analysis; review steps, DTG, validation, and literature in the results column.",
+    },
+    "dash.analysis.tga.workflow_guide.step4": {
+        "tr": "Rapor ve dışa aktarma için şekil yakalama ve proje yenilemesi mevcut akışta kalır.",
+        "en": "Figure capture and project refresh remain as today for reporting and export.",
+    },
+    "dash.analysis.tga.raw_quality.card_title": {"tr": "Ham veri kalitesi (önizleme)", "en": "Raw data quality (preview)"},
+    "dash.analysis.tga.raw_quality.card_hint": {
+        "tr": "Çalıştırmadan önce aralık, nokta sayısı ve sinyal ipuçlarını kontrol edin. Tam doğrulama çalıştırma sonrası kalite kartında kalır.",
+        "en": "Check range, point count, and hints before Run; full validation stays in the post-run quality card.",
+    },
+    "dash.analysis.tga.raw_quality.empty_missing_series": {
+        "tr": "Veri yok veya sıcaklık/sinyal kolonları çıkarılamadı.",
+        "en": "No data or temperature/signal columns could not be extracted.",
+    },
+    "dash.analysis.tga.raw_quality.empty_too_few_points": {
+        "tr": "Yeterli veri noktası yok (önizleme).",
+        "en": "Not enough data points for a preview.",
+    },
+    "dash.analysis.tga.raw_quality.pick_dataset": {
+        "tr": "Önizleme için bir veri seti seçin.",
+        "en": "Select a dataset for the preview.",
+    },
+    "dash.analysis.tga.raw_quality.load_failed": {
+        "tr": "Veri yüklenemedi: {error}",
+        "en": "Could not load data: {error}",
+    },
+    "dash.analysis.tga.raw_quality.stat_points": {"tr": "{n:,} nokta", "en": "{n:,} points"},
+    "dash.analysis.tga.raw_quality.stat_temp_range": {
+        "tr": "Sıcaklık: {t0:.1f}–{t1:.1f} {u}",
+        "en": "Temperature: {t0:.1f}–{t1:.1f} {u}",
+    },
+    "dash.analysis.tga.raw_quality.stat_mass_range": {
+        "tr": "Kütle sinyali: {s0:.4f}–{s1:.4f} {u}",
+        "en": "Mass signal: {s0:.4f}–{s1:.4f} {u}",
+    },
+    "dash.analysis.tga.raw_quality.stat_apparent_change": {
+        "tr": "Görünen toplam sinyal değişimi: {chg:.4f} {u}",
+        "en": "Apparent total signal span: {chg:.4f} {u}",
+    },
+    "dash.analysis.tga.raw_quality.grade_label": {"tr": "Sinyal notu (özet):", "en": "Signal grade (summary):"},
+    "dash.analysis.tga.raw_quality.grade_good": {"tr": "İyi", "en": "Good"},
+    "dash.analysis.tga.raw_quality.grade_fair": {"tr": "Orta", "en": "Fair"},
+    "dash.analysis.tga.raw_quality.grade_poor": {"tr": "Zayıf", "en": "Poor"},
+    "dash.analysis.tga.raw_quality.hint.temperature_non_monotonic": {
+        "tr": "Sıcaklık ekseni genelde monoton değil; soğuma segmenti veya eksen tersliği olabilir.",
+        "en": "Temperature axis is not mostly monotonic; cooling segment or inverted axis is possible.",
+    },
+    "dash.analysis.tga.raw_quality.hint.temperature_mostly_decreasing": {
+        "tr": "Sıcaklık çoğunlukla azalıyor; veri yönünü doğrulayın.",
+        "en": "Temperature mostly decreases; confirm scan direction.",
+    },
+    "dash.analysis.tga.raw_quality.hint.mass_trend_increasing": {
+        "tr": "Kütle sinyali çoğunlukla artıyor; birim modu veya kalan kütle vs. kayıp yorumunu kontrol edin.",
+        "en": "Mass signal mostly increases; check unit mode (remaining mass vs loss).",
+    },
+    "dash.analysis.tga.raw_quality.hint.mass_trend_decreasing": {
+        "tr": "Kütle sinyali çoğunlukla azalıyor (TGA için tipik).",
+        "en": "Mass signal mostly decreases (typical for TGA).",
+    },
+    "dash.analysis.tga.processing.history_title": {"tr": "İşleme geçmişi", "en": "Processing history"},
+    "dash.analysis.tga.processing.history_hint": {
+        "tr": "Yalnızca yumuşatma ve adım algılama taslağını etkiler; preset adı ayrı tutulur.",
+        "en": "Affects smoothing and step-detection draft only; preset name is kept separately.",
+    },
+    "dash.analysis.tga.processing.undo_btn": {"tr": "Geri al", "en": "Undo"},
+    "dash.analysis.tga.processing.redo_btn": {"tr": "İleri al", "en": "Redo"},
+    "dash.analysis.tga.processing.reset_btn": {"tr": "Varsayılanlara dön", "en": "Reset to defaults"},
+    "dash.analysis.tga.processing.history_status_undo": {"tr": "Önceki işleme taslağı geri yüklendi.", "en": "Restored previous processing draft."},
+    "dash.analysis.tga.processing.history_status_redo": {"tr": "Sonraki işleme taslağı geri yüklendi.", "en": "Restored next processing draft."},
+    "dash.analysis.tga.processing.history_status_reset": {
+        "tr": "İşleme varsayılanlarına dönüldü; preset kirli durumu şablona göre güncellenir.",
+        "en": "Processing reset to defaults; preset dirty state updates against your template.",
+    },
+    "dash.analysis.tga.step_ref.no_midpoint": {"tr": "—", "en": "—"},
+    "dash.analysis.tga.step_ref.neutral": {
+        "tr": "15 °C içinde bilinen ayrışma referansı yok.",
+        "en": "No known decomposition reference within 15 °C.",
+    },
+    "dash.analysis.tga.step_ref.badge": {"tr": "Ref", "en": "Ref"},
+    "dash.analysis.tga.step_ref.line": {
+        "tr": "{name} @ {rt:.1f} °C · ΔT {sg}{dv:.1f} °C",
+        "en": "{name} @ {rt:.1f} °C · ΔT {sg}{dv:.1f} °C",
+    },
+    "dash.analysis.tga.summary.atmosphere_label": {"tr": "Atmosfer", "en": "Atmosphere"},
     "dash.analysis.dta.title": {"tr": "DTA analizi", "en": "DTA Analysis"},
     "dash.analysis.dta.caption": {
         "tr": "DTA uyumlu veri seti seçin, şablonu seçin ve diferansiyel termal analizi çalıştırın.",

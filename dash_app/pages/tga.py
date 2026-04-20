@@ -49,6 +49,17 @@ from dash_app.components.literature_compare_ui import (
     literature_t,
     render_literature_output,
 )
+from dash_app.components.tga_explore import (
+    MAX_TGA_UNDO_DEPTH,
+    append_undo_after_edit,
+    build_tga_raw_quality_panel,
+    compute_tga_raw_exploration_stats,
+    downsample_rows,
+    format_tga_step_reference_callout,
+    perform_redo,
+    perform_undo,
+    tga_draft_processing_equal,
+)
 from dash_app.theme import PLOT_THEME, apply_figure_theme, normalize_ui_theme
 from utils.i18n import normalize_ui_locale, translate_ui
 
@@ -335,6 +346,54 @@ def _literature_compare_card() -> dbc.Card:
     return build_literature_compare_card(id_prefix="tga")
 
 
+def _tga_workflow_guide_block() -> html.Details:
+    return html.Details(
+        [
+            html.Summary(
+                [html.Span(className="ta-details-chevron"), html.Span(id="tga-workflow-guide-title", className="ms-1")],
+                className="ta-details-summary",
+            ),
+            html.Div(id="tga-workflow-guide-body", className="ta-details-body mt-2 small"),
+        ],
+        className="ta-ms-details mb-3",
+        open=False,
+    )
+
+
+def _tga_raw_quality_card() -> dbc.Card:
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H6(id="tga-raw-quality-card-title", className="card-title mb-1"),
+                html.P(id="tga-raw-quality-card-hint", className="small text-muted mb-2"),
+                html.Div(id="tga-raw-quality-panel", className="tga-raw-quality-panel"),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
+def _tga_processing_history_card() -> dbc.Card:
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H6(id="tga-processing-history-title", className="card-title mb-1"),
+                html.P(id="tga-processing-history-hint", className="small text-muted mb-2"),
+                dbc.Row(
+                    [
+                        dbc.Col(dbc.Button(id="tga-processing-undo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
+                        dbc.Col(dbc.Button(id="tga-processing-redo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
+                        dbc.Col(dbc.Button(id="tga-processing-reset-btn", color="warning", size="sm", outline=True), width="auto"),
+                    ],
+                    className="g-2 align-items-center mb-1",
+                ),
+                html.Div(id="tga-history-status", className="small text-muted"),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
 def _step_card(step: dict, idx: int, loc: str) -> dbc.Card:
     onset = step.get("onset_temperature")
     midpoint = step.get("midpoint_temperature")
@@ -397,6 +456,7 @@ def _step_card(step: dict, idx: int, loc: str) -> dbc.Card:
                     if mass_loss_mg is not None
                     else []
                 ),
+                format_tga_step_reference_callout(midpoint, loc),
             ]
         ),
         className="mb-2",
@@ -568,6 +628,8 @@ def _tga_left_column_tabs() -> dbc.Tabs:
                         "tga.general",
                         card_title_id="tga-workflow-card-title",
                     ),
+                    _tga_workflow_guide_block(),
+                    _tga_raw_quality_card(),
                 ],
                 tab_id="tga-tab-setup",
                 label_class_name="ta-tab-label",
@@ -575,6 +637,7 @@ def _tga_left_column_tabs() -> dbc.Tabs:
             ),
             dbc.Tab(
                 [
+                    _tga_processing_history_card(),
                     _tga_preset_card(),
                     _tga_smoothing_controls_card(),
                     _tga_step_detection_card(),
@@ -604,6 +667,9 @@ layout = html.Div(
     + [
         dcc.Store(id="tga-figure-captured", data={}),
         dcc.Store(id="tga-processing-draft", data=copy.deepcopy(_default_tga_processing_draft())),
+        dcc.Store(id="tga-processing-undo-stack", data=[]),
+        dcc.Store(id="tga-processing-redo-stack", data=[]),
+        dcc.Store(id="tga-history-hydrate", data=0),
         dcc.Store(id="tga-preset-refresh", data=0),
         dcc.Store(id="tga-preset-hydrate", data=0),
         dcc.Store(id="tga-preset-loaded-name", data=""),
@@ -879,13 +945,18 @@ def toggle_tga_preset_action_buttons(selected_name):
     Output("tga-preset-loaded-name", "data", allow_duplicate=True),
     Output("tga-preset-snapshot", "data", allow_duplicate=True),
     Output("tga-left-tabs", "active_tab", allow_duplicate=True),
+    Output("tga-processing-undo-stack", "data", allow_duplicate=True),
+    Output("tga-processing-redo-stack", "data", allow_duplicate=True),
     Input("tga-preset-load-btn", "n_clicks"),
     State("tga-preset-select", "value"),
     State("tga-preset-hydrate", "data"),
+    State("tga-processing-draft", "data"),
+    State("tga-processing-undo-stack", "data"),
+    State("tga-processing-redo-stack", "data"),
     State("ui-locale", "data"),
     prevent_initial_call=True,
 )
-def apply_tga_preset(n_clicks, selected_name, hydrate_val, locale_data):
+def apply_tga_preset(n_clicks, selected_name, hydrate_val, current_draft, undo_stack, redo_stack, locale_data):
     from dash_app import api_client
 
     loc = _loc(locale_data)
@@ -898,6 +969,8 @@ def apply_tga_preset(n_clicks, selected_name, hydrate_val, locale_data):
             dash.no_update,
             dash.no_update,
             translate_ui(loc, "dash.analysis.tga.presets.select_required"),
+            dash.no_update,
+            dash.no_update,
             dash.no_update,
             dash.no_update,
             dash.no_update,
@@ -915,6 +988,8 @@ def apply_tga_preset(n_clicks, selected_name, hydrate_val, locale_data):
             dash.no_update,
             dash.no_update,
             dash.no_update,
+            dash.no_update,
+            dash.no_update,
         )
 
     processing = dict(payload.get("processing") or {})
@@ -925,6 +1000,9 @@ def apply_tga_preset(n_clicks, selected_name, hydrate_val, locale_data):
     resolved_tid = template_id_raw if template_id_raw in _TGA_TEMPLATE_IDS else "tga.general"
     snap = _tga_ui_snapshot_dict(resolved_tid, unit_mode, draft)
     status = translate_ui(loc, "dash.analysis.tga.presets.loaded").format(preset=name)
+    old_norm = _normalize_tga_processing_draft(current_draft)
+    new_norm = _normalize_tga_processing_draft(draft)
+    past2, fut2 = append_undo_after_edit(undo_stack, redo_stack, old_norm, new_norm)
     return (
         draft,
         template_out,
@@ -934,6 +1012,8 @@ def apply_tga_preset(n_clicks, selected_name, hydrate_val, locale_data):
         name,
         snap,
         "tga-tab-run",
+        past2,
+        fut2,
     )
 
 
@@ -1057,9 +1137,10 @@ def delete_tga_preset(n_clicks, selected_name, loaded_name, refresh_token, local
     Output("tga-step-min-mass", "value"),
     Output("tga-step-half-width", "value"),
     Input("tga-preset-hydrate", "data"),
+    Input("tga-history-hydrate", "data"),
     State("tga-processing-draft", "data"),
 )
-def hydrate_tga_processing_controls(_hydrate_token, draft):
+def hydrate_tga_processing_controls(_preset_hydrate, _history_hydrate, draft):
     d = _normalize_tga_processing_draft(draft)
     sm = d["smoothing"]
     st = d["step_detection"]
@@ -1076,6 +1157,8 @@ def hydrate_tga_processing_controls(_hydrate_token, draft):
 
 @callback(
     Output("tga-processing-draft", "data", allow_duplicate=True),
+    Output("tga-processing-undo-stack", "data", allow_duplicate=True),
+    Output("tga-processing-redo-stack", "data", allow_duplicate=True),
     Input("tga-smooth-method", "value"),
     Input("tga-smooth-window", "value"),
     Input("tga-smooth-polyorder", "value"),
@@ -1083,10 +1166,179 @@ def hydrate_tga_processing_controls(_hydrate_token, draft):
     Input("tga-step-prominence", "value"),
     Input("tga-step-min-mass", "value"),
     Input("tga-step-half-width", "value"),
+    State("tga-processing-draft", "data"),
+    State("tga-processing-undo-stack", "data"),
+    State("tga-processing-redo-stack", "data"),
     prevent_initial_call="initial_duplicate",
 )
-def sync_tga_processing_draft_from_controls(sm_m, sm_w, sm_p, sm_s, st_pr, st_min, st_half):
-    return _tga_draft_from_control_values(sm_m, sm_w, sm_p, sm_s, st_pr, st_min, st_half)
+def sync_tga_processing_draft_from_controls(sm_m, sm_w, sm_p, sm_s, st_pr, st_min, st_half, prev_draft, undo_stack, redo_stack):
+    new_draft = _tga_draft_from_control_values(sm_m, sm_w, sm_p, sm_s, st_pr, st_min, st_half)
+    old_norm = _normalize_tga_processing_draft(prev_draft)
+    new_norm = _normalize_tga_processing_draft(new_draft)
+    past2, fut2 = append_undo_after_edit(undo_stack, redo_stack, old_norm, new_norm)
+    return new_norm, past2, fut2
+
+
+@callback(
+    Output("tga-processing-draft", "data", allow_duplicate=True),
+    Output("tga-processing-undo-stack", "data", allow_duplicate=True),
+    Output("tga-processing-redo-stack", "data", allow_duplicate=True),
+    Output("tga-history-hydrate", "data", allow_duplicate=True),
+    Output("tga-history-status", "children", allow_duplicate=True),
+    Input("tga-processing-undo-btn", "n_clicks"),
+    Input("tga-processing-redo-btn", "n_clicks"),
+    Input("tga-processing-reset-btn", "n_clicks"),
+    State("tga-processing-draft", "data"),
+    State("tga-processing-undo-stack", "data"),
+    State("tga-processing-redo-stack", "data"),
+    State("tga-history-hydrate", "data"),
+    State("ui-locale", "data"),
+    prevent_initial_call=True,
+)
+def tga_processing_history_actions(n_undo, n_redo, n_reset, draft, undo_stack, redo_stack, hist_hydrate, locale_data):
+    loc = _loc(locale_data)
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        raise dash.exceptions.PreventUpdate
+    trig = ctx.triggered_id
+    cur = _normalize_tga_processing_draft(draft)
+    past = undo_stack or []
+    fut = redo_stack or []
+    h = int(hist_hydrate or 0)
+
+    if trig == "tga-processing-undo-btn":
+        if not n_undo:
+            raise dash.exceptions.PreventUpdate
+        res = perform_undo(past, fut, cur)
+        if res is None:
+            raise dash.exceptions.PreventUpdate
+        prev, pl, fl = res
+        return prev, pl, fl, h + 1, translate_ui(loc, "dash.analysis.tga.processing.history_status_undo")
+
+    if trig == "tga-processing-redo-btn":
+        if not n_redo:
+            raise dash.exceptions.PreventUpdate
+        res = perform_redo(past, fut, cur)
+        if res is None:
+            raise dash.exceptions.PreventUpdate
+        nxt, pl, fl = res
+        return nxt, pl, fl, h + 1, translate_ui(loc, "dash.analysis.tga.processing.history_status_redo")
+
+    if trig == "tga-processing-reset-btn":
+        if not n_reset:
+            raise dash.exceptions.PreventUpdate
+        default_draft = _normalize_tga_processing_draft(copy.deepcopy(_default_tga_processing_draft()))
+        if tga_draft_processing_equal(cur, default_draft):
+            raise dash.exceptions.PreventUpdate
+        past_list = [copy.deepcopy(x) for x in past if isinstance(x, dict)]
+        past_list.append(copy.deepcopy(cur))
+        if len(past_list) > MAX_TGA_UNDO_DEPTH:
+            past_list = past_list[-MAX_TGA_UNDO_DEPTH:]
+        return default_draft, past_list, [], h + 1, translate_ui(loc, "dash.analysis.tga.processing.history_status_reset")
+
+    raise dash.exceptions.PreventUpdate
+
+
+@callback(
+    Output("tga-processing-undo-btn", "disabled"),
+    Output("tga-processing-redo-btn", "disabled"),
+    Input("tga-processing-undo-stack", "data"),
+    Input("tga-processing-redo-stack", "data"),
+)
+def toggle_tga_processing_history_buttons(undo_stack, redo_stack):
+    u = undo_stack or []
+    r = redo_stack or []
+    return len(u) == 0, len(r) == 0
+
+
+@callback(
+    Output("tga-workflow-guide-title", "children"),
+    Output("tga-workflow-guide-body", "children"),
+    Input("ui-locale", "data"),
+)
+def render_tga_workflow_guide_chrome(locale_data):
+    loc = _loc(locale_data)
+    pfx = "dash.analysis.tga.workflow_guide"
+    body = html.Div(
+        [
+            html.P(translate_ui(loc, f"{pfx}.intro"), className="mb-2"),
+            html.Ul(
+                [
+                    html.Li(translate_ui(loc, f"{pfx}.step1"), className="mb-1"),
+                    html.Li(translate_ui(loc, f"{pfx}.step2"), className="mb-1"),
+                    html.Li(translate_ui(loc, f"{pfx}.step3"), className="mb-1"),
+                    html.Li(translate_ui(loc, f"{pfx}.step4"), className="mb-0"),
+                ],
+                className="ps-3 mb-0",
+            ),
+        ]
+    )
+    return translate_ui(loc, f"{pfx}.title"), body
+
+
+@callback(
+    Output("tga-raw-quality-card-title", "children"),
+    Output("tga-raw-quality-card-hint", "children"),
+    Input("ui-locale", "data"),
+)
+def render_tga_raw_quality_chrome(locale_data):
+    loc = _loc(locale_data)
+    return translate_ui(loc, "dash.analysis.tga.raw_quality.card_title"), translate_ui(loc, "dash.analysis.tga.raw_quality.card_hint")
+
+
+@callback(
+    Output("tga-processing-history-title", "children"),
+    Output("tga-processing-history-hint", "children"),
+    Input("ui-locale", "data"),
+)
+def render_tga_processing_history_chrome(locale_data):
+    loc = _loc(locale_data)
+    return translate_ui(loc, "dash.analysis.tga.processing.history_title"), translate_ui(loc, "dash.analysis.tga.processing.history_hint")
+
+
+@callback(
+    Output("tga-processing-undo-btn", "children"),
+    Output("tga-processing-redo-btn", "children"),
+    Output("tga-processing-reset-btn", "children"),
+    Input("ui-locale", "data"),
+)
+def render_tga_processing_history_button_labels(locale_data):
+    loc = _loc(locale_data)
+    return (
+        translate_ui(loc, "dash.analysis.tga.processing.undo_btn"),
+        translate_ui(loc, "dash.analysis.tga.processing.redo_btn"),
+        translate_ui(loc, "dash.analysis.tga.processing.reset_btn"),
+    )
+
+
+@callback(
+    Output("tga-raw-quality-panel", "children"),
+    Input("project-id", "data"),
+    Input("tga-dataset-select", "value"),
+    Input("tga-refresh", "data"),
+    Input("ui-locale", "data"),
+)
+def render_tga_raw_quality_panel(project_id, dataset_key, _refresh, locale_data):
+    loc = _loc(locale_data)
+    if not project_id or not dataset_key:
+        return html.P(translate_ui(loc, "dash.analysis.tga.raw_quality.pick_dataset"), className="text-muted small mb-0")
+    from dash_app.api_client import workspace_dataset_data, workspace_dataset_detail
+
+    try:
+        detail = workspace_dataset_detail(project_id, dataset_key)
+        data = workspace_dataset_data(project_id, dataset_key)
+    except Exception as exc:
+        return html.P(translate_ui(loc, "dash.analysis.tga.raw_quality.load_failed", error=str(exc)), className="text-danger small mb-0")
+
+    rows = data.get("rows") or []
+    columns = data.get("columns") or []
+    t_arr, s_arr = downsample_rows(rows, columns)
+    validation = detail.get("validation") if isinstance(detail.get("validation"), dict) else {}
+    stats = compute_tga_raw_exploration_stats(t_arr, s_arr, validation=validation)
+    units = detail.get("units") or {}
+    temp_u = str(units.get("temperature") or "°C")
+    sig_u = str(units.get("signal") or "")
+    return build_tga_raw_quality_panel(stats, loc, temp_unit=temp_u, signal_unit=sig_u)
 
 
 @callback(
@@ -1589,6 +1841,14 @@ def _build_tga_analysis_summary(
         html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.heating_rate_label"), className="col-sm-4 text-muted dsc-meta-term"),
         html.Dd(_meta_value(heating_rate), className="col-sm-8 dsc-meta-def"),
     ]
+    atmosphere = _format_dataset_metadata_value(metadata.get("atmosphere"))
+    if atmosphere:
+        dl_rows.extend(
+            [
+                html.Dt(translate_ui(loc, "dash.analysis.tga.summary.atmosphere_label"), className="col-sm-4 text-muted dsc-meta-term"),
+                html.Dd(_meta_value(atmosphere), className="col-sm-8 dsc-meta-def"),
+            ]
+        )
     return html.Div(
         [
             html.H5(translate_ui(loc, "dash.analysis.tga.summary.card_title"), className="mb-3"),

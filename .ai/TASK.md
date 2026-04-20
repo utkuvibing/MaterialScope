@@ -4,7 +4,32 @@
 
 ## Status: no active slice (2026-04-20)
 
-The **Dash literature compare across all analysis pages** slice is **complete**. Start a new slice by replacing the status block above.
+The **Dash TGA Streamlit→Dash exploration / guidance parity** slice is **complete**. Start a new slice by replacing the status block above.
+
+---
+
+### Archived: Dash TGA exploration + guidance parity vs Streamlit (done, 2026-04-20)
+
+**Goal:** Close high-value Streamlit TGA gaps (undo/redo/reset, raw-quality pre-run panel, per-step reference callouts, workflow guide) without replacing the workspace-backed Setup / Processing / Run architecture.
+
+**In scope**
+
+- [`dash_app/components/tga_explore.py`](dash_app/components/tga_explore.py): undo stack helpers, raw stats + Dash panel, step reference callout, local signal quality metrics (no Streamlit import).
+- [`dash_app/pages/tga.py`](dash_app/pages/tga.py): new stores and callbacks; Setup (workflow guide + raw quality); Processing (history card); hydrate from `tga-history-hydrate`; extended sync + preset load for history; summary atmosphere when metadata present.
+- [`utils/i18n.py`](utils/i18n.py): workflow guide, raw quality, processing history, step reference, atmosphere label (en/tr).
+- Tests: [`tests/test_tga_explore.py`](tests/test_tga_explore.py), [`tests/test_tga_dash_page.py`](tests/test_tga_dash_page.py).
+
+**Acceptance**
+
+- Undo restores prior processing draft; redo forward; reset restores default draft; buttons disabled when stacks empty; preset load records prior draft on stack.
+- Raw quality panel shows dataset-driven stats/warnings before run; full post-run validation unchanged.
+- Each key step card shows compact reference line or neutral fallback.
+- Workflow guide renders collapsible copy; atmosphere appears in summary when `metadata.atmosphere` exists.
+
+**Verification**
+
+- `rtk pytest tests/test_tga_explore.py tests/test_tga_dash_page.py -q` — 28 passed.
+- `rtk pytest tests/test_dash_figure_capture_wiring.py tests/test_dsc_tga_parity.py -q` — 16 passed.
 
 ---
 

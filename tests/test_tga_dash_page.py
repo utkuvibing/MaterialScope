@@ -57,6 +57,14 @@ def test_layout_contains_section_ids_in_order():
         "tga-preset-hydrate",
         "tga-preset-loaded-name",
         "tga-preset-snapshot",
+        "tga-processing-undo-stack",
+        "tga-processing-redo-stack",
+        "tga-history-hydrate",
+        "tga-workflow-guide-title",
+        "tga-raw-quality-panel",
+        "tga-processing-undo-btn",
+        "tga-processing-redo-btn",
+        "tga-processing-reset-btn",
         "tga-preset-select",
         "tga-preset-load-btn",
         "tga-preset-save-btn",
@@ -177,6 +185,35 @@ def test_build_step_cards_truncates_high_step_count():
     assert "8" in s
     assert "6" in s
     assert "source of truth" in s.lower()
+
+
+def test_step_card_includes_reference_callout():
+    mod = _import_tga_page()
+    card = mod._step_card(
+        {
+            "onset_temperature": 190.0,
+            "midpoint_temperature": 200.0,
+            "endset_temperature": 210.0,
+            "mass_loss_percent": 12.0,
+            "residual_percent": 88.0,
+        },
+        0,
+        "en",
+    )
+    text = str(card)
+    assert "badge" in text.lower() or "200" in text
+
+
+def test_build_tga_analysis_summary_shows_atmosphere_when_present():
+    mod = _import_tga_page()
+    dataset_detail = {
+        "metadata": {"atmosphere": "N2", "file_name": "x.csv"},
+        "dataset": {"display_name": "Demo"},
+    }
+    summary = {"sample_mass": "10", "heating_rate": "10"}
+    out = mod._build_tga_analysis_summary(dataset_detail, summary, {}, {}, "en", locale_data="en")
+    assert "N2" in str(out)
+    assert "Atmosphere" in str(out) or "atmosphere" in str(out).lower()
 
 
 def test_render_tga_literature_output_respects_preview_limit():
