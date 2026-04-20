@@ -4,13 +4,16 @@ Lets the user:
   1. Select an eligible TGA dataset from the workspace
   2. Select a TGA unit mode (auto / percent / absolute_mass)
   3. Select a TGA workflow template
-  4. Run analysis through the backend /analysis/run endpoint
-  5. View analysis summary, validation, main mass trace, DTG preview, steps,
+  4. Tune smoothing and step-detection parameters (mirrored into ``processing_overrides``)
+  5. Save / load / delete named presets (workflow + unit + processing via shared preset API)
+  6. Run analysis through the backend /analysis/run endpoint
+  7. View analysis summary, validation, main mass trace, DTG preview, steps,
      processing, raw metadata, literature compare, and auto-refresh workspace state
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import math
 from typing import Any
@@ -74,6 +77,204 @@ _TGA_USER_FACING_METADATA_KEYS: frozenset[str] = frozenset({
 _TGA_MAX_STEP_CARDS = 6
 _TGA_TRUNCATE_STEP_CARDS_WHEN = 7
 
+_TGA_PRESET_ANALYSIS_TYPE = "TGA"
+_TGA_SMOOTH_METHODS = frozenset({"savgol", "moving_average", "gaussian"})
+_TGA_SMOOTHING_DEFAULTS: dict[str, dict[str, Any]] = {
+    "savgol": {"method": "savgol", "window_length": 11, "polyorder": 3},
+    "moving_average": {"method": "moving_average", "window_length": 11},
+    "gaussian": {"method": "gaussian", "sigma": 2.0},
+}
+_TGA_STEP_DETECTION_DEFAULTS: dict[str, Any] = {
+    "method": "dtg_peaks",
+    "prominence": None,
+    "min_mass_loss": 0.5,
+    "search_half_width": 80,
+}
+
+
+def _coerce_int_positive(value, *, default: int, minimum: int) -> int:
+    try:
+        if value in (None, ""):
+            return max(default, minimum)
+        parsed = int(float(value))
+    except (TypeError, ValueError):
+        return max(default, minimum)
+    return max(parsed, minimum)
+
+
+def _coerce_float_positive(value, *, default: float, minimum: float) -> float:
+    try:
+        if value in (None, ""):
+            return max(default, minimum)
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return max(default, minimum)
+    if not math.isfinite(parsed):
+        return max(default, minimum)
+    return max(parsed, minimum)
+
+
+def _coerce_float_non_negative(value, *, default: float) -> float:
+    try:
+        if value in (None, ""):
+            return max(default, 0.0)
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return max(default, 0.0)
+    if not math.isfinite(parsed) or parsed < 0:
+        return max(default, 0.0)
+    return parsed
+
+
+def _default_tga_processing_draft() -> dict[str, Any]:
+    return {
+        "smoothing": copy.deepcopy(_TGA_SMOOTHING_DEFAULTS["savgol"]),
+        "step_detection": copy.deepcopy(_TGA_STEP_DETECTION_DEFAULTS),
+    }
+
+
+def _merge_tga_smoothing_defaults(values: dict | None) -> dict[str, Any]:
+    base = copy.deepcopy(_TGA_SMOOTHING_DEFAULTS["savgol"])
+    if isinstance(values, dict):
+        method = str(values.get("method") or "savgol").strip().lower()
+        if method in _TGA_SMOOTH_METHODS:
+            base = copy.deepcopy(_TGA_SMOOTHING_DEFAULTS.get(method, _TGA_SMOOTHING_DEFAULTS["savgol"]))
+        for k, v in values.items():
+            if k == "method":
+                continue
+            if v is not None:
+                base[k] = copy.deepcopy(v)
+    return _normalize_tga_smoothing_section(base)
+
+
+def _merge_tga_step_defaults(values: dict | None) -> dict[str, Any]:
+    base = copy.deepcopy(_TGA_STEP_DETECTION_DEFAULTS)
+    if isinstance(values, dict):
+        for k, v in values.items():
+            if k == "method":
+                continue
+            if v is not None or k == "prominence":
+                base[k] = copy.deepcopy(v)
+    return _normalize_tga_step_section(base)
+
+
+def _normalize_tga_smoothing_section(smoothing: dict[str, Any]) -> dict[str, Any]:
+    method = str(smoothing.get("method") or "savgol").strip().lower()
+    if method not in _TGA_SMOOTH_METHODS:
+        method = "savgol"
+    if method == "savgol":
+        wl = _coerce_int_positive(smoothing.get("window_length"), default=11, minimum=5)
+        if wl % 2 == 0:
+            wl += 1
+        po = _coerce_int_positive(smoothing.get("polyorder"), default=3, minimum=1)
+        po = min(po, max(wl - 2, 1))
+        return {"method": "savgol", "window_length": wl, "polyorder": po}
+    if method == "moving_average":
+        wl = _coerce_int_positive(smoothing.get("window_length"), default=11, minimum=3)
+        if wl % 2 == 0:
+            wl += 1
+        return {"method": "moving_average", "window_length": wl}
+    sigma = _coerce_float_positive(smoothing.get("sigma"), default=2.0, minimum=0.1)
+    return {"method": "gaussian", "sigma": sigma}
+
+
+def _normalize_tga_step_section(step: dict[str, Any]) -> dict[str, Any]:
+    prom_raw = step.get("prominence", _TGA_STEP_DETECTION_DEFAULTS["prominence"])
+    prominence: float | None
+    if prom_raw in (None, ""):
+        prominence = None
+    else:
+        try:
+            pv = float(prom_raw)
+        except (TypeError, ValueError):
+            prominence = None
+        else:
+            prominence = None if not math.isfinite(pv) or pv <= 0 else pv
+    min_ml = _coerce_float_non_negative(step.get("min_mass_loss"), default=float(_TGA_STEP_DETECTION_DEFAULTS["min_mass_loss"]))
+    if min_ml <= 0:
+        min_ml = float(_TGA_STEP_DETECTION_DEFAULTS["min_mass_loss"])
+    half = _coerce_int_positive(step.get("search_half_width"), default=80, minimum=3)
+    return {
+        "method": "dtg_peaks",
+        "prominence": prominence,
+        "min_mass_loss": min_ml,
+        "search_half_width": half,
+    }
+
+
+def _normalize_tga_processing_draft(draft: dict | None) -> dict[str, Any]:
+    d = dict(draft or {})
+    sm = d.get("smoothing")
+    st = d.get("step_detection")
+    return {
+        "smoothing": _merge_tga_smoothing_defaults(sm if isinstance(sm, dict) else None),
+        "step_detection": _merge_tga_step_defaults(st if isinstance(st, dict) else None),
+    }
+
+
+def _tga_overrides_from_draft(draft: dict | None) -> dict[str, Any]:
+    norm = _normalize_tga_processing_draft(draft)
+    return {
+        "smoothing": copy.deepcopy(norm["smoothing"]),
+        "step_detection": copy.deepcopy(norm["step_detection"]),
+    }
+
+
+def _tga_draft_and_unit_from_loaded_processing(processing: dict | None) -> tuple[dict[str, Any], str]:
+    if not isinstance(processing, dict):
+        return copy.deepcopy(_default_tga_processing_draft()), "auto"
+    sp = processing.get("signal_pipeline") or {}
+    ast = processing.get("analysis_steps") or {}
+    sm = sp.get("smoothing") if isinstance(sp.get("smoothing"), dict) else processing.get("smoothing")
+    st = ast.get("step_detection") if isinstance(ast.get("step_detection"), dict) else processing.get("step_detection")
+    mc = processing.get("method_context") if isinstance(processing.get("method_context"), dict) else {}
+    unit = str(mc.get("tga_unit_mode_declared") or "auto").strip().lower()
+    if unit not in _TGA_UNIT_MODE_IDS:
+        unit = "auto"
+    draft = {
+        "smoothing": _merge_tga_smoothing_defaults(sm if isinstance(sm, dict) else None),
+        "step_detection": _merge_tga_step_defaults(st if isinstance(st, dict) else None),
+    }
+    return draft, unit
+
+
+def _tga_preset_processing_body_for_save(draft: dict | None, unit_mode: str | None) -> dict[str, Any]:
+    from core.processing_schema import get_tga_unit_modes
+
+    norm = _normalize_tga_processing_draft(draft)
+    mode = str(unit_mode or "auto").strip().lower()
+    if mode not in _TGA_UNIT_MODE_IDS:
+        mode = "auto"
+    labels = {entry["id"]: entry["label"] for entry in get_tga_unit_modes()}
+    label = labels.get(mode, mode.replace("_", " ").title())
+    return {
+        "smoothing": copy.deepcopy(norm["smoothing"]),
+        "step_detection": copy.deepcopy(norm["step_detection"]),
+        "method_context": {
+            "tga_unit_mode_declared": mode,
+            "tga_unit_mode_label": label,
+        },
+    }
+
+
+def _tga_ui_snapshot_dict(template_id: str | None, unit_mode: str | None, draft: dict | None) -> dict[str, Any]:
+    tid = template_id if template_id in _TGA_TEMPLATE_IDS else "tga.general"
+    u = unit_mode if unit_mode in _TGA_UNIT_MODE_IDS else "auto"
+    norm = _normalize_tga_processing_draft(draft)
+    return {
+        "workflow_template_id": tid,
+        "unit_mode": u,
+        "smoothing": norm["smoothing"],
+        "step_detection": norm["step_detection"],
+    }
+
+
+def _tga_snapshots_equal(a: dict | None, b: dict | None) -> bool:
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return False
+    return json.dumps(a, sort_keys=True, default=str) == json.dumps(b, sort_keys=True, default=str)
+
+
 _TGA_QUALITY_CHECK_ORDER: tuple[str, ...] = (
     "import_review_required",
     "import_confidence",
@@ -93,16 +294,6 @@ _TGA_QUALITY_CHECK_ORDER: tuple[str, ...] = (
 
 def _loc(locale_data: str | None) -> str:
     return normalize_ui_locale(locale_data)
-
-
-def _coerce_int_positive(value, *, default: int, minimum: int) -> int:
-    try:
-        if value in (None, ""):
-            return max(default, minimum)
-        parsed = int(float(value))
-    except (TypeError, ValueError):
-        return max(default, minimum)
-    return max(parsed, minimum)
 
 
 def _tga_result_section(child: Any, *, role: str = "support") -> html.Div:
@@ -278,10 +469,142 @@ def _unit_mode_card() -> dbc.Card:
     )
 
 
+def _tga_preset_card() -> dbc.Card:
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H5(id="tga-preset-card-title", className="card-title mb-1"),
+                html.Small(id="tga-preset-help", className="form-text text-muted d-block mb-2"),
+                html.Div(id="tga-preset-caption", className="small text-muted mb-2"),
+                html.Div(id="tga-preset-loaded-line", className="small mb-1"),
+                html.Div(id="tga-preset-dirty-flag", className="small mb-2"),
+                dbc.Label(id="tga-preset-select-label", html_for="tga-preset-select", className="mb-1"),
+                dbc.Select(id="tga-preset-select", options=[], value=None),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            dbc.Button(id="tga-preset-load-btn", color="primary", size="sm", disabled=True, className="me-2"),
+                            width="auto",
+                        ),
+                        dbc.Col(
+                            dbc.Button(id="tga-preset-delete-btn", color="secondary", size="sm", outline=True, disabled=True),
+                            width="auto",
+                        ),
+                    ],
+                    className="g-2 my-2 align-items-center",
+                ),
+                dbc.Label(id="tga-preset-save-name-label", html_for="tga-preset-save-name", className="mb-1"),
+                dbc.Input(id="tga-preset-save-name", type="text", value="", maxLength=80),
+                html.Small(id="tga-preset-save-hint", className="text-muted d-block my-1"),
+                dbc.Row(
+                    [
+                        dbc.Col(dbc.Button(id="tga-preset-save-btn", color="primary", size="sm", className="me-2"), width="auto"),
+                        dbc.Col(dbc.Button(id="tga-preset-saveas-btn", color="secondary", size="sm", outline=True), width="auto"),
+                    ],
+                    className="g-2 mb-2 align-items-center",
+                ),
+                html.Div(id="tga-preset-status", className="small text-muted"),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
+def _tga_processing_controls_card() -> dbc.Card:
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H5(id="tga-processing-card-title", className="card-title mb-2"),
+                html.P(id="tga-processing-card-hint", className="small text-muted mb-3"),
+                html.H6(id="tga-processing-smooth-heading", className="small text-uppercase text-muted mb-2"),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="tga-smooth-method-label", html_for="tga-smooth-method", className="mb-1"),
+                                dbc.Select(
+                                    id="tga-smooth-method",
+                                    options=[
+                                        {"label": "Savitzky–Golay", "value": "savgol"},
+                                        {"label": "Moving average", "value": "moving_average"},
+                                        {"label": "Gaussian", "value": "gaussian"},
+                                    ],
+                                    value="savgol",
+                                ),
+                            ],
+                            md=12,
+                        ),
+                    ],
+                    className="g-2",
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="tga-smooth-window-label", html_for="tga-smooth-window", className="mb-1"),
+                                dbc.Input(id="tga-smooth-window", type="number", min=3, step=2, value=11),
+                            ],
+                            md=4,
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Label(id="tga-smooth-polyorder-label", html_for="tga-smooth-polyorder", className="mb-1"),
+                                dbc.Input(id="tga-smooth-polyorder", type="number", min=1, max=7, step=1, value=3),
+                            ],
+                            md=4,
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Label(id="tga-smooth-sigma-label", html_for="tga-smooth-sigma", className="mb-1"),
+                                dbc.Input(id="tga-smooth-sigma", type="number", min=0.1, step=0.1, value=2.0),
+                            ],
+                            md=4,
+                        ),
+                    ],
+                    className="g-2 mb-3",
+                ),
+                html.H6(id="tga-processing-step-heading", className="small text-uppercase text-muted mb-2"),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="tga-step-prominence-label", html_for="tga-step-prominence", className="mb-1"),
+                                dbc.Input(id="tga-step-prominence", type="text", value="", placeholder=""),
+                            ],
+                            md=4,
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Label(id="tga-step-min-mass-label", html_for="tga-step-min-mass", className="mb-1"),
+                                dbc.Input(id="tga-step-min-mass", type="number", min=0, step=0.05, value=0.5),
+                            ],
+                            md=4,
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Label(id="tga-step-half-width-label", html_for="tga-step-half-width", className="mb-1"),
+                                dbc.Input(id="tga-step-half-width", type="number", min=3, step=1, value=80),
+                            ],
+                            md=4,
+                        ),
+                    ],
+                    className="g-2",
+                ),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
 layout = html.Div(
     analysis_page_stores("tga-refresh", "tga-latest-result-id")
     + [
         dcc.Store(id="tga-figure-captured", data={}),
+        dcc.Store(id="tga-processing-draft", data=copy.deepcopy(_default_tga_processing_draft())),
+        dcc.Store(id="tga-preset-refresh", data=0),
+        dcc.Store(id="tga-preset-hydrate", data=0),
+        dcc.Store(id="tga-preset-loaded-name", data=""),
+        dcc.Store(id="tga-preset-snapshot", data=None),
         html.Div(id="tga-hero-slot"),
         dbc.Row(
             [
@@ -296,6 +619,8 @@ layout = html.Div(
                             "tga.general",
                             card_title_id="tga-workflow-card-title",
                         ),
+                        _tga_preset_card(),
+                        _tga_processing_controls_card(),
                         execute_card("tga-run-status", "tga-run-btn", card_title_id="tga-execute-card-title"),
                     ],
                     md=4,
@@ -387,6 +712,402 @@ def update_tga_unit_mode_description(locale_data, unit_mode):
     return text
 
 
+def _tga_draft_from_control_values(
+    smooth_method,
+    smooth_window,
+    smooth_poly,
+    smooth_sigma,
+    step_prominence,
+    step_min_mass,
+    step_half_width,
+) -> dict[str, Any]:
+    token = str(smooth_method or "savgol").strip().lower()
+    if token not in _TGA_SMOOTH_METHODS:
+        token = "savgol"
+    smooth: dict[str, Any] = {"method": token}
+    if token == "savgol":
+        smooth["window_length"] = smooth_window
+        smooth["polyorder"] = smooth_poly
+    elif token == "moving_average":
+        smooth["window_length"] = smooth_window
+    else:
+        smooth["sigma"] = smooth_sigma
+    step: dict[str, Any] = {
+        "method": "dtg_peaks",
+        "prominence": step_prominence,
+        "min_mass_loss": step_min_mass,
+        "search_half_width": step_half_width,
+    }
+    return _normalize_tga_processing_draft({"smoothing": smooth, "step_detection": step})
+
+
+@callback(
+    Output("tga-preset-card-title", "children"),
+    Output("tga-preset-help", "children"),
+    Output("tga-preset-select-label", "children"),
+    Output("tga-preset-load-btn", "children"),
+    Output("tga-preset-delete-btn", "children"),
+    Output("tga-preset-save-name-label", "children"),
+    Output("tga-preset-save-name", "placeholder"),
+    Output("tga-preset-save-btn", "children"),
+    Output("tga-preset-saveas-btn", "children"),
+    Output("tga-preset-save-hint", "children"),
+    Input("ui-locale", "data"),
+)
+def render_tga_preset_chrome(locale_data):
+    loc = _loc(locale_data)
+    return (
+        translate_ui(loc, "dash.analysis.tga.presets.title"),
+        translate_ui(loc, "dash.analysis.tga.presets.help.overview"),
+        translate_ui(loc, "dash.analysis.tga.presets.select_label"),
+        translate_ui(loc, "dash.analysis.tga.presets.load_btn"),
+        translate_ui(loc, "dash.analysis.tga.presets.delete_btn"),
+        translate_ui(loc, "dash.analysis.tga.presets.save_name_label"),
+        translate_ui(loc, "dash.analysis.tga.presets.save_name_placeholder"),
+        translate_ui(loc, "dash.analysis.tga.presets.save_btn"),
+        translate_ui(loc, "dash.analysis.tga.presets.saveas_btn"),
+        translate_ui(loc, "dash.analysis.tga.presets.save_hint"),
+    )
+
+
+@callback(
+    Output("tga-processing-card-title", "children"),
+    Output("tga-processing-card-hint", "children"),
+    Output("tga-processing-smooth-heading", "children"),
+    Output("tga-smooth-method-label", "children"),
+    Output("tga-smooth-window-label", "children"),
+    Output("tga-smooth-polyorder-label", "children"),
+    Output("tga-smooth-sigma-label", "children"),
+    Output("tga-processing-step-heading", "children"),
+    Output("tga-step-prominence-label", "children"),
+    Output("tga-step-prominence", "placeholder"),
+    Output("tga-step-min-mass-label", "children"),
+    Output("tga-step-half-width-label", "children"),
+    Output("tga-smooth-method", "options"),
+    Input("ui-locale", "data"),
+)
+def render_tga_processing_chrome(locale_data):
+    loc = _loc(locale_data)
+    smooth_opts = [
+        {"label": translate_ui(loc, "dash.analysis.tga.processing.smooth.savgol"), "value": "savgol"},
+        {"label": translate_ui(loc, "dash.analysis.tga.processing.smooth.moving_average"), "value": "moving_average"},
+        {"label": translate_ui(loc, "dash.analysis.tga.processing.smooth.gaussian"), "value": "gaussian"},
+    ]
+    return (
+        translate_ui(loc, "dash.analysis.tga.processing.card_title"),
+        translate_ui(loc, "dash.analysis.tga.processing.card_hint"),
+        translate_ui(loc, "dash.analysis.tga.processing.smooth.heading"),
+        translate_ui(loc, "dash.analysis.tga.processing.smooth.method"),
+        translate_ui(loc, "dash.analysis.tga.processing.smooth.window"),
+        translate_ui(loc, "dash.analysis.tga.processing.smooth.polyorder"),
+        translate_ui(loc, "dash.analysis.tga.processing.smooth.sigma"),
+        translate_ui(loc, "dash.analysis.tga.processing.step.heading"),
+        translate_ui(loc, "dash.analysis.tga.processing.step.prominence"),
+        translate_ui(loc, "dash.analysis.tga.processing.step.prominence_ph"),
+        translate_ui(loc, "dash.analysis.tga.processing.step.min_mass"),
+        translate_ui(loc, "dash.analysis.tga.processing.step.half_width"),
+        smooth_opts,
+    )
+
+
+@callback(
+    Output("tga-preset-select", "options"),
+    Output("tga-preset-caption", "children"),
+    Input("tga-preset-refresh", "data"),
+    Input("ui-locale", "data"),
+)
+def refresh_tga_preset_options(_refresh_token, locale_data):
+    from dash_app import api_client
+
+    loc = _loc(locale_data)
+    try:
+        payload = api_client.list_analysis_presets(_TGA_PRESET_ANALYSIS_TYPE)
+    except Exception as exc:
+        message = translate_ui(loc, "dash.analysis.tga.presets.list_failed").format(error=str(exc))
+        return [], message
+
+    presets = payload.get("presets") or []
+    options = [
+        {"label": item.get("preset_name", ""), "value": item.get("preset_name", "")}
+        for item in presets
+        if isinstance(item, dict) and item.get("preset_name")
+    ]
+    caption = translate_ui(loc, "dash.analysis.tga.presets.caption").format(
+        analysis_type=payload.get("analysis_type", _TGA_PRESET_ANALYSIS_TYPE),
+        count=int(payload.get("count", len(options)) or 0),
+        max_count=int(payload.get("max_count", 10) or 10),
+    )
+    return options, caption
+
+
+@callback(
+    Output("tga-preset-load-btn", "disabled"),
+    Output("tga-preset-delete-btn", "disabled"),
+    Output("tga-preset-save-btn", "disabled"),
+    Input("tga-preset-select", "value"),
+)
+def toggle_tga_preset_action_buttons(selected_name):
+    has_selection = bool(str(selected_name or "").strip())
+    return (not has_selection, not has_selection, not has_selection)
+
+
+@callback(
+    Output("tga-processing-draft", "data", allow_duplicate=True),
+    Output("tga-template-select", "value", allow_duplicate=True),
+    Output("tga-unit-mode-select", "value", allow_duplicate=True),
+    Output("tga-preset-status", "children", allow_duplicate=True),
+    Output("tga-preset-hydrate", "data", allow_duplicate=True),
+    Output("tga-preset-loaded-name", "data", allow_duplicate=True),
+    Output("tga-preset-snapshot", "data", allow_duplicate=True),
+    Input("tga-preset-load-btn", "n_clicks"),
+    State("tga-preset-select", "value"),
+    State("tga-preset-hydrate", "data"),
+    State("ui-locale", "data"),
+    prevent_initial_call=True,
+)
+def apply_tga_preset(n_clicks, selected_name, hydrate_val, locale_data):
+    from dash_app import api_client
+
+    loc = _loc(locale_data)
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    name = str(selected_name or "").strip()
+    if not name:
+        return (
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            translate_ui(loc, "dash.analysis.tga.presets.select_required"),
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+        )
+    try:
+        payload = api_client.load_analysis_preset(_TGA_PRESET_ANALYSIS_TYPE, name)
+    except Exception as exc:
+        return (
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+            translate_ui(loc, "dash.analysis.tga.presets.load_failed").format(error=str(exc)),
+            dash.no_update,
+            dash.no_update,
+            dash.no_update,
+        )
+
+    processing = dict(payload.get("processing") or {})
+    draft, unit_mode = _tga_draft_and_unit_from_loaded_processing(processing)
+    template_id_raw = str(payload.get("workflow_template_id") or "").strip()
+    template_out = template_id_raw if template_id_raw in _TGA_TEMPLATE_IDS else dash.no_update
+    unit_out = unit_mode if unit_mode in _TGA_UNIT_MODE_IDS else dash.no_update
+    resolved_tid = template_id_raw if template_id_raw in _TGA_TEMPLATE_IDS else "tga.general"
+    snap = _tga_ui_snapshot_dict(resolved_tid, unit_mode, draft)
+    status = translate_ui(loc, "dash.analysis.tga.presets.loaded").format(preset=name)
+    return (
+        draft,
+        template_out,
+        unit_out,
+        status,
+        int(hydrate_val or 0) + 1,
+        name,
+        snap,
+    )
+
+
+@callback(
+    Output("tga-preset-refresh", "data", allow_duplicate=True),
+    Output("tga-preset-save-name", "value", allow_duplicate=True),
+    Output("tga-preset-status", "children", allow_duplicate=True),
+    Output("tga-preset-snapshot", "data", allow_duplicate=True),
+    Input("tga-preset-save-btn", "n_clicks"),
+    Input("tga-preset-saveas-btn", "n_clicks"),
+    State("tga-preset-select", "value"),
+    State("tga-preset-save-name", "value"),
+    State("tga-processing-draft", "data"),
+    State("tga-template-select", "value"),
+    State("tga-unit-mode-select", "value"),
+    State("tga-preset-refresh", "data"),
+    State("ui-locale", "data"),
+    prevent_initial_call=True,
+)
+def save_tga_preset(n_save, n_saveas, selected_name, save_name, draft, template_id, unit_mode, refresh_token, locale_data):
+    from dash_app import api_client
+
+    loc = _loc(locale_data)
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        raise dash.exceptions.PreventUpdate
+    trig = ctx.triggered_id
+    if trig == "tga-preset-save-btn":
+        name = str(selected_name or "").strip()
+        if not name:
+            return dash.no_update, dash.no_update, translate_ui(loc, "dash.analysis.tga.presets.select_required"), dash.no_update
+        clear_name = dash.no_update
+    elif trig == "tga-preset-saveas-btn":
+        name = str(save_name or "").strip()
+        if not name:
+            return dash.no_update, dash.no_update, translate_ui(loc, "dash.analysis.tga.presets.save_name_required"), dash.no_update
+        clear_name = ""
+    else:
+        raise dash.exceptions.PreventUpdate
+
+    processing_body = _tga_preset_processing_body_for_save(draft, unit_mode)
+    try:
+        response = api_client.save_analysis_preset(
+            _TGA_PRESET_ANALYSIS_TYPE,
+            name,
+            workflow_template_id=str(template_id or "").strip() or None,
+            processing=processing_body,
+        )
+    except Exception as exc:
+        return (
+            dash.no_update,
+            dash.no_update,
+            translate_ui(loc, "dash.analysis.tga.presets.save_failed").format(error=str(exc)),
+            dash.no_update,
+        )
+    resolved_template = str(response.get("workflow_template_id") or template_id or "")
+    snap = _tga_ui_snapshot_dict(str(template_id or "").strip() or None, unit_mode, draft)
+    status = translate_ui(loc, "dash.analysis.tga.presets.saved").format(preset=name, template=resolved_template)
+    return int(refresh_token or 0) + 1, clear_name, status, snap
+
+
+@callback(
+    Output("tga-preset-refresh", "data", allow_duplicate=True),
+    Output("tga-preset-select", "value", allow_duplicate=True),
+    Output("tga-preset-status", "children", allow_duplicate=True),
+    Output("tga-preset-loaded-name", "data", allow_duplicate=True),
+    Output("tga-preset-snapshot", "data", allow_duplicate=True),
+    Input("tga-preset-delete-btn", "n_clicks"),
+    State("tga-preset-select", "value"),
+    State("tga-preset-loaded-name", "data"),
+    State("tga-preset-refresh", "data"),
+    State("ui-locale", "data"),
+    prevent_initial_call=True,
+)
+def delete_tga_preset(n_clicks, selected_name, loaded_name, refresh_token, locale_data):
+    from dash_app import api_client
+
+    loc = _loc(locale_data)
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    name = str(selected_name or "").strip()
+    if not name:
+        return dash.no_update, dash.no_update, translate_ui(loc, "dash.analysis.tga.presets.select_required"), dash.no_update, dash.no_update
+    try:
+        api_client.delete_analysis_preset(_TGA_PRESET_ANALYSIS_TYPE, name)
+    except Exception as exc:
+        return (
+            dash.no_update,
+            dash.no_update,
+            translate_ui(loc, "dash.analysis.tga.presets.delete_failed").format(error=str(exc)),
+            dash.no_update,
+            dash.no_update,
+        )
+    status = translate_ui(loc, "dash.analysis.tga.presets.deleted").format(preset=name)
+    loaded = str(loaded_name or "").strip()
+    if loaded == name:
+        return int(refresh_token or 0) + 1, None, status, "", None
+    return int(refresh_token or 0) + 1, None, status, dash.no_update, dash.no_update
+
+
+@callback(
+    Output("tga-smooth-method", "value"),
+    Output("tga-smooth-window", "value"),
+    Output("tga-smooth-polyorder", "value"),
+    Output("tga-smooth-sigma", "value"),
+    Output("tga-step-prominence", "value"),
+    Output("tga-step-min-mass", "value"),
+    Output("tga-step-half-width", "value"),
+    Input("tga-preset-hydrate", "data"),
+    State("tga-processing-draft", "data"),
+)
+def hydrate_tga_processing_controls(_hydrate_token, draft):
+    d = _normalize_tga_processing_draft(draft)
+    sm = d["smoothing"]
+    st = d["step_detection"]
+    method = str(sm.get("method") or "savgol")
+    wl = int(sm.get("window_length", 11))
+    po = int(sm.get("polyorder", 3))
+    sigma = float(sm.get("sigma", 2.0))
+    prom = st.get("prominence")
+    prom_s = "" if prom in (None, "") else str(prom)
+    min_ml = float(st.get("min_mass_loss", 0.5))
+    half = int(st.get("search_half_width", 80))
+    return method, wl, po, sigma, prom_s, min_ml, half
+
+
+@callback(
+    Output("tga-processing-draft", "data", allow_duplicate=True),
+    Input("tga-smooth-method", "value"),
+    Input("tga-smooth-window", "value"),
+    Input("tga-smooth-polyorder", "value"),
+    Input("tga-smooth-sigma", "value"),
+    Input("tga-step-prominence", "value"),
+    Input("tga-step-min-mass", "value"),
+    Input("tga-step-half-width", "value"),
+    prevent_initial_call="initial_duplicate",
+)
+def sync_tga_processing_draft_from_controls(sm_m, sm_w, sm_p, sm_s, st_pr, st_min, st_half):
+    return _tga_draft_from_control_values(sm_m, sm_w, sm_p, sm_s, st_pr, st_min, st_half)
+
+
+@callback(
+    Output("tga-smooth-window", "disabled"),
+    Output("tga-smooth-polyorder", "disabled"),
+    Output("tga-smooth-sigma", "disabled"),
+    Input("tga-smooth-method", "value"),
+)
+def toggle_tga_smoothing_inputs(method):
+    token = str(method or "savgol").strip().lower()
+    if token == "savgol":
+        return False, False, True
+    if token == "moving_average":
+        return False, True, True
+    return True, True, False
+
+
+@callback(
+    Output("tga-preset-loaded-line", "children"),
+    Input("tga-preset-loaded-name", "data"),
+    Input("ui-locale", "data"),
+)
+def render_tga_preset_loaded_line(loaded_name, locale_data):
+    loc = _loc(locale_data)
+    name = str(loaded_name or "").strip()
+    if not name:
+        return ""
+    return translate_ui(loc, "dash.analysis.tga.presets.loaded_line").format(preset=name)
+
+
+@callback(
+    Output("tga-preset-dirty-flag", "children"),
+    Input("ui-locale", "data"),
+    Input("tga-template-select", "value"),
+    Input("tga-unit-mode-select", "value"),
+    Input("tga-smooth-method", "value"),
+    Input("tga-smooth-window", "value"),
+    Input("tga-smooth-polyorder", "value"),
+    Input("tga-smooth-sigma", "value"),
+    Input("tga-step-prominence", "value"),
+    Input("tga-step-min-mass", "value"),
+    Input("tga-step-half-width", "value"),
+    State("tga-preset-snapshot", "data"),
+)
+def render_tga_preset_dirty_flag(locale_data, template_id, unit_mode, sm_m, sm_w, sm_p, sm_s, st_pr, st_min, st_half, snapshot):
+    loc = _loc(locale_data)
+    if not isinstance(snapshot, dict):
+        return html.Span(translate_ui(loc, "dash.analysis.tga.presets.dirty_no_baseline"), className="text-muted")
+    current = _tga_ui_snapshot_dict(
+        template_id,
+        unit_mode,
+        _tga_draft_from_control_values(sm_m, sm_w, sm_p, sm_s, st_pr, st_min, st_half),
+    )
+    if _tga_snapshots_equal(snapshot, current):
+        return html.Span(translate_ui(loc, "dash.analysis.tga.presets.clean"), className="text-success")
+    return html.Span(translate_ui(loc, "dash.analysis.tga.presets.dirty"), className="text-warning")
+
+
 @callback(
     Output("tga-dataset-selector-area", "children"),
     Output("tga-run-btn", "disabled"),
@@ -428,18 +1149,20 @@ def load_eligible_datasets(project_id, _refresh, locale_data):
     State("tga-dataset-select", "value"),
     State("tga-template-select", "value"),
     State("tga-unit-mode-select", "value"),
+    State("tga-processing-draft", "data"),
     State("tga-refresh", "data"),
     State("workspace-refresh", "data"),
     State("ui-locale", "data"),
     prevent_initial_call=True,
 )
-def run_tga_analysis(n_clicks, project_id, dataset_key, template_id, unit_mode, refresh_val, global_refresh, locale_data):
+def run_tga_analysis(n_clicks, project_id, dataset_key, template_id, unit_mode, processing_draft, refresh_val, global_refresh, locale_data):
     loc = _loc(locale_data)
     if not n_clicks or not project_id or not dataset_key:
         raise dash.exceptions.PreventUpdate
 
     from dash_app.api_client import analysis_run
 
+    overrides = _tga_overrides_from_draft(processing_draft)
     try:
         result = analysis_run(
             project_id=project_id,
@@ -447,6 +1170,7 @@ def run_tga_analysis(n_clicks, project_id, dataset_key, template_id, unit_mode, 
             analysis_type="TGA",
             workflow_template_id=template_id,
             unit_mode=unit_mode if unit_mode and unit_mode != "auto" else None,
+            processing_overrides=overrides or None,
         )
     except Exception as exc:
         return dbc.Alert(translate_ui(loc, "dash.analysis.analysis_failed", error=str(exc)), color="danger"), dash.no_update, dash.no_update, dash.no_update

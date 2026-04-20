@@ -1424,6 +1424,93 @@ TRANSLATIONS = {
         "tr": "Kartlar yalnızca bir alt küme vurgusudur; tüm algılanan adımlar için aşağıdaki tablo eksiksiz kaynaktır.",
         "en": "Cards highlight a curated subset only; the step table below is the complete source of truth for every detected step.",
     },
+    "dash.analysis.tga.presets.title": {"tr": "TGA presetleri", "en": "TGA Presets"},
+    "dash.analysis.tga.presets.help.overview": {
+        "tr": "Şablon, birim modu ve işleme ayarlarını kaydedin; aynı ada tekrar kaydetmek üzerine yazar. Analiz türü başına en fazla 10 preset.",
+        "en": "Save workflow template, unit mode, and processing parameters. Saving again with the same name overwrites that preset. Up to 10 presets per analysis type.",
+    },
+    "dash.analysis.tga.presets.caption": {
+        "tr": "{analysis_type} presetleri: {count}/{max_count}",
+        "en": "{analysis_type} presets: {count}/{max_count}",
+    },
+    "dash.analysis.tga.presets.select_label": {"tr": "Kayıtlı presetler", "en": "Saved presets"},
+    "dash.analysis.tga.presets.load_btn": {"tr": "Yükle", "en": "Load"},
+    "dash.analysis.tga.presets.delete_btn": {"tr": "Sil", "en": "Delete"},
+    "dash.analysis.tga.presets.save_name_label": {"tr": "Preset adı (Save As)", "en": "Preset name (Save As)"},
+    "dash.analysis.tga.presets.save_name_placeholder": {"tr": "Yeni veya mevcut ad", "en": "New or existing name"},
+    "dash.analysis.tga.presets.save_btn": {"tr": "Seçileni kaydet", "en": "Save (selected)"},
+    "dash.analysis.tga.presets.saveas_btn": {"tr": "Farklı kaydet", "en": "Save As"},
+    "dash.analysis.tga.presets.save_hint": {
+        "tr": "Seçili presetin üzerine yazmak için Save; ad alanıyla yeni veya başka ada kaydetmek için Save As.",
+        "en": "Save overwrites the selected preset. Save As uses the name field to create or overwrite by that name.",
+    },
+    "dash.analysis.tga.presets.loaded": {
+        "tr": "'{preset}' presetinin ayarları yüklendi.",
+        "en": "Loaded preset '{preset}'.",
+    },
+    "dash.analysis.tga.presets.loaded_line": {
+        "tr": "Yüklü preset: {preset}",
+        "en": "Loaded preset: {preset}",
+    },
+    "dash.analysis.tga.presets.saved": {
+        "tr": "'{preset}' presetine kaydedildi ({template}).",
+        "en": "Saved preset '{preset}' ({template}).",
+    },
+    "dash.analysis.tga.presets.deleted": {
+        "tr": "'{preset}' preseti silindi.",
+        "en": "Deleted preset '{preset}'.",
+    },
+    "dash.analysis.tga.presets.save_failed": {
+        "tr": "Preset kaydedilemedi: {error}",
+        "en": "Could not save preset: {error}",
+    },
+    "dash.analysis.tga.presets.delete_failed": {
+        "tr": "Preset silinemedi: {error}",
+        "en": "Could not delete preset: {error}",
+    },
+    "dash.analysis.tga.presets.load_failed": {
+        "tr": "Preset yüklenemedi: {error}",
+        "en": "Could not load preset: {error}",
+    },
+    "dash.analysis.tga.presets.list_failed": {
+        "tr": "Preset listesi alınamadı: {error}",
+        "en": "Could not load presets: {error}",
+    },
+    "dash.analysis.tga.presets.save_name_required": {
+        "tr": "Save As için bir preset adı girin.",
+        "en": "Enter a preset name for Save As.",
+    },
+    "dash.analysis.tga.presets.select_required": {
+        "tr": "Önce listeden bir preset seçin.",
+        "en": "Select a preset from the list first.",
+    },
+    "dash.analysis.tga.presets.dirty_no_baseline": {
+        "tr": "Kayıtlı preset ile karşılaştırma yok (henüz yükleme veya kayıt yapılmadı).",
+        "en": "No saved preset baseline yet (load or save to compare).",
+    },
+    "dash.analysis.tga.presets.clean": {"tr": "Yüklü preset ile uyumlu", "en": "Matches loaded preset"},
+    "dash.analysis.tga.presets.dirty": {"tr": "Yüklü presetten farklı (kaydedilmemiş değişiklikler)", "en": "Modified vs loaded preset"},
+    "dash.analysis.tga.processing.card_title": {"tr": "TGA işleme", "en": "TGA processing"},
+    "dash.analysis.tga.processing.card_hint": {
+        "tr": "Yumuşatma ve adım algılama bu çalıştırmada kullanılır; presetlere dahildir.",
+        "en": "Smoothing and step detection apply to each run and are included in presets.",
+    },
+    "dash.analysis.tga.processing.smooth.heading": {"tr": "Yumuşatma", "en": "Smoothing"},
+    "dash.analysis.tga.processing.smooth.method": {"tr": "Yöntem", "en": "Method"},
+    "dash.analysis.tga.processing.smooth.window": {"tr": "Pencere uzunluğu", "en": "Window length"},
+    "dash.analysis.tga.processing.smooth.polyorder": {"tr": "Polinom derecesi", "en": "Polynomial order"},
+    "dash.analysis.tga.processing.smooth.sigma": {"tr": "Sigma", "en": "Sigma"},
+    "dash.analysis.tga.processing.smooth.savgol": {"tr": "Savitzky–Golay", "en": "Savitzky–Golay"},
+    "dash.analysis.tga.processing.smooth.moving_average": {"tr": "Hareketli ortalama", "en": "Moving average"},
+    "dash.analysis.tga.processing.smooth.gaussian": {"tr": "Gauss", "en": "Gaussian"},
+    "dash.analysis.tga.processing.step.heading": {"tr": "Adım algılama", "en": "Step detection"},
+    "dash.analysis.tga.processing.step.prominence": {
+        "tr": "Belirginlik (boş = otomatik)",
+        "en": "Prominence (empty = auto)",
+    },
+    "dash.analysis.tga.processing.step.prominence_ph": {"tr": "boş = otomatik", "en": "empty = auto"},
+    "dash.analysis.tga.processing.step.min_mass": {"tr": "Min. kütle kaybı (%)", "en": "Min mass loss (%)"},
+    "dash.analysis.tga.processing.step.half_width": {"tr": "Arama yarım genişliği (örnek)", "en": "Search half width (samples)"},
     "dash.analysis.tga.dtg.card_title": {"tr": "DTG önizlemesi", "en": "DTG preview"},
     "dash.analysis.tga.dtg.caption": {
         "tr": "Kütle kaybının sıcaklığa göre türevi (DTG); ana kütle eğrisinden ayrı gösterilir.",

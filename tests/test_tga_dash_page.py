@@ -47,6 +47,21 @@ def test_layout_contains_section_ids_in_order():
     mod = _import_tga_page()
     layout_str = str(mod.layout)
     expected_ids = [
+        "tga-processing-draft",
+        "tga-preset-refresh",
+        "tga-preset-hydrate",
+        "tga-preset-loaded-name",
+        "tga-preset-snapshot",
+        "tga-preset-select",
+        "tga-preset-load-btn",
+        "tga-preset-save-btn",
+        "tga-preset-saveas-btn",
+        "tga-preset-delete-btn",
+        "tga-preset-status",
+        "tga-smooth-method",
+        "tga-step-prominence",
+        "tga-step-min-mass",
+        "tga-step-half-width",
         "tga-result-analysis-summary",
         "tga-result-metrics",
         "tga-result-quality",
@@ -72,6 +87,9 @@ def test_layout_contains_section_ids_in_order():
     assert layout_str.index("tga-result-figure") < layout_str.index("tga-result-dtg")
     assert layout_str.index("tga-result-dtg") < layout_str.index("tga-result-step-cards")
     assert layout_str.index("tga-result-raw-metadata") < layout_str.index("tga-literature-compare-btn")
+    assert layout_str.index("tga-template-select") < layout_str.index("tga-preset-select")
+    assert layout_str.index("tga-preset-select") < layout_str.index("tga-smooth-method")
+    assert layout_str.index("tga-smooth-method") < layout_str.index("tga-run-btn")
 
 
 def test_layout_uses_results_surface_class():
@@ -295,3 +313,84 @@ def test_extract_graph_from_wrapped_tga_figure_area(monkeypatch):
     payload = _extract_graph_figure_payload(fig)
     assert payload is not None
     assert "Steps:" in str(fig) or "Adımlar:" in str(fig)
+
+
+def test_tga_processing_draft_defaults_and_overrides():
+    mod = _import_tga_page()
+    d0 = mod._default_tga_processing_draft()
+    assert d0["smoothing"]["method"] == "savgol"
+    assert d0["step_detection"]["search_half_width"] == 80
+    ov = mod._tga_overrides_from_draft(d0)
+    assert set(ov.keys()) == {"smoothing", "step_detection"}
+    assert ov["smoothing"]["window_length"] == 11
+
+
+def test_tga_draft_from_loaded_processing_nested_and_unit():
+    mod = _import_tga_page()
+    processing = {
+        "signal_pipeline": {"smoothing": {"method": "moving_average", "window_length": 9}},
+        "analysis_steps": {"step_detection": {"prominence": 0.02, "min_mass_loss": 0.4, "search_half_width": 60}},
+        "method_context": {"tga_unit_mode_declared": "percent"},
+    }
+    draft, unit = mod._tga_draft_and_unit_from_loaded_processing(processing)
+    assert unit == "percent"
+    assert draft["smoothing"]["method"] == "moving_average"
+    assert draft["step_detection"]["min_mass_loss"] == 0.4
+    assert draft["step_detection"]["prominence"] == 0.02
+
+
+def test_tga_preset_processing_body_for_save_includes_method_context():
+    mod = _import_tga_page()
+    draft = mod._normalize_tga_processing_draft(
+        {
+            "smoothing": {"method": "savgol", "window_length": 15, "polyorder": 3},
+            "step_detection": {"min_mass_loss": 0.6, "search_half_width": 90},
+        }
+    )
+    body = mod._tga_preset_processing_body_for_save(draft, "absolute_mass")
+    assert body["method_context"]["tga_unit_mode_declared"] == "absolute_mass"
+    assert body["smoothing"]["window_length"] == 15
+    assert body["step_detection"]["search_half_width"] == 90
+
+
+def test_tga_snapshots_equal_for_dirty_tracking():
+    mod = _import_tga_page()
+    d = mod._default_tga_processing_draft()
+    a = mod._tga_ui_snapshot_dict("tga.general", "auto", d)
+    b = mod._tga_ui_snapshot_dict("tga.general", "auto", d)
+    assert mod._tga_snapshots_equal(a, b)
+    c = mod._tga_ui_snapshot_dict("tga.multi_step_decomposition", "auto", d)
+    assert not mod._tga_snapshots_equal(a, c)
+
+
+def test_tga_controls_to_draft_normalizes_window_and_prominence():
+    mod = _import_tga_page()
+    d = mod._tga_draft_from_control_values("savgol", 10, 3, 2.0, "", 0.5, 80)
+    assert d["smoothing"]["window_length"] % 2 == 1
+    assert d["step_detection"]["prominence"] is None
+    d2 = mod._tga_draft_from_control_values("savgol", 11, 3, 2.0, "0.05", 0.5, 80)
+    assert d2["step_detection"]["prominence"] == 0.05
+
+
+def test_run_tga_analysis_forwards_processing_overrides(monkeypatch):
+    mod = _import_tga_page()
+    captured: dict = {}
+
+    def fake_run(**kwargs):
+        captured.update(kwargs)
+        return {"execution_status": "failed", "detail": "noop"}
+
+    monkeypatch.setattr("dash_app.api_client.analysis_run", fake_run)
+    mod.run_tga_analysis(
+        1,
+        "proj-1",
+        "ds-1",
+        "tga.general",
+        "auto",
+        {"smoothing": {"method": "savgol", "window_length": 21, "polyorder": 3}, "step_detection": mod._default_tga_processing_draft()["step_detection"]},
+        0,
+        0,
+        "en",
+    )
+    assert captured.get("processing_overrides") is not None
+    assert captured["processing_overrides"]["smoothing"]["window_length"] == 21

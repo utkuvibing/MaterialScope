@@ -4,9 +4,31 @@
 
 ## Status: no active slice (2026-04-20)
 
-The **Dash literature clickable links** slice is **complete** (shared component + tests; no per-page Dash file changes).
+The **TGA Dash presets + processing** slice is **complete** (page wiring, i18n, tests). Start a new slice by replacing this file.
 
-When starting new work, replace this file with the new slice goal, in/out of scope, and acceptance criteria.
+---
+
+### Archived: TGA Dash presets and presettable processing (done, 2026-04-20)
+
+**Goal:** Bring save/load/delete preset workflow to the TGA Dash page in a reusable (TGA-first) way: preset chrome, `processing_overrides`-backed controls, hydrate on load, clear save/dirty UX, compatible with existing preset APIs.
+
+**In scope**
+
+- [`dash_app/pages/tga.py`](dash_app/pages/tga.py): preset card near workflow; processing controls; stores; callbacks; helpers for draft/snapshot/preset save body; `run_tga_analysis` passes `processing_overrides`.
+- [`utils/i18n.py`](utils/i18n.py): TGA preset and processing strings (en/tr).
+- [`tests/test_tga_dash_page.py`](tests/test_tga_dash_page.py).
+
+**Acceptance**
+
+- Presets list/load/save/delete use `list_analysis_presets` / `load_analysis_preset` / `save_analysis_preset` / `delete_analysis_preset` for analysis type `TGA`.
+- Saved payload includes `workflow_template_id` (API field) plus `processing` with `smoothing`, `step_detection`, and `method_context` (`tga_unit_mode_*`) so unit mode round-trips.
+- Run uses current UI: `workflow_template_id`, `unit_mode`, and `processing_overrides` from the draft store.
+- Load hydrates template, unit, controls, draft, snapshot baseline; dirty indicator when UI diverges; empty preset list and API errors handled in UI copy.
+
+**Verification**
+
+- `rtk pytest tests/test_tga_dash_page.py -q` — 19 passed.
+- `rtk pytest tests/test_backend_presets_api.py tests/test_preset_store.py -q` — 14 passed.
 
 ---
 

@@ -6,21 +6,24 @@
 
 - **Project:** MaterialScope
 - **Branch:** `web-dash-plotly-migration`
-- **Last slice:** Shared Dash literature compare — clickable DOI/URL for retained evidence (titles + citation meta + rationale linkify); applies to DSC/DTA/TGA via `render_literature_output` only.
+- **Last slice:** TGA Dash — presets + presettable processing (shared `/presets` API, `processing_overrides` on run).
 
 ## What was done this session
 
-1. **Module helpers** in [`dash_app/components/literature_compare_ui.py`](dash_app/components/literature_compare_ui.py): `canonical_doi_string`, `doi_to_https_url`, `normalize_http_url`, `resolve_literature_href`, `linkify_doi_fragments`, `citation_meta_children`.
-2. **Retained rows:** Each row carries resolved `href` (direct DOI → direct URL → linked citation DOI → linked citation URL); citation-only rows use structured `rationale_nodes` with linked `DOI:` line.
-3. **Rendering:** Titles as `html.A` when `href` exists (`target="_blank"`, `rel="noopener noreferrer"`); comparison rationale strings linkify bare DOI tokens; preview/show-more and compact literature unchanged.
+1. **Preset card** on [`dash_app/pages/tga.py`](dash_app/pages/tga.py): list/load/save (selected)/save-as/delete, status, loaded-name line, dirty vs snapshot, empty/error list handling.
+2. **Processing card:** smoothing (savgol / moving_average / gaussian) + step detection (prominence, min mass loss, search half width); `tga-processing-draft` store; hydrate on preset load.
+3. **Run:** `analysis_run(..., processing_overrides=...)` from normalized draft; unit + template unchanged at API level; unit also stored in preset `method_context` for round-trip (preset DB has no top-level `unit_mode`).
+4. **i18n** [`utils/i18n.py`](utils/i18n.py): `dash.analysis.tga.presets.*`, `dash.analysis.tga.processing.*`.
+5. **Tests** [`tests/test_tga_dash_page.py`](tests/test_tga_dash_page.py): layout IDs/order, draft/overrides/snapshot helpers, save body, `run_tga_analysis` forwards overrides.
 
 ## What was verified
 
-- `rtk pytest tests/test_literature_compare_ui.py tests/test_dsc_dash_page.py tests/test_tga_dash_page.py -q` — **50 passed** (RTK **0.37.1**).
-- Same scope via `.venv/bin/python -m pytest …` — equivalent (fallback if `rtk` unavailable).
+- `rtk pytest tests/test_tga_dash_page.py -q` — **19 passed**.
+- `rtk pytest tests/test_backend_presets_api.py tests/test_preset_store.py -q` — **14 passed**.
+- `rtk pytest tests/test_tga_dash_page.py tests/test_tga_processor.py -q` — **53 passed**.
 
 ## Next step
 
-- Merge PR after review; optional full `pytest` on CI.
+- Optional: DSC/DTA-style Dash callback tests for preset buttons (currently helper + layout coverage); full `pytest` on CI after merge.
 
 **Process defaults:** **`00-workflow.mdc`**.

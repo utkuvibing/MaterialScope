@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-04-20 — TGA Dash presets: unit mode inside `processing.method_context`; overrides-only run
+
+**Decision:** On the TGA Dash page, persist **declared unit mode** in preset `processing.method_context` (`tga_unit_mode_declared` / `tga_unit_mode_label`) together with `smoothing` and `step_detection`, because the SQLite preset envelope only stores `workflow_template_id` + `processing` (no separate `unit_mode` column). On **Run**, continue sending `unit_mode` as the existing `/analysis/run` field when not `auto`, and send **`processing_overrides`** built only from smoothing + step_detection (normalized from the UI draft store).
+
+**Reason:** Matches the backend preset store contract and `processing_overrides` merge rules (`update_processing_step` / `method_context`); avoids a backend migration while still making presets meaningful for TGA.
+
+**Consequence / future:** DSC/DTA preset pages can follow the same pattern for any “run-time” field not in the preset envelope. Reuse `_apply_processing_overrides` semantics: Dash should only emit override sections the backend accepts for that modality.
+
+---
+
+## 2026-04-20 — TGA processing draft sync: `prevent_initial_call="initial_duplicate"`
+
+**Decision:** The callback that writes `tga-processing-draft` from control `Input`s uses `Output(..., allow_duplicate=True)` with `prevent_initial_call="initial_duplicate"` so it can coexist with layout-provided initial store data and preset-load writers without `DuplicateCallback` registration errors on Dash ≥2.18.
+
+**Reason:** Dash requires either `prevent_initial_call=True` or `initial_duplicate` when combining `allow_duplicate` with an initial fire; we need the first client pass to align store + controls without ordering races.
+
+**Consequence / future:** Other pages adding a similar “controls → draft store” mirror should use the same pattern when the store is also written by load/reset callbacks.
+
+---
+
 ## 2026-04-20 — Dash literature compare: shared DOI/URL resolution and linked titles
 
 **Decision:** Implement DOI normalization (`https://doi.org/...`), optional HTTP URL fallback, and `resolve_literature_href` (direct DOI → direct URL → first linked citation DOI → first linked citation URL) inside `dash_app/components/literature_compare_ui.py`. Render retained evidence titles as `html.A` when a URL exists; link DOI text in citation meta and linkify bare DOI tokens in comparison rationale strings. No per-modality Dash page changes.
