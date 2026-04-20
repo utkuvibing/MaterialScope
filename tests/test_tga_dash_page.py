@@ -110,6 +110,96 @@ def test_build_tga_quality_card_renders_validation_and_checks():
     assert "import_review_required" in text
     assert "tga_unit_inference_basis" in text
     assert "nominal" in text
+    assert getattr(card, "open", False) is True
+    assert "warning" in text.lower()
+
+
+def test_build_tga_quality_card_collapsed_when_clean():
+    mod = _import_tga_page()
+    detail = {
+        "validation": {
+            "status": "ok",
+            "warnings": [],
+            "issues": [],
+            "warning_count": 0,
+            "issue_count": 0,
+            "checks": {},
+        },
+        "processing": {"method_context": {}},
+        "result": {},
+    }
+    card = mod._build_tga_quality_card(detail, {}, "en")
+    assert getattr(card, "open", True) is False
+
+
+def test_build_step_cards_truncates_high_step_count():
+    mod = _import_tga_page()
+    rows = []
+    for i in range(8):
+        rows.append(
+            {
+                "onset_temperature": 100.0 + i * 10,
+                "midpoint_temperature": 105.0 + i * 10,
+                "endset_temperature": 110.0 + i * 10,
+                "mass_loss_percent": float(i + 1),
+                "residual_percent": 90.0 - i,
+            }
+        )
+    div = mod._build_step_cards(rows, "en")
+    s = str(div)
+    assert s.count("bi-arrow-down-circle") == 6
+    assert "8" in s
+    assert "6" in s
+
+
+def test_render_tga_literature_output_respects_preview_limit():
+    from dash_app.components.literature_compare_ui import render_literature_output
+
+    comparisons = [
+        {
+            "claim_text": f"Retained claim {i}",
+            "provider": "openalex",
+            "rationale": f"Note {i}",
+            "support_label": "supports",
+            "validation_posture": "validating",
+        }
+        for i in range(4)
+    ]
+    payload = {
+        "literature_claims": [],
+        "literature_comparisons": comparisons,
+        "citations": [],
+        "literature_context": {},
+    }
+    out = render_literature_output(
+        payload,
+        "en",
+        i18n_prefix="dash.analysis.tga.literature",
+        evidence_preview_limit=2,
+        alternative_preview_limit=1,
+    )
+    text = str(out)
+    assert "Show 2 more references" in text
+    assert "Retained claim 0" in text
+    assert "Retained claim 3" in text
+
+
+def test_tga_validation_metric_value_formats_status():
+    mod = _import_tga_page()
+    detail_ok = {"validation": {"status": "ok", "warnings": [], "issues": [], "warning_count": 0, "issue_count": 0}}
+    assert mod._tga_validation_metric_value(detail_ok, {}, "en") == "OK"
+    detail_warn = {
+        "validation": {
+            "status": "warn",
+            "warnings": ["x"],
+            "issues": [],
+            "warning_count": 2,
+            "issue_count": 0,
+        }
+    }
+    v = mod._tga_validation_metric_value(detail_warn, {}, "en")
+    assert "warn" in v
+    assert "2" in v
 
 
 def test_build_tga_raw_metadata_panel_splits_user_and_technical():
@@ -174,6 +264,8 @@ def test_extract_graph_from_wrapped_tga_figure_area(monkeypatch):
         },
     )
     mod = _import_tga_page()
-    fig = mod._build_figure("p", "k", {}, [], "light", "en")
+    summary = {"step_count": 3, "total_mass_loss_percent": 12.5, "residue_percent": 40.0}
+    fig = mod._build_figure("p", "k", summary, [], "light", "en")
     payload = _extract_graph_figure_payload(fig)
     assert payload is not None
+    assert "Steps:" in str(fig) or "Adımlar:" in str(fig)

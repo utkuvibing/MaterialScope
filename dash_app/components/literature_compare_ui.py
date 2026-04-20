@@ -33,8 +33,20 @@ def _collapsible_section(loc: str, title_key: str, body: Any, *, open: bool = Fa
     )
 
 
-def render_literature_output(payload: dict, loc: str, *, i18n_prefix: str) -> html.Div:
-    """Render literature compare payload as curated product-facing sections."""
+def render_literature_output(
+    payload: dict,
+    loc: str,
+    *,
+    i18n_prefix: str,
+    evidence_preview_limit: int | None = None,
+    alternative_preview_limit: int | None = None,
+) -> html.Div:
+    """Render literature compare payload as curated product-facing sections.
+
+    When *evidence_preview_limit* is set, only that many relevant retained references are
+    shown inline; the rest appear behind a collapsed details section. DSC/DTA omit this
+    parameter to preserve the original full layout.
+    """
     claims = payload.get("literature_claims") or []
     comparisons = payload.get("literature_comparisons") or []
     citations = payload.get("citations") or []
@@ -186,6 +198,10 @@ def render_literature_output(payload: dict, loc: str, *, i18n_prefix: str) -> ht
     alternative_rows = [row for row in retained_rows if row.get("is_alternative")]
     has_retained_evidence = bool(relevant_rows or alternative_rows)
 
+    alt_limit = alternative_preview_limit
+    if alt_limit is None and evidence_preview_limit is not None:
+        alt_limit = 1
+
     claim_items = []
     for entry in claims:
         if not isinstance(entry, dict):
@@ -194,7 +210,10 @@ def render_literature_output(payload: dict, loc: str, *, i18n_prefix: str) -> ht
         if text:
             claim_items.append(html.Li(text, className="small"))
 
-    def _render_evidence_rows(rows: list[dict[str, Any]]) -> list[html.Div]:
+    def _render_evidence_rows(rows: list[dict[str, Any]], *, compact: bool = False) -> list[html.Div]:
+        row_class = (
+            "mb-2 pb-2 border-bottom ta-literature-evidence-compact" if compact else "border rounded p-2 mb-2"
+        )
         rendered: list[html.Div] = []
         for row in rows:
             meta_parts: list[str] = []
@@ -217,10 +236,45 @@ def render_literature_output(payload: dict, loc: str, *, i18n_prefix: str) -> ht
                         html.P(row["rationale"], className="small mb-1") if row.get("rationale") else None,
                         html.P(" | ".join(meta_parts), className="small text-muted mb-0") if meta_parts else None,
                     ],
-                    className="border rounded p-2 mb-2",
+                    className=row_class,
                 )
             )
         return rendered
+
+    def _evidence_rows_block(rows: list[dict[str, Any]], preview_limit: int | None) -> html.Div:
+        if not rows:
+            return html.Div()
+        use_compact = preview_limit is not None
+        if preview_limit is None or len(rows) <= preview_limit:
+            return html.Div(_render_evidence_rows(rows, compact=use_compact))
+        head = rows[:preview_limit]
+        tail = rows[preview_limit:]
+        n_more = len(tail)
+        show_more_key = _k("evidence_show_more")
+        formatted = translate_ui(loc, show_more_key, n=n_more)
+        show_more_label = formatted if formatted != show_more_key else f"Show {n_more} more references"
+        return html.Div(
+            [
+                html.Div(_render_evidence_rows(head, compact=True)),
+                html.Details(
+                    [
+                        html.Summary(
+                            [
+                                html.Span(className="ta-details-chevron"),
+                                html.Span(show_more_label, className="ms-1 small"),
+                            ],
+                            className="ta-details-summary",
+                        ),
+                        html.Div(
+                            html.Div(_render_evidence_rows(tail, compact=True)),
+                            className="ta-details-body mt-2",
+                        ),
+                    ],
+                    className="ta-ms-details mb-0 mt-1",
+                    open=False,
+                ),
+            ]
+        )
 
     children: list[Any] = []
 
@@ -250,7 +304,7 @@ def render_literature_output(payload: dict, loc: str, *, i18n_prefix: str) -> ht
                 html.Div(
                     [
                         html.H6(literature_t(loc, _k("relevant_references"), "Relevant retained references"), className="mt-2 mb-1"),
-                        html.Div(_render_evidence_rows(relevant_rows))
+                        _evidence_rows_block(relevant_rows, evidence_preview_limit)
                         if relevant_rows
                         else html.P(
                             literature_t(loc, _k("relevant_references_empty"), "No relevant retained references were found."),
@@ -264,7 +318,7 @@ def render_literature_output(payload: dict, loc: str, *, i18n_prefix: str) -> ht
                             literature_t(loc, _k("alternative_references"), "Alternative or non-validating references"),
                             className="mt-2 mb-1",
                         ),
-                        html.Div(_render_evidence_rows(alternative_rows))
+                        _evidence_rows_block(alternative_rows, alt_limit)
                         if alternative_rows
                         else html.P(
                             literature_t(loc, _k("alternative_references_empty"), "No alternative or non-validating references were retained."),

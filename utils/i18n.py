@@ -807,6 +807,8 @@ TRANSLATIONS = {
     "dash.analysis.metric.steps": {"tr": "Adımlar", "en": "Steps"},
     "dash.analysis.metric.total_mass_loss": {"tr": "Toplam kütle kaybı", "en": "Total Mass Loss"},
     "dash.analysis.metric.residue": {"tr": "Kalıntı", "en": "Residue"},
+    "dash.analysis.metric.tga_unit_mode": {"tr": "Birim modu", "en": "Unit mode"},
+    "dash.analysis.metric.validation_status": {"tr": "Doğrulama", "en": "Validation"},
     "dash.analysis.metric.matches": {"tr": "Eşleşmeler", "en": "Matches"},
     "dash.analysis.metric.events": {"tr": "Olaylar", "en": "Events"},
     "dash.analysis.metric.candidates": {"tr": "Adaylar", "en": "Candidates"},
@@ -1405,6 +1407,15 @@ TRANSLATIONS = {
     "dash.analysis.tga.quality.reference_label": {"tr": "Referans:", "en": "Reference:"},
     "dash.analysis.tga.quality.context_na": {"tr": "Kayıtlı değil", "en": "Not recorded"},
     "dash.analysis.tga.quality.import_checks_heading": {"tr": "İçe aktarma ve çıkarım denetimleri", "en": "Import and inference checks"},
+    "dash.analysis.tga.quality.badge_warnings": {"tr": "{n} uyarı", "en": "{n} warning(s)"},
+    "dash.analysis.tga.quality.badge_issues": {"tr": "{n} sorun", "en": "{n} issue(s)"},
+    "dash.analysis.tga.metric.validation_ok": {"tr": "Tamam", "en": "OK"},
+    "dash.analysis.tga.metric.validation_warnings": {"tr": "{n} uyarı", "en": "{n} warning(s)"},
+    "dash.analysis.tga.metric.validation_issues": {"tr": "{n} sorun", "en": "{n} issue(s)"},
+    "dash.analysis.tga.steps.truncation_note": {
+        "tr": "Önem sırasına göre üst {shown} / {total} adım gösteriliyor; tam liste aşağıdaki tabloda.",
+        "en": "Showing top {shown} of {total} steps by significance; see the table below for the full list.",
+    },
     "dash.analysis.tga.dtg.card_title": {"tr": "DTG önizlemesi", "en": "DTG preview"},
     "dash.analysis.tga.dtg.caption": {
         "tr": "Kütle kaybının sıcaklığa göre türevi (DTG); ana kütle eğrisinden ayrı gösterilir.",
@@ -1413,6 +1424,10 @@ TRANSLATIONS = {
     "dash.analysis.tga.dtg.title": {"tr": "TGA DTG", "en": "TGA DTG"},
     "dash.analysis.tga.dtg.trace_name": {"tr": "DTG", "en": "DTG"},
     "dash.analysis.tga.figure.section_title": {"tr": "TGA kütle eğrisi", "en": "TGA mass trace"},
+    "dash.analysis.tga.figure.run_summary": {
+        "tr": "Adımlar: {steps} · Toplam kütle kaybı: {loss} · Kalıntı: {residue}",
+        "en": "Steps: {steps} · Total mass loss: {loss} · Residue: {residue}",
+    },
     "dash.analysis.section.tga_key_steps": {"tr": "Önemli kütle kaybı adımları", "en": "Key mass-loss steps"},
     "dash.analysis.tga.literature.title": {"tr": "Literatür karşılaştırma", "en": "Literature Compare"},
     "dash.analysis.tga.literature.ready": {
@@ -1426,6 +1441,7 @@ TRANSLATIONS = {
     "dash.analysis.tga.literature.max_claims": {"tr": "Maks. iddia sayısı", "en": "Max Claims"},
     "dash.analysis.tga.literature.persist": {"tr": "Projeye kaydet", "en": "Persist to project"},
     "dash.analysis.tga.literature.compare_btn": {"tr": "Karşılaştır", "en": "Compare"},
+    "dash.analysis.tga.literature.evidence_show_more": {"tr": "{n} kaynak daha göster", "en": "Show {n} more references"},
     "dash.analysis.tga.literature.missing_result": {
         "tr": "Önce bir TGA analizi çalıştırın.",
         "en": "Run a TGA analysis first.",

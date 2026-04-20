@@ -2,11 +2,36 @@
 
 **Purpose:** One active migration slice — scope, goal, and acceptance only.
 
-## Status: no active slice (2026-04-19)
+## Status: no active slice (2026-04-20)
 
-The **TGA Dash DSC-parity layout** slice is **complete** (pending merge verification: full `pytest` if desired).
+The **TGA Dash UX polish** slice is **complete** (small UX-only changes; layout column order unchanged).
 
 When starting new work, replace this file with the new slice goal, in/out of scope, and acceptance criteria.
+
+---
+
+### Archived: TGA Dash UX polish (done, 2026-04-20)
+
+**Goal:** Improve TGA results UX without structural layout changes: validation easier to notice, fewer step cards for high-step datasets, denser literature compare default, metrics/summary prioritization, lighter main figure for many steps.
+
+**In scope**
+
+- [`dash_app/pages/tga.py`](dash_app/pages/tga.py): quality open + badges; step ranking/truncation; metrics; figure caption + marker/vline rules; TGA literature call with preview limits.
+- [`dash_app/components/literature_compare_ui.py`](dash_app/components/literature_compare_ui.py): optional `evidence_preview_limit` / `alternative_preview_limit`, backward compatible.
+- [`utils/i18n.py`](utils/i18n.py): new en/tr strings for badges, truncation, figure caption, metrics, literature “show more”.
+- [`tests/test_tga_dash_page.py`](tests/test_tga_dash_page.py).
+
+**Acceptance**
+
+- Warnings/issues expand quality by default and show header badges.
+- ≥7 steps → at most 6 ranked step cards + note; step table lists all rows.
+- TGA literature shows two relevant references inline by default with collapsible remainder; technical block unchanged (collapsed by default).
+- Metrics: steps, total loss, residue, unit mode, validation; summary has no duplicate unit rows.
+- Main figure: caption; first `dcc.Graph` still extractable for capture; DTG stays separate.
+
+**Verification**
+
+- `.venv/bin/python -m pytest tests/test_tga_dash_page.py tests/test_dsc_dash_page.py` — 39 passed.
 
 ---
 

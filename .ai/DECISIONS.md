@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-04-20 — TGA literature compare uses optional preview limits on shared `render_literature_output`
+
+**Decision:** Add optional `evidence_preview_limit` and `alternative_preview_limit` to `dash_app/components/literature_compare_ui.py::render_literature_output` (defaults `None` = unchanged full layout). TGA passes small limits (2 / 1) so retained references collapse behind a `<details>` “show N more” block with lighter row chrome; DSC/DTA call sites unchanged.
+
+**Reason:** TGA literature output was visually heavy on the page; other modalities did not request a denser default.
+
+**Consequence / future:** Any page may opt in with the same kwargs; keep defaults `None` so existing tests and layouts stay stable.
+
+---
+
 ## 2026-04-19 — Literature: opt-in fixture fallback when OpenAlex env is missing
 
 **Decision:** When the default provider list is only `openalex_like_provider` and `build_openalex_like_client_from_env()` would return `None`, optionally expand to `["openalex_like_provider", "fixture_provider"]` if `MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK` (or `THERMOANALYZER_LITERATURE_FIXTURE_FALLBACK`) is truthy (`1`/`true`/`yes`/`on`), and set `filters["allow_fixture_fallback"] = True` for traceability.

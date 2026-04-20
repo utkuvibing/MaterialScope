@@ -71,6 +71,9 @@ _TGA_USER_FACING_METADATA_KEYS: frozenset[str] = frozenset({
     "source_data_hash",
 })
 
+_TGA_MAX_STEP_CARDS = 6
+_TGA_TRUNCATE_STEP_CARDS_WHEN = 7
+
 _TGA_QUALITY_CHECK_ORDER: tuple[str, ...] = (
     "import_review_required",
     "import_confidence",
@@ -107,16 +110,26 @@ def _tga_result_section(child: Any, *, role: str = "support") -> html.Div:
     return html.Div(child, className=f"dsc-result-section {role_class}")
 
 
-def _tga_collapsible_section(loc: str, title_key: str, body: Any, *, open: bool = False) -> html.Details:
+def _tga_collapsible_section(
+    loc: str,
+    title_key: str,
+    body: Any,
+    *,
+    open: bool = False,
+    summary_suffix: Any | None = None,
+) -> html.Details:
+    summary_children: list[Any] = [
+        html.Span(className="ta-details-chevron"),
+        html.Span(translate_ui(loc, title_key), className="ms-1"),
+    ]
+    if summary_suffix is not None:
+        if isinstance(summary_suffix, (list, tuple)):
+            summary_children.extend(summary_suffix)
+        else:
+            summary_children.append(summary_suffix)
     return html.Details(
         [
-            html.Summary(
-                [
-                    html.Span(className="ta-details-chevron"),
-                    html.Span(translate_ui(loc, title_key), className="ms-1"),
-                ],
-                className="ta-details-summary",
-            ),
+            html.Summary(summary_children, className="ta-details-summary"),
             html.Div(body, className="ta-details-body mt-2"),
         ],
         className="ta-ms-details mb-0",
@@ -525,19 +538,20 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
     step_count = summary.get("step_count", 0)
     total_mass_loss = summary.get("total_mass_loss_percent")
     residue = summary.get("residue_percent")
-    sample_name = resolve_sample_name(summary, result_meta, locale_data=locale_data)
     na = translate_ui(loc, "dash.analysis.na")
 
     total_loss_str = f"{total_mass_loss:.2f} %" if total_mass_loss is not None else na
     residue_str = f"{residue:.1f} %" if residue is not None else na
+    unit_metric = _tga_resolved_unit_label(processing, loc)
+    validation_metric = _tga_validation_metric_value(detail, result_meta, loc)
 
     metrics = metrics_row(
         [
             ("dash.analysis.metric.steps", str(step_count)),
             ("dash.analysis.metric.total_mass_loss", total_loss_str),
             ("dash.analysis.metric.residue", residue_str),
-            ("dash.analysis.metric.template", str(processing.get("workflow_template_label", na))),
-            ("dash.analysis.metric.sample", sample_name),
+            ("dash.analysis.metric.tga_unit_mode", unit_metric),
+            ("dash.analysis.metric.validation_status", validation_metric),
         ],
         locale_data=locale_data,
     )
@@ -661,7 +675,13 @@ def compare_tga_literature(n_clicks, project_id, result_id, max_claims, persist_
         return dash.no_update, err
 
     return (
-        render_literature_output(payload, loc, i18n_prefix=_TGA_LITERATURE_PREFIX),
+        render_literature_output(
+            payload,
+            loc,
+            i18n_prefix=_TGA_LITERATURE_PREFIX,
+            evidence_preview_limit=2,
+            alternative_preview_limit=1,
+        ),
         literature_compare_status_alert(payload, loc, i18n_prefix=_TGA_LITERATURE_PREFIX),
     )
 
@@ -696,11 +716,60 @@ def _format_dataset_metadata_value(value: Any) -> str | None:
     return text or None
 
 
+def _tga_step_significance_key(row: dict) -> tuple[float, float]:
+    """Sort key: larger mass loss magnitude first, then lower midpoint temperature."""
+    m = row.get("mass_loss_percent")
+    try:
+        mag = abs(float(m)) if m is not None else 0.0
+    except (TypeError, ValueError):
+        mag = 0.0
+    mid = row.get("midpoint_temperature")
+    try:
+        midv = float(mid) if mid is not None else float("nan")
+    except (TypeError, ValueError):
+        midv = float("nan")
+    if not math.isfinite(midv):
+        midv = float("inf")
+    return (-mag, midv)
+
+
+def _tga_steps_ranked_for_display(rows: list) -> list[dict]:
+    dict_rows = [r for r in rows if isinstance(r, dict)]
+    return sorted(dict_rows, key=_tga_step_significance_key)
+
+
+def _tga_resolved_unit_label(processing: dict, loc: str) -> str:
+    method_context = (processing or {}).get("method_context") or {}
+    return (
+        _format_dataset_metadata_value(method_context.get("tga_unit_mode_resolved_label"))
+        or _format_dataset_metadata_value(method_context.get("tga_unit_mode_label"))
+        or translate_ui(loc, "dash.analysis.na")
+    )
+
+
+def _tga_validation_metric_value(detail: dict, result_meta: dict, loc: str) -> str:
+    validation = detail.get("validation") if isinstance(detail.get("validation"), dict) else {}
+    status = str(validation.get("status") or result_meta.get("validation_status") or "unknown")
+    warnings_list = validation.get("warnings") if isinstance(validation.get("warnings"), list) else []
+    issues_list = validation.get("issues") if isinstance(validation.get("issues"), list) else []
+    wc = int(validation.get("warning_count", len(warnings_list)) or 0)
+    ic = int(validation.get("issue_count", len(issues_list)) or 0)
+    status_token = status.strip().lower()
+    if status_token in {"ok", "pass", "valid"} and wc == 0 and ic == 0:
+        return translate_ui(loc, "dash.analysis.tga.metric.validation_ok")
+    parts: list[str] = [status]
+    if wc:
+        parts.append(translate_ui(loc, "dash.analysis.tga.metric.validation_warnings", n=wc))
+    if ic:
+        parts.append(translate_ui(loc, "dash.analysis.tga.metric.validation_issues", n=ic))
+    return " · ".join(parts)
+
+
 def _build_tga_analysis_summary(
     dataset_detail: dict,
     summary: dict,
     result_meta: dict,
-    processing: dict,
+    _processing: dict,
     loc: str,
     *,
     locale_data: str | None = None,
@@ -708,7 +777,6 @@ def _build_tga_analysis_summary(
     metadata = (dataset_detail or {}).get("metadata") or {}
     dataset_summary = (dataset_detail or {}).get("dataset") or {}
     na = translate_ui(loc, "dash.analysis.na")
-    method_context = processing.get("method_context") or {}
 
     dataset_label = (
         _format_dataset_metadata_value(metadata.get("file_name"))
@@ -738,11 +806,6 @@ def _build_tga_analysis_summary(
     else:
         heating_rate = na
 
-    unit_resolved = _format_dataset_metadata_value(method_context.get("tga_unit_mode_resolved_label")) or _format_dataset_metadata_value(
-        method_context.get("tga_unit_mode_label")
-    ) or na
-    unit_basis = _format_dataset_metadata_value(method_context.get("tga_unit_inference_basis")) or na
-
     def _meta_value(value: str) -> html.Span:
         return html.Span(value, className="dsc-meta-value", title=value)
 
@@ -755,10 +818,6 @@ def _build_tga_analysis_summary(
         html.Dd(_meta_value(sample_mass), className="col-sm-8 dsc-meta-def"),
         html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.heating_rate_label"), className="col-sm-4 text-muted dsc-meta-term"),
         html.Dd(_meta_value(heating_rate), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.tga.summary.unit_mode_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(unit_resolved), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.tga.summary.unit_inference_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(unit_basis), className="col-sm-8 dsc-meta-def"),
     ]
     return html.Div(
         [
@@ -866,7 +925,34 @@ def _build_tga_quality_card(detail: dict, result_meta: dict, loc: str) -> html.D
         )
 
     inner = dbc.Alert(body_children, color=alert_color, className="mb-0 ta-quality-alert")
-    return _tga_collapsible_section(loc, "dash.analysis.dsc.quality.card_title", inner, open=False)
+    has_attention = wc > 0 or ic > 0
+    badges: list[Any] = []
+    if wc:
+        badges.append(
+            dbc.Badge(
+                translate_ui(loc, "dash.analysis.tga.quality.badge_warnings", n=wc),
+                color="warning",
+                text_color="dark",
+                className="ms-2",
+                pill=True,
+            )
+        )
+    if ic:
+        badges.append(
+            dbc.Badge(
+                translate_ui(loc, "dash.analysis.tga.quality.badge_issues", n=ic),
+                color="danger",
+                className="ms-2",
+                pill=True,
+            )
+        )
+    return _tga_collapsible_section(
+        loc,
+        "dash.analysis.dsc.quality.card_title",
+        inner,
+        open=has_attention,
+        summary_suffix=badges if badges else None,
+    )
 
 
 def _tga_quality_check_entries(checks: Any) -> list[str]:
@@ -1058,9 +1144,21 @@ def _build_step_cards(rows: list, loc: str) -> html.Div:
             ]
         )
 
-    cards = [html.H5(translate_ui(loc, "dash.analysis.section.tga_key_steps"), className="mb-3")]
-    for idx, row in enumerate(rows):
+    ranked = _tga_steps_ranked_for_display(rows)
+    total = len(ranked)
+    truncated = total >= _TGA_TRUNCATE_STEP_CARDS_WHEN
+    display_rows = ranked[:_TGA_MAX_STEP_CARDS] if truncated else ranked
+
+    cards: list[Any] = [html.H5(translate_ui(loc, "dash.analysis.section.tga_key_steps"), className="mb-3")]
+    for idx, row in enumerate(display_rows):
         cards.append(_step_card(row, idx, loc))
+    if truncated:
+        cards.append(
+            html.P(
+                translate_ui(loc, "dash.analysis.tga.steps.truncation_note", shown=len(display_rows), total=total),
+                className="small text-muted mb-0",
+            )
+        )
     return html.Div(cards)
 
 
@@ -1080,6 +1178,7 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, step_rows: l
     if not temperature:
         return no_data_figure_msg(locale_data=loc)
 
+    na = translate_ui(loc, "dash.analysis.na")
     sample_name = resolve_sample_name(summary, {}, fallback_display_name=dataset_key, locale_data=loc)
 
     fig = go.Figure()
@@ -1109,10 +1208,15 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, step_rows: l
         )
 
     # Midpoint markers only on the main mass axis; DTG is shown in the dedicated card below.
-    _ANNOTATION_MIN_SEP = 15.0
+    n_steps = len(step_rows)
+    marker_rows = (
+        _tga_steps_ranked_for_display(step_rows)[:_TGA_MAX_STEP_CARDS] if n_steps > _TGA_MAX_STEP_CARDS else list(step_rows)
+    )
+
+    _ANNOTATION_MIN_SEP = 18.0 if n_steps > _TGA_MAX_STEP_CARDS else 15.0
     annotated_temps: list[float] = []
 
-    for row in step_rows:
+    for row in marker_rows:
         midpoint = row.get("midpoint_temperature")
         if midpoint is not None and temperature:
             idx = min(range(len(temperature)), key=lambda i: abs(temperature[i] - midpoint))
@@ -1138,9 +1242,8 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, step_rows: l
             if text_str:
                 annotated_temps.append(midpoint)
 
-    n_steps = len(step_rows)
     # Keep vertical guides readable: full onset/endset lines only for small step counts.
-    show_step_vlines = n_steps <= 6
+    show_step_vlines = n_steps <= 4
     annotate_onset_endset = n_steps <= 4
 
     if show_step_vlines:
@@ -1177,9 +1280,24 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, step_rows: l
     fig.update_layout(
         yaxis=dict(title=dict(text=translate_ui(loc, "dash.analysis.figure.axis_mass_pct"), font=dict(color=ink)), tickfont=dict(color=ink))
     )
+
+    step_count_disp = summary.get("step_count", n_steps)
+    total_mass_loss = summary.get("total_mass_loss_percent")
+    residue_pct = summary.get("residue_percent")
+    loss_str = f"{total_mass_loss:.2f} %" if total_mass_loss is not None else na
+    res_str = f"{residue_pct:.1f} %" if residue_pct is not None else na
+    run_caption = translate_ui(
+        loc,
+        "dash.analysis.tga.figure.run_summary",
+        steps=str(step_count_disp),
+        loss=loss_str,
+        residue=res_str,
+    )
+
     return html.Div(
         [
             html.H5(translate_ui(loc, "dash.analysis.tga.figure.section_title"), className="mb-2"),
+            html.P(run_caption, className="small text-muted mb-2"),
             dcc.Graph(
                 figure=fig,
                 config={"displaylogo": False, "responsive": True},

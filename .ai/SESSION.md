@@ -6,23 +6,23 @@
 
 - **Project:** MaterialScope
 - **Branch:** `web-dash-plotly-migration`
-- **Last slice:** TGA Dash page — DSC-order layout, analysis summary, validation/quality, raw metadata, literature compare, DTG card, main figure cleanup, tests + TGA export/figure workflow.
+- **Last slice:** TGA Dash page UX polish (no layout rework): validation visibility, ranked/truncated step cards, compact literature output, decision-oriented metrics + summary trim, main figure caption and high-step marker cleanup.
 
 ## What was done this session
 
-1. **TGA results column:** `dsc-results-surface` + section order aligned with DSC; new placeholders and literature card (`tga-literature-*`).
-2. **Panels:** analysis summary (dataset, sample, mass, heating rate, unit mode, inference basis), validation/quality (DSC base + calibration/reference + `validation.checks`), raw metadata (same user/technical split as DSC), DTG preview card via `analysis_state_curves`.
-3. **Main figure:** mass traces only; DTG removed from overlay; fewer `vline`s when step count is high (see `tga.py`).
-4. **Tests:** `tests/test_tga_dash_page.py`; TGA DOCX embed + `collect_figure_export_warnings` coverage for TGA.
+1. **Validation / quality:** `html.Details` opens by default when `warning_count > 0` or `issue_count > 0`; summary badges for warnings/issues; `_tga_collapsible_section` gained optional `summary_suffix`.
+2. **Key steps:** `_tga_steps_ranked_for_display` + cap at 6 cards when ≥7 steps; truncation note (i18n); full table unchanged.
+3. **Literature:** `render_literature_output(..., evidence_preview_limit=2, alternative_preview_limit=1)` from TGA only; compact row styling + “show N more” `Details` for overflow; DSC/DTA defaults unchanged.
+4. **Metrics / summary:** Metrics row shows resolved unit mode + validation string; analysis summary `<dl>` drops duplicate unit rows (`_build_tga_analysis_summary` fourth arg renamed `_processing`).
+5. **Figure:** Run summary line above graph; for >6 steps, midpoint markers limited to top 6 by mass; vlines only when ≤4 steps; slightly larger label spacing when many steps.
+6. **Tests:** Extended `tests/test_tga_dash_page.py` (quality open/clean, truncation, literature preview, validation metric helper, figure caption + extraction).
 
 ## What was verified
 
-- `uv run pytest tests/test_tga_dash_page.py` — **8 passed**.
-- `uv run pytest tests/test_backend_workflow.py::test_analysis_run_auto_registers_figure_for_tga_and_persists_into_exports_and_project` and `tests/test_backend_exports.py` collect-warning tests — **pass**.
-- Changes **committed and pushed** to `origin/web-dash-plotly-migration`.
+- `.venv/bin/python -m pytest tests/test_tga_dash_page.py tests/test_dsc_dash_page.py` — **39 passed** (TGA + DSC dash page tests).
 
 ## Next step
 
-- Merge PR after review; optional full `uv run pytest` on CI or locally before release.
+- Push commit to `origin/web-dash-plotly-migration` (if not already); merge PR after review; optional full `pytest` on CI.
 
 **Process defaults:** **`00-workflow.mdc`**.
