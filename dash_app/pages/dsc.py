@@ -300,6 +300,28 @@ def _processing_draft_stores() -> list:
 _DSC_PRESET_ANALYSIS_TYPE = "DSC"
 
 
+def _dsc_processing_history_card() -> dbc.Card:
+    """Undo / redo / reset for the shared DSC processing draft (same stack as Apply actions)."""
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H6(id="dsc-processing-history-title", className="card-title mb-1"),
+                html.P(id="dsc-processing-history-hint", className="small text-muted mb-2"),
+                dbc.Row(
+                    [
+                        dbc.Col(dbc.Button(id="dsc-undo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
+                        dbc.Col(dbc.Button(id="dsc-redo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
+                        dbc.Col(dbc.Button(id="dsc-reset-btn", color="secondary", size="sm", outline=True), width="auto"),
+                    ],
+                    className="g-2 align-items-center mb-1",
+                ),
+                html.Div(id="dsc-history-status", className="small text-muted"),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
 def _preset_controls_card() -> dbc.Card:
     return dbc.Card(
         dbc.CardBody(
@@ -401,9 +423,6 @@ def _smoothing_controls_card() -> dbc.Card:
                 dbc.ButtonGroup(
                     [
                         dbc.Button(id="dsc-smooth-apply-btn", color="primary", size="sm"),
-                        dbc.Button(id="dsc-undo-btn", color="secondary", size="sm", outline=True),
-                        dbc.Button(id="dsc-redo-btn", color="secondary", size="sm", outline=True),
-                        dbc.Button(id="dsc-reset-btn", color="secondary", size="sm", outline=True),
                     ],
                     className="mb-2",
                 ),
@@ -624,6 +643,7 @@ def _dsc_left_column_tabs() -> dbc.Tabs:
             ),
             dbc.Tab(
                 [
+                    _dsc_processing_history_card(),
                     _preset_controls_card(),
                     _smoothing_controls_card(),
                     _baseline_controls_card(),
@@ -863,9 +883,6 @@ def render_dsc_preset_chrome(locale_data):
     Output("dsc-smooth-polyorder-label", "children"),
     Output("dsc-smooth-sigma-label", "children"),
     Output("dsc-smooth-apply-btn", "children"),
-    Output("dsc-undo-btn", "children"),
-    Output("dsc-redo-btn", "children"),
-    Output("dsc-reset-btn", "children"),
     Output("dsc-smooth-method-hint", "children"),
     Output("dsc-smooth-window-hint", "children"),
     Output("dsc-smooth-polyorder-hint", "children"),
@@ -881,13 +898,29 @@ def render_dsc_smoothing_chrome(locale_data):
         translate_ui(loc, "dash.analysis.dsc.smoothing.polyorder"),
         translate_ui(loc, "dash.analysis.dsc.smoothing.sigma"),
         translate_ui(loc, "dash.analysis.dsc.smoothing.apply_btn"),
-        translate_ui(loc, "dash.analysis.dsc.undo_btn"),
-        translate_ui(loc, "dash.analysis.dsc.redo_btn"),
-        translate_ui(loc, "dash.analysis.dsc.reset_btn"),
         translate_ui(loc, "dash.analysis.dsc.smoothing.help.method"),
         translate_ui(loc, "dash.analysis.dsc.smoothing.help.window"),
         translate_ui(loc, "dash.analysis.dsc.smoothing.help.polyorder"),
         translate_ui(loc, "dash.analysis.dsc.smoothing.help.sigma"),
+    )
+
+
+@callback(
+    Output("dsc-processing-history-title", "children"),
+    Output("dsc-processing-history-hint", "children"),
+    Output("dsc-undo-btn", "children"),
+    Output("dsc-redo-btn", "children"),
+    Output("dsc-reset-btn", "children"),
+    Input("ui-locale", "data"),
+)
+def render_dsc_processing_history_chrome(locale_data):
+    loc = _loc(locale_data)
+    return (
+        translate_ui(loc, "dash.analysis.tga.processing.history_title"),
+        translate_ui(loc, "dash.analysis.dsc.processing.history_hint"),
+        translate_ui(loc, "dash.analysis.tga.processing.undo_btn"),
+        translate_ui(loc, "dash.analysis.tga.processing.redo_btn"),
+        translate_ui(loc, "dash.analysis.tga.processing.reset_btn"),
     )
 
 
@@ -1405,52 +1438,46 @@ def apply_glass_transition(n_clicks, enabled, region_min, region_max, draft, und
     Output("dsc-processing-draft", "data", allow_duplicate=True),
     Output("dsc-processing-undo", "data", allow_duplicate=True),
     Output("dsc-processing-redo", "data", allow_duplicate=True),
+    Output("dsc-history-status", "children", allow_duplicate=True),
     Input("dsc-undo-btn", "n_clicks"),
-    State("dsc-processing-draft", "data"),
-    State("dsc-processing-undo", "data"),
-    State("dsc-processing-redo", "data"),
-    prevent_initial_call=True,
-)
-def undo_processing(n_clicks, draft, undo, redo):
-    if not n_clicks:
-        raise dash.exceptions.PreventUpdate
-    next_draft, next_undo, next_redo = _do_undo(draft or {}, undo, redo)
-    return next_draft, next_undo, next_redo
-
-
-@callback(
-    Output("dsc-processing-draft", "data", allow_duplicate=True),
-    Output("dsc-processing-undo", "data", allow_duplicate=True),
-    Output("dsc-processing-redo", "data", allow_duplicate=True),
     Input("dsc-redo-btn", "n_clicks"),
-    State("dsc-processing-draft", "data"),
-    State("dsc-processing-undo", "data"),
-    State("dsc-processing-redo", "data"),
-    prevent_initial_call=True,
-)
-def redo_processing(n_clicks, draft, undo, redo):
-    if not n_clicks:
-        raise dash.exceptions.PreventUpdate
-    next_draft, next_undo, next_redo = _do_redo(draft or {}, undo, redo)
-    return next_draft, next_undo, next_redo
-
-
-@callback(
-    Output("dsc-processing-draft", "data", allow_duplicate=True),
-    Output("dsc-processing-undo", "data", allow_duplicate=True),
-    Output("dsc-processing-redo", "data", allow_duplicate=True),
     Input("dsc-reset-btn", "n_clicks"),
     State("dsc-processing-draft", "data"),
     State("dsc-processing-undo", "data"),
     State("dsc-processing-redo", "data"),
     State("dsc-processing-default", "data"),
+    State("ui-locale", "data"),
     prevent_initial_call=True,
 )
-def reset_processing(n_clicks, draft, undo, redo, defaults):
-    if not n_clicks:
+def dsc_processing_history_actions(n_undo, n_redo, n_reset, draft, undo, redo, defaults, locale_data):
+    loc = _loc(locale_data)
+    ctx = dash.callback_context
+    if not ctx.triggered:
         raise dash.exceptions.PreventUpdate
-    next_draft, next_undo, next_redo = _do_reset(draft or {}, undo, redo, defaults)
-    return next_draft, next_undo, next_redo
+    trig = ctx.triggered_id
+    cur = draft or {}
+
+    if trig == "dsc-undo-btn":
+        if not n_undo:
+            raise dash.exceptions.PreventUpdate
+        next_draft, next_undo, next_redo = _do_undo(cur, undo, redo)
+        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.tga.processing.history_status_undo")
+
+    if trig == "dsc-redo-btn":
+        if not n_redo:
+            raise dash.exceptions.PreventUpdate
+        next_draft, next_undo, next_redo = _do_redo(cur, undo, redo)
+        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.tga.processing.history_status_redo")
+
+    if trig == "dsc-reset-btn":
+        if not n_reset:
+            raise dash.exceptions.PreventUpdate
+        next_draft, next_undo, next_redo = _do_reset(cur, undo, redo, defaults)
+        if next_draft == cur and next_undo == (undo or []) and next_redo == (redo or []):
+            raise dash.exceptions.PreventUpdate
+        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.tga.processing.history_status_reset")
+
+    raise dash.exceptions.PreventUpdate
 
 
 def _smoothing_status_text(draft: dict | None, loc: str) -> str:

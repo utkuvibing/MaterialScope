@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-04-20 — Thermal Dash pages: Processing history card + neutral Reset styling
+
+**Decision:** DSC and DTA expose a **Processing history** card on the Processing tab (before presets) with Undo, Redo, and Reset to defaults, mirroring TGA: one merged callback per page driven by `dash.callback_context.triggered_id`, updating `processing-draft`, undo/redo stacks, and a small `*-history-status` line. Smoothing (and other section) chrome callbacks no longer own undo/redo/reset **button label** outputs—those live in dedicated `render_*_processing_history_chrome` callbacks. **Reset to defaults** uses Bootstrap **`secondary` outline** (same as Undo/Redo), not **`warning`**, so reset is not confused with validation severity.
+
+**Reason:** Parity across TGA/DSC/DTA; yellow/warning is reserved for validation and alerts.
+
+**Consequence / future:** Any new analysis page with a processing draft + undo stack should reuse this card + merged handler pattern for predictable wiring and theming.
+
+---
+
 ## 2026-04-20 — TGA Dash presets: unit mode inside `processing.method_context`; overrides-only run
 
 **Decision:** On the TGA Dash page, persist **declared unit mode** in preset `processing.method_context` (`tga_unit_mode_declared` / `tga_unit_mode_label`) together with `smoothing` and `step_detection`, because the SQLite preset envelope only stores `workflow_template_id` + `processing` (no separate `unit_mode` column). On **Run**, continue sending `unit_mode` as the existing `/analysis/run` field when not `auto`, and send **`processing_overrides`** built only from smoothing + step_detection (normalized from the UI draft store).

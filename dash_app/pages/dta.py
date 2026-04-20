@@ -790,9 +790,6 @@ def _smoothing_controls_card() -> dbc.Card:
                 dbc.ButtonGroup(
                     [
                         dbc.Button(id="dta-smooth-apply-btn", color="primary", size="sm"),
-                        dbc.Button(id="dta-undo-btn", color="secondary", size="sm", outline=True),
-                        dbc.Button(id="dta-redo-btn", color="secondary", size="sm", outline=True),
-                        dbc.Button(id="dta-reset-btn", color="secondary", size="sm", outline=True),
                     ],
                     className="mb-2",
                 ),
@@ -808,8 +805,7 @@ def _baseline_controls_card() -> dbc.Card:
 
     Method ∈ {asls, linear, rubberband}; lam + p are gated on asls. Apply pushes
     the current draft onto the shared undo stack, mutates ``draft["baseline"]``,
-    and clears redo. Undo/Redo/Reset are the shared buttons from the smoothing
-    card; they operate on the full draft atomically.
+    and clears redo.     Undo/Redo/Reset live in the Processing history card; they operate on the full draft atomically.
     """
     method_options = [
         {"label": "AsLS", "value": "asls"},
@@ -1011,14 +1007,36 @@ def _processing_draft_stores() -> list:
 _DTA_PRESET_ANALYSIS_TYPE = "DTA"
 
 
+def _dta_processing_history_card() -> dbc.Card:
+    """Undo / redo / reset for the shared DTA processing draft (same stack as Apply actions)."""
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H6(id="dta-processing-history-title", className="card-title mb-1"),
+                html.P(id="dta-processing-history-hint", className="small text-muted mb-2"),
+                dbc.Row(
+                    [
+                        dbc.Col(dbc.Button(id="dta-undo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
+                        dbc.Col(dbc.Button(id="dta-redo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
+                        dbc.Col(dbc.Button(id="dta-reset-btn", color="secondary", size="sm", outline=True), width="auto"),
+                    ],
+                    className="g-2 align-items-center mb-1",
+                ),
+                html.Div(id="dta-history-status", className="small text-muted"),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
 def _preset_controls_card() -> dbc.Card:
     """Processing-preset panel for the DTA page (Phase 3b).
 
     Exposes preset save / apply / delete against the backend ``/presets/DTA``
     endpoints. Apply restores the saved ``workflow_template_id`` + ``processing``
     sections onto the active draft while pushing the previous draft onto the
-    shared undo stack, so an accidental apply can be reverted with the Undo
-    button that already lives inside the Processing tab.
+    shared undo stack, so an accidental apply can be reverted with Undo in the
+    Processing history card.
     """
     return dbc.Card(
         dbc.CardBody(
@@ -1102,9 +1120,7 @@ def _preset_controls_card() -> dbc.Card:
 def _dta_left_column_tabs() -> dbc.Tabs:
     """Stepwise Setup / Processing / Run tabs for the DTA left column (Phase 3a).
 
-    All existing card-builder output IDs remain mounted — ``dbc.Tab`` children are
-    eagerly rendered in the DOM, so existing callbacks bound to element IDs inside
-    these cards continue to fire without changes.
+    Card output IDs remain mounted inside each tab so callbacks stay wired.
     """
     return dbc.Tabs(
         [
@@ -1128,6 +1144,7 @@ def _dta_left_column_tabs() -> dbc.Tabs:
             ),
             dbc.Tab(
                 [
+                    _dta_processing_history_card(),
                     _preset_controls_card(),
                     _smoothing_controls_card(),
                     _baseline_controls_card(),
@@ -2394,9 +2411,6 @@ def _smoothing_status_text(draft: dict | None, loc: str) -> str:
     Output("dta-smooth-polyorder-label", "children"),
     Output("dta-smooth-sigma-label", "children"),
     Output("dta-smooth-apply-btn", "children"),
-    Output("dta-undo-btn", "children"),
-    Output("dta-redo-btn", "children"),
-    Output("dta-reset-btn", "children"),
     Output("dta-smooth-method-hint", "children"),
     Output("dta-smooth-window-hint", "children"),
     Output("dta-smooth-polyorder-hint", "children"),
@@ -2417,9 +2431,6 @@ def render_dta_smoothing_chrome(locale_data):
         _t("dash.analysis.dta.smoothing.polyorder", "Polynomial Order"),
         _t("dash.analysis.dta.smoothing.sigma", "Sigma"),
         _t("dash.analysis.dta.smoothing.apply_btn", "Apply Smoothing"),
-        _t("dash.analysis.dta.undo_btn", "Undo"),
-        _t("dash.analysis.dta.redo_btn", "Redo"),
-        _t("dash.analysis.dta.reset_btn", "Reset"),
         _t(
             "dash.analysis.dta.smoothing.help.method",
             "Savitzky-Golay preserves peak shape; Moving Average is simple and fast; Gaussian gives the smoothest curve.",
@@ -2436,6 +2447,30 @@ def render_dta_smoothing_chrome(locale_data):
             "dash.analysis.dta.smoothing.help.sigma",
             "Gaussian kernel width. Larger sigma = stronger smoothing. Start from 1.0-3.0 and raise if the baseline is still noisy.",
         ),
+    )
+
+
+@callback(
+    Output("dta-processing-history-title", "children"),
+    Output("dta-processing-history-hint", "children"),
+    Output("dta-undo-btn", "children"),
+    Output("dta-redo-btn", "children"),
+    Output("dta-reset-btn", "children"),
+    Input("ui-locale", "data"),
+)
+def render_dta_processing_history_chrome(locale_data):
+    loc = _loc(locale_data)
+
+    def _t(key: str, fallback: str) -> str:
+        value = translate_ui(loc, key)
+        return fallback if value == key else value
+
+    return (
+        _t("dash.analysis.tga.processing.history_title", "Processing history"),
+        _t("dash.analysis.dta.processing.history_hint", "Affects the processing draft only; preset selection is kept separate."),
+        _t("dash.analysis.tga.processing.undo_btn", "Undo"),
+        _t("dash.analysis.tga.processing.redo_btn", "Redo"),
+        _t("dash.analysis.tga.processing.reset_btn", "Reset to defaults"),
     )
 
 
@@ -2480,52 +2515,46 @@ def apply_smoothing(n_clicks, method, window, polyorder, sigma, draft, undo):
     Output("dta-processing-draft", "data", allow_duplicate=True),
     Output("dta-processing-undo", "data", allow_duplicate=True),
     Output("dta-processing-redo", "data", allow_duplicate=True),
+    Output("dta-history-status", "children", allow_duplicate=True),
     Input("dta-undo-btn", "n_clicks"),
-    State("dta-processing-draft", "data"),
-    State("dta-processing-undo", "data"),
-    State("dta-processing-redo", "data"),
-    prevent_initial_call=True,
-)
-def undo_processing(n_clicks, draft, undo, redo):
-    if not n_clicks:
-        raise dash.exceptions.PreventUpdate
-    next_draft, next_undo, next_redo = _do_undo(draft or {}, undo, redo)
-    return next_draft, next_undo, next_redo
-
-
-@callback(
-    Output("dta-processing-draft", "data", allow_duplicate=True),
-    Output("dta-processing-undo", "data", allow_duplicate=True),
-    Output("dta-processing-redo", "data", allow_duplicate=True),
     Input("dta-redo-btn", "n_clicks"),
-    State("dta-processing-draft", "data"),
-    State("dta-processing-undo", "data"),
-    State("dta-processing-redo", "data"),
-    prevent_initial_call=True,
-)
-def redo_processing(n_clicks, draft, undo, redo):
-    if not n_clicks:
-        raise dash.exceptions.PreventUpdate
-    next_draft, next_undo, next_redo = _do_redo(draft or {}, undo, redo)
-    return next_draft, next_undo, next_redo
-
-
-@callback(
-    Output("dta-processing-draft", "data", allow_duplicate=True),
-    Output("dta-processing-undo", "data", allow_duplicate=True),
-    Output("dta-processing-redo", "data", allow_duplicate=True),
     Input("dta-reset-btn", "n_clicks"),
     State("dta-processing-draft", "data"),
     State("dta-processing-undo", "data"),
     State("dta-processing-redo", "data"),
     State("dta-processing-default", "data"),
+    State("ui-locale", "data"),
     prevent_initial_call=True,
 )
-def reset_processing(n_clicks, draft, undo, redo, defaults):
-    if not n_clicks:
+def dta_processing_history_actions(n_undo, n_redo, n_reset, draft, undo, redo, defaults, locale_data):
+    loc = _loc(locale_data)
+    ctx = dash.callback_context
+    if not ctx.triggered:
         raise dash.exceptions.PreventUpdate
-    next_draft, next_undo, next_redo = _do_reset(draft or {}, undo, redo, defaults)
-    return next_draft, next_undo, next_redo
+    trig = ctx.triggered_id
+    cur = draft or {}
+
+    if trig == "dta-undo-btn":
+        if not n_undo:
+            raise dash.exceptions.PreventUpdate
+        next_draft, next_undo, next_redo = _do_undo(cur, undo, redo)
+        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.tga.processing.history_status_undo")
+
+    if trig == "dta-redo-btn":
+        if not n_redo:
+            raise dash.exceptions.PreventUpdate
+        next_draft, next_undo, next_redo = _do_redo(cur, undo, redo)
+        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.tga.processing.history_status_redo")
+
+    if trig == "dta-reset-btn":
+        if not n_reset:
+            raise dash.exceptions.PreventUpdate
+        next_draft, next_undo, next_redo = _do_reset(cur, undo, redo, defaults)
+        if next_draft == cur and next_undo == (undo or []) and next_redo == (redo or []):
+            raise dash.exceptions.PreventUpdate
+        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.tga.processing.history_status_reset")
+
+    raise dash.exceptions.PreventUpdate
 
 
 @callback(

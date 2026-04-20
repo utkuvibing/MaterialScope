@@ -4,7 +4,31 @@
 
 ## Status: no active slice (2026-04-20)
 
-The **Dash TGA Streamlit→Dash exploration / guidance parity** slice is **complete**. Start a new slice by replacing the status block above.
+The **DSC/DTA Processing history + reset styling** slice is **complete**. Start a new slice by replacing the status block above.
+
+---
+
+### Archived: DSC/DTA Dash Processing history parity + TGA reset styling (done, 2026-04-20)
+
+**Goal:** Match the TGA Processing tab “Processing history” UX on DSC and DTA (Undo / Redo / Reset to defaults, draft-only hint, status line). Align **Reset to defaults** with the neutral secondary outline palette (not warning).
+
+**In scope**
+
+- [`dash_app/pages/dsc.py`](dash_app/pages/dsc.py): history card, `render_dsc_processing_history_chrome`, merged `dsc_processing_history_actions`; smoothing chrome without undo/redo/reset children.
+- [`dash_app/pages/dta.py`](dash_app/pages/dta.py): same pattern (`render_dta_processing_history_chrome`, `dta_processing_history_actions`).
+- [`dash_app/pages/tga.py`](dash_app/pages/tga.py): `tga-processing-reset-btn` → `color="secondary"`.
+- [`utils/i18n.py`](utils/i18n.py): DSC/DTA `processing.history_hint` keys (en/tr).
+- [`tests/test_dta_dash_page.py`](tests/test_dta_dash_page.py): smoothing chrome tuple length / hint indices.
+
+**Acceptance**
+
+- Processing tab shows history card before presets (DSC/DTA); undo/redo/reset update draft + stacks and show localized history status where implemented.
+- Reset uses secondary outline like Undo/Redo on TGA/DSC/DTA history controls.
+- No duplicate conflicting callbacks for the same outputs.
+
+**Verification**
+
+- `rtk pytest tests/test_dta_dash_page.py tests/test_dsc_dash_page.py -q` — 127 passed.
 
 ---
 

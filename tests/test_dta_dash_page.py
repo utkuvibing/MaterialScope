@@ -2438,20 +2438,20 @@ def test_dta_processing_controls_mount_inline_help_hints():
 
 
 def test_render_dta_smoothing_chrome_emits_help_hints_tr_and_en():
-    """Smoothing chrome must now return 13 outputs (9 chrome + 4 hints) and flip locale."""
+    """Smoothing chrome returns 10 outputs (6 labels/apply + 4 hints) and flips locale."""
     mod = _import_dta_page()
 
     tr = mod.render_dta_smoothing_chrome("tr")
     en = mod.render_dta_smoothing_chrome("en")
 
-    assert len(tr) == 13 and len(en) == 13
-    assert "Savitzky-Golay" in tr[9] and "Savitzky-Golay" in en[9]
-    assert "tek" in tr[10].lower()
-    assert "odd" in en[10].lower()
-    assert "polinom" in tr[11].lower() or "Savitzky" in tr[11]
-    assert "polynomial" in en[11].lower() or "Savitzky" in en[11]
-    assert "sigma" in tr[12].lower()
-    assert "sigma" in en[12].lower()
+    assert len(tr) == 10 and len(en) == 10
+    assert "Savitzky-Golay" in tr[6] and "Savitzky-Golay" in en[6]
+    assert "tek" in tr[7].lower()
+    assert "odd" in en[7].lower()
+    assert "polinom" in tr[8].lower() or "Savitzky" in tr[8]
+    assert "polynomial" in en[8].lower() or "Savitzky" in en[8]
+    assert "sigma" in tr[9].lower()
+    assert "sigma" in en[9].lower()
 
 
 def test_render_dta_baseline_chrome_emits_help_hints_tr_and_en():

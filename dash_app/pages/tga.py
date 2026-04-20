@@ -383,7 +383,7 @@ def _tga_processing_history_card() -> dbc.Card:
                     [
                         dbc.Col(dbc.Button(id="tga-processing-undo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
                         dbc.Col(dbc.Button(id="tga-processing-redo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
-                        dbc.Col(dbc.Button(id="tga-processing-reset-btn", color="warning", size="sm", outline=True), width="auto"),
+                        dbc.Col(dbc.Button(id="tga-processing-reset-btn", color="secondary", size="sm", outline=True), width="auto"),
                     ],
                     className="g-2 align-items-center mb-1",
                 ),

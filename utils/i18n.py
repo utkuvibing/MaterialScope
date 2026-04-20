@@ -1113,6 +1113,10 @@ TRANSLATIONS = {
     "dash.analysis.dsc.undo_btn": {"tr": "Geri al", "en": "Undo"},
     "dash.analysis.dsc.redo_btn": {"tr": "Yinele", "en": "Redo"},
     "dash.analysis.dsc.reset_btn": {"tr": "Sıfırla", "en": "Reset"},
+    "dash.analysis.dsc.processing.history_hint": {
+        "tr": "Yalnızca işleme taslağını (yumuşatma, taban çizgisi, tepe algılama, Tg) etkiler; preset seçimi ayrı tutulur.",
+        "en": "Affects the processing draft (smoothing, baseline, peak detection, Tg) only; preset selection is kept separate.",
+    },
     "dash.analysis.dsc.baseline.title": {"tr": "Taban çizgisi", "en": "Baseline"},
     "dash.analysis.dsc.baseline.method": {"tr": "Taban çizgisi yöntemi", "en": "Baseline Method"},
     "dash.analysis.dsc.baseline.lam": {"tr": "Lambda (asls)", "en": "Lambda (asls)"},
@@ -1954,6 +1958,10 @@ TRANSLATIONS = {
     "dash.analysis.dta.undo_btn": {"tr": "Geri al", "en": "Undo"},
     "dash.analysis.dta.redo_btn": {"tr": "Yinele", "en": "Redo"},
     "dash.analysis.dta.reset_btn": {"tr": "Sıfırla", "en": "Reset"},
+    "dash.analysis.dta.processing.history_hint": {
+        "tr": "Yalnızca işleme taslağını (yumuşatma, taban çizgisi, tepe algılama) etkiler; preset seçimi ayrı tutulur.",
+        "en": "Affects the processing draft (smoothing, baseline, peak detection) only; preset selection is kept separate.",
+    },
     "dash.analysis.dta.baseline.title": {"tr": "Taban çizgisi", "en": "Baseline"},
     "dash.analysis.dta.baseline.method": {"tr": "Taban çizgisi yöntemi", "en": "Baseline Method"},
     "dash.analysis.dta.baseline.lam": {"tr": "Lambda (asls)", "en": "Lambda (asls)"},
