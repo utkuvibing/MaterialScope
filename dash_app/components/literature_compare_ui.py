@@ -2,12 +2,166 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import dash_bootstrap_components as dbc
 from dash import html
 
 from utils.i18n import translate_ui
+
+_DOI_IN_TEXT = re.compile(r"(10\.\d{4,9}/[^\s\],;)}\]]+)", re.IGNORECASE)
+
+
+def _clean_str(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    return str(value).strip()
+
+
+def canonical_doi_string(raw: str) -> str:
+    """Strip wrappers and return a bare DOI path (``10.xxxx/...``) or empty string."""
+    s = _clean_str(raw)
+    if not s:
+        return ""
+    low = s.lower()
+    for prefix in ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/"):
+        if low.startswith(prefix):
+            s = s[len(prefix) :].strip()
+            low = s.lower()
+            break
+    if low.startswith("doi:"):
+        s = s[4:].lstrip()
+    return s.rstrip(").,]}\"").strip()
+
+
+def doi_to_https_url(doi_or_raw: str) -> str | None:
+    """Normalize a DOI or doi-prefixed string to ``https://doi.org/...``."""
+    d = canonical_doi_string(doi_or_raw)
+    if not d or not re.match(r"^10\.\d{4,9}/\S+$", d):
+        return None
+    return f"https://doi.org/{d}"
+
+
+def normalize_http_url(url: str) -> str | None:
+    """Return an absolute http(s) URL, or None if *url* is missing or not usable."""
+    u = _clean_str(url)
+    if not u:
+        return None
+    low = u.lower()
+    if low.startswith("//"):
+        return "https:" + u
+    if low.startswith("http://") or low.startswith("https://"):
+        return u
+    return None
+
+
+def resolve_literature_href(
+    *,
+    direct_doi: str = "",
+    direct_url: str = "",
+    fallback_doi: str = "",
+    fallback_url: str = "",
+) -> str | None:
+    """Pick the best external link: direct DOI, direct URL, citation DOI, citation URL."""
+    dd = _clean_str(direct_doi)
+    du = _clean_str(direct_url)
+    fd = _clean_str(fallback_doi)
+    fu = _clean_str(fallback_url)
+    if dd:
+        u = doi_to_https_url(dd)
+        if u:
+            return u
+    if du:
+        u = normalize_http_url(du)
+        if u:
+            return u
+    if fd:
+        u = doi_to_https_url(fd)
+        if u:
+            return u
+    if fu:
+        u = normalize_http_url(fu)
+        if u:
+            return u
+    return None
+
+
+def linkify_doi_fragments(text: str) -> list[Any]:
+    """Split *text* into strings and ``html.A`` nodes for bare DOI tokens."""
+    if not text:
+        return []
+    parts: list[Any] = []
+    pos = 0
+    for m in _DOI_IN_TEXT.finditer(text):
+        if m.start() > pos:
+            parts.append(text[pos : m.start()])
+        display = m.group(0)
+        href = doi_to_https_url(m.group(1))
+        if href:
+            parts.append(
+                html.A(
+                    display,
+                    href=href,
+                    target="_blank",
+                    rel="noopener noreferrer",
+                    className="text-reset",
+                )
+            )
+        else:
+            parts.append(display)
+        pos = m.end()
+    if pos < len(text):
+        parts.append(text[pos:])
+    return [p for p in parts if p != ""]
+
+
+def citation_meta_children(entry: dict) -> list[Any]:
+    """Year / journal / DOI line as inline children; DOI (or bare URL) is linked when possible."""
+    parts: list[Any] = []
+    year = _clean_str(entry.get("year"))
+    journal = _clean_str(entry.get("journal"))
+    doi = _clean_str(entry.get("doi") or entry.get("paper_doi"))
+    url = _clean_str(entry.get("url") or entry.get("paper_url") or entry.get("link"))
+
+    def _sep() -> None:
+        if parts:
+            parts.append(" | ")
+
+    if year:
+        parts.append(year)
+    if journal:
+        _sep()
+        parts.append(journal)
+    href_d = doi_to_https_url(doi) if doi else None
+    href_u = normalize_http_url(url) if url else None
+    if doi and href_d:
+        _sep()
+        parts.append("DOI: ")
+        parts.append(
+            html.A(
+                doi,
+                href=href_d,
+                target="_blank",
+                rel="noopener noreferrer",
+                className="text-reset",
+            )
+        )
+    elif doi:
+        _sep()
+        parts.append(f"DOI: {doi}")
+    elif url and href_u:
+        _sep()
+        parts.append(
+            html.A(
+                url,
+                href=href_u,
+                target="_blank",
+                rel="noopener noreferrer",
+                className="text-reset text-break",
+            )
+        )
+    return parts
 
 
 def literature_t(loc: str, key: str, fallback: str) -> str:
@@ -96,19 +250,6 @@ def render_literature_output(
             or citation.get("url")
         )
 
-    def _citation_meta(citation: dict) -> str:
-        parts: list[str] = []
-        year = _clean_text(citation.get("year"))
-        journal = _clean_text(citation.get("journal"))
-        doi = _clean_text(citation.get("doi"))
-        if year:
-            parts.append(year)
-        if journal:
-            parts.append(journal)
-        if doi:
-            parts.append(f"DOI: {doi}")
-        return " | ".join(parts)
-
     def _reason_text() -> str:
         status_token = _context_token("provider_query_status")
         reason_token = _context_token("no_results_reason")
@@ -161,6 +302,18 @@ def render_literature_output(
         posture = _clean_text(entry.get("validation_posture")).lower()
         is_alternative = support == "contradicts" or posture == "alternative_interpretation"
 
+        entry_doi = _clean_text(entry.get("doi") or entry.get("paper_doi"))
+        entry_url = _clean_text(entry.get("url") or entry.get("paper_url") or entry.get("link"))
+        fc = linked_citations[0] if linked_citations else {}
+        cite_doi = _clean_text(fc.get("doi") or fc.get("paper_doi")) if fc else ""
+        cite_url = _clean_text(fc.get("url") or fc.get("paper_url") or fc.get("link")) if fc else ""
+        row_href = resolve_literature_href(
+            direct_doi=entry_doi,
+            direct_url=entry_url,
+            fallback_doi=cite_doi,
+            fallback_url=cite_url,
+        )
+
         retained_rows.append(
             {
                 "title": title,
@@ -168,6 +321,7 @@ def render_literature_output(
                 "rationale": rationale,
                 "citation_titles": citation_titles,
                 "is_alternative": is_alternative,
+                "href": row_href,
             }
         )
 
@@ -184,13 +338,20 @@ def render_literature_output(
         provenance = entry.get("provenance")
         if not provider and isinstance(provenance, dict):
             provider = _clean_text(provenance.get("provider_id"))
+        cite_href = resolve_literature_href(
+            direct_doi=_clean_text(entry.get("doi") or entry.get("paper_doi")),
+            direct_url=_clean_text(entry.get("url") or entry.get("paper_url") or entry.get("link")),
+        )
+        meta_nodes = citation_meta_children(entry)
         retained_rows.append(
             {
                 "title": title,
                 "provider": provider,
-                "rationale": _citation_meta(entry),
+                "rationale": "",
+                "rationale_nodes": meta_nodes,
                 "citation_titles": [],
                 "is_alternative": False,
+                "href": cite_href,
             }
         )
 
@@ -234,13 +395,35 @@ def render_literature_output(
                     literature_t(loc, _k("evidence.citations_prefix"), "Linked citations: {titles}").replace("{titles}", cite_summary)
                 )
             title_cls = "fw-semibold small lh-sm mb-0" if compact else "fw-semibold small"
+            title_link_cls = f"{title_cls} link-primary text-decoration-underline"
             rationale_cls = "small text-muted mb-0 lh-sm mt-1" if compact else "small mb-1"
             meta_cls = "small text-muted mb-0 lh-sm mt-1" if compact else "small text-muted mb-0"
+            href = row.get("href")
+            title = row.get("title") or ""
+            title_el: Any = (
+                html.A(
+                    title,
+                    href=href,
+                    target="_blank",
+                    rel="noopener noreferrer",
+                    className=title_link_cls,
+                )
+                if href
+                else html.Div(title, className=title_cls)
+            )
+            rat_nodes = row.get("rationale_nodes")
+            if rat_nodes is not None:
+                rat_el = html.P(rat_nodes, className=rationale_cls) if rat_nodes else None
+            elif row.get("rationale"):
+                chunks = linkify_doi_fragments(str(row["rationale"]))
+                rat_el = html.P(chunks, className=rationale_cls) if chunks else None
+            else:
+                rat_el = None
             rendered.append(
                 html.Div(
                     [
-                        html.Div(row["title"], className=title_cls),
-                        html.P(row["rationale"], className=rationale_cls) if row.get("rationale") else None,
+                        title_el,
+                        rat_el,
                         html.P(" | ".join(meta_parts), className=meta_cls) if meta_parts else None,
                     ],
                     className=row_class,

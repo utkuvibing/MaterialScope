@@ -4,9 +4,30 @@
 
 ## Status: no active slice (2026-04-20)
 
-The **TGA Dash UX polish** slice is **complete** (small UX-only changes; layout column order unchanged).
+The **Dash literature clickable links** slice is **complete** (shared component + tests; no per-page Dash file changes).
 
 When starting new work, replace this file with the new slice goal, in/out of scope, and acceptance criteria.
+
+---
+
+### Archived: Dash literature compare clickable DOI/URL (done, 2026-04-20)
+
+**Goal:** Make literature references open in a new tab (Streamlit-like) across all Dash analysis pages by fixing the shared renderer only.
+
+**In scope**
+
+- [`dash_app/components/literature_compare_ui.py`](dash_app/components/literature_compare_ui.py): DOI/URL normalization, `href` on retained rows, linked titles and meta/rationale DOI text; preserve `evidence_preview_limit` / compact layout.
+- [`tests/test_literature_compare_ui.py`](tests/test_literature_compare_ui.py).
+
+**Acceptance**
+
+- DOI variants normalize to `https://doi.org/...`; explicit `http(s)` URLs used when no resolvable DOI; linked citation DOI/URL used when comparison row has no direct link.
+- Titles are anchors with `target="_blank"` and `rel="noopener noreferrer"` when a link exists; plain text otherwise.
+- TGA preview “show more” path still renders multiple linked rows.
+
+**Verification**
+
+- `rtk pytest tests/test_literature_compare_ui.py tests/test_dsc_dash_page.py tests/test_tga_dash_page.py -q` — 50 passed.
 
 ---
 

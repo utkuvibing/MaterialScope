@@ -4,6 +4,16 @@
 
 ---
 
+## 2026-04-20 — Dash literature compare: shared DOI/URL resolution and linked titles
+
+**Decision:** Implement DOI normalization (`https://doi.org/...`), optional HTTP URL fallback, and `resolve_literature_href` (direct DOI → direct URL → first linked citation DOI → first linked citation URL) inside `dash_app/components/literature_compare_ui.py`. Render retained evidence titles as `html.A` when a URL exists; link DOI text in citation meta and linkify bare DOI tokens in comparison rationale strings. No per-modality Dash page changes.
+
+**Reason:** DSC/DTA/TGA all use `render_literature_output`; centralizing avoids drift and restores Streamlit-like “open paper in new tab” behavior.
+
+**Consequence / future:** Any new analysis page that reuses this renderer gets links automatically; edge cases (non-DOI URLs in free-text rationale) remain plain unless matched as DOI tokens.
+
+---
+
 ## 2026-04-20 — TGA quality panel: `validation.checks` under nested technical details
 
 **Decision:** Keep status, warning/issue counts, warning/issue lists, and calibration/reference in the main TGA quality alert; render `validation.checks` only inside a collapsed “Technical validation details” `<details>` block.
