@@ -657,7 +657,6 @@ def _dsc_left_column_tabs() -> dbc.Tabs:
             dbc.Tab(
                 [
                     execute_card("dsc-run-status", "dsc-run-btn", card_title_id="dsc-execute-card-title"),
-                    html.Small(id="dsc-run-shortcut-hints", className="text-muted d-block mt-2"),
                 ],
                 tab_id="dsc-tab-run",
                 label_class_name="ta-tab-label",
@@ -828,24 +827,6 @@ def render_dsc_tab_chrome(locale_data):
         translate_ui(loc, "dash.analysis.dsc.tab.setup"),
         translate_ui(loc, "dash.analysis.dsc.tab.processing"),
         translate_ui(loc, "dash.analysis.dsc.tab.run"),
-    )
-
-
-@callback(
-    Output("dsc-run-shortcut-hints", "children"),
-    Input("ui-locale", "data"),
-)
-def render_dsc_run_shortcut_hints(locale_data):
-    loc = _loc(locale_data)
-    return html.Span(
-        [
-            translate_ui(loc, "dash.analysis.dsc.shortcuts.hint_undo"),
-            html.Br(),
-            translate_ui(loc, "dash.analysis.dsc.shortcuts.hint_redo"),
-            html.Br(),
-            translate_ui(loc, "dash.analysis.dsc.shortcuts.hint_run"),
-        ],
-        className="d-block",
     )
 
 

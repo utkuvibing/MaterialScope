@@ -649,7 +649,6 @@ def _tga_left_column_tabs() -> dbc.Tabs:
             dbc.Tab(
                 [
                     execute_card("tga-run-status", "tga-run-btn", card_title_id="tga-execute-card-title"),
-                    html.Small(id="tga-run-shortcut-hints", className="text-muted d-block mt-2"),
                 ],
                 tab_id="tga-tab-run",
                 label_class_name="ta-tab-label",
@@ -765,20 +764,6 @@ def render_tga_tab_chrome(locale_data):
         translate_ui(loc, "dash.analysis.tga.tab.setup"),
         translate_ui(loc, "dash.analysis.tga.tab.processing"),
         translate_ui(loc, "dash.analysis.tga.tab.run"),
-    )
-
-
-@callback(
-    Output("tga-run-shortcut-hints", "children"),
-    Input("ui-locale", "data"),
-)
-def render_tga_run_shortcut_hints(locale_data):
-    loc = _loc(locale_data)
-    return html.Span(
-        [
-            translate_ui(loc, "dash.analysis.tga.shortcuts.hint_run"),
-        ],
-        className="d-block",
     )
 
 

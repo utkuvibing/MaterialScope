@@ -1023,18 +1023,6 @@ TRANSLATIONS = {
     "dash.analysis.dsc.tab.setup": {"tr": "Kurulum", "en": "Setup"},
     "dash.analysis.dsc.tab.processing": {"tr": "İşleme", "en": "Processing"},
     "dash.analysis.dsc.tab.run": {"tr": "Çalıştır", "en": "Run"},
-    "dash.analysis.dsc.shortcuts.hint_undo": {
-        "tr": "Geri al: Ctrl+Z veya Cmd+Z",
-        "en": "Undo: Ctrl+Z or Cmd+Z",
-    },
-    "dash.analysis.dsc.shortcuts.hint_redo": {
-        "tr": "Yinele: Ctrl+Shift+Z veya Cmd+Shift+Z",
-        "en": "Redo: Ctrl+Shift+Z or Cmd+Shift+Z",
-    },
-    "dash.analysis.dsc.shortcuts.hint_run": {
-        "tr": "Çalıştır: Ctrl+Enter veya Cmd+Enter",
-        "en": "Run: Ctrl+Enter or Cmd+Enter",
-    },
     "dash.analysis.dsc.presets.title": {"tr": "İşleme Presetleri", "en": "Processing Presets"},
     "dash.analysis.dsc.presets.caption": {
         "tr": "{analysis_type} presetleri: {count}/{max_count}",
@@ -1396,10 +1384,6 @@ TRANSLATIONS = {
     "dash.analysis.tga.tab.setup": {"tr": "Kurulum", "en": "Setup"},
     "dash.analysis.tga.tab.processing": {"tr": "İşleme", "en": "Processing"},
     "dash.analysis.tga.tab.run": {"tr": "Çalıştır", "en": "Run"},
-    "dash.analysis.tga.shortcuts.hint_run": {
-        "tr": "Çalıştır: Ctrl+Enter veya Cmd+Enter",
-        "en": "Run: Ctrl+Enter or Cmd+Enter",
-    },
     "dash.analysis.tga.empty_import": {"tr": "Önce bir TGA dosyası içe aktarın.", "en": "Import a TGA file first."},
     "dash.analysis.tga.workflow_fallback": {"tr": "TGA analiz iş akışı.", "en": "TGA analysis workflow."},
     "dash.analysis.tga.unit_mode_help": {
@@ -1920,18 +1904,6 @@ TRANSLATIONS = {
     "dash.analysis.dta.processing.block_smoothing": {"tr": "Yumuşatma parametreleri", "en": "Smoothing parameters"},
     "dash.analysis.dta.processing.block_baseline": {"tr": "Taban çizgisi parametreleri", "en": "Baseline parameters"},
     "dash.analysis.dta.processing.block_peaks": {"tr": "Tepe algılama parametreleri", "en": "Peak detection parameters"},
-    "dash.analysis.dta.shortcuts.hint_undo": {
-        "tr": "Geri al: Ctrl+Z veya Cmd+Z",
-        "en": "Undo: Ctrl+Z or Cmd+Z",
-    },
-    "dash.analysis.dta.shortcuts.hint_redo": {
-        "tr": "Yinele: Ctrl+Shift+Z veya Cmd+Shift+Z",
-        "en": "Redo: Ctrl+Shift+Z or Cmd+Shift+Z",
-    },
-    "dash.analysis.dta.shortcuts.hint_run": {
-        "tr": "Çalıştır: Ctrl+Enter veya Cmd+Enter",
-        "en": "Run: Ctrl+Enter or Cmd+Enter",
-    },
     "dash.analysis.dta.smoothing.title": {"tr": "Yumuşatma", "en": "Smoothing"},
     "dash.analysis.dta.smoothing.method": {"tr": "Yumuşatma yöntemi", "en": "Smoothing Method"},
     "dash.analysis.dta.smoothing.window": {"tr": "Pencere uzunluğu", "en": "Window Length"},

@@ -1161,7 +1161,6 @@ def _dta_left_column_tabs() -> dbc.Tabs:
                         "dta-run-btn",
                         card_title_id="dta-execute-card-title",
                     ),
-                    html.Small(id="dta-run-shortcut-hints", className="text-muted d-block mt-2"),
                 ],
                 tab_id="dta-tab-run",
                 label_class_name="ta-tab-label",
@@ -1266,25 +1265,6 @@ def render_dta_tab_chrome(locale_data):
         translate_ui(loc, "dash.analysis.dta.tab.setup"),
         translate_ui(loc, "dash.analysis.dta.tab.processing"),
         translate_ui(loc, "dash.analysis.dta.tab.run"),
-    )
-
-
-@callback(
-    Output("dta-run-shortcut-hints", "children"),
-    Input("ui-locale", "data"),
-)
-def render_dta_run_shortcut_hints(locale_data):
-    """Phase 4 — localized keyboard shortcut hints for the Run tab."""
-    loc = _loc(locale_data)
-    return html.Span(
-        [
-            translate_ui(loc, "dash.analysis.dta.shortcuts.hint_undo"),
-            html.Br(),
-            translate_ui(loc, "dash.analysis.dta.shortcuts.hint_redo"),
-            html.Br(),
-            translate_ui(loc, "dash.analysis.dta.shortcuts.hint_run"),
-        ],
-        className="d-block",
     )
 
 

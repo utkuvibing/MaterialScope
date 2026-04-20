@@ -1935,7 +1935,6 @@ def test_dta_left_column_tabs_children_mount_expected_card_ids():
     assert "dta-execute-card-title" in str(run_tab)
     assert "dta-run-btn" in str(run_tab)
     assert "dta-run-status" in str(run_tab)
-    assert "dta-run-shortcut-hints" in str(run_tab)
 
 
 def test_layout_mounts_left_tabs_and_preserves_existing_ids():
@@ -1962,7 +1961,6 @@ def test_layout_mounts_left_tabs_and_preserves_existing_ids():
         "dta-reset-btn",
         "dta-run-btn",
         "dta-run-status",
-        "dta-run-shortcut-hints",
         "dta-result-metrics",
         "dta-result-quality",
         "dta-result-raw-metadata",
@@ -2539,17 +2537,6 @@ def test_layout_mounts_dta_scoped_result_surface_classes():
     assert "dta-results-surface" in layout_str
     assert "dta-result-section" in layout_str
     assert "dta-result-hero" in layout_str
-
-
-def test_render_dta_run_shortcut_hints_lists_undo_redo_run():
-    mod = _import_dta_page()
-    hints_en = mod.render_dta_run_shortcut_hints("en")
-    text_en = str(hints_en)
-    assert "Ctrl+Z" in text_en or "Cmd+Z" in text_en
-    assert "Enter" in text_en
-
-    hints_tr = mod.render_dta_run_shortcut_hints("tr")
-    assert "Geri al" in str(hints_tr) or "Ctrl" in str(hints_tr)
 
 
 def test_format_dataset_metadata_value_handles_empty_and_numeric():

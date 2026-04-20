@@ -51,7 +51,6 @@ def test_layout_contains_section_ids_in_order():
         "tga-tab-setup-shell",
         "tga-tab-processing-shell",
         "tga-tab-run-shell",
-        "tga-run-shortcut-hints",
         "tga-processing-draft",
         "tga-preset-refresh",
         "tga-preset-hydrate",
