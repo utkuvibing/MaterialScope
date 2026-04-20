@@ -4,6 +4,24 @@
 
 ---
 
+## 2026-04-21 — FTIR science chain: signal-role-aware pipeline with baseline validation and normalization guards
+
+**Decision:** The spectral batch runner (`core/batch_runner.py::_execute_spectral_batch`) now:
+1. Infers FTIR signal role from `dataset.units["signal"]` / `dataset.metadata["inferred_signal_unit"]` (*absorbance* / *transmittance* / *unknown*).
+2. Inverts transmittance signals (`max – signal`) before smoothing/baseline so troughs become peaks; records `ftir_inverted_for_transmittance` in processing context.
+3. Uses real `pybaselines` ASLS/rubberband with optional region weights instead of the previous fake linear-through-endpoints implementation.
+4. Validates the baseline fit: rejects it if variance increases >50% or corrected range collapses to <2% of original range; falls back to zero baseline and suppresses the trace.
+5. Guards normalization: skips it when signal has zero range, zero norm, or the result would be near-flat; falls back to showing the corrected spectrum.
+6. Replaces the hand-rolled peak scanner with `scipy.signal.find_peaks`; auto-fallback to 20% prominence when strict threshold yields nothing.
+7. Surfaces all failure modes as FTIR-specific warnings in validation + a `diagnostics` dict in analysis state (exposed via `AnalysisStateCurvesResponse`).
+8. The Dash page reads diagnostics and suppresses invalid traces instead of plotting them; legend labels append “(inverted)” when applicable.
+
+**Reason:** The previous pipeline produced visibly absurd baselines, misleading flat normalized traces, and zero peaks with no explanation. Signal-role ignorance caused transmittance troughs to be discarded. Fixing the backend chain and making the frontend reflect backend truth is more robust than client-side rescue logic.
+
+**Consequence / future:** Raman shares the same `_execute_spectral_batch` path and benefits automatically. Future peak controls (width, SNR) should extend the new `find_peaks`-based detector. Cloud search endpoint (`backend/library_cloud_service.py`) was updated to call the new signatures.
+
+---
+
 ## 2026-04-20 — FTIR analysis page: backend-truth peaks via `analysis_state_curves`; deferred overlay preview
 
 **Decision:** Extend `AnalysisStateCurvesResponse` and `analysis_state_curves` endpoint to return `normalized` signal and `peaks` for FTIR, with safe `_peak_to_dict` conversion so DSC/DTA `ThermalPeak` dataclass objects do not cause Pydantic serialization errors. The Dash page renders backend-truth peaks directly from this endpoint instead of re-detecting client-side. The top-match overlay preview graph (candidate signal plotted over sample signal) is explicitly deferred because the backend does not expose a candidate/reference signal endpoint today; the Dash page ships a strong text hero summary instead.

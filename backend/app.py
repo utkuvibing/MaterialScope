@@ -956,6 +956,7 @@ def create_app(
             return {}
 
         peaks = [_peak_to_dict(p) for p in raw_peaks]
+        diagnostics = analysis_state.get("diagnostics") or {}
 
         return AnalysisStateCurvesResponse(
             project_id=project_id,
@@ -975,6 +976,7 @@ def create_app(
             has_normalized=bool(normalized),
             has_dtg=bool(dtg),
             has_peaks=bool(peaks),
+            diagnostics=diagnostics,
         )
 
     @app.post("/workspace/{project_id}/results/{result_id}/literature/compare", response_model=LiteratureCompareResponse)

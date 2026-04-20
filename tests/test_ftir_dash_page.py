@@ -643,3 +643,42 @@ def test_preset_dirty_flag_renders_dirty_when_snapshot_differs():
         snap,
     )
     assert "text-warning" in str(flag)
+
+
+def test_build_figure_shows_diagnostics_when_present(monkeypatch):
+    mod = _import_ftir_page()
+    import dash_app.api_client as api_client
+
+    monkeypatch.setattr(
+        api_client,
+        "analysis_state_curves",
+        lambda _p, _t, _k: {
+            "temperature": [4000.0, 3000.0, 2000.0, 1000.0],
+            "raw_signal": [0.1, 0.5, 0.3, 0.2],
+            "smoothed": [0.12, 0.48, 0.32, 0.18],
+            "baseline": [],
+            "corrected": [],
+            "normalized": [],
+            "peaks": [],
+            "has_smoothed": True,
+            "has_baseline": False,
+            "has_corrected": False,
+            "has_normalized": False,
+            "diagnostics": {
+                "signal_role": "transmittance",
+                "inverted_for_transmittance": True,
+                "baseline_suppressed": True,
+                "baseline_suppression_reason": "Baseline fit increases signal variance",
+                "normalization_skipped": True,
+                "normalization_skip_reason": "Signal has zero range",
+                "peak_detection_no_peaks": True,
+                "peak_detection_reason": "No peaks found",
+            },
+        },
+    )
+    fig_div = mod._build_figure("proj", "ds", {"peak_count": 0, "top_match_name": None, "match_status": "no_match", "confidence_band": "no_match"}, "light", "en")
+    s = str(fig_div)
+    assert "inverted" in s.lower()
+    assert "baseline suppressed" in s.lower()
+    assert "normalization skipped" in s.lower()
+    assert "no peaks detected" in s.lower()

@@ -872,3 +872,248 @@ def test_execute_tga_batch_template_preserves_explicit_absolute_mass_mode(temper
     assert method_context["tga_unit_mode_resolved"] == "absolute_mass"
     assert method_context["tga_unit_auto_inference_used"] is False
     assert method_context["tga_unit_reference_source"] == "initial_mass_mg"
+
+
+def _make_ftir_transmittance_dataset():
+    axis = np.linspace(450.0, 1800.0, 420)
+    absorbance = (
+        _gaussian(axis, 720.0, 22.0, 0.9)
+        + _gaussian(axis, 1115.0, 28.0, 1.3)
+        + _gaussian(axis, 1510.0, 24.0, 0.8)
+    )
+    signal = 100.0 - absorbance * 50.0
+    metadata = {
+        "sample_name": "SyntheticFTIRTransmittance",
+        "sample_mass": 1.0,
+        "heating_rate": 1.0,
+        "instrument": "SpecBench",
+        "vendor": "TestVendor",
+        "display_name": "Synthetic FTIR Transmittance",
+        "source_data_hash": "synthetic-ftir-transmittance-hash",
+    }
+    return ThermalDataset(
+        data=pd.DataFrame({"temperature": axis, "signal": signal}),
+        metadata=metadata,
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "transmittance"},
+        original_columns={"temperature": "wavenumber", "signal": "transmittance"},
+        file_path="",
+    )
+
+
+def test_ftir_transmittance_inversion_detects_troughs_as_peaks():
+    dataset = _make_ftir_transmittance_dataset()
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_t",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_t_demo",
+    )
+    assert outcome["status"] == "saved"
+    diagnostics = outcome["state"]["diagnostics"]
+    assert diagnostics["signal_role"] == "transmittance"
+    assert diagnostics["inverted_for_transmittance"] is True
+    assert len(outcome["state"]["peaks"]) >= 3
+    # Ensure corrected signal has positive peaks (inverted troughs)
+    corrected = np.asarray(outcome["state"]["corrected"])
+    assert np.max(corrected) > 0
+    # Baseline should not be suppressed for this clean synthetic data
+    assert not diagnostics.get("baseline_suppressed", False)
+    # No double inversion: raw signal max ~100, min lower
+    raw_signal = dataset.data["signal"].values
+    assert np.max(raw_signal) > 90
+    assert np.min(raw_signal) < 90
+
+
+def test_ftir_absorbance_no_inversion():
+    dataset = _make_spectral_dataset(analysis_type="FTIR")
+    dataset.units["signal"] = "absorbance"
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_a",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_a_demo",
+    )
+    assert outcome["status"] == "saved"
+    diagnostics = outcome["state"]["diagnostics"]
+    assert diagnostics["signal_role"] == "absorbance"
+    assert diagnostics["inverted_for_transmittance"] is False
+    assert len(outcome["state"]["peaks"]) >= 3
+
+
+def test_ftir_baseline_rejection_for_implausible_fit():
+    axis = np.linspace(450.0, 1800.0, 420)
+    signal = 0.5 + 0.001 * axis
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": axis, "signal": signal}),
+        metadata={"sample_name": "LinearFTIR"},
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "a.u."},
+        original_columns={"temperature": "wavenumber", "signal": "intensity"},
+        file_path="",
+    )
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_linear",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_linear_demo",
+    )
+    assert outcome["status"] == "saved"
+    diagnostics = outcome["state"]["diagnostics"]
+    assert diagnostics.get("baseline_suppressed") is True
+    assert "collapses" in diagnostics.get("baseline_suppression_reason", "").lower() or "implausible" in diagnostics.get("baseline_suppression_reason", "").lower()
+    assert outcome["state"]["baseline"] == []
+    assert outcome["state"]["corrected"] == []
+    warnings = outcome["validation"].get("warnings", [])
+    assert any("baseline estimation was suppressed" in w.lower() for w in warnings)
+
+
+def test_ftir_normalization_skip_for_flat_signal():
+    axis = np.linspace(450.0, 1800.0, 420)
+    signal = np.full_like(axis, 0.5)
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": axis, "signal": signal}),
+        metadata={"sample_name": "FlatFTIR"},
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "a.u."},
+        original_columns={"temperature": "wavenumber", "signal": "intensity"},
+        file_path="",
+    )
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_flat",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_flat_demo",
+    )
+    assert outcome["status"] == "saved"
+    diagnostics = outcome["state"]["diagnostics"]
+    assert diagnostics.get("normalization_skipped") is True
+    assert outcome["state"]["normalized"] == []
+    warnings = outcome["validation"].get("warnings", [])
+    assert any("normalization was skipped" in w.lower() for w in warnings)
+
+
+def test_ftir_peak_detection_fallback_and_zero_peaks_diagnostic():
+    axis = np.linspace(450.0, 1800.0, 420)
+    signal = (
+        _gaussian(axis, 720.0, 22.0, 0.9)
+        + _gaussian(axis, 1115.0, 28.0, 1.3)
+        + _gaussian(axis, 1510.0, 24.0, 0.8)
+    )
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": axis, "signal": signal}),
+        metadata={"sample_name": "LowAmpFTIR"},
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "a.u."},
+        original_columns={"temperature": "wavenumber", "signal": "intensity"},
+        file_path="",
+    )
+    existing_processing = {
+        "analysis_type": "FTIR",
+        "workflow_template_id": "ftir.general",
+        "analysis_steps": {
+            "peak_detection": {"prominence": 0.5, "distance": 6, "max_peaks": 12},
+        },
+    }
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_lowamp",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        existing_processing=existing_processing,
+        batch_run_id="batch_ftir_lowamp_demo",
+    )
+    assert outcome["status"] == "saved"
+    diagnostics = outcome["state"]["diagnostics"]
+    assert diagnostics.get("peak_detection_fallback") is True
+    assert "fallback" in diagnostics.get("peak_detection_reason", "").lower()
+    assert len(outcome["state"]["peaks"]) >= 3
+    warnings = outcome["validation"].get("warnings", [])
+    assert any("peak detection used fallback logic" in w.lower() for w in warnings)
+
+
+def test_ftir_zero_peaks_surfaces_diagnostic_reason():
+    axis = np.linspace(450.0, 1800.0, 420)
+    signal = np.zeros_like(axis)
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": axis, "signal": signal}),
+        metadata={"sample_name": "ZeroFTIR"},
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "a.u."},
+        original_columns={"temperature": "wavenumber", "signal": "intensity"},
+        file_path="",
+    )
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_zero",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_zero_demo",
+    )
+    assert outcome["status"] == "saved"
+    diagnostics = outcome["state"]["diagnostics"]
+    assert diagnostics.get("peak_detection_no_peaks") is True
+    assert len(outcome["state"]["peaks"]) == 0
+    warnings = outcome["validation"].get("warnings", [])
+    assert any("peak detection returned no peaks" in w.lower() for w in warnings)
+
+
+def test_ftir_analysis_state_curves_carry_correct_outputs():
+    dataset = _make_spectral_dataset(analysis_type="FTIR")
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_curves_demo",
+    )
+    assert outcome["status"] == "saved"
+    state = outcome["state"]
+    assert "diagnostics" in state
+    assert state["diagnostics"]["signal_role"] == "unknown"
+    assert len(state["smoothed"]) == len(state["axis"])
+    assert len(state["baseline"]) == len(state["axis"])
+    assert len(state["corrected"]) == len(state["axis"])
+    assert len(state["normalized"]) == len(state["axis"])
+    assert len(state["peaks"]) >= 1
+
+
+def test_ftir_similarity_uses_corrected_when_normalization_skipped():
+    axis = np.linspace(450.0, 1800.0, 420)
+    signal = np.full_like(axis, 0.5)
+    metadata = {
+        "sample_name": "FlatFTIRWithRef",
+        "spectral_reference_library": [
+            {
+                "id": "flat_ref",
+                "name": "Flat Reference",
+                "axis": axis.tolist(),
+                "signal": (np.full_like(axis, 0.5) + 0.01).tolist(),
+            },
+        ],
+    }
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": axis, "signal": signal}),
+        metadata=metadata,
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "a.u."},
+        original_columns={"temperature": "wavenumber", "signal": "intensity"},
+        file_path="",
+    )
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_flat_ref",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_flat_ref_demo",
+    )
+    assert outcome["status"] == "saved"
+    assert outcome["state"]["diagnostics"].get("normalization_skipped") is True
+    assert outcome["state"]["normalized"] == []
+    # Matching should have run without crashing
+    assert outcome["record"]["summary"]["match_status"] in {"matched", "no_match"}
+    assert outcome["record"]["summary"]["candidate_count"] >= 0

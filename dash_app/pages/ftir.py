@@ -2297,6 +2297,14 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
     legend_imported = translate_ui(loc, "dash.analysis.figure.legend_imported_spectrum")
     legend_baseline = translate_ui(loc, "dash.analysis.figure.legend_estimated_baseline")
     legend_normalized = translate_ui(loc, "dash.analysis.ftir.legend_normalized_spectrum")
+
+    diagnostics = curves.get("diagnostics") or {}
+    if diagnostics.get("inverted_for_transmittance"):
+        suffix = " (inverted)"
+        legend_smooth += suffix
+        legend_query += suffix
+        legend_normalized += suffix
+
     dominant_name = legend_query if has_normalized_curve else legend_smooth if has_smoothed else legend_imported
     y_range = _y_axis_range(dominant_signal, raw_signal, smoothed, baseline, normalized)
 
@@ -2453,11 +2461,26 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
         confidence=confidence,
     )
 
+    diag_notes: list[str] = []
+    if diagnostics.get("inverted_for_transmittance"):
+        diag_notes.append("Signal interpreted as transmittance; inverted for analysis.")
+    if diagnostics.get("baseline_suppressed"):
+        diag_notes.append(f"Baseline suppressed: {diagnostics.get('baseline_suppression_reason', '')}")
+    if diagnostics.get("normalization_skipped"):
+        diag_notes.append(f"Normalization skipped: {diagnostics.get('normalization_skip_reason', '')}")
+    if diagnostics.get("peak_detection_fallback"):
+        diag_notes.append(f"Peak detection fallback: {diagnostics.get('peak_detection_reason', '')}")
+    if diagnostics.get("peak_detection_no_peaks"):
+        diag_notes.append(f"No peaks detected: {diagnostics.get('peak_detection_reason', '')}")
+
+    diag_children = [html.P(note, className="small text-warning mb-1") for note in diag_notes]
+
     return html.Div(
         [
             html.H5(translate_ui(loc, "dash.analysis.ftir.figure.section_title"), className="mb-2"),
             html.P(run_caption, className="small text-muted mb-2"),
             dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True}, className="ta-plot"),
+            *diag_children,
         ]
     )
 

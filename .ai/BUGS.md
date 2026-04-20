@@ -152,3 +152,49 @@ Preview area was populated only by backend-loaded persisted branding state; no c
 ### Next check
 
 Keep pending/saved branding distinction consistent if additional branding fields get staged UI behavior.
+
+---
+
+## BUG-004 — FTIR science chain produced misleading baseline, flat normalized trace, and silent zero peaks
+
+### Title
+
+FTIR preprocessing / peak detection / matching produced scientifically misleading results without diagnostic context
+
+### Status
+
+**Closed**
+
+### Symptoms
+
+- Baseline was a straight line between first and last data points even for `asls`/`rubberband` methods, producing obviously wrong sloped baselines.
+- Normalization could collapse into a near-flat line around zero with no explanation.
+- Peak count was 0 for transmittance data because troughs were never inverted.
+- Query / smoothed / normalized traces were semantically misaligned (peak detection ran on normalized even when it was broken).
+- No diagnostic context when preprocessing failed; "No Match" hid deeper science problems.
+
+### Repro steps
+
+1. Import FTIR dataset with transmittance unit or with strong spectral features.
+2. Run analysis with default `ftir.general` template.
+3. Observe baseline overlay, normalized trace, and peak count in results.
+
+### Likely cause
+
+- `_estimate_spectral_baseline` claimed to support `asls`/`rubberband` but only drew a linear line.
+- `_normalize_spectral_signal` had no guard-rails for zero-range or near-flat input.
+- No absorbance/transmittance role detection; pipeline always looked for positive maxima.
+- `_detect_spectral_peaks` used a hand-rolled local-maximum scanner instead of `scipy.signal.find_peaks`.
+- Failure modes were silent; no diagnostics propagated to validation or UI.
+
+### Files involved
+
+- `core/batch_runner.py`
+- `backend/library_cloud_service.py`
+- `backend/models.py`
+- `backend/app.py`
+- `dash_app/pages/ftir.py`
+
+### Next check
+
+Monitor for regressions in Raman (shares `_execute_spectral_batch`) and future peak-detector extensions.

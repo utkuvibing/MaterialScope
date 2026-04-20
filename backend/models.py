@@ -558,6 +558,7 @@ class AnalysisStateCurvesResponse(BaseModel):
     has_normalized: bool = False
     has_dtg: bool = False
     has_peaks: bool = False
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 
 class BatchRunResponse(BaseModel):

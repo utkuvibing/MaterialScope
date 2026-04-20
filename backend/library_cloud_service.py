@@ -646,17 +646,17 @@ class ManagedLibraryCloudService:
             raise HTTPException(status_code=400, detail="axis and signal arrays are required and must have equal length.")
         axis, signal = _sorted_axis_signal(axis, signal)
         smoothed = _apply_spectral_smoothing(signal, {"method": "none"})
-        normalized_signal = _normalize_spectral_signal(smoothed, {"method": "vector"})
+        normalized_signal, _, _ = _normalize_spectral_signal(smoothed, {"method": "vector"})
         top_n = max(1, int(request_payload.get("top_n") or 5))
         minimum_score = float(request_payload.get("minimum_score") or 0.45)
         peak_config = {"prominence": 0.05, "min_distance": 6, "max_peaks": 12}
-        observed_peaks = _detect_spectral_peaks(axis, normalized_signal, peak_config)
+        observed_peaks, _, _ = _detect_spectral_peaks(axis, normalized_signal, peak_config)
         top_n_internal = top_n if token != "RAMAN" else max(top_n * 5, 10)
         references = self.hosted_catalog.load_entries(token)
         reference_lookup = self._reference_lookup(references)
         rows = _rank_spectral_matches(
             axis=axis,
-            normalized_signal=normalized_signal,
+            query_signal=normalized_signal,
             observed_peaks=observed_peaks,
             references=references,
             matching_config={"top_n": top_n_internal, "minimum_score": minimum_score},

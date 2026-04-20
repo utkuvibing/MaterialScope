@@ -2,9 +2,41 @@
 
 **Purpose:** One active migration slice — scope, goal, and acceptance only.
 
-## Status: no active slice (2026-04-20)
+## Status: no active slice (2026-04-21)
 
-The **FTIR full product-grade page** slice is **complete**. Start a new slice by replacing the status block above.
+The **FTIR science chain stabilization** slice is **complete**. Start a new slice by replacing the status block above.
+
+---
+
+### Archived: FTIR science chain stabilization (done, 2026-04-21)
+
+**Goal:** Fix the FTIR preprocessing / peak-detection / matching science chain so results are scientifically honest and diagnostically transparent, without redesigning the FTIR page.
+
+**In scope**
+
+- [`core/batch_runner.py`](core/batch_runner.py): signal-role inference (`_infer_spectral_signal_role`), transmittance inversion (`_maybe_invert_spectral_signal`), real baseline estimation with `pybaselines` (`_estimate_spectral_baseline`), baseline validation (`_validate_spectral_baseline`), guarded normalization (`_normalize_spectral_signal`), robust peak detection with `scipy.signal.find_peaks` + fallback (`_detect_spectral_peaks`), matching basis alignment (`_rank_spectral_matches` uses `query_signal`).
+- [`backend/library_cloud_service.py`](backend/library_cloud_service.py): updated to call new spectral helper signatures.
+- [`backend/models.py`](backend/models.py): `AnalysisStateCurvesResponse` extended with `diagnostics`.
+- [`backend/app.py`](backend/app.py): `analysis_state_curves` endpoint returns `diagnostics` from analysis state.
+- [`dash_app/pages/ftir.py`](dash_app/pages/ftir.py): figure rendering suppresses invalid traces; legend labels “(inverted)” for transmittance; diagnostic notes render below figure.
+- Tests: [`tests/test_batch_runner.py`](tests/test_batch_runner.py) (8 new tests), [`tests/test_ftir_dash_page.py`](tests/test_ftir_dash_page.py) (1 new test).
+
+**Acceptance**
+
+- Baseline is validated and suppressed when implausible; corrected trace falls back to smoothed; warning explains why.
+- Normalization is skipped when it would produce a near-flat or non-informative result; warning explains why.
+- Transmittance data is inverted before peak detection so troughs become peaks; inversion is recorded in diagnostics and legend.
+- Peak detection uses `scipy.signal.find_peaks` with auto-fallback prominence; zero peaks surface a concrete reason.
+- Similarity matching runs on the best available processed signal (normalized if informative, else corrected).
+- Dash figure does not show silently invalid overlay traces; diagnostics appear as notes below the plot.
+- All existing FTIR page flows (presets, literature compare, figure export) continue to work.
+
+**Verification**
+
+- `rtk pytest tests/test_batch_runner.py -q` — **29 passed**.
+- `rtk pytest tests/test_ftir_dash_page.py -q` — **36 passed**.
+- `rtk pytest tests/test_dash_workflow_regression.py -q` — **76 passed**.
+- FTIR end-to-end regression (`load-sample-ftir`) passes.
 
 ---
 

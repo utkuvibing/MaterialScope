@@ -765,58 +765,151 @@ def _apply_spectral_smoothing(signal: np.ndarray, config: Mapping[str, Any]) -> 
     return np.convolve(padded, kernel, mode="valid")
 
 
+def _infer_spectral_signal_role(dataset) -> str:
+    unit = str(getattr(dataset, "units", {}).get("signal") or getattr(dataset, "metadata", {}).get("inferred_signal_unit") or "").strip().lower()
+    if unit in {"absorbance"}:
+        return "absorbance"
+    if unit in {"transmittance", "%t"}:
+        return "transmittance"
+    return "unknown"
+
+
+def _maybe_invert_spectral_signal(signal: np.ndarray, role: str) -> tuple[np.ndarray, bool]:
+    if role == "transmittance":
+        max_val = float(np.max(signal))
+        return max_val - signal, True
+    return signal.copy(), False
+
+
 def _estimate_spectral_baseline(axis: np.ndarray, signal: np.ndarray, config: Mapping[str, Any]) -> np.ndarray:
     method = str(config.get("method") or "linear").strip().lower()
     if method in {"none", "off"}:
         return np.zeros_like(signal)
-    if method in {"linear", "asls", "rubberband"}:
+
+    region = config.get("region")
+    weights = None
+    if isinstance(region, (list, tuple)) and len(region) == 2:
+        rmin, rmax = float(region[0]), float(region[1])
+        weights = ((axis >= rmin) & (axis <= rmax)).astype(float)
+
+    if method == "linear":
         start = float(signal[0])
         end = float(signal[-1])
         if float(axis[-1]) == float(axis[0]):
             return np.full_like(signal, start)
         slope = (end - start) / (float(axis[-1]) - float(axis[0]))
         return start + slope * (axis - float(axis[0]))
-    offset = float(np.min(signal))
-    return np.full_like(signal, offset)
+
+    try:
+        from pybaselines import Baseline
+        bl = Baseline(x_data=axis)
+        if method == "asls":
+            lam = float(config.get("lam", 1e6))
+            p = float(config.get("p", 0.01))
+            baseline, _ = bl.asls(signal, lam=lam, p=p, weights=weights)
+            return baseline
+        if method == "rubberband":
+            baseline, _ = bl.rubberband(signal, segments=1, weights=weights)
+            return baseline
+    except Exception:
+        pass
+
+    start = float(signal[0])
+    end = float(signal[-1])
+    if float(axis[-1]) == float(axis[0]):
+        return np.full_like(signal, start)
+    slope = (end - start) / (float(axis[-1]) - float(axis[0]))
+    return start + slope * (axis - float(axis[0]))
 
 
-def _normalize_spectral_signal(signal: np.ndarray, config: Mapping[str, Any]) -> np.ndarray:
+def _validate_spectral_baseline(axis: np.ndarray, signal: np.ndarray, baseline: np.ndarray) -> tuple[bool, str]:
+    if baseline.shape != signal.shape:
+        return False, "Baseline shape mismatch."
+    if not np.isfinite(baseline).all():
+        return False, "Baseline contains non-finite values."
+    corrected = signal - baseline
+    var_signal = float(np.var(signal))
+    var_corrected = float(np.var(corrected))
+    if var_signal > 0 and var_corrected > var_signal * 1.5:
+        return False, "Baseline fit increases signal variance; fit is implausible."
+    sig_range = float(np.ptp(signal))
+    corr_range = float(np.ptp(corrected))
+    if sig_range > 0 and corr_range < 0.02 * sig_range:
+        return False, "Baseline correction collapses signal to near-flat line."
+    return True, ""
+
+
+def _normalize_spectral_signal(signal: np.ndarray, config: Mapping[str, Any]) -> tuple[np.ndarray, bool, str]:
     method = str(config.get("method") or "vector").strip().lower()
-    centered = signal - float(np.mean(signal))
+    sig_range = float(np.ptp(signal))
+    if sig_range <= 0:
+        return signal.copy(), False, "Signal has zero range; normalization skipped."
+
+    result = signal.copy()
     if method == "snv":
+        centered = signal - float(np.mean(signal))
         std = float(np.std(centered))
-        return centered / std if std > 0 else centered
-    if method == "max":
+        if std > 0:
+            result = centered / std
+        else:
+            return signal.copy(), False, "Signal standard deviation is zero; SNV normalization skipped."
+    elif method == "max":
         scale = float(np.max(np.abs(signal)))
-        return signal / scale if scale > 0 else signal.copy()
-    norm = float(np.linalg.norm(signal))
-    return signal / norm if norm > 0 else signal.copy()
+        if scale > 0:
+            result = signal / scale
+        else:
+            return signal.copy(), False, "Signal maximum absolute value is zero; max normalization skipped."
+    else:  # vector
+        norm = float(np.linalg.norm(signal))
+        if norm > 0:
+            result = signal / norm
+        else:
+            return signal.copy(), False, "Signal vector norm is zero; vector normalization skipped."
+
+    norm_range = float(np.ptp(result))
+    if norm_range < 1e-4:
+        return signal.copy(), False, "Normalization produced a near-flat result; displaying corrected spectrum instead."
+
+    return result, True, ""
 
 
-def _detect_spectral_peaks(axis: np.ndarray, signal: np.ndarray, config: Mapping[str, Any]) -> list[dict[str, float]]:
+def _detect_spectral_peaks(axis: np.ndarray, signal: np.ndarray, config: Mapping[str, Any]) -> tuple[list[dict[str, float]], bool, str]:
     prominence = float(config.get("prominence") or 0.05)
-    min_distance = int(config.get("min_distance") or 5)
+    distance = int(config.get("distance") or config.get("min_distance") or 5)
     max_peaks = int(config.get("max_peaks") or 10)
 
-    candidate_indices: list[int] = []
-    for idx in range(1, signal.size - 1):
-        if signal[idx] < prominence:
-            continue
-        if signal[idx] >= signal[idx - 1] and signal[idx] >= signal[idx + 1]:
-            candidate_indices.append(idx)
+    peak_indices, properties = find_peaks(signal, prominence=prominence, distance=distance)
 
-    selected: list[int] = []
-    for idx in sorted(candidate_indices, key=lambda item: float(signal[item]), reverse=True):
-        if any(abs(idx - prev) < min_distance for prev in selected):
-            continue
-        selected.append(idx)
-        if len(selected) >= max_peaks:
-            break
+    fallback = False
+    reason = ""
 
-    return [
-        {"position": float(axis[idx]), "intensity": float(signal[idx])}
-        for idx in sorted(selected)
-    ]
+    if peak_indices.size == 0:
+        fallback_prominence = max(prominence * 0.2, 1e-6)
+        peak_indices, properties = find_peaks(signal, prominence=fallback_prominence, distance=distance)
+        if peak_indices.size == 0:
+            reason = f"No peaks found with prominence down to {fallback_prominence:.6f}; signal may be too noisy or flat."
+            return [], fallback, reason
+        fallback = True
+        reason = f"No peaks met the original prominence ({prominence}); fallback to lower prominence ({fallback_prominence}) was used."
+
+    prominences = np.asarray(properties.get("prominences", []), dtype=float)
+    ranking = sorted(
+        range(len(peak_indices)),
+        key=lambda idx: (-float(prominences[idx]), float(axis[peak_indices[idx]])),
+    )
+    selected = ranking[:max_peaks]
+    peaks: list[dict[str, float]] = []
+    for rank, index in enumerate(selected, start=1):
+        peak_index = int(peak_indices[index])
+        peaks.append(
+            {
+                "rank": rank,
+                "position": float(axis[peak_index]),
+                "intensity": float(signal[peak_index]),
+                "prominence": float(prominences[index]) if index < len(prominences) else 0.0,
+            }
+        )
+    return peaks, fallback, reason
 
 
 def _first_defined_value(*values: Any) -> Any:
@@ -1047,7 +1140,7 @@ def _shared_peak_count(observed_peaks: list[dict[str, float]], reference_peaks: 
 def _rank_spectral_matches(
     *,
     axis: np.ndarray,
-    normalized_signal: np.ndarray,
+    query_signal: np.ndarray,
     observed_peaks: list[dict[str, float]],
     references: list[dict[str, Any]],
     matching_config: Mapping[str, Any],
@@ -1064,9 +1157,9 @@ def _rank_spectral_matches(
         reference_signal = reference["signal"]
         interpolated = np.interp(axis, reference_axis, reference_signal)
         reference_smoothed = _apply_spectral_smoothing(interpolated, {"method": "none"})
-        reference_normalized = _normalize_spectral_signal(reference_smoothed, {"method": "vector"})
-        reference_peaks = _detect_spectral_peaks(axis, reference_normalized, peak_config)
-        cosine_score = _spectral_similarity(normalized_signal, reference_normalized, "cosine")
+        reference_normalized, _, _ = _normalize_spectral_signal(reference_smoothed, {"method": "vector"})
+        reference_peaks, _, _ = _detect_spectral_peaks(axis, reference_normalized, peak_config)
+        cosine_score = _spectral_similarity(query_signal, reference_normalized, "cosine")
         preranked.append(
             {
                 "reference": reference,
@@ -1091,7 +1184,7 @@ def _rank_spectral_matches(
         reference_peaks = item["reference_peaks"]
         shared = _shared_peak_count(observed_peaks, reference_peaks)
         overlap_ratio = float(shared / max(len(observed_peaks), len(reference_peaks), 1))
-        pearson_score = _spectral_similarity(normalized_signal, reference_normalized, "pearson")
+        pearson_score = _spectral_similarity(query_signal, reference_normalized, "pearson")
         score = float(max(0.0, min(1.0, (0.7 * pearson_score) + (0.3 * overlap_ratio))))
         confidence_band = _confidence_band(score, minimum_score)
         ranked.append(
@@ -1152,11 +1245,26 @@ def _execute_spectral_batch(
     peak_detection = copy.deepcopy((processing.get("analysis_steps") or {}).get("peak_detection") or {})
     similarity_matching = copy.deepcopy((processing.get("analysis_steps") or {}).get("similarity_matching") or {})
 
-    smoothed = _apply_spectral_smoothing(signal, smoothing)
+    signal_role = _infer_spectral_signal_role(dataset)
+    working_signal, was_inverted = _maybe_invert_spectral_signal(signal, signal_role)
+
+    smoothed = _apply_spectral_smoothing(working_signal, smoothing)
     baseline_curve = _estimate_spectral_baseline(axis, smoothed, baseline)
+    baseline_valid, baseline_reason = _validate_spectral_baseline(axis, smoothed, baseline_curve)
+    baseline_suppressed = False
+    if not baseline_valid:
+        baseline_curve = np.zeros_like(smoothed)
+        baseline_suppressed = True
+
     corrected = smoothed - baseline_curve
-    normalized_signal = _normalize_spectral_signal(corrected, normalization)
-    observed_peaks = _detect_spectral_peaks(axis, normalized_signal, peak_detection)
+
+    normalized_signal, norm_informative, norm_reason = _normalize_spectral_signal(corrected, normalization)
+    normalization_skipped = not norm_informative
+
+    peak_basis = normalized_signal if norm_informative else corrected
+    observed_peaks, peak_fallback, peak_reason = _detect_spectral_peaks(axis, peak_basis, peak_detection)
+
+    match_basis = normalized_signal if norm_informative else corrected
 
     manager = get_reference_library_manager()
     library_context = manager.library_context(analysis_type)
@@ -1175,7 +1283,7 @@ def _execute_spectral_batch(
             analysis_type=analysis_type,
             payload={
                 "axis": axis.tolist(),
-                "signal": normalized_signal.tolist(),
+                "signal": match_basis.tolist(),
                 "preprocessing_metadata": {
                     "peak_detection": peak_detection,
                     "smoothing": smoothing,
@@ -1216,7 +1324,7 @@ def _execute_spectral_batch(
         references = _resolve_spectral_references(dataset=dataset, analysis_type=analysis_type, processing=processing)
         ranked_matches = _rank_spectral_matches(
             axis=axis,
-            normalized_signal=normalized_signal,
+            query_signal=match_basis,
             observed_peaks=observed_peaks,
             references=references,
             matching_config=similarity_matching,
@@ -1284,10 +1392,35 @@ def _execute_spectral_batch(
             "library_result_source": library_result_source,
             "library_provider_scope": library_provider_scope,
             "library_offline_limited_mode": bool(library_offline_limited_mode),
+            "ftir_signal_role": signal_role,
+            "ftir_inverted_for_transmittance": was_inverted,
         },
         analysis_type=analysis_type,
     )
     validation = validate_thermal_dataset(dataset, analysis_type=analysis_type, processing=processing)
+    ftir_warnings: list[str] = []
+    if signal_role == "unknown":
+        ftir_warnings.append(
+            "FTIR signal role is uncertain (absorbance vs transmittance); review unit metadata and interpret results with caution."
+        )
+    if was_inverted:
+        ftir_warnings.append(
+            "FTIR signal was interpreted as transmittance and inverted for analysis; peak positions are accurate but intensities are on an inverted scale."
+        )
+    if baseline_suppressed:
+        ftir_warnings.append(f"FTIR baseline estimation was suppressed because the fit was implausible: {baseline_reason}")
+    if normalization_skipped:
+        ftir_warnings.append(f"FTIR normalization was skipped: {norm_reason}")
+    if peak_fallback:
+        ftir_warnings.append(f"FTIR peak detection used fallback logic: {peak_reason}")
+    elif not observed_peaks:
+        ftir_warnings.append(f"FTIR peak detection returned no peaks: {peak_reason}")
+
+    for w in ftir_warnings:
+        if w not in validation.setdefault("warnings", []):
+            validation["warnings"].append(w)
+    validation["warning_count"] = len(validation.get("warnings", []))
+
     provenance = build_result_provenance(
         dataset=dataset,
         dataset_key=dataset_key,
@@ -1378,15 +1511,34 @@ def _execute_spectral_batch(
             "caution": caution_payload,
         },
     )
+
+    diagnostics: dict[str, Any] = {
+        "signal_role": signal_role,
+        "inverted_for_transmittance": was_inverted,
+    }
+    if baseline_suppressed:
+        diagnostics["baseline_suppressed"] = True
+        diagnostics["baseline_suppression_reason"] = baseline_reason
+    if normalization_skipped:
+        diagnostics["normalization_skipped"] = True
+        diagnostics["normalization_skip_reason"] = norm_reason
+    if peak_fallback:
+        diagnostics["peak_detection_fallback"] = True
+        diagnostics["peak_detection_reason"] = peak_reason
+    if not observed_peaks and peak_reason:
+        diagnostics["peak_detection_no_peaks"] = True
+        diagnostics["peak_detection_reason"] = peak_reason
+
     state = {
         "axis": axis.tolist(),
         "smoothed": smoothed.tolist(),
-        "baseline": baseline_curve.tolist(),
-        "corrected": corrected.tolist(),
-        "normalized": normalized_signal.tolist(),
+        "baseline": baseline_curve.tolist() if not baseline_suppressed else [],
+        "corrected": corrected.tolist() if not baseline_suppressed else [],
+        "normalized": normalized_signal.tolist() if norm_informative else [],
         "peaks": observed_peaks,
         "matches": ranked_matches,
         "processing": processing,
+        "diagnostics": diagnostics,
     }
 
     return {
