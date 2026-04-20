@@ -368,6 +368,7 @@ class LiteratureContext:
         except (TypeError, ValueError):
             payload["surfaced_comparison_count"] = 0
         payload["evidence_specificity_summary"] = _clean_text(payload.get("evidence_specificity_summary")).lower()
+        payload["executed_queries"] = _to_str_list(payload.get("executed_queries"))
         return payload
 
 
@@ -420,6 +421,7 @@ def normalize_literature_context(value: Any) -> dict[str, Any]:
         low_specificity_retrieval=source.get("low_specificity_retrieval", False),
         surfaced_comparison_count=source.get("surfaced_comparison_count", 0),
         evidence_specificity_summary=source.get("evidence_specificity_summary", ""),
+        executed_queries=source.get("executed_queries", []),
     ).to_dict()
 
 

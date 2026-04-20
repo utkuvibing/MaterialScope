@@ -52,9 +52,6 @@ from dash_app.components.data_preview import dataset_table
 from dash_app.components.ftir_explore import (
     MAX_FTIR_UNDO_DEPTH,
     append_undo_after_edit,
-    build_ftir_raw_quality_panel,
-    compute_ftir_raw_exploration_stats,
-    downsample_rows,
     ftir_draft_processing_equal,
     perform_redo,
     perform_undo,
@@ -441,19 +438,6 @@ def _ftir_workflow_guide_block() -> html.Details:
     )
 
 
-def _ftir_raw_quality_card() -> dbc.Card:
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                html.H6(id="ftir-raw-quality-card-title", className="card-title mb-1"),
-                html.P(id="ftir-raw-quality-card-hint", className="small text-muted mb-2"),
-                html.Div(id="ftir-raw-quality-panel", className="ftir-raw-quality-panel"),
-            ]
-        ),
-        className="mb-3",
-    )
-
-
 def _ftir_processing_history_card() -> dbc.Card:
     return dbc.Card(
         dbc.CardBody(
@@ -777,7 +761,6 @@ def _ftir_left_column_tabs() -> dbc.Tabs:
                         card_title_id="ftir-workflow-card-title",
                     ),
                     _ftir_workflow_guide_block(),
-                    _ftir_raw_quality_card(),
                 ],
                 tab_id="ftir-tab-setup",
                 label_class_name="ta-tab-label",
@@ -1666,50 +1649,6 @@ def toggle_ftir_processing_history_buttons(undo_stack, redo_stack):
     u = undo_stack or []
     r = redo_stack or []
     return len(u) == 0, len(r) == 0
-
-
-# ---------------------------------------------------------------------------
-# Raw quality callbacks
-# ---------------------------------------------------------------------------
-
-
-@callback(
-    Output("ftir-raw-quality-card-title", "children"),
-    Output("ftir-raw-quality-card-hint", "children"),
-    Input("ui-locale", "data"),
-)
-def render_ftir_raw_quality_chrome(locale_data):
-    loc = _loc(locale_data)
-    return translate_ui(loc, "dash.analysis.ftir.raw_quality.card_title"), translate_ui(loc, "dash.analysis.ftir.raw_quality.card_hint")
-
-
-@callback(
-    Output("ftir-raw-quality-panel", "children"),
-    Input("project-id", "data"),
-    Input("ftir-dataset-select", "value"),
-    Input("ftir-refresh", "data"),
-    Input("ui-locale", "data"),
-)
-def render_ftir_raw_quality_panel(project_id, dataset_key, _refresh, locale_data):
-    loc = _loc(locale_data)
-    if not project_id or not dataset_key:
-        return html.P(translate_ui(loc, "dash.analysis.ftir.raw_quality.pick_dataset"), className="text-muted small mb-0")
-    from dash_app.api_client import workspace_dataset_data, workspace_dataset_detail
-
-    try:
-        detail = workspace_dataset_detail(project_id, dataset_key)
-        data = workspace_dataset_data(project_id, dataset_key)
-    except Exception as exc:
-        return html.P(translate_ui(loc, "dash.analysis.ftir.raw_quality.load_failed", error=str(exc)), className="text-danger small mb-0")
-
-    rows = data.get("rows") or []
-    columns = data.get("columns") or []
-    t_arr, s_arr = downsample_rows(rows, columns)
-    validation = detail.get("validation") if isinstance(detail.get("validation"), dict) else {}
-    stats = compute_ftir_raw_exploration_stats(t_arr, s_arr, validation=validation)
-    units = detail.get("units") or {}
-    sig_u = str(units.get("signal") or "")
-    return build_ftir_raw_quality_panel(stats, loc, signal_unit=sig_u)
 
 
 # ---------------------------------------------------------------------------

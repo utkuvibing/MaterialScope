@@ -60,7 +60,6 @@ def test_layout_contains_section_ids_in_order():
         "ftir-preset-loaded-name",
         "ftir-preset-snapshot",
         "ftir-workflow-guide-title",
-        "ftir-raw-quality-panel",
         "ftir-processing-undo-btn",
         "ftir-processing-redo-btn",
         "ftir-processing-reset-btn",
@@ -446,29 +445,11 @@ def test_build_figure_no_data_when_empty_curves(monkeypatch):
     assert isinstance(fig, html.P)
 
 
-def test_render_ftir_raw_quality_panel_renders_stats(monkeypatch):
+def test_ftir_layout_excludes_raw_quality_section():
     mod = _import_ftir_page()
-    import dash_app.api_client as api_client
-
-    monkeypatch.setattr(
-        api_client,
-        "workspace_dataset_detail",
-        lambda _p, _k: {
-            "validation": {"status": "ok"},
-            "units": {"signal": "absorbance"},
-        },
-    )
-    monkeypatch.setattr(
-        api_client,
-        "workspace_dataset_data",
-        lambda _p, _k: {
-            "columns": ["temperature", "signal"],
-            "rows": [{"temperature": 4000.0, "signal": 0.1}, {"temperature": 3000.0, "signal": 0.5}],
-        },
-    )
-    panel = mod.render_ftir_raw_quality_panel("proj", "ds", 0, "en")
-    s = str(panel)
-    assert "4000.0" in s or "Points:" in s
+    layout_str = str(mod.layout)
+    assert "ftir-raw-quality-panel" not in layout_str
+    assert "ftir-raw-quality-card-title" not in layout_str
 
 
 def test_render_ftir_literature_uses_ftir_prefix():

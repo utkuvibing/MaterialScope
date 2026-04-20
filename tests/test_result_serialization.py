@@ -288,6 +288,8 @@ def test_serialize_ftir_result_persists_no_match_caution_and_evidence():
     assert record["review"]["caution"]["code"] == "spectral_no_match"
     assert record["rows"][0]["library_provider"] == "OpenSpecy"
     assert record["rows"][0]["evidence"]["shared_peak_count"] == 0
+    claim_blob = " ".join(item.get("claim", "") for item in record["scientific_context"].get("scientific_claims") or [])
+    assert "not specialized for this analysis type yet" not in claim_blob.lower()
     assert record["scientific_context"]["methodology"]["library_context"]["package"] == "openspecy_ftir_core"
     assert record["scientific_context"]["methodology"]["library_context"]["request_id"] == "libreq_ftir_001"
     assert record["scientific_context"]["fit_quality"]["confidence_band"] == "no_match"

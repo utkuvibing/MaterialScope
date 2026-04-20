@@ -431,6 +431,122 @@ def _build_dta_reasoning(
     }
 
 
+def _build_ftir_reasoning(
+    summary: dict[str, Any],
+    rows: list[dict[str, Any]],
+    metadata: dict[str, Any],
+    fit_band: str,
+    fit_reason: str,
+    validation: dict[str, Any] | None,
+) -> dict[str, Any]:
+    top_row = rows[0] if rows else {}
+    evidence = dict(top_row.get("evidence") or {})
+    match_status = str(summary.get("match_status") or "").lower()
+    confidence_band = str(summary.get("confidence_band") or "").lower()
+    peak_count = _safe_int(summary.get("peak_count"))
+    if peak_count is None:
+        peak_count = 0
+    top_name = str(summary.get("top_match_name") or "").strip()
+    top_score = _safe_float(summary.get("top_match_score"))
+    shared = _safe_int(evidence.get("shared_peak_count"))
+    sample = str(summary.get("sample_name") or metadata.get("sample_name") or "").strip()
+    library_src = str(summary.get("library_result_source") or "").strip()
+
+    claims: list[dict[str, Any]] = []
+    evidence_map: dict[str, list[str]] = {}
+
+    desc_ev = [
+        f"Detected peaks (in-record): {peak_count}.",
+        f"Library match status: {match_status}.",
+    ]
+    if sample:
+        desc_ev.append(f"Sample label: {sample}.")
+    if library_src:
+        desc_ev.append(f"Library result source: {library_src}.")
+    claims.append(
+        _claim(
+            "C1",
+            "descriptive",
+            f"The FTIR workflow executed spectral preprocessing, peak detection, and reference similarity matching, ending in match_status={match_status}.",
+            desc_ev,
+        )
+    )
+    evidence_map["C1"] = desc_ev
+
+    if match_status == "library_unavailable":
+        caution = str(summary.get("caution_message") or "").strip()
+        c2_ev = [
+            "Reference spectral library access was not available for this run.",
+            (caution[:240] + "…") if len(caution) > 240 else caution if caution else "See caution banner for library access details.",
+        ]
+        claims.append(
+            _claim(
+                "C2",
+                "descriptive",
+                "Because reference-library retrieval was unavailable, no ranked similarity candidates should be read as a spectrum-level identification outcome.",
+                c2_ev,
+            )
+        )
+        evidence_map["C2"] = c2_ev
+    elif match_status == "matched" and top_name:
+        strength = "comparative" if confidence_band not in {"", "no_match", "low"} else "descriptive"
+        matched_ev = [
+            f"Top candidate: {top_name}.",
+            f"Confidence band: {confidence_band}.",
+        ]
+        if top_score is not None:
+            matched_ev.append(f"Normalized similarity score: {top_score:.4f}.")
+        if shared is not None:
+            matched_ev.append(f"Shared peak correspondences (top candidate): {shared}.")
+        claims.append(
+            _claim(
+                "C2",
+                strength,
+                f"The retained library spectrum {top_name} is a qualitative top match that still requires analyst review before any chemistry claim.",
+                matched_ev,
+            )
+        )
+        evidence_map["C2"] = matched_ev
+    elif match_status == "no_match":
+        nm_ev: list[str] = []
+        if top_score is not None:
+            nm_ev.append(f"Best similarity score (below threshold): {top_score:.4f}.")
+        claims.append(
+            _claim(
+                "C2",
+                "descriptive",
+                "No reference entry met the minimum similarity rule; treat the spectrum as unmatched screening output until better references or preprocessing are available.",
+                nm_ev or ["No candidate retained above configured minimum score."],
+            )
+        )
+        evidence_map["C2"] = nm_ev or ["No candidate retained above configured minimum score."]
+
+    gaps = metadata_gaps(metadata, ["instrument", "atmosphere", "pathlength"])
+    uncertainty_items = [fit_reason]
+    if validation:
+        for w in (validation.get("warnings") or [])[:4]:
+            if str(w).strip():
+                uncertainty_items.append(str(w).strip())
+
+    return {
+        "scientific_claims": claims,
+        "evidence_map": evidence_map,
+        "uncertainty_assessment": {
+            "overall_confidence": "moderate"
+            if match_status == "matched" and confidence_band not in {"", "no_match", "low"}
+            else "low",
+            "fit_assessment": fit_band,
+            "metadata_gaps": gaps,
+            "items": uncertainty_items,
+        },
+        "alternative_hypotheses": [
+            "Baseline and smoothing parameter changes can move detected peaks enough to shift similarity scores.",
+            "Library coverage and reference preprocessing assumptions dominate apparent no_match outcomes.",
+        ],
+        "next_experiments": recommend_next_experiments("FTIR", metadata_gaps=gaps, fit_band=fit_band),
+    }
+
+
 def _build_xrd_reasoning(
     summary: dict[str, Any],
     rows: list[dict[str, Any]],
@@ -878,6 +994,8 @@ def build_scientific_reasoning(
         return _build_dsc_reasoning(summary, rows, metadata, band, fit_reason, validation)
     if analysis == "DTA":
         return _build_dta_reasoning(summary, rows, metadata, band, fit_reason, validation)
+    if analysis == "FTIR":
+        return _build_ftir_reasoning(summary, rows, metadata, band, fit_reason, validation)
     if analysis == "XRD":
         return _build_xrd_reasoning(summary, rows, metadata, band, fit_reason, validation)
     if analysis in {"KISSINGER", "OZAWA-FLYNN-WALL", "FRIEDMAN"}:

@@ -4,7 +4,34 @@
 
 ## Status: no active slice (2026-04-21)
 
-The **FTIR follow-up pass** slice is **complete**. Start a new slice by replacing the status block above.
+The **FTIR literature + Setup cleanup** slice is **complete**. Start a new slice by replacing the status block above.
+
+---
+
+### Archived: FTIR literature compare + Raw Data Quality removal (done, 2026-04-21)
+
+**Goal:** Remove the low-value FTIR Raw Data Quality block from Setup; bring FTIR literature compare to **TGA-level** traceability and FTIR-specific queries/claims (no generic placeholder path), without redesigning the FTIR page or breaking shared literature UI.
+
+**In scope**
+
+- [`dash_app/pages/ftir.py`](dash_app/pages/ftir.py): remove raw-quality card and callbacks; keep Setup / Processing / Run and DSC/TGA/DTA alignment.
+- [`dash_app/components/ftir_explore.py`](dash_app/components/ftir_explore.py): remove raw-quality stats/panel; keep undo/redo + `downsample_rows`.
+- [`core/ftir_literature_query_builder.py`](core/ftir_literature_query_builder.py): traceable query payload (modality, match status, peaks, wavenumber terms from evidence, library-unavailable vs matched vs no_match semantics).
+- [`core/literature_compare.py`](core/literature_compare.py): `_compare_ftir_result_to_literature` + FTIR relevance/distractor penalties; `compare_result_to_literature` branches **FTIR**.
+- [`core/scientific_reasoning.py`](core/scientific_reasoning.py): `_build_ftir_reasoning` + dispatch.
+- [`core/literature_models.py`](core/literature_models.py): `executed_queries` through `normalize_literature_context` / `to_dict`.
+- [`core/experiment_recommender.py`](core/experiment_recommender.py): FTIR follow-up recommendations.
+- Tests: [`tests/test_literature_compare.py`](tests/test_literature_compare.py), [`tests/test_ftir_dash_page.py`](tests/test_ftir_dash_page.py), [`tests/test_result_serialization.py`](tests/test_result_serialization.py).
+
+**Acceptance**
+
+- FTIR Setup tab no longer shows Raw Data Quality; layout IDs/tests updated.
+- FTIR literature uses dedicated compare path; provider **not_configured** vs **no_real_results** remain distinct; no generic “not specialized” string on normal FTIR paths.
+- Shared literature renderer and FTIR figure/preset/export wiring unchanged by intent.
+
+**Verification**
+
+- `rtk pytest tests/test_literature_compare.py tests/test_ftir_dash_page.py tests/test_result_serialization.py::test_serialize_ftir_result_persists_no_match_caution_and_evidence -q` — **111 passed**.
 
 ---
 

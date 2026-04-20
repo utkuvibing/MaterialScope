@@ -4,6 +4,22 @@
 
 ---
 
+## 2026-04-21 — FTIR literature compare: dedicated query builder + thermal-style compare path
+
+**Decision:**
+
+1. **Routing:** `analysis_type == "FTIR"` uses **`_compare_ftir_result_to_literature`**, not the generic per-claim path — same structural guarantees as DSC/DTA/TGA (single search pool, ranked surfacing, merged surfaced comparisons, rich `LiteratureContext` including **`executed_queries`**).
+2. **Queries:** **`core/ftir_literature_query_builder.build_ftir_literature_query`** builds modality-first text from real summary/row evidence (including **`matched_peak_pairs`** → wavenumber display terms when present). When **`match_status == library_unavailable`**, queries target **FTIR methodology / library practice**, not a fabricated top identification.
+3. **Relevance:** FTIR uses explicit **modality** phrases plus **distractor penalties** (off-topic domains) so irrelevant hits are less likely to dominate; **no IR modality mention in source text → non_validating** posture.
+4. **Scientific reasoning:** **`_build_ftir_reasoning`** supplies FTIR-native claims (library unavailable vs matched vs no_match); the generic “not specialized for this analysis type yet” branch is **not** used for FTIR.
+5. **Context normalization:** **`LiteratureContext.executed_queries`** is passed through **`normalize_literature_context`** and normalized in **`to_dict`** so technical-details UI stays truthful for all modalities using executed query lists.
+
+**Reason:** FTIR previously fell through generic literature + generic reasoning, producing placeholder copy and weak retention semantics. End-to-end FTIR-specific inputs restore product trust without a new FTIR literature card layout.
+
+**Consequence / future:** **RAMAN** still uses the generic literature path today; a small follow-up can reuse the FTIR builder/compare with modality strings swapped. Raw-quality exploration was removed from the FTIR page; undo/redo helpers remain in `ftir_explore.py`.
+
+---
+
 ## 2026-04-21 — FTIR follow-up: adaptive prominence, normalized plot gating, `library_unavailable` match status
 
 **Decision:**

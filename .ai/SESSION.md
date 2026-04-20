@@ -6,25 +6,24 @@
 
 - **Project:** MaterialScope
 - **Branch:** `web-dash-plotly-migration`
-- **Last slice:** FTIR follow-up pass (peak retention, figure clarity, library diagnostics, literature i18n) — **committed**.
+- **Last slice:** FTIR Setup cleanup + FTIR literature compare (thermal-style pipeline) — **commit + push this session**.
 
 ## What was done this session
 
-1. **Peak retention (`core/batch_runner.py`):** `_detect_spectral_peaks` blends configured prominence with a signal-range floor; second-pass prominence lowered when the first pass finds nothing; `ftir.general` defaults slightly relaxed (`prominence` 0.035, `min_distance` 5, `max_peaks` 14).
-2. **Normalized trace honesty:** Diagnostics `normalized_axis_ratio_vs_corrected` and `plot_normalized_primary_axis`; Dash FTIR figure omits normalized on the shared axis when backend marks it unhelpful; peak markers use **corrected** (then smoothed/raw) Y at the axis index.
-3. **Figure clutter:** With corrected present, **smoothed** is hidden; **baseline** only when baseline + corrected exist; Y-range from plotted series only.
-4. **Library vs chemistry:** New summary `match_status` **`library_unavailable`** when there are no ranked candidates and library access/source indicates missing/unconfigured support; distinct caution `spectral_library_unavailable`; validation + serialization updated; FTIR empty top-match / match-table copy clarified.
-5. **Literature i18n:** FTIR-prefixed technical-details keys; `_collapsible_section` uses `literature_t` + fallback so titles never leak raw keys.
-6. **Tests:** `tests/test_batch_runner.py` (wide-axis peaks, library-unavailable stub path, fallback wording), `tests/test_ftir_dash_page.py` (defaults, normalized suppression, literature title, match table), `tests/test_validation.py` (library_unavailable enrichment).
+1. **Removed FTIR Raw Data Quality** from the Setup tab: dropped card, Dash callbacks, and `ftir_explore` panel/stats helpers that existed only for that UI.
+2. **FTIR literature pipeline:** New `core/ftir_literature_query_builder.py`; `compare_result_to_literature` routes **FTIR** to `_compare_ftir_result_to_literature` (thermal-style pool search, relevance, surfacing, rich `LiteratureContext`).
+3. **Scientific reasoning:** `_build_ftir_reasoning` + `build_scientific_reasoning` dispatch for **FTIR** (no generic “not specialized” placeholder on supported paths).
+4. **`LiteratureContext`:** `normalize_literature_context` now preserves **`executed_queries`**; `to_dict` normalizes the list.
+5. **Follow-ups:** `recommend_next_experiments` gains an **FTIR** branch.
+6. **Tests:** FTIR layout/raw-quality removal; `_ftir_record` + FTIR literature tests; generic-engine tests use **RAMAN** where per-claim behavior is asserted; serialization asserts no placeholder in FTIR claims.
 
 ## What was verified
 
-- `rtk pytest tests/test_batch_runner.py tests/test_ftir_dash_page.py tests/test_validation.py::test_enrich_ftir_result_validation_adds_library_unavailable_semantics -q` — **71 passed**.
-- `rtk pytest tests/test_result_serialization.py tests/test_literature_compare_panel.py tests/test_literature_compare.py tests/test_raman_dash_page.py -q` — green on targeted runs.
+- `rtk pytest tests/test_literature_compare.py tests/test_ftir_dash_page.py tests/test_result_serialization.py::test_serialize_ftir_result_persists_no_match_caution_and_evidence -q` — **111 passed**.
 
 ## Next step
 
 - None required for this slice.
-- Optional: top-match spectral overlay when a candidate signal API exists.
+- Optional: route **RAMAN** through the same spectral literature builder/compare for parity.
 
 **Process defaults:** **`00-workflow.mdc`**.
