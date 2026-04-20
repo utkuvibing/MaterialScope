@@ -6,7 +6,7 @@
 
 - **Project:** MaterialScope
 - **Branch:** `web-dash-plotly-migration`
-- **Last slice:** FTIR Setup cleanup + FTIR literature compare (thermal-style pipeline) — **commit + push this session**.
+- **Last slice:** FTIR Setup cleanup + FTIR literature compare (thermal-style pipeline) — **committed and pushed** (`ce037d9`).
 
 ## What was done this session
 
