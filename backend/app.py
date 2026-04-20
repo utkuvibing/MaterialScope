@@ -940,7 +940,22 @@ def create_app(
         smoothed = _to_list(analysis_state.get("smoothed"))
         baseline = _to_list(analysis_state.get("baseline"))
         corrected = _to_list(analysis_state.get("corrected"))
+        normalized = _to_list(analysis_state.get("normalized"))
         dtg = _to_list(analysis_state.get("dtg"))
+        raw_peaks = analysis_state.get("peaks") or []
+        if not isinstance(raw_peaks, list):
+            raw_peaks = []
+
+        def _peak_to_dict(peak: Any) -> dict[str, Any]:
+            if isinstance(peak, dict):
+                return peak
+            if hasattr(peak, "__dict__"):
+                return vars(peak)
+            if hasattr(peak, "_asdict"):
+                return peak._asdict()
+            return {}
+
+        peaks = [_peak_to_dict(p) for p in raw_peaks]
 
         return AnalysisStateCurvesResponse(
             project_id=project_id,
@@ -951,11 +966,15 @@ def create_app(
             smoothed=smoothed,
             baseline=baseline,
             corrected=corrected,
+            normalized=normalized,
             dtg=dtg,
+            peaks=peaks,
             has_smoothed=bool(smoothed),
             has_baseline=bool(baseline),
             has_corrected=bool(corrected),
+            has_normalized=bool(normalized),
             has_dtg=bool(dtg),
+            has_peaks=bool(peaks),
         )
 
     @app.post("/workspace/{project_id}/results/{result_id}/literature/compare", response_model=LiteratureCompareResponse)

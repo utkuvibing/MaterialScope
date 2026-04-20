@@ -549,11 +549,15 @@ class AnalysisStateCurvesResponse(BaseModel):
     smoothed: list[float] = Field(default_factory=list)
     baseline: list[float] = Field(default_factory=list)
     corrected: list[float] = Field(default_factory=list)
+    normalized: list[float] = Field(default_factory=list)
     dtg: list[float] = Field(default_factory=list)
+    peaks: list[dict[str, Any]] = Field(default_factory=list)
     has_smoothed: bool = False
     has_baseline: bool = False
     has_corrected: bool = False
+    has_normalized: bool = False
     has_dtg: bool = False
+    has_peaks: bool = False
 
 
 class BatchRunResponse(BaseModel):
