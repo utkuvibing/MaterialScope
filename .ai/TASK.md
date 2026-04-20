@@ -4,7 +4,39 @@
 
 ## Status: no active slice (2026-04-20)
 
-The **DSC/DTA Processing history + reset styling** slice is **complete**. Start a new slice by replacing the status block above.
+The **FTIR full product-grade page** slice is **complete**. Start a new slice by replacing the status block above.
+
+---
+
+### Archived: Dash FTIR full product-grade page (done, 2026-04-20)
+
+**Goal:** Bring the FTIR Dash analysis page from a first-slice implementation to a full product-grade page aligned with the existing DSC/TGA/DTA standard.
+
+**In scope**
+
+- [`dash_app/pages/ftir.py`](dash_app/pages/ftir.py): complete rewrite to standard left-column tabs (Setup / Processing / Run) + right-column result surface (summary, metrics, quality, figure, top-match, peak cards, match table, processing, raw metadata, literature compare); processing draft store + controls; preset workflow; undo/redo/reset; figure overlays.
+- [`dash_app/components/ftir_explore.py`](dash_app/components/ftir_explore.py): raw-quality stats, spacing/irregularity hints, undo/redo helpers, panel builder.
+- [`backend/models.py`](backend/models.py): `AnalysisStateCurvesResponse` extended with `normalized`, `peaks`, `has_normalized`, `has_peaks`.
+- [`backend/app.py`](backend/app.py): `analysis_state_curves` endpoint returns new fields + safe `_peak_to_dict` conversion for DSC/DTA dataclass peaks.
+- [`utils/i18n.py`](utils/i18n.py): ~45 FTIR-specific keys (en/tr).
+- Tests: [`tests/test_ftir_dash_page.py`](tests/test_ftir_dash_page.py).
+
+**Acceptance**
+
+- FTIR page matches DSC/TGA/DTA section order and design language exactly.
+- Processing controls (baseline, normalization, smoothing, peak detection, similarity matching) map into `processing_overrides` for `analysis_run`.
+- Preset payload saves and loads both `workflow_template_id` and full FTIR processing draft.
+- Backend exposes `normalized` signal and `peaks` via `analysis_state_curves`; Dash page shows backend-truth peaks without client-side re-detection.
+- Figure shows raw/smoothed/corrected/baseline/normalized overlays with reversed x-axis and limited peak labels (top 8).
+- Top-match hero summary panel renders candidate name, score, confidence badge, and overlap explanation (overlay preview deferred).
+- Literature compare uses FTIR-specific i18n prefix and shared renderer unchanged.
+- Undo/redo/reset work with dirty-state tracking on the Processing tab.
+
+**Verification**
+
+- `rtk pytest tests/test_ftir_dash_page.py -q` — **35 passed**.
+- `rtk pytest tests/test_dash_workflow_regression.py tests/test_dash_figure_capture_wiring.py tests/test_analysis_page_components.py tests/test_preset_store.py tests/test_tga_dash_page.py tests/test_dsc_dash_page.py -q` — **142 passed**.
+- `rtk pytest tests/test_backend_workflow.py -q` — **13 passed**.
 
 ---
 

@@ -4,6 +4,36 @@
 
 ---
 
+## 2026-04-20 — FTIR analysis page: backend-truth peaks via `analysis_state_curves`; deferred overlay preview
+
+**Decision:** Extend `AnalysisStateCurvesResponse` and `analysis_state_curves` endpoint to return `normalized` signal and `peaks` for FTIR, with safe `_peak_to_dict` conversion so DSC/DTA `ThermalPeak` dataclass objects do not cause Pydantic serialization errors. The Dash page renders backend-truth peaks directly from this endpoint instead of re-detecting client-side. The top-match overlay preview graph (candidate signal plotted over sample signal) is explicitly deferred because the backend does not expose a candidate/reference signal endpoint today; the Dash page ships a strong text hero summary instead.
+
+**Reason:** Keeps peak display consistent with backend analysis; avoids client/server drift. Overlay preview requires a new backend API for candidate spectral signals — out of scope for this slice.
+
+**Consequence / future:** When a candidate signal endpoint exists, the overlay preview can be added with minimal frontend-only changes. Other spectral modalities (Raman, XRD) should follow the same backend-truth curves contract.
+
+---
+
+## 2026-04-20 — FTIR preset payload: workflow template + full processing draft
+
+**Decision:** FTIR preset save/load stores both `workflow_template_id` and the complete FTIR processing draft (baseline, normalization, smoothing, peak detection, similarity matching) inside the `processing` envelope, matching the existing preset API contract. On load, the page hydrates template, controls, draft, snapshot baseline, and dirty state. On run, `processing_overrides` is built only from the UI draft store.
+
+**Reason:** Presets must be meaningful for FTIR; storing only the workflow template would lose all processing context. Reuses the TGA pattern (unit mode in `method_context`) but applies it to the full FTIR draft.
+
+**Consequence / future:** Any new analysis page with a processing draft should follow the same preset envelope pattern: template id + full draft in `processing`.
+
+---
+
+## 2026-04-20 — FTIR controls scope: only expose backend-supported parameters
+
+**Decision:** The FTIR Dash page exposes only `prominence`, `distance`, `max_peaks` for peak detection and `top_n`, `minimum_score` for similarity matching — the exact parameters the backend `processing_schema` and batch runner support today. Width, threshold, and other advanced peak controls are omitted until the backend detector is extended.
+
+**Reason:** Prevents user confusion from controls that would be ignored or would fail validation on the backend. Keeps the UI honest about backend capability.
+
+**Consequence / future:** When the backend adds new processing parameters (e.g., peak width, SNR threshold), the Dash page can expand its controls and preset draft model incrementally.
+
+---
+
 ## 2026-04-20 — Thermal Dash pages: Processing history card + neutral Reset styling
 
 **Decision:** DSC and DTA expose a **Processing history** card on the Processing tab (before presets) with Undo, Redo, and Reset to defaults, mirroring TGA: one merged callback per page driven by `dash.callback_context.triggered_id`, updating `processing-draft`, undo/redo stacks, and a small `*-history-status` line. Smoothing (and other section) chrome callbacks no longer own undo/redo/reset **button label** outputs—those live in dedicated `render_*_processing_history_chrome` callbacks. **Reset to defaults** uses Bootstrap **`secondary` outline** (same as Undo/Redo), not **`warning`**, so reset is not confused with validation severity.
