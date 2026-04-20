@@ -47,6 +47,11 @@ def test_layout_contains_section_ids_in_order():
     mod = _import_tga_page()
     layout_str = str(mod.layout)
     expected_ids = [
+        "tga-left-tabs",
+        "tga-tab-setup-shell",
+        "tga-tab-processing-shell",
+        "tga-tab-run-shell",
+        "tga-run-shortcut-hints",
         "tga-processing-draft",
         "tga-preset-refresh",
         "tga-preset-hydrate",
@@ -58,6 +63,8 @@ def test_layout_contains_section_ids_in_order():
         "tga-preset-saveas-btn",
         "tga-preset-delete-btn",
         "tga-preset-status",
+        "tga-smoothing-card-title",
+        "tga-step-card-title",
         "tga-smooth-method",
         "tga-step-prominence",
         "tga-step-min-mass",
@@ -87,9 +94,9 @@ def test_layout_contains_section_ids_in_order():
     assert layout_str.index("tga-result-figure") < layout_str.index("tga-result-dtg")
     assert layout_str.index("tga-result-dtg") < layout_str.index("tga-result-step-cards")
     assert layout_str.index("tga-result-raw-metadata") < layout_str.index("tga-literature-compare-btn")
-    assert layout_str.index("tga-template-select") < layout_str.index("tga-preset-select")
-    assert layout_str.index("tga-preset-select") < layout_str.index("tga-smooth-method")
-    assert layout_str.index("tga-smooth-method") < layout_str.index("tga-run-btn")
+    assert layout_str.index("tga-left-tabs") < layout_str.index("tga-result-analysis-summary")
+    assert layout_str.index("tga-tab-setup-shell") < layout_str.index("tga-tab-processing-shell")
+    assert layout_str.index("tga-tab-processing-shell") < layout_str.index("tga-tab-run-shell")
 
 
 def test_layout_uses_results_surface_class():

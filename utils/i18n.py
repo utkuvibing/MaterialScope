@@ -1353,6 +1353,13 @@ TRANSLATIONS = {
         "en": "Select a TGA-eligible dataset, choose unit mode and workflow template, and run thermogravimetric analysis.",
     },
     "dash.analysis.tga.run_btn": {"tr": "TGA analizini çalıştır", "en": "Run TGA Analysis"},
+    "dash.analysis.tga.tab.setup": {"tr": "Kurulum", "en": "Setup"},
+    "dash.analysis.tga.tab.processing": {"tr": "İşleme", "en": "Processing"},
+    "dash.analysis.tga.tab.run": {"tr": "Çalıştır", "en": "Run"},
+    "dash.analysis.tga.shortcuts.hint_run": {
+        "tr": "Çalıştır: Ctrl+Enter veya Cmd+Enter",
+        "en": "Run: Ctrl+Enter or Cmd+Enter",
+    },
     "dash.analysis.tga.empty_import": {"tr": "Önce bir TGA dosyası içe aktarın.", "en": "Import a TGA file first."},
     "dash.analysis.tga.workflow_fallback": {"tr": "TGA analiz iş akışı.", "en": "TGA analysis workflow."},
     "dash.analysis.tga.unit_mode_help": {
@@ -1490,10 +1497,15 @@ TRANSLATIONS = {
     },
     "dash.analysis.tga.presets.clean": {"tr": "Yüklü preset ile uyumlu", "en": "Matches loaded preset"},
     "dash.analysis.tga.presets.dirty": {"tr": "Yüklü presetten farklı (kaydedilmemiş değişiklikler)", "en": "Modified vs loaded preset"},
-    "dash.analysis.tga.processing.card_title": {"tr": "TGA işleme", "en": "TGA processing"},
-    "dash.analysis.tga.processing.card_hint": {
-        "tr": "Yumuşatma ve adım algılama bu çalıştırmada kullanılır; presetlere dahildir.",
-        "en": "Smoothing and step detection apply to each run and are included in presets.",
+    "dash.analysis.tga.processing.smoothing_card_title": {"tr": "Yumuşatma", "en": "Smoothing"},
+    "dash.analysis.tga.processing.smoothing_card_hint": {
+        "tr": "Kütle sinyali ve DTG için kullanılan yumuşatma; presetlere dahildir.",
+        "en": "Smoothing applied to the mass signal and DTG pipeline; included in presets.",
+    },
+    "dash.analysis.tga.processing.step_card_title": {"tr": "Adım algılama", "en": "Step detection"},
+    "dash.analysis.tga.processing.step_card_hint": {
+        "tr": "DTG tepelerinden kütle kaybı adımları; eşikler presetlere dahildir.",
+        "en": "Mass-loss steps from DTG peaks; thresholds are included in presets.",
     },
     "dash.analysis.tga.processing.smooth.heading": {"tr": "Yumuşatma", "en": "Smoothing"},
     "dash.analysis.tga.processing.smooth.method": {"tr": "Yöntem", "en": "Method"},

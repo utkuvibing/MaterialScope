@@ -1,13 +1,12 @@
 """TGA analysis page -- backend-driven first analysis slice.
 
 Lets the user:
-  1. Select an eligible TGA dataset from the workspace
-  2. Select a TGA unit mode (auto / percent / absolute_mass)
-  3. Select a TGA workflow template
-  4. Tune smoothing and step-detection parameters (mirrored into ``processing_overrides``)
-  5. Save / load / delete named presets (workflow + unit + processing via shared preset API)
-  6. Run analysis through the backend /analysis/run endpoint
-  7. View analysis summary, validation, main mass trace, DTG preview, steps,
+  1. Use **Setup / Processing / Run** tabs (aligned with DSC and DTA)
+  2. **Setup:** dataset, unit mode (auto / percent / absolute_mass), workflow template
+  3. **Processing:** presets and separate **Smoothing** / **Step detection** cards
+     (parameters flow into ``processing_overrides`` and preset payloads)
+  4. **Run:** execute via the backend ``/analysis/run`` endpoint
+  5. View analysis summary, validation, main mass trace, DTG preview, steps,
      processing, raw metadata, literature compare, and auto-refresh workspace state
 """
 
@@ -465,7 +464,7 @@ def _unit_mode_card() -> dbc.Card:
                 html.P("", className="text-muted small mt-2", id="tga-unit-mode-description"),
             ]
         ),
-        className="mb-4",
+        className="mb-3",
     )
 
 
@@ -510,13 +509,12 @@ def _tga_preset_card() -> dbc.Card:
     )
 
 
-def _tga_processing_controls_card() -> dbc.Card:
+def _tga_smoothing_controls_card() -> dbc.Card:
     return dbc.Card(
         dbc.CardBody(
             [
-                html.H5(id="tga-processing-card-title", className="card-title mb-2"),
-                html.P(id="tga-processing-card-hint", className="small text-muted mb-3"),
-                html.H6(id="tga-processing-smooth-heading", className="small text-uppercase text-muted mb-2"),
+                html.H5(id="tga-smoothing-card-title", className="card-title mb-2"),
+                html.P(id="tga-smoothing-card-hint", className="small text-muted mb-3"),
                 dbc.Row(
                     [
                         dbc.Col(
@@ -561,9 +559,20 @@ def _tga_processing_controls_card() -> dbc.Card:
                             md=4,
                         ),
                     ],
-                    className="g-2 mb-3",
+                    className="g-2",
                 ),
-                html.H6(id="tga-processing-step-heading", className="small text-uppercase text-muted mb-2"),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
+def _tga_step_detection_card() -> dbc.Card:
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H5(id="tga-step-card-title", className="card-title mb-2"),
+                html.P(id="tga-step-card-hint", className="small text-muted mb-3"),
                 dbc.Row(
                     [
                         dbc.Col(
@@ -596,6 +605,52 @@ def _tga_processing_controls_card() -> dbc.Card:
     )
 
 
+def _tga_left_column_tabs() -> dbc.Tabs:
+    """Setup / Processing / Run tabs — same structure as DSC and DTA left columns."""
+    return dbc.Tabs(
+        [
+            dbc.Tab(
+                [
+                    dataset_selection_card("tga-dataset-selector-area", card_title_id="tga-dataset-card-title"),
+                    _unit_mode_card(),
+                    workflow_template_card(
+                        "tga-template-select",
+                        "tga-template-description",
+                        [],
+                        "tga.general",
+                        card_title_id="tga-workflow-card-title",
+                    ),
+                ],
+                tab_id="tga-tab-setup",
+                label_class_name="ta-tab-label",
+                id="tga-tab-setup-shell",
+            ),
+            dbc.Tab(
+                [
+                    _tga_preset_card(),
+                    _tga_smoothing_controls_card(),
+                    _tga_step_detection_card(),
+                ],
+                tab_id="tga-tab-processing",
+                label_class_name="ta-tab-label",
+                id="tga-tab-processing-shell",
+            ),
+            dbc.Tab(
+                [
+                    execute_card("tga-run-status", "tga-run-btn", card_title_id="tga-execute-card-title"),
+                    html.Small(id="tga-run-shortcut-hints", className="text-muted d-block mt-2"),
+                ],
+                tab_id="tga-tab-run",
+                label_class_name="ta-tab-label",
+                id="tga-tab-run-shell",
+            ),
+        ],
+        id="tga-left-tabs",
+        active_tab="tga-tab-setup",
+        className="mb-3",
+    )
+
+
 layout = html.Div(
     analysis_page_stores("tga-refresh", "tga-latest-result-id")
     + [
@@ -609,20 +664,7 @@ layout = html.Div(
         dbc.Row(
             [
                 dbc.Col(
-                    [
-                        dataset_selection_card("tga-dataset-selector-area", card_title_id="tga-dataset-card-title"),
-                        _unit_mode_card(),
-                        workflow_template_card(
-                            "tga-template-select",
-                            "tga-template-description",
-                            [],
-                            "tga.general",
-                            card_title_id="tga-workflow-card-title",
-                        ),
-                        _tga_preset_card(),
-                        _tga_processing_controls_card(),
-                        execute_card("tga-run-status", "tga-run-btn", card_title_id="tga-execute-card-title"),
-                    ],
+                    [_tga_left_column_tabs()],
                     md=4,
                 ),
                 dbc.Col(
@@ -694,6 +736,35 @@ def render_tga_locale_chrome(locale_data, template_id, unit_mode):
         desc,
         unit_opts,
         uval,
+    )
+
+
+@callback(
+    Output("tga-tab-setup-shell", "label"),
+    Output("tga-tab-processing-shell", "label"),
+    Output("tga-tab-run-shell", "label"),
+    Input("ui-locale", "data"),
+)
+def render_tga_tab_chrome(locale_data):
+    loc = _loc(locale_data)
+    return (
+        translate_ui(loc, "dash.analysis.tga.tab.setup"),
+        translate_ui(loc, "dash.analysis.tga.tab.processing"),
+        translate_ui(loc, "dash.analysis.tga.tab.run"),
+    )
+
+
+@callback(
+    Output("tga-run-shortcut-hints", "children"),
+    Input("ui-locale", "data"),
+)
+def render_tga_run_shortcut_hints(locale_data):
+    loc = _loc(locale_data)
+    return html.Span(
+        [
+            translate_ui(loc, "dash.analysis.tga.shortcuts.hint_run"),
+        ],
+        className="d-block",
     )
 
 
@@ -771,14 +842,14 @@ def render_tga_preset_chrome(locale_data):
 
 
 @callback(
-    Output("tga-processing-card-title", "children"),
-    Output("tga-processing-card-hint", "children"),
-    Output("tga-processing-smooth-heading", "children"),
+    Output("tga-smoothing-card-title", "children"),
+    Output("tga-smoothing-card-hint", "children"),
+    Output("tga-step-card-title", "children"),
+    Output("tga-step-card-hint", "children"),
     Output("tga-smooth-method-label", "children"),
     Output("tga-smooth-window-label", "children"),
     Output("tga-smooth-polyorder-label", "children"),
     Output("tga-smooth-sigma-label", "children"),
-    Output("tga-processing-step-heading", "children"),
     Output("tga-step-prominence-label", "children"),
     Output("tga-step-prominence", "placeholder"),
     Output("tga-step-min-mass-label", "children"),
@@ -794,14 +865,14 @@ def render_tga_processing_chrome(locale_data):
         {"label": translate_ui(loc, "dash.analysis.tga.processing.smooth.gaussian"), "value": "gaussian"},
     ]
     return (
-        translate_ui(loc, "dash.analysis.tga.processing.card_title"),
-        translate_ui(loc, "dash.analysis.tga.processing.card_hint"),
-        translate_ui(loc, "dash.analysis.tga.processing.smooth.heading"),
+        translate_ui(loc, "dash.analysis.tga.processing.smoothing_card_title"),
+        translate_ui(loc, "dash.analysis.tga.processing.smoothing_card_hint"),
+        translate_ui(loc, "dash.analysis.tga.processing.step_card_title"),
+        translate_ui(loc, "dash.analysis.tga.processing.step_card_hint"),
         translate_ui(loc, "dash.analysis.tga.processing.smooth.method"),
         translate_ui(loc, "dash.analysis.tga.processing.smooth.window"),
         translate_ui(loc, "dash.analysis.tga.processing.smooth.polyorder"),
         translate_ui(loc, "dash.analysis.tga.processing.smooth.sigma"),
-        translate_ui(loc, "dash.analysis.tga.processing.step.heading"),
         translate_ui(loc, "dash.analysis.tga.processing.step.prominence"),
         translate_ui(loc, "dash.analysis.tga.processing.step.prominence_ph"),
         translate_ui(loc, "dash.analysis.tga.processing.step.min_mass"),
@@ -859,6 +930,7 @@ def toggle_tga_preset_action_buttons(selected_name):
     Output("tga-preset-hydrate", "data", allow_duplicate=True),
     Output("tga-preset-loaded-name", "data", allow_duplicate=True),
     Output("tga-preset-snapshot", "data", allow_duplicate=True),
+    Output("tga-left-tabs", "active_tab", allow_duplicate=True),
     Input("tga-preset-load-btn", "n_clicks"),
     State("tga-preset-select", "value"),
     State("tga-preset-hydrate", "data"),
@@ -881,6 +953,7 @@ def apply_tga_preset(n_clicks, selected_name, hydrate_val, locale_data):
             dash.no_update,
             dash.no_update,
             dash.no_update,
+            dash.no_update,
         )
     try:
         payload = api_client.load_analysis_preset(_TGA_PRESET_ANALYSIS_TYPE, name)
@@ -890,6 +963,7 @@ def apply_tga_preset(n_clicks, selected_name, hydrate_val, locale_data):
             dash.no_update,
             dash.no_update,
             translate_ui(loc, "dash.analysis.tga.presets.load_failed").format(error=str(exc)),
+            dash.no_update,
             dash.no_update,
             dash.no_update,
             dash.no_update,
@@ -911,6 +985,7 @@ def apply_tga_preset(n_clicks, selected_name, hydrate_val, locale_data):
         int(hydrate_val or 0) + 1,
         name,
         snap,
+        "tga-tab-run",
     )
 
 
@@ -919,6 +994,7 @@ def apply_tga_preset(n_clicks, selected_name, hydrate_val, locale_data):
     Output("tga-preset-save-name", "value", allow_duplicate=True),
     Output("tga-preset-status", "children", allow_duplicate=True),
     Output("tga-preset-snapshot", "data", allow_duplicate=True),
+    Output("tga-left-tabs", "active_tab", allow_duplicate=True),
     Input("tga-preset-save-btn", "n_clicks"),
     Input("tga-preset-saveas-btn", "n_clicks"),
     State("tga-preset-select", "value"),
@@ -941,12 +1017,24 @@ def save_tga_preset(n_save, n_saveas, selected_name, save_name, draft, template_
     if trig == "tga-preset-save-btn":
         name = str(selected_name or "").strip()
         if not name:
-            return dash.no_update, dash.no_update, translate_ui(loc, "dash.analysis.tga.presets.select_required"), dash.no_update
+            return (
+                dash.no_update,
+                dash.no_update,
+                translate_ui(loc, "dash.analysis.tga.presets.select_required"),
+                dash.no_update,
+                dash.no_update,
+            )
         clear_name = dash.no_update
     elif trig == "tga-preset-saveas-btn":
         name = str(save_name or "").strip()
         if not name:
-            return dash.no_update, dash.no_update, translate_ui(loc, "dash.analysis.tga.presets.save_name_required"), dash.no_update
+            return (
+                dash.no_update,
+                dash.no_update,
+                translate_ui(loc, "dash.analysis.tga.presets.save_name_required"),
+                dash.no_update,
+                dash.no_update,
+            )
         clear_name = ""
     else:
         raise dash.exceptions.PreventUpdate
@@ -965,11 +1053,12 @@ def save_tga_preset(n_save, n_saveas, selected_name, save_name, draft, template_
             dash.no_update,
             translate_ui(loc, "dash.analysis.tga.presets.save_failed").format(error=str(exc)),
             dash.no_update,
+            dash.no_update,
         )
     resolved_template = str(response.get("workflow_template_id") or template_id or "")
     snap = _tga_ui_snapshot_dict(str(template_id or "").strip() or None, unit_mode, draft)
     status = translate_ui(loc, "dash.analysis.tga.presets.saved").format(preset=name, template=resolved_template)
-    return int(refresh_token or 0) + 1, clear_name, status, snap
+    return int(refresh_token or 0) + 1, clear_name, status, snap, "tga-tab-run"
 
 
 @callback(
