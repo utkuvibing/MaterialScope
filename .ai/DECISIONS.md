@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-04-20 — TGA quality panel: `validation.checks` under nested technical details
+
+**Decision:** Keep status, warning/issue counts, warning/issue lists, and calibration/reference in the main TGA quality alert; render `validation.checks` only inside a collapsed “Technical validation details” `<details>` block.
+
+**Reason:** The flat checks list read like a backend inspection dump and obscured user-meaningful validation content.
+
+**Consequence / future:** Power users expand one nested section for import/inference keys; empty checks omit the block.
+
+---
+
+## 2026-04-20 — TGA figure markers use the same curated step rows as key-step cards
+
+**Decision:** Add `_tga_curated_step_rows_for_ui` and use it for both `_build_step_cards` midpoint/card data and `_build_figure` midpoint marker traces so the annotated set always matches the curated ranked subset (including ordering by significance when all steps fit the cap).
+
+**Reason:** Cards and plot could diverge (e.g. raw row order vs ranked cap), which confused interpretation on high-step datasets.
+
+**Consequence / future:** Any change to capping or ranking logic should touch this helper once.
+
+---
+
 ## 2026-04-20 — TGA literature compare uses optional preview limits on shared `render_literature_output`
 
 **Decision:** Add optional `evidence_preview_limit` and `alternative_preview_limit` to `dash_app/components/literature_compare_ui.py::render_literature_output` (defaults `None` = unchanged full layout). TGA passes small limits (2 / 1) so retained references collapse behind a `<details>` “show N more” block with lighter row chrome; DSC/DTA call sites unchanged.

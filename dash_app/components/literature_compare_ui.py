@@ -202,18 +202,22 @@ def render_literature_output(
     if alt_limit is None and evidence_preview_limit is not None:
         alt_limit = 1
 
-    claim_items = []
+    compact_lit = evidence_preview_limit is not None
+    claims_cap = 2 if compact_lit else None
+
+    claim_items: list[html.Li] = []
     for entry in claims:
         if not isinstance(entry, dict):
             continue
         text = _entry_text(entry)
         if text:
-            claim_items.append(html.Li(text, className="small"))
+            claim_items.append(html.Li(text, className="small mb-0"))
 
     def _render_evidence_rows(rows: list[dict[str, Any]], *, compact: bool = False) -> list[html.Div]:
-        row_class = (
-            "mb-2 pb-2 border-bottom ta-literature-evidence-compact" if compact else "border rounded p-2 mb-2"
-        )
+        if compact:
+            row_class = "mb-1 pb-1 border-bottom ta-literature-evidence-compact py-0"
+        else:
+            row_class = "border rounded p-2 mb-2"
         rendered: list[html.Div] = []
         for row in rows:
             meta_parts: list[str] = []
@@ -229,12 +233,15 @@ def render_literature_output(
                 meta_parts.append(
                     literature_t(loc, _k("evidence.citations_prefix"), "Linked citations: {titles}").replace("{titles}", cite_summary)
                 )
+            title_cls = "fw-semibold small lh-sm mb-0" if compact else "fw-semibold small"
+            rationale_cls = "small text-muted mb-0 lh-sm mt-1" if compact else "small mb-1"
+            meta_cls = "small text-muted mb-0 lh-sm mt-1" if compact else "small text-muted mb-0"
             rendered.append(
                 html.Div(
                     [
-                        html.Div(row["title"], className="fw-semibold small"),
-                        html.P(row["rationale"], className="small mb-1") if row.get("rationale") else None,
-                        html.P(" | ".join(meta_parts), className="small text-muted mb-0") if meta_parts else None,
+                        html.Div(row["title"], className=title_cls),
+                        html.P(row["rationale"], className=rationale_cls) if row.get("rationale") else None,
+                        html.P(" | ".join(meta_parts), className=meta_cls) if meta_parts else None,
                     ],
                     className=row_class,
                 )
@@ -261,16 +268,20 @@ def render_literature_output(
                         html.Summary(
                             [
                                 html.Span(className="ta-details-chevron"),
-                                html.Span(show_more_label, className="ms-1 small"),
+                                html.Span(show_more_label, className="ms-1 small fw-semibold text-primary"),
+                                html.Span(
+                                    literature_t(loc, _k("evidence_show_more_hint"), " (expand)"),
+                                    className="small text-muted ms-1",
+                                ),
                             ],
-                            className="ta-details-summary",
+                            className="ta-details-summary py-1 border border-secondary-subtle rounded px-2",
                         ),
                         html.Div(
                             html.Div(_render_evidence_rows(tail, compact=True)),
                             className="ta-details-body mt-2",
                         ),
                     ],
-                    className="ta-ms-details mb-0 mt-1",
+                    className="ta-ms-details mb-0 mt-2",
                     open=False,
                 ),
             ]
@@ -279,8 +290,65 @@ def render_literature_output(
     children: list[Any] = []
 
     if claim_items:
-        children.append(
-            html.Div(
+        if compact_lit and claims_cap is not None and len(claim_items) > claims_cap:
+            head_li, tail_li = claim_items[:claims_cap], claim_items[claims_cap:]
+            n_claim_more = len(tail_li)
+            claims_more_key = _k("claims_show_more")
+            claims_more_fmt = translate_ui(loc, claims_more_key, n=n_claim_more)
+            claims_more_label = claims_more_fmt if claims_more_fmt != claims_more_key else f"Show {n_claim_more} more claims"
+            claims_block = html.Div(
+                [
+                    html.Div(
+                        literature_t(loc, _k("claims_generated"), "Generated interpretation claims"),
+                        className="small fw-semibold mt-2 mb-1",
+                    ),
+                    html.P(
+                        literature_t(
+                            loc,
+                            _k("claims_note_compact"),
+                            "Model-generated bullets; not external literature.",
+                        ),
+                        className="small text-muted mb-1 lh-sm",
+                    ),
+                    html.Ul(head_li, className="mb-1 ps-3 small"),
+                    html.Details(
+                        [
+                            html.Summary(
+                                [
+                                    html.Span(className="ta-details-chevron"),
+                                    html.Span(claims_more_label, className="ms-1 small fw-semibold text-primary"),
+                                ],
+                                className="ta-details-summary py-1 border border-secondary-subtle rounded px-2",
+                            ),
+                            html.Div(html.Ul(tail_li, className="mb-0 ps-3 small"), className="ta-details-body mt-2"),
+                        ],
+                        className="ta-ms-details mb-0",
+                        open=False,
+                    ),
+                ],
+                className="mb-2",
+            )
+        elif compact_lit:
+            claims_block = html.Div(
+                [
+                    html.Div(
+                        literature_t(loc, _k("claims_generated"), "Generated interpretation claims"),
+                        className="small fw-semibold mt-2 mb-1",
+                    ),
+                    html.P(
+                        literature_t(
+                            loc,
+                            _k("claims_note_compact"),
+                            "Model-generated bullets; not external literature.",
+                        ),
+                        className="small text-muted mb-1 lh-sm",
+                    ),
+                    html.Ul(claim_items, className="mb-0 ps-3 small"),
+                ],
+                className="mb-2",
+            )
+        else:
+            claims_block = html.Div(
                 [
                     html.H6(literature_t(loc, _k("claims_generated"), "Generated interpretation claims"), className="mt-2 mb-1"),
                     html.P(
@@ -295,7 +363,7 @@ def render_literature_output(
                 ],
                 className="mb-3",
             )
-        )
+        children.append(claims_block)
 
     children.append(
         html.Div(

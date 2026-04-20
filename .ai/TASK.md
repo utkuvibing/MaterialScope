@@ -12,26 +12,26 @@ When starting new work, replace this file with the new slice goal, in/out of sco
 
 ### Archived: TGA Dash UX polish (done, 2026-04-20)
 
-**Goal:** Improve TGA results UX without structural layout changes: validation easier to notice, fewer step cards for high-step datasets, denser literature compare default, metrics/summary prioritization, lighter main figure for many steps.
+**Goal:** Improve TGA results UX without structural layout changes: validation easier to notice and more readable, fewer key-step cards for high-step datasets, denser literature compare, metrics/summary prioritization, lighter main figure; follow-up pass nested raw checks, clarified table authority, aligned figure markers with curated steps, and tightened compact literature.
 
 **In scope**
 
-- [`dash_app/pages/tga.py`](dash_app/pages/tga.py): quality open + badges; step ranking/truncation; metrics; figure caption + marker/vline rules; TGA literature call with preview limits.
-- [`dash_app/components/literature_compare_ui.py`](dash_app/components/literature_compare_ui.py): optional `evidence_preview_limit` / `alternative_preview_limit`, backward compatible.
-- [`utils/i18n.py`](utils/i18n.py): new en/tr strings for badges, truncation, figure caption, metrics, literature “show more”.
+- [`dash_app/pages/tga.py`](dash_app/pages/tga.py): quality (open + badges; checks under nested technical details); `_tga_curated_step_rows_for_ui` for cards + figure; step notes; metrics; figure caption + marker/vline rules; TGA literature preview kwargs.
+- [`dash_app/components/literature_compare_ui.py`](dash_app/components/literature_compare_ui.py): optional preview limits; compact evidence and claims when TGA-style preview mode is active.
+- [`utils/i18n.py`](utils/i18n.py): en/tr for validation technical title, step authority note, truncation copy, literature hints and compact claims.
 - [`tests/test_tga_dash_page.py`](tests/test_tga_dash_page.py).
 
 **Acceptance**
 
-- Warnings/issues expand quality by default and show header badges.
-- ≥7 steps → at most 6 ranked step cards + note; step table lists all rows.
-- TGA literature shows two relevant references inline by default with collapsible remainder; technical block unchanged (collapsed by default).
+- Warnings/issues expand quality by default and show header badges; main panel is product-facing; full `validation.checks` behind nested “Technical validation details”.
+- ≥7 steps → at most 6 ranked step cards + notes (truncation + table as source of truth); step table lists all rows.
+- TGA literature: preview + show-more; compact rows; clearer expand affordance; long generated-claims lists collapsible.
 - Metrics: steps, total loss, residue, unit mode, validation; summary has no duplicate unit rows.
-- Main figure: caption; first `dcc.Graph` still extractable for capture; DTG stays separate.
+- Main figure: caption (steps, loss, residue); first `dcc.Graph` extractable for capture; DTG separate; markers match curated step subset.
 
 **Verification**
 
-- `.venv/bin/python -m pytest tests/test_tga_dash_page.py tests/test_dsc_dash_page.py` — 39 passed.
+- `.venv/bin/python -m pytest tests/test_tga_dash_page.py tests/test_dsc_dash_page.py` — 40 passed.
 
 ---
 

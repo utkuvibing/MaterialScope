@@ -110,6 +110,7 @@ def test_build_tga_quality_card_renders_validation_and_checks():
     assert "import_review_required" in text
     assert "tga_unit_inference_basis" in text
     assert "nominal" in text
+    assert "Technical validation" in text
     assert getattr(card, "open", False) is True
     assert "warning" in text.lower()
 
@@ -150,6 +151,7 @@ def test_build_step_cards_truncates_high_step_count():
     assert s.count("bi-arrow-down-circle") == 6
     assert "8" in s
     assert "6" in s
+    assert "source of truth" in s.lower()
 
 
 def test_render_tga_literature_output_respects_preview_limit():
@@ -180,8 +182,32 @@ def test_render_tga_literature_output_respects_preview_limit():
     )
     text = str(out)
     assert "Show 2 more references" in text
+    assert "(expand)" in text
     assert "Retained claim 0" in text
     assert "Retained claim 3" in text
+
+
+def test_render_tga_literature_compacts_generated_claims():
+    from dash_app.components.literature_compare_ui import render_literature_output
+
+    claims = [{"claim_text": f"Claim line {i}"} for i in range(5)]
+    payload = {
+        "literature_claims": claims,
+        "literature_comparisons": [],
+        "citations": [],
+        "literature_context": {},
+    }
+    out = render_literature_output(
+        payload,
+        "en",
+        i18n_prefix="dash.analysis.tga.literature",
+        evidence_preview_limit=2,
+    )
+    text = str(out)
+    assert "Model-generated bullets" in text
+    assert "Show 3 more claims" in text
+    assert "Claim line 0" in text
+    assert "Claim line 4" in text
 
 
 def test_tga_validation_metric_value_formats_status():

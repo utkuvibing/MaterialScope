@@ -1407,14 +1407,22 @@ TRANSLATIONS = {
     "dash.analysis.tga.quality.reference_label": {"tr": "Referans:", "en": "Reference:"},
     "dash.analysis.tga.quality.context_na": {"tr": "Kayıtlı değil", "en": "Not recorded"},
     "dash.analysis.tga.quality.import_checks_heading": {"tr": "İçe aktarma ve çıkarım denetimleri", "en": "Import and inference checks"},
+    "dash.analysis.tga.quality.technical_validation_title": {
+        "tr": "Teknik doğrulama ayrıntıları",
+        "en": "Technical validation details",
+    },
     "dash.analysis.tga.quality.badge_warnings": {"tr": "{n} uyarı", "en": "{n} warning(s)"},
     "dash.analysis.tga.quality.badge_issues": {"tr": "{n} sorun", "en": "{n} issue(s)"},
     "dash.analysis.tga.metric.validation_ok": {"tr": "Tamam", "en": "OK"},
     "dash.analysis.tga.metric.validation_warnings": {"tr": "{n} uyarı", "en": "{n} warning(s)"},
     "dash.analysis.tga.metric.validation_issues": {"tr": "{n} sorun", "en": "{n} issue(s)"},
     "dash.analysis.tga.steps.truncation_note": {
-        "tr": "Önem sırasına göre üst {shown} / {total} adım gösteriliyor; tam liste aşağıdaki tabloda.",
-        "en": "Showing top {shown} of {total} steps by significance; see the table below for the full list.",
+        "tr": "Önem sırasına göre üst {shown} / {total} adım (önce en yüksek kütle kaybı). Tam liste aşağıdaki tabloda.",
+        "en": "Showing top {shown} of {total} steps by significance (largest mass-loss steps first). See the full table below.",
+    },
+    "dash.analysis.tga.steps.table_authority_note": {
+        "tr": "Kartlar yalnızca bir alt küme vurgusudur; tüm algılanan adımlar için aşağıdaki tablo eksiksiz kaynaktır.",
+        "en": "Cards highlight a curated subset only; the step table below is the complete source of truth for every detected step.",
     },
     "dash.analysis.tga.dtg.card_title": {"tr": "DTG önizlemesi", "en": "DTG preview"},
     "dash.analysis.tga.dtg.caption": {
@@ -1442,6 +1450,12 @@ TRANSLATIONS = {
     "dash.analysis.tga.literature.persist": {"tr": "Projeye kaydet", "en": "Persist to project"},
     "dash.analysis.tga.literature.compare_btn": {"tr": "Karşılaştır", "en": "Compare"},
     "dash.analysis.tga.literature.evidence_show_more": {"tr": "{n} kaynak daha göster", "en": "Show {n} more references"},
+    "dash.analysis.tga.literature.evidence_show_more_hint": {"tr": "(genişlet)", "en": "(expand)"},
+    "dash.analysis.tga.literature.claims_show_more": {"tr": "{n} iddia daha göster", "en": "Show {n} more claims"},
+    "dash.analysis.tga.literature.claims_note_compact": {
+        "tr": "Modelden üretilmiş maddeler; harici literatür değildir.",
+        "en": "Model-generated bullets; not external literature.",
+    },
     "dash.analysis.tga.literature.missing_result": {
         "tr": "Önce bir TGA analizi çalıştırın.",
         "en": "Run a TGA analysis first.",

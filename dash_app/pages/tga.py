@@ -738,6 +738,15 @@ def _tga_steps_ranked_for_display(rows: list) -> list[dict]:
     return sorted(dict_rows, key=_tga_step_significance_key)
 
 
+def _tga_curated_step_rows_for_ui(rows: list) -> tuple[list[dict], int, bool]:
+    """Same ranking and cap as key-step cards; use for figure midpoint markers."""
+    ranked = _tga_steps_ranked_for_display(rows)
+    total = len(ranked)
+    truncated = total >= _TGA_TRUNCATE_STEP_CARDS_WHEN
+    shown = ranked[:_TGA_MAX_STEP_CARDS] if truncated else ranked
+    return shown, total, truncated
+
+
 def _tga_resolved_unit_label(processing: dict, loc: str) -> str:
     method_context = (processing or {}).get("method_context") or {}
     return (
@@ -914,13 +923,24 @@ def _build_tga_quality_card(detail: dict, result_meta: dict, loc: str) -> html.D
     checks = validation.get("checks")
     check_items = _tga_quality_check_entries(checks)
     if check_items:
+        technical_checks = html.Ul([html.Li(item, className="small") for item in check_items], className="small mb-0 ps-3")
         body_children.append(
-            html.Div(
+            html.Details(
                 [
-                    html.H6(translate_ui(loc, "dash.analysis.tga.quality.import_checks_heading"), className="small mt-2 mb-1"),
-                    html.Ul([html.Li(item, className="small") for item in check_items], className="small mb-0 ps-3"),
+                    html.Summary(
+                        [
+                            html.Span(className="ta-details-chevron"),
+                            html.Span(
+                                translate_ui(loc, "dash.analysis.tga.quality.technical_validation_title"),
+                                className="ms-1 small",
+                            ),
+                        ],
+                        className="ta-details-summary",
+                    ),
+                    html.Div(technical_checks, className="ta-details-body mt-2"),
                 ],
-                className="mb-0",
+                className="ta-ms-details mb-0 mt-2",
+                open=False,
             )
         )
 
@@ -1144,10 +1164,7 @@ def _build_step_cards(rows: list, loc: str) -> html.Div:
             ]
         )
 
-    ranked = _tga_steps_ranked_for_display(rows)
-    total = len(ranked)
-    truncated = total >= _TGA_TRUNCATE_STEP_CARDS_WHEN
-    display_rows = ranked[:_TGA_MAX_STEP_CARDS] if truncated else ranked
+    display_rows, total, truncated = _tga_curated_step_rows_for_ui(rows)
 
     cards: list[Any] = [html.H5(translate_ui(loc, "dash.analysis.section.tga_key_steps"), className="mb-3")]
     for idx, row in enumerate(display_rows):
@@ -1156,7 +1173,13 @@ def _build_step_cards(rows: list, loc: str) -> html.Div:
         cards.append(
             html.P(
                 translate_ui(loc, "dash.analysis.tga.steps.truncation_note", shown=len(display_rows), total=total),
-                className="small text-muted mb-0",
+                className="small text-muted mb-1",
+            )
+        )
+        cards.append(
+            html.P(
+                translate_ui(loc, "dash.analysis.tga.steps.table_authority_note"),
+                className="small text-muted mb-0 fst-italic",
             )
         )
     return html.Div(cards)
@@ -1208,10 +1231,9 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, step_rows: l
         )
 
     # Midpoint markers only on the main mass axis; DTG is shown in the dedicated card below.
+    # Use the same curated ranked subset as key-step cards so markers match the UI.
     n_steps = len(step_rows)
-    marker_rows = (
-        _tga_steps_ranked_for_display(step_rows)[:_TGA_MAX_STEP_CARDS] if n_steps > _TGA_MAX_STEP_CARDS else list(step_rows)
-    )
+    marker_rows, _, _ = _tga_curated_step_rows_for_ui(step_rows)
 
     _ANNOTATION_MIN_SEP = 18.0 if n_steps > _TGA_MAX_STEP_CARDS else 15.0
     annotated_temps: list[float] = []
