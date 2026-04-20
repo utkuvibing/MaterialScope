@@ -31,7 +31,7 @@ When starting new work, replace this file with the new slice goal, in/out of sco
 
 **Verification**
 
-- `.venv/bin/python -m pytest tests/test_tga_dash_page.py tests/test_dsc_dash_page.py` — 40 passed.
+- `rtk pytest tests/test_tga_dash_page.py tests/test_dsc_dash_page.py -q` — 40 passed (or equivalent `.venv/bin/python -m pytest …`).
 
 ---
 

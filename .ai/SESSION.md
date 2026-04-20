@@ -18,10 +18,11 @@
 
 ## What was verified
 
-- `.venv/bin/python -m pytest tests/test_tga_dash_page.py tests/test_dsc_dash_page.py` — **40 passed**.
+- `rtk pytest tests/test_tga_dash_page.py tests/test_dsc_dash_page.py -q` — **40 passed** (RTK **0.37.1**; project rule: prefer `rtk` for verbose shell commands).
+- Same scope via `.venv/bin/python -m pytest …` — **40 passed** (fallback if `rtk` unavailable).
 
 ## Next step
 
-- Merge PR after review; optional full `pytest` on CI.
+- Latest TGA UX commits are on **`origin/web-dash-plotly-migration`**; merge PR after review; optional full `pytest` on CI.
 
 **Process defaults:** **`00-workflow.mdc`**.
