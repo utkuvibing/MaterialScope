@@ -976,7 +976,14 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"Unknown result_id: {result_id}")
 
         provider_ids = [str(item).strip() for item in (request.provider_ids or []) if str(item).strip()]
-        if not provider_ids and str(record.get("analysis_type") or "").upper() in {"XRD", "DSC", "DTA", "TGA", "FTIR"}:
+        if not provider_ids and str(record.get("analysis_type") or "").upper() in {
+            "XRD",
+            "DSC",
+            "DTA",
+            "TGA",
+            "FTIR",
+            "RAMAN",
+        }:
             provider_ids = ["openalex_like_provider"]
         use_fixture_fallback = (
             provider_ids == ["openalex_like_provider"]

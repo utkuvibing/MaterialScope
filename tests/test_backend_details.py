@@ -609,6 +609,23 @@ def test_result_literature_compare_endpoint_defaults_live_provider_for_ftir_resu
     assert payload["literature_context"]["query_text"]
 
 
+def test_result_literature_compare_endpoint_defaults_live_provider_for_raman_results():
+    store, project_id, result_id = _seed_spectral_result_store("RAMAN")
+    client = TestClient(create_app(api_token="details-token", store=store))
+
+    response = client.post(
+        f"/workspace/{project_id}/results/{result_id}/literature/compare",
+        headers=_headers(),
+        json={"persist": True},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["literature_context"]["provider_scope"] == ["openalex_like_provider"]
+    assert payload["literature_context"]["analysis_type"] == "RAMAN"
+    assert payload["literature_context"]["query_text"]
+
+
 def test_result_literature_compare_endpoint_validates_typed_user_documents():
     store, project_id, result_id = _seed_xrd_result_store()
     client = TestClient(create_app(api_token="details-token", store=store))

@@ -83,6 +83,11 @@ def test_layout_contains_key_div_ids():
         "raman-result-match-cards",
         "raman-result-table",
         "raman-result-processing",
+        "raman-literature-compare-btn",
+        "raman-literature-max-claims",
+        "raman-literature-persist",
+        "raman-literature-output",
+        "raman-literature-status",
         "raman-refresh",
         "raman-latest-result-id",
         "raman-figure-captured",
@@ -95,6 +100,12 @@ def test_layout_places_figure_before_match_cards():
     mod = _import_raman_page()
     layout_str = str(mod.layout)
     assert layout_str.index("raman-result-figure") < layout_str.index("raman-result-match-cards")
+
+
+def test_layout_places_literature_compare_after_processing():
+    mod = _import_raman_page()
+    layout_str = str(mod.layout)
+    assert layout_str.index("raman-result-processing") < layout_str.index("raman-literature-compare-btn")
 
 
 def test_build_match_cards_empty():

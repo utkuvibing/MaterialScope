@@ -40,6 +40,10 @@ from dash_app.components.analysis_page import (
 from dash_app.components.chrome import page_header
 from dash_app.components.data_preview import dataset_table
 from dash_app.components.literature_compare_ui import (
+    LITERATURE_COMPACT_ALTERNATIVE_PREVIEW_LIMIT,
+    LITERATURE_COMPACT_EVIDENCE_PREVIEW_LIMIT,
+    build_literature_compare_card,
+    coerce_literature_max_claims,
     literature_compare_status_alert,
     literature_t,
     render_literature_output,
@@ -497,64 +501,8 @@ def _baseline_controls_card() -> dbc.Card:
 
 
 def _literature_compare_card() -> dbc.Card:
-    """Manual literature compare (same interaction model as DTA)."""
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                html.H5(id="dsc-literature-card-title", className="card-title mb-3"),
-                html.Div(id="dsc-literature-hint", className="small text-muted mb-2"),
-                dbc.Row(
-                    [
-                        dbc.Col(
-                            [
-                                dbc.Label(
-                                    id="dsc-literature-max-claims-label",
-                                    html_for="dsc-literature-max-claims",
-                                ),
-                                dbc.Input(
-                                    id="dsc-literature-max-claims",
-                                    type="number",
-                                    min=1,
-                                    max=10,
-                                    step=1,
-                                    value=3,
-                                ),
-                            ],
-                            md=6,
-                        ),
-                        dbc.Col(
-                            [
-                                dbc.Checklist(
-                                    id="dsc-literature-persist",
-                                    options=[{"label": "", "value": "persist"}],
-                                    value=[],
-                                    switch=True,
-                                    className="mt-4",
-                                ),
-                                dbc.Label(
-                                    id="dsc-literature-persist-label",
-                                    html_for="dsc-literature-persist",
-                                    className="small",
-                                ),
-                            ],
-                            md=6,
-                        ),
-                    ],
-                    className="g-2 mb-2",
-                ),
-                dbc.Button(
-                    id="dsc-literature-compare-btn",
-                    color="primary",
-                    size="sm",
-                    disabled=True,
-                    className="mb-2",
-                ),
-                html.Div(id="dsc-literature-status", className="small text-muted"),
-                html.Div(id="dsc-literature-output", className="mt-2"),
-            ]
-        ),
-        className="mb-3",
-    )
+    """Manual literature compare (same interaction model as DTA / TGA)."""
+    return build_literature_compare_card(id_prefix="dsc")
 
 
 def _peak_controls_card() -> dbc.Card:
@@ -1900,7 +1848,7 @@ def compare_dsc_literature(n_clicks, project_id, result_id, max_claims, persist_
         )
         return dash.no_update, dbc.Alert(msg, color="warning", className="py-1 small")
 
-    claims_limit = _coerce_int_positive(max_claims, default=3, minimum=1)
+    claims_limit = coerce_literature_max_claims(max_claims, default=3)
     persist = bool(persist_values) and "persist" in (persist_values or [])
 
     from dash_app.api_client import literature_compare
@@ -1925,7 +1873,13 @@ def compare_dsc_literature(n_clicks, project_id, result_id, max_claims, persist_
         return dash.no_update, err
 
     return (
-        render_literature_output(payload, loc, i18n_prefix=_DSC_LITERATURE_PREFIX),
+        render_literature_output(
+            payload,
+            loc,
+            i18n_prefix=_DSC_LITERATURE_PREFIX,
+            evidence_preview_limit=LITERATURE_COMPACT_EVIDENCE_PREVIEW_LIMIT,
+            alternative_preview_limit=LITERATURE_COMPACT_ALTERNATIVE_PREVIEW_LIMIT,
+        ),
         literature_compare_status_alert(payload, loc, i18n_prefix=_DSC_LITERATURE_PREFIX),
     )
 

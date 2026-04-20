@@ -882,12 +882,36 @@ TRANSLATIONS = {
     "dash.analysis.ftir.peak_detection": {"tr": "Tepe algılama: {detail}", "en": "Peak Detection: {detail}"},
     "dash.analysis.ftir.similarity_matching": {"tr": "Benzerlik eşlemesi: {detail}", "en": "Similarity Matching: {detail}"},
     "dash.analysis.ftir.library": {"tr": "Kütüphane: {mode} (kaynak: {source})", "en": "Library: {mode} (source: {source})"},
+    "dash.analysis.ftir.literature.ready": {
+        "tr": "Kaydedilmiş FTIR sonucunu literatür kaynaklarıyla karşılaştırın.",
+        "en": "Compare the saved FTIR result to literature sources.",
+    },
+    "dash.analysis.ftir.literature.empty": {
+        "tr": "Literatür karşılaştırmasını etkinleştirmek için önce bir FTIR analizi çalıştırın.",
+        "en": "Run an FTIR analysis first to enable literature comparison.",
+    },
+    "dash.analysis.ftir.literature.missing_result": {
+        "tr": "Önce bir FTIR analizi çalıştırın.",
+        "en": "Run an FTIR analysis first.",
+    },
     "dash.analysis.raman.top_match": {"tr": "En iyi eşleşme: {name}", "en": "Top match: {name}"},
     "dash.analysis.raman.baseline": {"tr": "Taban çizgisi: {detail}", "en": "Baseline: {detail}"},
     "dash.analysis.raman.normalization": {"tr": "Normalizasyon: {detail}", "en": "Normalization: {detail}"},
     "dash.analysis.raman.peak_detection": {"tr": "Tepe algılama: {detail}", "en": "Peak Detection: {detail}"},
     "dash.analysis.raman.similarity_matching": {"tr": "Benzerlik eşlemesi: {detail}", "en": "Similarity Matching: {detail}"},
     "dash.analysis.raman.library": {"tr": "Kütüphane: {mode} (kaynak: {source})", "en": "Library: {mode} (source: {source})"},
+    "dash.analysis.raman.literature.ready": {
+        "tr": "Kaydedilmiş Raman sonucunu literatür kaynaklarıyla karşılaştırın.",
+        "en": "Compare the saved RAMAN result to literature sources.",
+    },
+    "dash.analysis.raman.literature.empty": {
+        "tr": "Literatür karşılaştırmasını etkinleştirmek için önce bir Raman analizi çalıştırın.",
+        "en": "Run a RAMAN analysis first to enable literature comparison.",
+    },
+    "dash.analysis.raman.literature.missing_result": {
+        "tr": "Önce bir Raman analizi çalıştırın.",
+        "en": "Run a RAMAN analysis first.",
+    },
     "dash.analysis.xrd.top_candidate": {"tr": "En iyi aday: {name}", "en": "Top candidate: {name}"},
     "dash.analysis.xrd.axis_role_note": {
         "tr": "Eksen rolü: {role}; çıktı 2θ odaklı difraktogram olarak gösteriliyor.",
@@ -905,6 +929,18 @@ TRANSLATIONS = {
     "dash.analysis.xrd.no_plot_signal": {
         "tr": "Grafik için işlenmiş XRD sinyali yok.",
         "en": "No processed XRD signal is available for plotting.",
+    },
+    "dash.analysis.xrd.literature.ready": {
+        "tr": "Kaydedilmiş XRD sonucunu literatür kaynaklarıyla karşılaştırın.",
+        "en": "Compare the saved XRD result to literature sources.",
+    },
+    "dash.analysis.xrd.literature.empty": {
+        "tr": "Literatür karşılaştırmasını etkinleştirmek için önce bir XRD analizi çalıştırın.",
+        "en": "Run an XRD analysis first to enable literature comparison.",
+    },
+    "dash.analysis.xrd.literature.missing_result": {
+        "tr": "Önce bir XRD analizi çalıştırın.",
+        "en": "Run an XRD analysis first.",
     },
     "dash.analysis.label.midpoint": {"tr": "Orta nokta", "en": "Midpoint"},
     "dash.analysis.label.onset": {"tr": "Başlangıç", "en": "Onset"},

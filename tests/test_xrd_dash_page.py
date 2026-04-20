@@ -83,6 +83,11 @@ def test_layout_contains_key_div_ids():
         "xrd-result-candidate-cards",
         "xrd-result-table",
         "xrd-result-processing",
+        "xrd-literature-compare-btn",
+        "xrd-literature-max-claims",
+        "xrd-literature-persist",
+        "xrd-literature-output",
+        "xrd-literature-status",
         "xrd-refresh",
         "xrd-latest-result-id",
         "xrd-figure-captured",
@@ -95,6 +100,12 @@ def test_layout_places_figure_before_candidate_cards():
     mod = _import_xrd_page()
     layout_str = str(mod.layout)
     assert layout_str.index("xrd-result-figure") < layout_str.index("xrd-result-candidate-cards")
+
+
+def test_layout_places_literature_compare_after_processing():
+    mod = _import_xrd_page()
+    layout_str = str(mod.layout)
+    assert layout_str.index("xrd-result-processing") < layout_str.index("xrd-literature-compare-btn")
 
 
 def test_match_card_renders_candidate_and_score():

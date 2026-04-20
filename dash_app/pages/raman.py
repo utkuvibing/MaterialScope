@@ -27,6 +27,15 @@ from dash_app.components.analysis_page import (
 )
 from dash_app.components.chrome import page_header
 from dash_app.components.data_preview import dataset_table
+from dash_app.components.literature_compare_ui import (
+    LITERATURE_COMPACT_ALTERNATIVE_PREVIEW_LIMIT,
+    LITERATURE_COMPACT_EVIDENCE_PREVIEW_LIMIT,
+    build_literature_compare_card,
+    coerce_literature_max_claims,
+    literature_compare_status_alert,
+    literature_t,
+    render_literature_output,
+)
 from dash_app.theme import PLOT_THEME, normalize_ui_theme
 from utils.i18n import normalize_ui_locale, translate_ui
 
@@ -39,6 +48,9 @@ _RAMAN_WORKFLOW_TEMPLATES = [
     {"id": "raman.polymorph_screening", "label": "Polymorph Screening"},
 ]
 _TEMPLATE_OPTIONS = [{"label": t["label"], "value": t["id"]} for t in _RAMAN_WORKFLOW_TEMPLATES]
+
+_LITERATURE_OUTPUT_I18N_PREFIX = "dash.analysis.tga.literature"
+_RAMAN_LITERATURE_HINT_PREFIX = "dash.analysis.raman.literature"
 
 _CONFIDENCE_COLORS = {
     "high_confidence": "#059669",
@@ -164,6 +176,7 @@ layout = html.Div(
                         result_placeholder_card("raman-result-match-cards"),
                         result_placeholder_card("raman-result-table"),
                         result_placeholder_card("raman-result-processing"),
+                        build_literature_compare_card(id_prefix="raman"),
                     ],
                     md=8,
                 ),
@@ -359,6 +372,105 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
     )
 
     return metrics, match_cards, figure_area, table_area, proc_view
+
+
+@callback(
+    Output("raman-literature-card-title", "children"),
+    Output("raman-literature-hint", "children"),
+    Output("raman-literature-max-claims-label", "children"),
+    Output("raman-literature-persist-label", "children"),
+    Output("raman-literature-compare-btn", "children"),
+    Input("ui-locale", "data"),
+    Input("raman-latest-result-id", "data"),
+)
+def render_raman_literature_chrome(locale_data, result_id):
+    loc = _loc(locale_data)
+    if result_id:
+        hint = literature_t(
+            loc,
+            f"{_RAMAN_LITERATURE_HINT_PREFIX}.ready",
+            "Compare the saved RAMAN result to literature sources.",
+        )
+    else:
+        hint = literature_t(
+            loc,
+            f"{_RAMAN_LITERATURE_HINT_PREFIX}.empty",
+            "Run a RAMAN analysis first to enable literature comparison.",
+        )
+    return (
+        literature_t(loc, f"{_LITERATURE_OUTPUT_I18N_PREFIX}.title", "Literature Compare"),
+        hint,
+        literature_t(loc, f"{_LITERATURE_OUTPUT_I18N_PREFIX}.max_claims", "Max Claims"),
+        literature_t(loc, f"{_LITERATURE_OUTPUT_I18N_PREFIX}.persist", "Persist to project"),
+        literature_t(loc, f"{_LITERATURE_OUTPUT_I18N_PREFIX}.compare_btn", "Compare"),
+    )
+
+
+@callback(
+    Output("raman-literature-compare-btn", "disabled"),
+    Input("raman-latest-result-id", "data"),
+)
+def toggle_raman_literature_compare_button(result_id):
+    return not bool(result_id)
+
+
+@callback(
+    Output("raman-literature-output", "children"),
+    Output("raman-literature-status", "children"),
+    Input("raman-literature-compare-btn", "n_clicks"),
+    State("project-id", "data"),
+    State("raman-latest-result-id", "data"),
+    State("raman-literature-max-claims", "value"),
+    State("raman-literature-persist", "value"),
+    State("ui-locale", "data"),
+    prevent_initial_call=True,
+)
+def compare_raman_literature(n_clicks, project_id, result_id, max_claims, persist_values, locale_data):
+    loc = _loc(locale_data)
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    if not project_id or not result_id:
+        msg = literature_t(
+            loc,
+            f"{_RAMAN_LITERATURE_HINT_PREFIX}.missing_result",
+            "Run a RAMAN analysis first.",
+        )
+        return dash.no_update, dbc.Alert(msg, color="warning", className="py-1 small")
+
+    claims_limit = coerce_literature_max_claims(max_claims, default=3)
+    persist = bool(persist_values) and "persist" in (persist_values or [])
+
+    from dash_app.api_client import literature_compare
+
+    try:
+        payload = literature_compare(
+            project_id,
+            result_id,
+            max_claims=claims_limit,
+            persist=persist,
+        )
+    except Exception as exc:
+        err = dbc.Alert(
+            literature_t(
+                loc,
+                f"{_LITERATURE_OUTPUT_I18N_PREFIX}.error",
+                "Literature compare failed: {error}",
+            ).replace("{error}", str(exc)),
+            color="danger",
+            className="py-1 small",
+        )
+        return dash.no_update, err
+
+    return (
+        render_literature_output(
+            payload,
+            loc,
+            i18n_prefix=_LITERATURE_OUTPUT_I18N_PREFIX,
+            evidence_preview_limit=LITERATURE_COMPACT_EVIDENCE_PREVIEW_LIMIT,
+            alternative_preview_limit=LITERATURE_COMPACT_ALTERNATIVE_PREVIEW_LIMIT,
+        ),
+        literature_compare_status_alert(payload, loc, i18n_prefix=_LITERATURE_OUTPUT_I18N_PREFIX),
+    )
 
 
 @callback(

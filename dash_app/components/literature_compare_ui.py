@@ -1,4 +1,4 @@
-"""Shared literature compare rendering for Dash analysis pages (DTA, DSC, ...)."""
+"""Shared literature compare rendering and layout for Dash analysis pages."""
 
 from __future__ import annotations
 
@@ -9,6 +9,83 @@ import dash_bootstrap_components as dbc
 from dash import html
 
 from utils.i18n import translate_ui
+
+# Default compact evidence layout for Dash analysis pages (matches TGA / DSC / DTA).
+LITERATURE_COMPACT_EVIDENCE_PREVIEW_LIMIT = 2
+LITERATURE_COMPACT_ALTERNATIVE_PREVIEW_LIMIT = 1
+
+
+def coerce_literature_max_claims(value: Any, *, default: int = 3) -> int:
+    """Clamp manual max-claims input to 1..10."""
+    try:
+        if value in (None, ""):
+            return max(1, default)
+        n = int(float(value))
+    except (TypeError, ValueError):
+        return max(1, default)
+    return max(1, min(10, n))
+
+
+def build_literature_compare_card(*, id_prefix: str, class_name: str = "mb-3") -> dbc.Card:
+    """Reusable literature compare card; element ids are ``{id_prefix}-literature-*``."""
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H5(id=f"{id_prefix}-literature-card-title", className="card-title mb-3"),
+                html.Div(id=f"{id_prefix}-literature-hint", className="small text-muted mb-2"),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(
+                                    id=f"{id_prefix}-literature-max-claims-label",
+                                    html_for=f"{id_prefix}-literature-max-claims",
+                                ),
+                                dbc.Input(
+                                    id=f"{id_prefix}-literature-max-claims",
+                                    type="number",
+                                    min=1,
+                                    max=10,
+                                    step=1,
+                                    value=3,
+                                ),
+                            ],
+                            md=6,
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Checklist(
+                                    id=f"{id_prefix}-literature-persist",
+                                    options=[{"label": "", "value": "persist"}],
+                                    value=[],
+                                    switch=True,
+                                    className="mt-4",
+                                ),
+                                dbc.Label(
+                                    id=f"{id_prefix}-literature-persist-label",
+                                    html_for=f"{id_prefix}-literature-persist",
+                                    className="small",
+                                ),
+                            ],
+                            md=6,
+                        ),
+                    ],
+                    className="g-2 mb-2",
+                ),
+                dbc.Button(
+                    id=f"{id_prefix}-literature-compare-btn",
+                    color="primary",
+                    size="sm",
+                    disabled=True,
+                    className="mb-2",
+                ),
+                html.Div(id=f"{id_prefix}-literature-status", className="small text-muted"),
+                html.Div(id=f"{id_prefix}-literature-output", className="mt-2"),
+            ]
+        ),
+        className=class_name,
+    )
+
 
 _DOI_IN_TEXT = re.compile(r"(10\.\d{4,9}/[^\s\],;)}\]]+)", re.IGNORECASE)
 
@@ -198,8 +275,9 @@ def render_literature_output(
     """Render literature compare payload as curated product-facing sections.
 
     When *evidence_preview_limit* is set, only that many relevant retained references are
-    shown inline; the rest appear behind a collapsed details section. DSC/DTA omit this
-    parameter to preserve the original full layout.
+    shown inline; the rest appear behind a collapsed details section. Dash analysis pages
+    pass the module constants LITERATURE_COMPACT_EVIDENCE_PREVIEW_LIMIT for a consistent
+    compact layout; pass None for the legacy full inline layout.
     """
     claims = payload.get("literature_claims") or []
     comparisons = payload.get("literature_comparisons") or []

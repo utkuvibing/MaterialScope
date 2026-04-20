@@ -27,6 +27,15 @@ from dash_app.components.analysis_page import (
 )
 from dash_app.components.chrome import page_header
 from dash_app.components.data_preview import dataset_table
+from dash_app.components.literature_compare_ui import (
+    LITERATURE_COMPACT_ALTERNATIVE_PREVIEW_LIMIT,
+    LITERATURE_COMPACT_EVIDENCE_PREVIEW_LIMIT,
+    build_literature_compare_card,
+    coerce_literature_max_claims,
+    literature_compare_status_alert,
+    literature_t,
+    render_literature_output,
+)
 from dash_app.theme import PLOT_THEME, apply_figure_theme, normalize_ui_theme
 from utils.i18n import normalize_ui_locale, translate_ui
 
@@ -39,6 +48,10 @@ _XRD_WORKFLOW_TEMPLATES = [
     {"id": "xrd.phase_screening", "label": "Phase Screening"},
 ]
 _TEMPLATE_OPTIONS = [{"label": t["label"], "value": t["id"]} for t in _XRD_WORKFLOW_TEMPLATES]
+
+# Shared output strings with TGA/DSC/DTA; page-specific hints only.
+_LITERATURE_OUTPUT_I18N_PREFIX = "dash.analysis.tga.literature"
+_XRD_LITERATURE_HINT_PREFIX = "dash.analysis.xrd.literature"
 
 _CONFIDENCE_COLORS = {
     "high_confidence": "#059669",
@@ -192,6 +205,7 @@ layout = html.Div(
                         result_placeholder_card("xrd-result-candidate-cards"),
                         result_placeholder_card("xrd-result-table"),
                         result_placeholder_card("xrd-result-processing"),
+                        build_literature_compare_card(id_prefix="xrd"),
                     ],
                     md=8,
                 ),
@@ -404,6 +418,105 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
 
     proc_view = processing_details_section(processing, extra_lines=proc_extra, locale_data=locale_data)
     return metrics, candidate_cards, figure_area, table_area, proc_view
+
+
+@callback(
+    Output("xrd-literature-card-title", "children"),
+    Output("xrd-literature-hint", "children"),
+    Output("xrd-literature-max-claims-label", "children"),
+    Output("xrd-literature-persist-label", "children"),
+    Output("xrd-literature-compare-btn", "children"),
+    Input("ui-locale", "data"),
+    Input("xrd-latest-result-id", "data"),
+)
+def render_xrd_literature_chrome(locale_data, result_id):
+    loc = _loc(locale_data)
+    if result_id:
+        hint = literature_t(
+            loc,
+            f"{_XRD_LITERATURE_HINT_PREFIX}.ready",
+            "Compare the saved XRD result to literature sources.",
+        )
+    else:
+        hint = literature_t(
+            loc,
+            f"{_XRD_LITERATURE_HINT_PREFIX}.empty",
+            "Run an XRD analysis first to enable literature comparison.",
+        )
+    return (
+        literature_t(loc, f"{_LITERATURE_OUTPUT_I18N_PREFIX}.title", "Literature Compare"),
+        hint,
+        literature_t(loc, f"{_LITERATURE_OUTPUT_I18N_PREFIX}.max_claims", "Max Claims"),
+        literature_t(loc, f"{_LITERATURE_OUTPUT_I18N_PREFIX}.persist", "Persist to project"),
+        literature_t(loc, f"{_LITERATURE_OUTPUT_I18N_PREFIX}.compare_btn", "Compare"),
+    )
+
+
+@callback(
+    Output("xrd-literature-compare-btn", "disabled"),
+    Input("xrd-latest-result-id", "data"),
+)
+def toggle_xrd_literature_compare_button(result_id):
+    return not bool(result_id)
+
+
+@callback(
+    Output("xrd-literature-output", "children"),
+    Output("xrd-literature-status", "children"),
+    Input("xrd-literature-compare-btn", "n_clicks"),
+    State("project-id", "data"),
+    State("xrd-latest-result-id", "data"),
+    State("xrd-literature-max-claims", "value"),
+    State("xrd-literature-persist", "value"),
+    State("ui-locale", "data"),
+    prevent_initial_call=True,
+)
+def compare_xrd_literature(n_clicks, project_id, result_id, max_claims, persist_values, locale_data):
+    loc = _loc(locale_data)
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    if not project_id or not result_id:
+        msg = literature_t(
+            loc,
+            f"{_XRD_LITERATURE_HINT_PREFIX}.missing_result",
+            "Run an XRD analysis first.",
+        )
+        return dash.no_update, dbc.Alert(msg, color="warning", className="py-1 small")
+
+    claims_limit = coerce_literature_max_claims(max_claims, default=3)
+    persist = bool(persist_values) and "persist" in (persist_values or [])
+
+    from dash_app.api_client import literature_compare
+
+    try:
+        payload = literature_compare(
+            project_id,
+            result_id,
+            max_claims=claims_limit,
+            persist=persist,
+        )
+    except Exception as exc:
+        err = dbc.Alert(
+            literature_t(
+                loc,
+                f"{_LITERATURE_OUTPUT_I18N_PREFIX}.error",
+                "Literature compare failed: {error}",
+            ).replace("{error}", str(exc)),
+            color="danger",
+            className="py-1 small",
+        )
+        return dash.no_update, err
+
+    return (
+        render_literature_output(
+            payload,
+            loc,
+            i18n_prefix=_LITERATURE_OUTPUT_I18N_PREFIX,
+            evidence_preview_limit=LITERATURE_COMPACT_EVIDENCE_PREVIEW_LIMIT,
+            alternative_preview_limit=LITERATURE_COMPACT_ALTERNATIVE_PREVIEW_LIMIT,
+        ),
+        literature_compare_status_alert(payload, loc, i18n_prefix=_LITERATURE_OUTPUT_I18N_PREFIX),
+    )
 
 
 @callback(

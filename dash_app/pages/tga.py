@@ -41,6 +41,10 @@ from dash_app.components.analysis_page import (
 from dash_app.components.chrome import page_header
 from dash_app.components.data_preview import dataset_table
 from dash_app.components.literature_compare_ui import (
+    LITERATURE_COMPACT_ALTERNATIVE_PREVIEW_LIMIT,
+    LITERATURE_COMPACT_EVIDENCE_PREVIEW_LIMIT,
+    build_literature_compare_card,
+    coerce_literature_max_claims,
     literature_compare_status_alert,
     literature_t,
     render_literature_output,
@@ -328,63 +332,7 @@ def _tga_collapsible_section(
 
 
 def _literature_compare_card() -> dbc.Card:
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                html.H5(id="tga-literature-card-title", className="card-title mb-3"),
-                html.Div(id="tga-literature-hint", className="small text-muted mb-2"),
-                dbc.Row(
-                    [
-                        dbc.Col(
-                            [
-                                dbc.Label(
-                                    id="tga-literature-max-claims-label",
-                                    html_for="tga-literature-max-claims",
-                                ),
-                                dbc.Input(
-                                    id="tga-literature-max-claims",
-                                    type="number",
-                                    min=1,
-                                    max=10,
-                                    step=1,
-                                    value=3,
-                                ),
-                            ],
-                            md=6,
-                        ),
-                        dbc.Col(
-                            [
-                                dbc.Checklist(
-                                    id="tga-literature-persist",
-                                    options=[{"label": "", "value": "persist"}],
-                                    value=[],
-                                    switch=True,
-                                    className="mt-4",
-                                ),
-                                dbc.Label(
-                                    id="tga-literature-persist-label",
-                                    html_for="tga-literature-persist",
-                                    className="small",
-                                ),
-                            ],
-                            md=6,
-                        ),
-                    ],
-                    className="g-2 mb-2",
-                ),
-                dbc.Button(
-                    id="tga-literature-compare-btn",
-                    color="primary",
-                    size="sm",
-                    disabled=True,
-                    className="mb-2",
-                ),
-                html.Div(id="tga-literature-status", className="small text-muted"),
-                html.Div(id="tga-literature-output", className="mt-2"),
-            ]
-        ),
-        className="mb-3",
-    )
+    return build_literature_compare_card(id_prefix="tga")
 
 
 def _step_card(step: dict, idx: int, loc: str) -> dbc.Card:
@@ -1463,7 +1411,7 @@ def compare_tga_literature(n_clicks, project_id, result_id, max_claims, persist_
         )
         return dash.no_update, dbc.Alert(msg, color="warning", className="py-1 small")
 
-    claims_limit = _coerce_int_positive(max_claims, default=3, minimum=1)
+    claims_limit = coerce_literature_max_claims(max_claims, default=3)
     persist = bool(persist_values) and "persist" in (persist_values or [])
 
     from dash_app.api_client import literature_compare
@@ -1492,8 +1440,8 @@ def compare_tga_literature(n_clicks, project_id, result_id, max_claims, persist_
             payload,
             loc,
             i18n_prefix=_TGA_LITERATURE_PREFIX,
-            evidence_preview_limit=2,
-            alternative_preview_limit=1,
+            evidence_preview_limit=LITERATURE_COMPACT_EVIDENCE_PREVIEW_LIMIT,
+            alternative_preview_limit=LITERATURE_COMPACT_ALTERNATIVE_PREVIEW_LIMIT,
         ),
         literature_compare_status_alert(payload, loc, i18n_prefix=_TGA_LITERATURE_PREFIX),
     )

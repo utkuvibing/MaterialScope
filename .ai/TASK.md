@@ -4,7 +4,32 @@
 
 ## Status: no active slice (2026-04-20)
 
-The **TGA Dash presets + processing** slice is **complete** (page wiring, i18n, tests). Start a new slice by replacing this file.
+The **Dash literature compare across all analysis pages** slice is **complete**. Start a new slice by replacing the status block above.
+
+---
+
+### Archived: Dash literature compare on all analysis pages (done, 2026-04-20)
+
+**Goal:** Use the same TGA-style literature compare workflow (shared card, max claims + persist + Compare, compact output, status alert, `literature_compare` API) on every Dash analysis page, not only TGA.
+
+**In scope**
+
+- [`dash_app/components/literature_compare_ui.py`](dash_app/components/literature_compare_ui.py): reusable card builder, claim coercion, compact preview constants.
+- [`dash_app/pages/tga.py`](dash_app/pages/tga.py), [`dsc.py`](dash_app/pages/dsc.py), [`dta.py`](dash_app/pages/dta.py), [`xrd.py`](dash_app/pages/xrd.py), [`ftir.py`](dash_app/pages/ftir.py), [`raman.py`](dash_app/pages/raman.py): layout slot + three callbacks each (`render_*_literature_chrome`, toggle, compare).
+- [`utils/i18n.py`](utils/i18n.py): modality-specific hint keys for XRD / FTIR / Raman; shared TGA literature prefix for bulk output strings.
+- [`backend/app.py`](backend/app.py): default provider when `provider_ids` omitted — include **RAMAN**.
+- Tests: [`tests/test_xrd_dash_page.py`](tests/test_xrd_dash_page.py), [`tests/test_raman_dash_page.py`](tests/test_raman_dash_page.py), [`tests/test_backend_details.py`](tests/test_backend_details.py).
+
+**Acceptance**
+
+- Each listed analysis page exposes `{prefix}-literature-*` controls and runs compare against the latest result id when enabled.
+- Compact evidence/alternative preview limits match the TGA-style Dash layout.
+- RAMAN compare without explicit `provider_ids` resolves the same default live provider path as FTIR.
+
+**Verification**
+
+- `rtk pytest tests/test_xrd_dash_page.py tests/test_raman_dash_page.py tests/test_backend_details.py::test_result_literature_compare_endpoint_defaults_live_provider_for_raman_results tests/test_backend_details.py::test_result_literature_compare_endpoint_defaults_live_provider_for_ftir_results -q` — 28 passed.
+- `rtk pytest tests/test_dash_figure_capture_wiring.py -q` — 10 passed.
 
 ---
 
