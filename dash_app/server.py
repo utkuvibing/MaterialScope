@@ -12,9 +12,6 @@ import uvicorn
 from dotenv import load_dotenv
 from a2wsgi import WSGIMiddleware
 
-from backend.app import create_app as create_backend
-from dash_app.app import create_dash_app
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -28,6 +25,9 @@ def parse_args() -> argparse.Namespace:
 
 def create_combined_app(*, api_token: str | None = None):
     """Create a FastAPI app with the Dash UI mounted as WSGI fallback."""
+    from backend.app import create_app as create_backend
+    from dash_app.app import create_dash_app
+
     api = create_backend(api_token=api_token)
     dash = create_dash_app()
     api.mount("/", WSGIMiddleware(dash.server))
@@ -37,6 +37,17 @@ def create_combined_app(*, api_token: str | None = None):
 def main() -> None:
     load_dotenv(dotenv_path=REPO_ROOT / ".env", override=False)
     args = parse_args()
+
+    from core.library_combined_bootstrap import (
+        apply_combined_dash_server_library_env,
+        sanitize_library_path_env_vars,
+    )
+
+    for line in sanitize_library_path_env_vars():
+        print(line, flush=True)
+    for line in apply_combined_dash_server_library_env(listen_host=args.host, listen_port=args.port):
+        print(line, flush=True)
+
     app = create_combined_app(api_token=args.token or None)
     print(f"MaterialScope (Dash) starting on http://{args.host}:{args.port}", flush=True)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")

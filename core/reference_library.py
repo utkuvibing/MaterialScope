@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -18,8 +19,11 @@ from typing import Any, Iterable, Mapping
 import httpx
 import numpy as np
 
+from core.path_env import library_filesystem_env_looks_like_windows_leak
 from utils.license_manager import encode_license_key, get_storage_dir
 
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_BACKGROUND_REFRESH_HOURS = 24
 DEFAULT_PRIORITY = 0
@@ -145,6 +149,14 @@ def configured_library_feed_source() -> str | None:
         return feed_url.rstrip("/")
 
     mirror_root = _env_value(LIBRARY_ENV_MIRROR_ROOT, LIBRARY_ENV_MIRROR_ROOT_LEGACY).strip()
+    if mirror_root and library_filesystem_env_looks_like_windows_leak(mirror_root):
+        logger.warning(
+            "Ignoring %s / %s mirror root %r on this platform (Windows-style path on POSIX).",
+            LIBRARY_ENV_MIRROR_ROOT,
+            LIBRARY_ENV_MIRROR_ROOT_LEGACY,
+            mirror_root,
+        )
+        mirror_root = ""
     if mirror_root:
         return Path(mirror_root).resolve().as_uri()
     return None

@@ -394,3 +394,9 @@ def get_library_cloud_client() -> ManagedLibraryCloudClient:
     if _CLIENT_INSTANCE is None or getattr(_CLIENT_INSTANCE, "_env_signature", ()) != _client_env_signature():
         _CLIENT_INSTANCE = ManagedLibraryCloudClient()
     return _CLIENT_INSTANCE
+
+
+def reset_library_cloud_client() -> None:
+    """Drop the process-wide client singleton (used after mutating cloud URL env vars)."""
+    global _CLIENT_INSTANCE
+    _CLIENT_INSTANCE = None

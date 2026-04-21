@@ -1,7 +1,11 @@
 """Local dev smoke helper for M005 cloud-library endpoints.
 
-Usage:
+Usage (standalone FastAPI on 8000, e.g. Docker / ``python -m backend.main``):
+
     python tools/library_cloud_smoke.py --base-url http://127.0.0.1:8000
+
+Combined Dash + FastAPI (``python -m dash_app.server``, default port 8050) normally uses
+``http://127.0.0.1:8050`` (or set ``MATERIALSCOPE_LIBRARY_CLOUD_URL`` accordingly).
 """
 
 from __future__ import annotations
@@ -33,7 +37,8 @@ def _build_args() -> argparse.Namespace:
         ).strip(),
         help=(
             "Backend base URL (default: MATERIALSCOPE_LIBRARY_CLOUD_URL, "
-            "legacy THERMOANALYZER_LIBRARY_CLOUD_URL, or http://127.0.0.1:8000)."
+            "legacy THERMOANALYZER_LIBRARY_CLOUD_URL, or http://127.0.0.1:8000). "
+            "Use the same host/port as the process serving /v1/library/* (8050 for combined Dash dev)."
         ),
     )
     parser.add_argument(

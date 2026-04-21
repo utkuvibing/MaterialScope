@@ -176,6 +176,16 @@ python -m dash_app.server --host 0.0.0.0 --port 8050 --token <api-token>
 
 This starts a combined FastAPI app with Dash mounted at `/` and backend routes served from the same process.
 
+On startup, `dash_app.server` applies a small **library env bootstrap** (unless
+`MATERIALSCOPE_LIBRARY_DISABLE_COMBINED_BOOTSTRAP=1`):
+
+- If `MATERIALSCOPE_LIBRARY_CLOUD_URL` is unset, it defaults to `http://<listen-host>:<listen-port>` (loopback
+  adjusted when you bind `0.0.0.0`), so the managed-library HTTP client targets this same process.
+- If the URL is the common Docker-style `http://127.0.0.1:8000` but the server listens on another port (the
+  default `8050`), the URL is rewritten to match the listen port.
+- Windows-style `MATERIALSCOPE_LIBRARY_HOSTED_ROOT` / `MATERIALSCOPE_LIBRARY_MIRROR_ROOT` values are dropped on
+  Linux/WSL so a copied `.env` does not silently point at non-existent paths.
+
 ### Backend API (standalone)
 
 ```bash
@@ -241,6 +251,21 @@ BACKEND_STARTUP_TIMEOUT_SECONDS=30
 
 Use the same repo-root `.env` for Dash (`dash_app/server.py`), Streamlit (`app.py`), and backend (`backend/app.py`).
 
+**Combined Dash + FastAPI (typical Linux / WSL dev):** the managed-library client must target the same HTTP
+origin as `/v1/library/*`. With `python -m dash_app.server` you usually want port **8050** (or omit
+`MATERIALSCOPE_LIBRARY_CLOUD_URL` and let the startup bootstrap set it).
+
+```dotenv
+MATERIALSCOPE_LIBRARY_CLOUD_URL=http://127.0.0.1:8050
+MATERIALSCOPE_LIBRARY_CLOUD_ENABLED=true
+MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH=true
+MATERIALSCOPE_LIBRARY_MIRROR_ROOT=/home/you/materialscope/build/reference_library_mirror_live
+MATERIALSCOPE_LIBRARY_HOSTED_ROOT=/home/you/materialscope/build/reference_library_hosted
+MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC=false
+```
+
+**Docker / split processes (backend on 8000, UI elsewhere):** keep the cloud URL on **8000**.
+
 ```dotenv
 MATERIALSCOPE_LIBRARY_CLOUD_URL=http://127.0.0.1:8000
 MATERIALSCOPE_LIBRARY_CLOUD_ENABLED=true
@@ -254,6 +279,8 @@ Notes:
 
 - `MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC=false` preserves the limited-fallback policy.
 - `MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH=true` is a dev-only shortcut for local cloud testing.
+- On Linux/WSL, do **not** paste Windows `C:\...` paths for hosted/mirror roots; leave those variables unset to
+  use repo defaults under `build/`, or use POSIX paths. Malformed values are ignored with a warning.
 - hosted XRD coverage warnings remain visible even when the cloud path is healthy.
 
 ### Publish hosted library data locally
@@ -265,7 +292,16 @@ python tools/publish_hosted_library.py --output-root build/reference_library_hos
 ### Local cloud smoke test
 
 ```bash
-python tools/library_cloud_smoke.py --base-url http://127.0.0.1:8000
+python tools/library_cloud_smoke.py --base-url http://127.0.0.1:8050
+```
+
+For a standalone API on port 8000, use `http://127.0.0.1:8000` instead.
+
+### Spectral library diagnostics (FTIR / Raman / XRD)
+
+```bash
+python tools/ftir_library_diagnostics.py
+python tools/ftir_library_diagnostics.py --json
 ```
 
 Expected local/dev result:

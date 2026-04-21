@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-04-21 — Combined Dash server: library cloud URL bootstrap + POSIX Windows-path env sanitation
+
+**Decision:**
+
+1. **`python -m dash_app.server`** runs **`sanitize_library_path_env_vars`** then **`apply_combined_dash_server_library_env`** (see [`core/library_combined_bootstrap.py`](core/library_combined_bootstrap.py)) **before** importing [`backend/app.py`](backend/app.py), so the first `ManagedLibraryCloudService` sees corrected `MATERIALSCOPE_LIBRARY_CLOUD_URL`. Opt out with **`MATERIALSCOPE_LIBRARY_DISABLE_COMBINED_BOOTSTRAP=1`**.
+2. **Defaults:** unset cloud URL → `http://<bind>:<port>` (loopback when listening on `0.0.0.0`); loopback URL stuck on **port 8000** while the combined server listens on another port → rewrite to the listen port (Docker `.env` vs Dash dev mismatch).
+3. **POSIX safety:** hosted/mirror env values that look like pasted Windows paths are **removed at startup** (sanitize) and **ignored in resolution** ([`core/path_env.py`](core/path_env.py), [`core/hosted_library.py`](core/hosted_library.py), [`core/reference_library.py`](core/reference_library.py)) with logging.
+4. **Diagnostics:** [`core/spectral_library_diagnostics.py`](core/spectral_library_diagnostics.py) is the shared snapshot builder; [`tools/ftir_library_diagnostics.py`](tools/ftir_library_diagnostics.py) wraps it for CLI/NDJSON.
+
+**Reason:** WSL/Linux dev failed FTIR matching with `library_unavailable` due to cloud client pointing at **8000** while the combined app served on **8050**, plus malformed **Windows-derived hosted root** paths; fixes belonged in startup and path resolution, not the FTIR UI.
+
+**Consequence / future:** Standalone **`python -m backend.main`** on 8000 is unchanged. Split-process / production layouts should set **`MATERIALSCOPE_LIBRARY_CLOUD_URL`** explicitly to the real API origin.
+
+---
+
 ## 2026-04-21 — Dash: validation warning counts from list payloads; FTIR page i18n under `dash.analysis.ftir.*`
 
 **Decision:**
