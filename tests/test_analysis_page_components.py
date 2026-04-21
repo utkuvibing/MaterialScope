@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 
 import dash_app.components.analysis_page as analysis_page_mod
 from dash_app.components.analysis_page import (
+    finalized_validation_warning_issue_counts,
     capture_result_figure_from_layout,
     dataset_options,
     dataset_selector_block,
@@ -143,13 +144,34 @@ def test_interpret_run_result_saved():
         "execution_status": "saved",
         "result_id": "dsc_test",
         "failure_reason": None,
-        "validation": {"status": "pass", "warning_count": 0},
+        "validation": {"status": "pass", "warning_count": 0, "warnings": []},
     }
     alert, saved, result_id = interpret_run_result(result)
     assert saved is True
     assert result_id == "dsc_test"
     assert isinstance(alert, dbc.Alert)
     assert alert.color == "success"
+
+
+def test_finalized_validation_warning_issue_counts_prefers_lists():
+    assert finalized_validation_warning_issue_counts(
+        {"warnings": ["a", "b"], "issues": ["x"], "warning_count": 99, "issue_count": 99}
+    ) == (2, 1)
+
+
+def test_interpret_run_result_saved_ignores_stale_warning_count():
+    result = {
+        "execution_status": "saved",
+        "result_id": "ftir_test",
+        "failure_reason": None,
+        "validation": {"status": "warn", "warning_count": 11, "warnings": ["w"] * 10, "issues": []},
+    }
+    alert, saved, result_id = interpret_run_result(result, locale_data="en")
+    assert saved is True
+    assert result_id == "ftir_test"
+    body = str(alert)
+    assert "warnings: 10" in body
+    assert "warnings: 11" not in body
 
 
 def test_interpret_run_result_blocked():

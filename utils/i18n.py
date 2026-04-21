@@ -2165,6 +2165,173 @@ TRANSLATIONS = {
     "dash.analysis.ftir.summary.card_title": {"tr": "Analiz Özeti", "en": "Analysis Summary"},
     "dash.analysis.ftir.summary.instrument_label": {"tr": "Cihaz", "en": "Instrument"},
     "dash.analysis.ftir.summary.vendor_label": {"tr": "Üretici", "en": "Vendor"},
+    "dash.analysis.ftir.summary.dataset_label": {"tr": "Veri Seti", "en": "Dataset"},
+    "dash.analysis.ftir.summary.sample_label": {"tr": "Numune", "en": "Sample"},
+    "dash.analysis.ftir.tab.setup": {"tr": "Kurulum", "en": "Setup"},
+    "dash.analysis.ftir.tab.processing": {"tr": "İşleme", "en": "Processing"},
+    "dash.analysis.ftir.tab.run": {"tr": "Çalıştır", "en": "Run"},
+    "dash.analysis.ftir.presets.title": {"tr": "FTIR presetleri", "en": "FTIR Presets"},
+    "dash.analysis.ftir.presets.help.overview": {
+        "tr": (
+            "İş akışı şablonunu ve tam FTIR işleme taslağını (yumuşatma, taban çizgisi, normalizasyon, "
+            "tepe algılama, benzerlik) kaydedin; aynı ada tekrar kaydetmek üzerine yazar. Analiz türü başına en fazla 10 preset."
+        ),
+        "en": (
+            "Save the workflow template and full FTIR processing draft (smoothing, baseline, normalization, "
+            "peak detection, similarity matching). Saving again with the same name overwrites that preset. "
+            "Up to 10 presets per analysis type."
+        ),
+    },
+    "dash.analysis.ftir.presets.caption": {
+        "tr": "{analysis_type} presetleri: {count}/{max_count}",
+        "en": "{analysis_type} presets: {count}/{max_count}",
+    },
+    "dash.analysis.ftir.presets.select_label": {"tr": "Kayıtlı presetler", "en": "Saved presets"},
+    "dash.analysis.ftir.presets.load_btn": {"tr": "Yükle", "en": "Load"},
+    "dash.analysis.ftir.presets.delete_btn": {"tr": "Sil", "en": "Delete"},
+    "dash.analysis.ftir.presets.save_name_label": {"tr": "Preset adı (Save As)", "en": "Preset name (Save As)"},
+    "dash.analysis.ftir.presets.save_name_placeholder": {"tr": "Yeni veya mevcut ad", "en": "New or existing name"},
+    "dash.analysis.ftir.presets.save_btn": {"tr": "Seçileni kaydet", "en": "Save (selected)"},
+    "dash.analysis.ftir.presets.saveas_btn": {"tr": "Farklı kaydet", "en": "Save As"},
+    "dash.analysis.ftir.presets.save_hint": {
+        "tr": "Seçili presetin üzerine yazmak için Save; ad alanıyla yeni veya başka ada kaydetmek için Save As.",
+        "en": "Save overwrites the selected preset. Save As uses the name field to create or overwrite by that name.",
+    },
+    "dash.analysis.ftir.presets.loaded": {
+        "tr": "'{preset}' presetinin ayarları yüklendi.",
+        "en": "Loaded preset '{preset}'.",
+    },
+    "dash.analysis.ftir.presets.loaded_line": {
+        "tr": "Yüklü preset: {preset}",
+        "en": "Loaded preset: {preset}",
+    },
+    "dash.analysis.ftir.presets.saved": {
+        "tr": "'{preset}' presetine kaydedildi ({template}).",
+        "en": "Saved preset '{preset}' ({template}).",
+    },
+    "dash.analysis.ftir.presets.deleted": {
+        "tr": "'{preset}' preseti silindi.",
+        "en": "Deleted preset '{preset}'.",
+    },
+    "dash.analysis.ftir.presets.save_failed": {
+        "tr": "Preset kaydedilemedi: {error}",
+        "en": "Could not save preset: {error}",
+    },
+    "dash.analysis.ftir.presets.delete_failed": {
+        "tr": "Preset silinemedi: {error}",
+        "en": "Could not delete preset: {error}",
+    },
+    "dash.analysis.ftir.presets.load_failed": {
+        "tr": "Preset yüklenemedi: {error}",
+        "en": "Could not load preset: {error}",
+    },
+    "dash.analysis.ftir.presets.list_failed": {
+        "tr": "Preset listesi alınamadı: {error}",
+        "en": "Could not load presets: {error}",
+    },
+    "dash.analysis.ftir.presets.save_name_required": {
+        "tr": "Save As için bir preset adı girin.",
+        "en": "Enter a preset name for Save As.",
+    },
+    "dash.analysis.ftir.presets.select_required": {
+        "tr": "Önce listeden bir preset seçin.",
+        "en": "Select a preset from the list first.",
+    },
+    "dash.analysis.ftir.presets.dirty_no_baseline": {
+        "tr": "Kayıtlı preset anlık görüntüsü yok (karşılaştırmak için preset yükleyin veya kaydedin).",
+        "en": "No saved preset snapshot yet (load or save a preset to compare).",
+    },
+    "dash.analysis.ftir.presets.clean": {"tr": "Yüklü preset ile uyumlu", "en": "Matches loaded preset"},
+    "dash.analysis.ftir.presets.dirty": {
+        "tr": "Yüklü presetten farklı (kaydedilmemiş değişiklikler)",
+        "en": "Modified vs loaded preset",
+    },
+    "dash.analysis.ftir.processing.history_title": {"tr": "İşleme geçmişi", "en": "Processing history"},
+    "dash.analysis.ftir.processing.history_hint": {
+        "tr": (
+            "Yalnızca işleme taslağını etkiler: yumuşatma, taban çizgisi, normalizasyon, tepe algılama ve "
+            "benzerlik eşleştirme ayarları; preset adı ayrı tutulur."
+        ),
+        "en": (
+            "Affects the processing draft only: smoothing, baseline, normalization, peak detection, and "
+            "similarity-matching settings; the preset name is kept separately."
+        ),
+    },
+    "dash.analysis.ftir.processing.undo_btn": {"tr": "Geri al", "en": "Undo"},
+    "dash.analysis.ftir.processing.redo_btn": {"tr": "İleri al", "en": "Redo"},
+    "dash.analysis.ftir.processing.reset_btn": {"tr": "Varsayılanlara dön", "en": "Reset to defaults"},
+    "dash.analysis.ftir.processing.history_status_undo": {
+        "tr": "Önceki işleme taslağı geri yüklendi.",
+        "en": "Restored previous processing draft.",
+    },
+    "dash.analysis.ftir.processing.history_status_redo": {
+        "tr": "Sonraki işleme taslağı geri yüklendi.",
+        "en": "Restored next processing draft.",
+    },
+    "dash.analysis.ftir.processing.history_status_reset": {
+        "tr": "İşleme varsayılanlarına dönüldü; preset kirli durumu şablona göre güncellenir.",
+        "en": "Processing reset to defaults; preset dirty state updates against your template.",
+    },
+    "dash.analysis.ftir.processing.smoothing_card_title": {"tr": "Yumuşatma", "en": "Smoothing"},
+    "dash.analysis.ftir.processing.smoothing_card_hint": {
+        "tr": "İçe aktarılan FTIR spektrumu üzerinde uygulanan yumuşatma; presetlere dahildir.",
+        "en": "Smoothing applied to the imported FTIR spectrum before baseline correction; included in presets.",
+    },
+    "dash.analysis.ftir.processing.smooth.method": {"tr": "Yöntem", "en": "Method"},
+    "dash.analysis.ftir.processing.smooth.window": {"tr": "Pencere uzunluğu", "en": "Window length"},
+    "dash.analysis.ftir.processing.smooth.polyorder": {"tr": "Polinom derecesi", "en": "Polynomial order"},
+    "dash.analysis.ftir.processing.smooth.sigma": {"tr": "Sigma", "en": "Sigma"},
+    "dash.analysis.ftir.processing.smooth.savgol": {"tr": "Savitzky–Golay", "en": "Savitzky–Golay"},
+    "dash.analysis.ftir.processing.smooth.moving_average": {"tr": "Hareketli ortalama", "en": "Moving average"},
+    "dash.analysis.ftir.processing.smooth.gaussian": {"tr": "Gauss", "en": "Gaussian"},
+    "dash.analysis.ftir.baseline.title": {"tr": "Taban çizgisi", "en": "Baseline"},
+    "dash.analysis.ftir.baseline.help.method": {
+        "tr": "ASLS çoğu spektrum için uygundur; doğrusal düz ofsetler için; lastik bant düzensiz ofsetler için.",
+        "en": "ASLS fits most spectra; linear for gentle offsets; rubberband for uneven offsets.",
+    },
+    "dash.analysis.ftir.baseline.method": {"tr": "Taban çizgisi yöntemi", "en": "Baseline method"},
+    "dash.analysis.ftir.baseline.lam": {"tr": "Lambda (asls)", "en": "Lambda (asls)"},
+    "dash.analysis.ftir.baseline.p": {"tr": "Asimetri p (asls)", "en": "Asymmetry p (asls)"},
+    "dash.analysis.ftir.baseline.region_section": {
+        "tr": "Spektral bölge (dalga sayısı) penceresi",
+        "en": "Spectral region (wavenumber) window",
+    },
+    "dash.analysis.ftir.baseline.help.enable_region": {
+        "tr": "İsteğe bağlı: taban çizgisini yalnızca seçilen cm⁻¹ aralığında uyarlamak için etkinleştirin.",
+        "en": "Optional: constrain baseline fitting to the selected wavenumber interval (cm^-1).",
+    },
+    "dash.analysis.ftir.baseline.region_min": {"tr": "Min (cm⁻¹)", "en": "Min (cm^-1)"},
+    "dash.analysis.ftir.baseline.region_max": {"tr": "Maks (cm⁻¹)", "en": "Max (cm^-1)"},
+    "dash.analysis.ftir.quality.card_title": {"tr": "Doğrulama ve kalite", "en": "Validation and quality"},
+    "dash.analysis.ftir.quality.empty": {
+        "tr": "Çalıştırma sonrası doğrulama özeti burada görünür.",
+        "en": "Validation summary will appear here after a run.",
+    },
+    "dash.analysis.ftir.quality.status_label": {"tr": "Durum", "en": "Status"},
+    "dash.analysis.ftir.quality.warnings_label": {"tr": "Uyarılar", "en": "Warnings"},
+    "dash.analysis.ftir.quality.issues_label": {"tr": "Sorunlar", "en": "Issues"},
+    "dash.analysis.ftir.quality.badge_warnings": {"tr": "{n} uyarı", "en": "{n} warnings"},
+    "dash.analysis.ftir.quality.badge_issues": {"tr": "{n} sorun", "en": "{n} issues"},
+    "dash.analysis.ftir.raw_metadata.card_title": {"tr": "Ham meta veri", "en": "Raw metadata"},
+    "dash.analysis.ftir.raw_metadata.empty": {
+        "tr": "Bu veri seti için ek meta veri yok.",
+        "en": "No extra metadata for this dataset.",
+    },
+    "dash.analysis.ftir.raw_metadata.technical_details": {"tr": "Teknik ayrıntılar", "en": "Technical details"},
+    "dash.analysis.ftir.library.reference_title": {"tr": "Referans kütüphanesi", "en": "Reference library"},
+    "dash.analysis.ftir.library.not_configured_for_run": {
+        "tr": "Bu çalıştırma için referans kütüphanesi yapılandırılmadı.",
+        "en": "Reference library not configured for this run.",
+    },
+    "dash.analysis.ftir.metric.score_not_applicable": {"tr": "—", "en": "—"},
+    "dash.analysis.ftir.empty_results_hint": {
+        "tr": (
+            "Metrikler, doğrulama, kütüphane eşleşmesi, tepeler ve işleme ayrıntıları bir FTIR çalıştırmasından sonra burada görünür."
+        ),
+        "en": (
+            "Metrics, validation, library matching, peaks, and processing details will appear here after you run FTIR analysis."
+        ),
+    },
     "dash.analysis.ftir.normalization.title": {"tr": "Normalizasyon", "en": "Normalization"},
     "dash.analysis.ftir.normalization.hint": {"tr": "Spektrumu vektör, maksimum veya SNV ile normalize edin.", "en": "Normalize the spectrum using vector, max, or SNV."},
     "dash.analysis.ftir.normalization.method": {"tr": "Normalizasyon yöntemi", "en": "Normalization method"},

@@ -304,6 +304,19 @@ def capture_result_figure_from_layout(
 # Execute callback helpers
 # ---------------------------------------------------------------------------
 
+
+def finalized_validation_warning_issue_counts(validation: dict[str, Any] | None) -> tuple[int, int]:
+    """Warning/issue counts for UI: derive from list payloads only.
+
+    Keeps run banners, badges, and bullet lists aligned when stored
+    ``warning_count`` / ``issue_count`` disagree with ``warnings`` / ``issues``.
+    """
+    v = validation if isinstance(validation, dict) else {}
+    warnings = v.get("warnings") if isinstance(v.get("warnings"), list) else []
+    issues = v.get("issues") if isinstance(v.get("issues"), list) else []
+    return len(warnings), len(issues)
+
+
 def interpret_run_result(result: dict[str, Any], *, locale_data: str | None = None) -> tuple[Any, bool, str | None]:
     """Interpret an ``analysis_run`` API response.
 
@@ -318,16 +331,17 @@ def interpret_run_result(result: dict[str, Any], *, locale_data: str | None = No
     status = result.get("execution_status", "unknown")
     result_id = result.get("result_id")
     failure = result.get("failure_reason")
-    validation = result.get("validation", {})
+    validation = result.get("validation", {}) if isinstance(result.get("validation"), dict) else {}
 
     if status == "saved" and result_id:
+        warn_n, _issue_n = finalized_validation_warning_issue_counts(validation)
         alert = dbc.Alert(
             translate_ui(
                 loc,
                 "dash.analysis.interpret_saved",
                 rid=result_id,
                 vstatus=validation.get("status", translate_ui(loc, "dash.analysis.na")),
-                warnings=validation.get("warning_count", 0),
+                warnings=warn_n,
             ),
             color="success",
         )

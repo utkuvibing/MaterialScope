@@ -6,24 +6,23 @@
 
 - **Project:** MaterialScope
 - **Branch:** `web-dash-plotly-migration`
-- **Last slice:** FTIR Setup cleanup + FTIR literature compare (thermal-style pipeline) — **committed and pushed** (`ce037d9`).
+- **Last slice:** FTIR Dash page — modality-specific UI copy, validation count alignment, library-unavailable presentation, quieter pre-run empty state (committed and pushed; see latest commit on branch).
 
 ## What was done this session
 
-1. **Removed FTIR Raw Data Quality** from the Setup tab: dropped card, Dash callbacks, and `ftir_explore` panel/stats helpers that existed only for that UI.
-2. **FTIR literature pipeline:** New `core/ftir_literature_query_builder.py`; `compare_result_to_literature` routes **FTIR** to `_compare_ftir_result_to_literature` (thermal-style pool search, relevance, surfacing, rich `LiteratureContext`).
-3. **Scientific reasoning:** `_build_ftir_reasoning` + `build_scientific_reasoning` dispatch for **FTIR** (no generic “not specialized” placeholder on supported paths).
-4. **`LiteratureContext`:** `normalize_literature_context` now preserves **`executed_queries`**; `to_dict` normalizes the list.
-5. **Follow-ups:** `recommend_next_experiments` gains an **FTIR** branch.
-6. **Tests:** FTIR layout/raw-quality removal; `_ftir_record` + FTIR literature tests; generic-engine tests use **RAMAN** where per-claim behavior is asserted; serialization asserts no placeholder in FTIR claims.
+1. **`dash.analysis.ftir.*` i18n** in [`utils/i18n.py`](utils/i18n.py): FTIR-only presets, tabs, processing history, smoothing, baseline (wavenumber window, cm⁻¹), quality/raw-metadata strings; removed reliance on TGA thermal copy for the FTIR page.
+2. **[`dash_app/pages/ftir.py`](dash_app/pages/ftir.py):** Wired all of the above; baseline uses FTIR keys; `library_unavailable` shows a reference-library info alert and hides the match table; pre-run empty state uses one metrics hint plus hidden deferred slots; lighter layout (cards mainly for summary + figure).
+3. **[`dash_app/components/analysis_page.py`](dash_app/components/analysis_page.py):** `finalized_validation_warning_issue_counts()`; `interpret_run_result` uses list-derived warning count for the saved-run banner.
+4. **Tests:** [`tests/test_ftir_dash_page.py`](tests/test_ftir_dash_page.py), [`tests/test_analysis_page_components.py`](tests/test_analysis_page_components.py) updated/extended.
 
 ## What was verified
 
-- `rtk pytest tests/test_literature_compare.py tests/test_ftir_dash_page.py tests/test_result_serialization.py::test_serialize_ftir_result_persists_no_match_caution_and_evidence -q` — **111 passed**.
+- `rtk pytest tests/test_ftir_dash_page.py tests/test_analysis_page_components.py -q` — pass.
+- `rtk pytest tests/test_ftir_dash_page.py tests/test_dsc_dash_page.py tests/test_tga_dash_page.py -q` — pass.
 
 ## Next step
 
-- None required for this slice.
-- Optional: route **RAMAN** through the same spectral literature builder/compare for parity.
+- Optional: apply the same **list-derived validation counts** pattern to DSC/TGA/DTA quality cards if any still prefer numeric `warning_count` over list length.
+- Optional: **RAMAN** Dash page — mirror FTIR-style modality i18n if it still borrows TGA strings.
 
 **Process defaults:** **`00-workflow.mdc`**.

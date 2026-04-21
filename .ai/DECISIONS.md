@@ -4,6 +4,19 @@
 
 ---
 
+## 2026-04-21 — Dash: validation warning counts from list payloads; FTIR page i18n under `dash.analysis.ftir.*`
+
+**Decision:**
+
+1. **Counts:** UI warning and issue **counts** (saved-run banner from `interpret_run_result`, FTIR validation/quality panel badges and numeric lines) use **`len(validation["warnings"])`** and **`len(validation["issues"])`** via **`finalized_validation_warning_issue_counts`** in [`dash_app/components/analysis_page.py`](dash_app/components/analysis_page.py). Stale **`warning_count`** / **`issue_count`** integers must not override the lists when they disagree.
+2. **FTIR Dash copy:** All user-visible FTIR processing/preset/quality/raw-metadata/baseline chrome on [`dash_app/pages/ftir.py`](dash_app/pages/ftir.py) reads **`dash.analysis.ftir.*`** keys in [`utils/i18n.py`](utils/i18n.py), not **`dash.analysis.tga.*`** or DSC thermal baseline strings, so the page stays modality-correct without scattering one-off string edits.
+
+**Reason:** Users saw TGA/thermal wording and °C on FTIR; run banner and quality panel could disagree on warning totals; library-off states read like chemistry failures.
+
+**Consequence / future:** Other modality pages can reuse **`finalized_validation_warning_issue_counts`** in their quality builders for the same guarantee. Raman (or others) still borrowing TGA preset keys should get their own **`dash.analysis.raman.*`** (or shared neutral) namespace when touched.
+
+---
+
 ## 2026-04-21 — FTIR literature compare: dedicated query builder + thermal-style compare path
 
 **Decision:**

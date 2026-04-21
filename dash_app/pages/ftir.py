@@ -1,7 +1,7 @@
-"""FTIR analysis page -- product-grade implementation aligned with DSC/TGA/DTA standard.
+"""FTIR analysis page -- product-grade implementation aligned with other modality Dash analysis pages.
 
 Left column tabs:
-  - Setup: dataset, workflow template, raw-quality exploration, workflow guide
+  - Setup: dataset, workflow template, workflow guide
   - Processing: undo/redo/reset, presets, smoothing, baseline, normalization,
     peak detection, similarity matching
   - Run: execute analysis
@@ -17,6 +17,9 @@ Right column results surface:
   8. applied processing summary
   9. raw metadata
   10. literature compare
+
+User-visible labels for presets, processing, baseline window, validation, and library status are read
+from ``dash.analysis.ftir.*`` keys in ``utils/i18n.py`` (not thermal/TGA copy).
 """
 
 from __future__ import annotations
@@ -39,6 +42,7 @@ from dash_app.components.analysis_page import (
     eligible_datasets,
     empty_result_msg,
     execute_card,
+    finalized_validation_warning_issue_counts,
     interpret_run_result,
     metrics_row,
     no_data_figure_msg,
@@ -390,6 +394,10 @@ def _loc(locale_data: str | None) -> str:
 def _ftir_result_section(child: Any, *, role: str = "support") -> html.Div:
     role_class = _FTIR_RESULT_CARD_ROLES.get(role, _FTIR_RESULT_CARD_ROLES["support"])
     return html.Div(child, className=f"dsc-result-section {role_class}")
+
+
+def _ftir_library_unavailable(summary: dict | None) -> bool:
+    return str((summary or {}).get("match_status") or "").lower() == "library_unavailable"
 
 
 def _ftir_collapsible_section(
@@ -822,14 +830,14 @@ layout = html.Div(
                 dbc.Col(
                     [
                         _ftir_result_section(result_placeholder_card("ftir-result-analysis-summary"), role="context"),
-                        _ftir_result_section(result_placeholder_card("ftir-result-metrics"), role="context"),
-                        _ftir_result_section(result_placeholder_card("ftir-result-quality"), role="support"),
+                        _ftir_result_section(html.Div(id="ftir-result-metrics", className="mb-2"), role="context"),
+                        _ftir_result_section(html.Div(id="ftir-result-quality", className="mb-2"), role="support"),
                         _ftir_result_section(result_placeholder_card("ftir-result-figure"), role="hero"),
-                        _ftir_result_section(result_placeholder_card("ftir-result-top-match"), role="support"),
-                        _ftir_result_section(result_placeholder_card("ftir-result-peak-cards"), role="support"),
-                        _ftir_result_section(result_placeholder_card("ftir-result-match-table"), role="support"),
-                        _ftir_result_section(result_placeholder_card("ftir-result-processing"), role="support"),
-                        _ftir_result_section(result_placeholder_card("ftir-result-raw-metadata"), role="support"),
+                        _ftir_result_section(html.Div(id="ftir-result-top-match", className="mb-2"), role="support"),
+                        _ftir_result_section(html.Div(id="ftir-result-peak-cards", className="mb-2"), role="support"),
+                        _ftir_result_section(html.Div(id="ftir-result-match-table", className="mb-2"), role="support"),
+                        _ftir_result_section(html.Div(id="ftir-result-processing", className="mb-2"), role="support"),
+                        _ftir_result_section(html.Div(id="ftir-result-raw-metadata", className="mb-2"), role="support"),
                         _ftir_result_section(build_literature_compare_card(id_prefix="ftir"), role="secondary"),
                     ],
                     md=8,
@@ -893,9 +901,9 @@ def render_ftir_locale_chrome(locale_data, template_id):
 def render_ftir_tab_chrome(locale_data):
     loc = _loc(locale_data)
     return (
-        translate_ui(loc, "dash.analysis.tga.tab.setup"),
-        translate_ui(loc, "dash.analysis.tga.tab.processing"),
-        translate_ui(loc, "dash.analysis.tga.tab.run"),
+        translate_ui(loc, "dash.analysis.ftir.tab.setup"),
+        translate_ui(loc, "dash.analysis.ftir.tab.processing"),
+        translate_ui(loc, "dash.analysis.ftir.tab.run"),
     )
 
 
@@ -981,16 +989,16 @@ def load_eligible_datasets(project_id, _refresh, locale_data):
 def render_ftir_preset_chrome(locale_data):
     loc = _loc(locale_data)
     return (
-        translate_ui(loc, "dash.analysis.tga.presets.title"),
-        translate_ui(loc, "dash.analysis.tga.presets.help.overview"),
-        translate_ui(loc, "dash.analysis.tga.presets.select_label"),
-        translate_ui(loc, "dash.analysis.tga.presets.load_btn"),
-        translate_ui(loc, "dash.analysis.tga.presets.delete_btn"),
-        translate_ui(loc, "dash.analysis.tga.presets.save_name_label"),
-        translate_ui(loc, "dash.analysis.tga.presets.save_name_placeholder"),
-        translate_ui(loc, "dash.analysis.tga.presets.save_btn"),
-        translate_ui(loc, "dash.analysis.tga.presets.saveas_btn"),
-        translate_ui(loc, "dash.analysis.tga.presets.save_hint"),
+        translate_ui(loc, "dash.analysis.ftir.presets.title"),
+        translate_ui(loc, "dash.analysis.ftir.presets.help.overview"),
+        translate_ui(loc, "dash.analysis.ftir.presets.select_label"),
+        translate_ui(loc, "dash.analysis.ftir.presets.load_btn"),
+        translate_ui(loc, "dash.analysis.ftir.presets.delete_btn"),
+        translate_ui(loc, "dash.analysis.ftir.presets.save_name_label"),
+        translate_ui(loc, "dash.analysis.ftir.presets.save_name_placeholder"),
+        translate_ui(loc, "dash.analysis.ftir.presets.save_btn"),
+        translate_ui(loc, "dash.analysis.ftir.presets.saveas_btn"),
+        translate_ui(loc, "dash.analysis.ftir.presets.save_hint"),
     )
 
 
@@ -1007,7 +1015,7 @@ def refresh_ftir_preset_options(_refresh_token, locale_data):
     try:
         payload = api_client.list_analysis_presets(_FTIR_PRESET_ANALYSIS_TYPE)
     except Exception as exc:
-        message = translate_ui(loc, "dash.analysis.tga.presets.list_failed").format(error=str(exc))
+        message = translate_ui(loc, "dash.analysis.ftir.presets.list_failed").format(error=str(exc))
         return [], message
 
     presets = payload.get("presets") or []
@@ -1016,7 +1024,7 @@ def refresh_ftir_preset_options(_refresh_token, locale_data):
         for item in presets
         if isinstance(item, dict) and item.get("preset_name")
     ]
-    caption = translate_ui(loc, "dash.analysis.tga.presets.caption").format(
+    caption = translate_ui(loc, "dash.analysis.ftir.presets.caption").format(
         analysis_type=payload.get("analysis_type", _FTIR_PRESET_ANALYSIS_TYPE),
         count=int(payload.get("count", len(options)) or 0),
         max_count=int(payload.get("max_count", 10) or 10),
@@ -1065,7 +1073,7 @@ def apply_ftir_preset(n_clicks, selected_name, hydrate_val, current_draft, undo_
         return (
             dash.no_update,
             dash.no_update,
-            translate_ui(loc, "dash.analysis.tga.presets.select_required"),
+            translate_ui(loc, "dash.analysis.ftir.presets.select_required"),
             dash.no_update,
             dash.no_update,
             dash.no_update,
@@ -1079,7 +1087,7 @@ def apply_ftir_preset(n_clicks, selected_name, hydrate_val, current_draft, undo_
         return (
             dash.no_update,
             dash.no_update,
-            translate_ui(loc, "dash.analysis.tga.presets.load_failed").format(error=str(exc)),
+            translate_ui(loc, "dash.analysis.ftir.presets.load_failed").format(error=str(exc)),
             dash.no_update,
             dash.no_update,
             dash.no_update,
@@ -1094,7 +1102,7 @@ def apply_ftir_preset(n_clicks, selected_name, hydrate_val, current_draft, undo_
     template_out = template_id_raw if template_id_raw in _FTIR_TEMPLATE_IDS else dash.no_update
     resolved_tid = template_id_raw if template_id_raw in _FTIR_TEMPLATE_IDS else "ftir.general"
     snap = _ftir_ui_snapshot_dict(resolved_tid, draft)
-    status = translate_ui(loc, "dash.analysis.tga.presets.loaded").format(preset=name)
+    status = translate_ui(loc, "dash.analysis.ftir.presets.loaded").format(preset=name)
     old_norm = _normalize_ftir_processing_draft(current_draft)
     new_norm = _normalize_ftir_processing_draft(draft)
     past2, fut2 = append_undo_after_edit(undo_stack, redo_stack, old_norm, new_norm)
@@ -1141,7 +1149,7 @@ def save_ftir_preset(n_save, n_saveas, selected_name, save_name, draft, template
             return (
                 dash.no_update,
                 dash.no_update,
-                translate_ui(loc, "dash.analysis.tga.presets.select_required"),
+                translate_ui(loc, "dash.analysis.ftir.presets.select_required"),
                 dash.no_update,
                 dash.no_update,
             )
@@ -1152,7 +1160,7 @@ def save_ftir_preset(n_save, n_saveas, selected_name, save_name, draft, template
             return (
                 dash.no_update,
                 dash.no_update,
-                translate_ui(loc, "dash.analysis.tga.presets.save_name_required"),
+                translate_ui(loc, "dash.analysis.ftir.presets.save_name_required"),
                 dash.no_update,
                 dash.no_update,
             )
@@ -1172,13 +1180,13 @@ def save_ftir_preset(n_save, n_saveas, selected_name, save_name, draft, template
         return (
             dash.no_update,
             dash.no_update,
-            translate_ui(loc, "dash.analysis.tga.presets.save_failed").format(error=str(exc)),
+            translate_ui(loc, "dash.analysis.ftir.presets.save_failed").format(error=str(exc)),
             dash.no_update,
             dash.no_update,
         )
     resolved_template = str(response.get("workflow_template_id") or template_id or "")
     snap = _ftir_ui_snapshot_dict(str(template_id or "").strip() or None, draft)
-    status = translate_ui(loc, "dash.analysis.tga.presets.saved").format(preset=name, template=resolved_template)
+    status = translate_ui(loc, "dash.analysis.ftir.presets.saved").format(preset=name, template=resolved_template)
     return int(refresh_token or 0) + 1, clear_name, status, snap, "ftir-tab-run"
 
 
@@ -1203,18 +1211,18 @@ def delete_ftir_preset(n_clicks, selected_name, loaded_name, refresh_token, loca
         raise dash.exceptions.PreventUpdate
     name = str(selected_name or "").strip()
     if not name:
-        return dash.no_update, dash.no_update, translate_ui(loc, "dash.analysis.tga.presets.select_required"), dash.no_update, dash.no_update
+        return dash.no_update, dash.no_update, translate_ui(loc, "dash.analysis.ftir.presets.select_required"), dash.no_update, dash.no_update
     try:
         api_client.delete_analysis_preset(_FTIR_PRESET_ANALYSIS_TYPE, name)
     except Exception as exc:
         return (
             dash.no_update,
             dash.no_update,
-            translate_ui(loc, "dash.analysis.tga.presets.delete_failed").format(error=str(exc)),
+            translate_ui(loc, "dash.analysis.ftir.presets.delete_failed").format(error=str(exc)),
             dash.no_update,
             dash.no_update,
         )
-    status = translate_ui(loc, "dash.analysis.tga.presets.deleted").format(preset=name)
+    status = translate_ui(loc, "dash.analysis.ftir.presets.deleted").format(preset=name)
     loaded = str(loaded_name or "").strip()
     if loaded == name:
         return int(refresh_token or 0) + 1, None, status, "", None
@@ -1231,7 +1239,7 @@ def render_ftir_preset_loaded_line(loaded_name, locale_data):
     name = str(loaded_name or "").strip()
     if not name:
         return ""
-    return translate_ui(loc, "dash.analysis.tga.presets.loaded_line").format(preset=name)
+    return translate_ui(loc, "dash.analysis.ftir.presets.loaded_line").format(preset=name)
 
 
 @callback(
@@ -1268,7 +1276,7 @@ def render_ftir_preset_dirty_flag(
 ):
     loc = _loc(locale_data)
     if not isinstance(snapshot, dict):
-        return html.Span(translate_ui(loc, "dash.analysis.tga.presets.dirty_no_baseline"), className="text-muted")
+        return html.Span(translate_ui(loc, "dash.analysis.ftir.presets.dirty_no_baseline"), className="text-muted")
     current = _ftir_ui_snapshot_dict(
         template_id,
         _ftir_draft_from_control_values(
@@ -1280,8 +1288,8 @@ def render_ftir_preset_dirty_flag(
         ),
     )
     if _ftir_snapshots_equal(snapshot, current):
-        return html.Span(translate_ui(loc, "dash.analysis.tga.presets.clean"), className="text-success")
-    return html.Span(translate_ui(loc, "dash.analysis.tga.presets.dirty"), className="text-warning")
+        return html.Span(translate_ui(loc, "dash.analysis.ftir.presets.clean"), className="text-success")
+    return html.Span(translate_ui(loc, "dash.analysis.ftir.presets.dirty"), className="text-warning")
 
 
 # ---------------------------------------------------------------------------
@@ -1300,11 +1308,11 @@ def render_ftir_preset_dirty_flag(
 def render_ftir_processing_history_chrome(locale_data):
     loc = _loc(locale_data)
     return (
-        translate_ui(loc, "dash.analysis.tga.processing.history_title"),
-        translate_ui(loc, "dash.analysis.tga.processing.history_hint"),
-        translate_ui(loc, "dash.analysis.tga.processing.undo_btn"),
-        translate_ui(loc, "dash.analysis.tga.processing.redo_btn"),
-        translate_ui(loc, "dash.analysis.tga.processing.reset_btn"),
+        translate_ui(loc, "dash.analysis.ftir.processing.history_title"),
+        translate_ui(loc, "dash.analysis.ftir.processing.history_hint"),
+        translate_ui(loc, "dash.analysis.ftir.processing.undo_btn"),
+        translate_ui(loc, "dash.analysis.ftir.processing.redo_btn"),
+        translate_ui(loc, "dash.analysis.ftir.processing.reset_btn"),
     )
 
 
@@ -1321,17 +1329,17 @@ def render_ftir_processing_history_chrome(locale_data):
 def render_ftir_smoothing_chrome(locale_data):
     loc = _loc(locale_data)
     smooth_opts = [
-        {"label": translate_ui(loc, "dash.analysis.tga.processing.smooth.savgol"), "value": "savgol"},
-        {"label": translate_ui(loc, "dash.analysis.tga.processing.smooth.moving_average"), "value": "moving_average"},
-        {"label": translate_ui(loc, "dash.analysis.tga.processing.smooth.gaussian"), "value": "gaussian"},
+        {"label": translate_ui(loc, "dash.analysis.ftir.processing.smooth.savgol"), "value": "savgol"},
+        {"label": translate_ui(loc, "dash.analysis.ftir.processing.smooth.moving_average"), "value": "moving_average"},
+        {"label": translate_ui(loc, "dash.analysis.ftir.processing.smooth.gaussian"), "value": "gaussian"},
     ]
     return (
-        translate_ui(loc, "dash.analysis.tga.processing.smoothing_card_title"),
-        translate_ui(loc, "dash.analysis.tga.processing.smoothing_card_hint"),
-        translate_ui(loc, "dash.analysis.tga.processing.smooth.method"),
-        translate_ui(loc, "dash.analysis.tga.processing.smooth.window"),
-        translate_ui(loc, "dash.analysis.tga.processing.smooth.polyorder"),
-        translate_ui(loc, "dash.analysis.tga.processing.smooth.sigma"),
+        translate_ui(loc, "dash.analysis.ftir.processing.smoothing_card_title"),
+        translate_ui(loc, "dash.analysis.ftir.processing.smoothing_card_hint"),
+        translate_ui(loc, "dash.analysis.ftir.processing.smooth.method"),
+        translate_ui(loc, "dash.analysis.ftir.processing.smooth.window"),
+        translate_ui(loc, "dash.analysis.ftir.processing.smooth.polyorder"),
+        translate_ui(loc, "dash.analysis.ftir.processing.smooth.sigma"),
         smooth_opts,
     )
 
@@ -1351,15 +1359,15 @@ def render_ftir_smoothing_chrome(locale_data):
 def render_ftir_baseline_chrome(locale_data):
     loc = _loc(locale_data)
     return (
-        translate_ui(loc, "dash.analysis.dsc.baseline.title"),
-        translate_ui(loc, "dash.analysis.dsc.baseline.help.method"),
-        translate_ui(loc, "dash.analysis.dsc.baseline.method"),
-        translate_ui(loc, "dash.analysis.dsc.baseline.lam"),
-        translate_ui(loc, "dash.analysis.dsc.baseline.p"),
-        translate_ui(loc, "dash.analysis.dsc.baseline.region_section"),
-        translate_ui(loc, "dash.analysis.dsc.baseline.help.enable_region"),
-        translate_ui(loc, "dash.analysis.dsc.baseline.region_min"),
-        translate_ui(loc, "dash.analysis.dsc.baseline.region_max"),
+        translate_ui(loc, "dash.analysis.ftir.baseline.title"),
+        translate_ui(loc, "dash.analysis.ftir.baseline.help.method"),
+        translate_ui(loc, "dash.analysis.ftir.baseline.method"),
+        translate_ui(loc, "dash.analysis.ftir.baseline.lam"),
+        translate_ui(loc, "dash.analysis.ftir.baseline.p"),
+        translate_ui(loc, "dash.analysis.ftir.baseline.region_section"),
+        translate_ui(loc, "dash.analysis.ftir.baseline.help.enable_region"),
+        translate_ui(loc, "dash.analysis.ftir.baseline.region_min"),
+        translate_ui(loc, "dash.analysis.ftir.baseline.region_max"),
     )
 
 
@@ -1613,7 +1621,7 @@ def ftir_processing_history_actions(n_undo, n_redo, n_reset, draft, undo_stack, 
         if res is None:
             raise dash.exceptions.PreventUpdate
         prev, pl, fl = res
-        return prev, pl, fl, h + 1, translate_ui(loc, "dash.analysis.tga.processing.history_status_undo")
+        return prev, pl, fl, h + 1, translate_ui(loc, "dash.analysis.ftir.processing.history_status_undo")
 
     if trig == "ftir-processing-redo-btn":
         if not n_redo:
@@ -1622,7 +1630,7 @@ def ftir_processing_history_actions(n_undo, n_redo, n_reset, draft, undo_stack, 
         if res is None:
             raise dash.exceptions.PreventUpdate
         nxt, pl, fl = res
-        return nxt, pl, fl, h + 1, translate_ui(loc, "dash.analysis.tga.processing.history_status_redo")
+        return nxt, pl, fl, h + 1, translate_ui(loc, "dash.analysis.ftir.processing.history_status_redo")
 
     if trig == "ftir-processing-reset-btn":
         if not n_reset:
@@ -1634,7 +1642,7 @@ def ftir_processing_history_actions(n_undo, n_redo, n_reset, draft, undo_stack, 
         past_list.append(copy.deepcopy(cur))
         if len(past_list) > MAX_FTIR_UNDO_DEPTH:
             past_list = past_list[-MAX_FTIR_UNDO_DEPTH:]
-        return default_draft, past_list, [], h + 1, translate_ui(loc, "dash.analysis.tga.processing.history_status_reset")
+        return default_draft, past_list, [], h + 1, translate_ui(loc, "dash.analysis.ftir.processing.history_status_reset")
 
     raise dash.exceptions.PreventUpdate
 
@@ -1724,26 +1732,28 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
     summary_empty = html.P(translate_ui(loc, "dash.analysis.ftir.summary.empty"), className="text-muted")
     quality_empty = _ftir_collapsible_section(
         loc,
-        "dash.analysis.dsc.quality.card_title",
-        html.P(translate_ui(loc, "dash.analysis.dsc.quality.empty"), className="text-muted mb-0"),
+        "dash.analysis.ftir.quality.card_title",
+        html.P(translate_ui(loc, "dash.analysis.ftir.quality.empty"), className="text-muted mb-0"),
         open=False,
     )
     raw_meta_empty = _ftir_collapsible_section(
         loc,
-        "dash.analysis.dsc.raw_metadata.card_title",
-        html.P(translate_ui(loc, "dash.analysis.dsc.raw_metadata.empty"), className="text-muted mb-0"),
+        "dash.analysis.ftir.raw_metadata.card_title",
+        html.P(translate_ui(loc, "dash.analysis.ftir.raw_metadata.empty"), className="text-muted mb-0"),
         open=False,
     )
+    _deferred_hidden = html.Div(className="d-none")
+    metrics_hint = html.P(translate_ui(loc, "dash.analysis.ftir.empty_results_hint"), className="text-muted mb-0")
     if not result_id or not project_id:
         return (
             summary_empty,
-            empty_msg,
+            metrics_hint,
             quality_empty,
             empty_msg,
-            empty_msg,
-            empty_msg,
-            empty_msg,
-            empty_msg,
+            _deferred_hidden,
+            _deferred_hidden,
+            _deferred_hidden,
+            _deferred_hidden,
             raw_meta_empty,
         )
 
@@ -1753,7 +1763,7 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
         detail = workspace_result_detail(project_id, result_id)
     except Exception as exc:
         err = dbc.Alert(translate_ui(loc, "dash.analysis.error_loading_result", error=str(exc)), color="danger")
-        return summary_empty, err, quality_empty, empty_msg, empty_msg, empty_msg, empty_msg, empty_msg, raw_meta_empty
+        return summary_empty, err, quality_empty, empty_msg, _deferred_hidden, _deferred_hidden, _deferred_hidden, _deferred_hidden, raw_meta_empty
 
     summary = detail.get("summary", {})
     result_meta = detail.get("result", {})
@@ -1783,7 +1793,12 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
     top_score = summary.get("top_match_score", 0.0)
     sample_name = resolve_sample_name(summary, result_meta, locale_data=locale_data)
     na = translate_ui(loc, "dash.analysis.na")
-    top_score_str = f"{top_score:.4f}" if top_score else na
+    lib_unavailable = _ftir_library_unavailable(summary)
+    top_score_str = (
+        translate_ui(loc, "dash.analysis.ftir.metric.score_not_applicable")
+        if lib_unavailable
+        else (f"{float(top_score):.4f}" if top_score else na)
+    )
 
     metrics = metrics_row(
         [
@@ -2053,9 +2068,9 @@ def _build_ftir_analysis_summary(
         return html.Span(value, className="dsc-meta-value", title=value)
 
     dl_rows: list[Any] = [
-        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.dataset_label"), className="col-sm-4 text-muted dsc-meta-term"),
+        html.Dt(translate_ui(loc, "dash.analysis.ftir.summary.dataset_label"), className="col-sm-4 text-muted dsc-meta-term"),
         html.Dd(_meta_value(dataset_label), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.sample_label"), className="col-sm-4 text-muted dsc-meta-term"),
+        html.Dt(translate_ui(loc, "dash.analysis.ftir.summary.sample_label"), className="col-sm-4 text-muted dsc-meta-term"),
         html.Dd(_meta_value(sample_label), className="col-sm-8 dsc-meta-def"),
         html.Dt(translate_ui(loc, "dash.analysis.ftir.summary.instrument_label"), className="col-sm-4 text-muted dsc-meta-term"),
         html.Dd(_meta_value(instrument), className="col-sm-8 dsc-meta-def"),
@@ -2075,8 +2090,7 @@ def _build_ftir_quality_card(detail: dict, result_meta: dict, loc: str) -> html.
     status = str(validation.get("status") or result_meta.get("validation_status") or "unknown")
     warnings_list = validation.get("warnings") if isinstance(validation.get("warnings"), list) else []
     issues_list = validation.get("issues") if isinstance(validation.get("issues"), list) else []
-    wc = int(validation.get("warning_count", len(warnings_list)) or 0)
-    ic = int(validation.get("issue_count", len(issues_list)) or 0)
+    wc, ic = finalized_validation_warning_issue_counts(validation)
 
     status_token = status.strip().lower()
     if status_token in {"ok", "pass", "valid"} and wc == 0 and ic == 0:
@@ -2087,9 +2101,9 @@ def _build_ftir_quality_card(detail: dict, result_meta: dict, loc: str) -> html.
         alert_color = "danger"
 
     body_children: list[Any] = [
-        html.P([html.Strong(translate_ui(loc, "dash.analysis.dsc.quality.status_label")), f" {status}"], className="mb-2"),
-        html.P([html.Strong(translate_ui(loc, "dash.analysis.dsc.quality.warnings_label")), f" {wc}"], className="mb-2"),
-        html.P([html.Strong(translate_ui(loc, "dash.analysis.dsc.quality.issues_label")), f" {ic}"], className="mb-0"),
+        html.P([html.Strong(translate_ui(loc, "dash.analysis.ftir.quality.status_label")), f" {status}"], className="mb-2"),
+        html.P([html.Strong(translate_ui(loc, "dash.analysis.ftir.quality.warnings_label")), f" {wc}"], className="mb-2"),
+        html.P([html.Strong(translate_ui(loc, "dash.analysis.ftir.quality.issues_label")), f" {ic}"], className="mb-0"),
     ]
     if warnings_list:
         body_children.append(html.Ul([html.Li(str(w)) for w in warnings_list[:12]], className="small mb-0 mt-2"))
@@ -2102,7 +2116,7 @@ def _build_ftir_quality_card(detail: dict, result_meta: dict, loc: str) -> html.
     if wc:
         badges.append(
             dbc.Badge(
-                translate_ui(loc, "dash.analysis.tga.quality.badge_warnings", n=wc),
+                translate_ui(loc, "dash.analysis.ftir.quality.badge_warnings", n=wc),
                 color="warning",
                 text_color="dark",
                 className="ms-2",
@@ -2112,7 +2126,7 @@ def _build_ftir_quality_card(detail: dict, result_meta: dict, loc: str) -> html.
     if ic:
         badges.append(
             dbc.Badge(
-                translate_ui(loc, "dash.analysis.tga.quality.badge_issues", n=ic),
+                translate_ui(loc, "dash.analysis.ftir.quality.badge_issues", n=ic),
                 color="danger",
                 className="ms-2",
                 pill=True,
@@ -2120,7 +2134,7 @@ def _build_ftir_quality_card(detail: dict, result_meta: dict, loc: str) -> html.
         )
     return _ftir_collapsible_section(
         loc,
-        "dash.analysis.dsc.quality.card_title",
+        "dash.analysis.ftir.quality.card_title",
         inner,
         open=has_attention,
         summary_suffix=badges if badges else None,
@@ -2130,7 +2144,7 @@ def _build_ftir_quality_card(detail: dict, result_meta: dict, loc: str) -> html.
 def _build_ftir_raw_metadata_panel(metadata: dict | None, loc: str) -> html.Details:
     meta = metadata if isinstance(metadata, dict) else {}
     if not meta:
-        inner = html.P(translate_ui(loc, "dash.analysis.dsc.raw_metadata.empty"), className="text-muted mb-0")
+        inner = html.P(translate_ui(loc, "dash.analysis.ftir.raw_metadata.empty"), className="text-muted mb-0")
     else:
         user_keys = sorted([k for k in meta if k in _FTIR_USER_FACING_METADATA_KEYS], key=lambda k: str(k).lower())
         tech_keys = sorted([k for k in meta if k not in _FTIR_USER_FACING_METADATA_KEYS], key=lambda k: str(k).lower())
@@ -2159,7 +2173,7 @@ def _build_ftir_raw_metadata_panel(metadata: dict | None, loc: str) -> html.Deta
                     html.Summary(
                         [
                             html.Span(className="ta-details-chevron"),
-                            html.Span(translate_ui(loc, "dash.analysis.dsc.raw_metadata.technical_details") or "Technical details", className="ms-1"),
+                            html.Span(translate_ui(loc, "dash.analysis.ftir.raw_metadata.technical_details") or "Technical details", className="ms-1"),
                         ],
                         className="ta-details-summary",
                     ),
@@ -2169,8 +2183,8 @@ def _build_ftir_raw_metadata_panel(metadata: dict | None, loc: str) -> html.Deta
                 open=False,
             )
             body_parts.append(html.Div(tech_collapsible, className="mt-2"))
-        inner = html.Div(body_parts) if body_parts else html.P(translate_ui(loc, "dash.analysis.dsc.raw_metadata.empty"), className="text-muted mb-0")
-    return _ftir_collapsible_section(loc, "dash.analysis.dsc.raw_metadata.card_title", inner, open=False)
+        inner = html.Div(body_parts) if body_parts else html.P(translate_ui(loc, "dash.analysis.ftir.raw_metadata.empty"), className="text-muted mb-0")
+    return _ftir_collapsible_section(loc, "dash.analysis.ftir.raw_metadata.card_title", inner, open=False)
 
 
 def _finite_series(values: list | None) -> list[float]:
@@ -2453,9 +2467,17 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
 def _build_top_match_panel(summary: dict, rows: list, loc: str) -> html.Div:
     if not rows:
         if str(summary.get("match_status") or "").lower() == "library_unavailable":
-            body = translate_ui(loc, "dash.analysis.ftir.match.library_unavailable_body")
-        else:
-            body = translate_ui(loc, "dash.analysis.state.no_library_matches")
+            return html.Div(
+                [
+                    html.H5(translate_ui(loc, "dash.analysis.ftir.library.reference_title"), className="mb-3"),
+                    dbc.Alert(
+                        translate_ui(loc, "dash.analysis.ftir.library.not_configured_for_run"),
+                        color="info",
+                        className="mb-0 small",
+                    ),
+                ]
+            )
+        body = translate_ui(loc, "dash.analysis.state.no_library_matches")
         return html.Div(
             [
                 html.H5(translate_ui(loc, "dash.analysis.ftir.top_match.title"), className="mb-3"),
@@ -2577,9 +2599,8 @@ def _build_match_table(rows: list, loc: str, *, summary: dict | None = None) -> 
     if not rows:
         summary = summary or {}
         if str(summary.get("match_status") or "").lower() == "library_unavailable":
-            body = translate_ui(loc, "dash.analysis.ftir.match.library_unavailable_body")
-        else:
-            body = translate_ui(loc, "dash.analysis.state.no_match_data")
+            return html.Div(className="d-none")
+        body = translate_ui(loc, "dash.analysis.state.no_match_data")
         return html.Div(
             [
                 html.H5(translate_ui(loc, "dash.analysis.section.match_data_table"), className="mb-3"),

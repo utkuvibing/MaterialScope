@@ -4,7 +4,32 @@
 
 ## Status: no active slice (2026-04-21)
 
-The **FTIR literature + Setup cleanup** slice is **complete**. Start a new slice by replacing the status block above.
+The **FTIR Dash UI copy and validation alignment** slice is **complete**. Start a new slice by replacing the status block above.
+
+---
+
+### Archived: FTIR Dash UI — modality-specific copy, validation counts, library state (done, 2026-04-21)
+
+**Goal:** Remove TGA/DSC thermal leftovers from the FTIR Dash page; align warning counts everywhere with the same rule as the warning list; treat `library_unavailable` as tooling, not a spectral no-match; simplify the pre-run empty state without changing analysis behavior.
+
+**In scope**
+
+- [`utils/i18n.py`](utils/i18n.py): `dash.analysis.ftir.*` for presets, tabs, processing, baseline (wavenumber / cm⁻¹), quality, raw metadata, library status, empty hint.
+- [`dash_app/pages/ftir.py`](dash_app/pages/ftir.py): use FTIR keys only; quality counts via shared helper import; library-unavailable top-match alert + hidden match table; metrics top-score em dash when library off; deferred `d-none` placeholders before first result; cards trimmed for secondary result slots.
+- [`dash_app/components/analysis_page.py`](dash_app/components/analysis_page.py): `finalized_validation_warning_issue_counts`; `interpret_run_result` warning number from lists.
+- Tests: [`tests/test_ftir_dash_page.py`](tests/test_ftir_dash_page.py), [`tests/test_analysis_page_components.py`](tests/test_analysis_page_components.py).
+
+**Acceptance**
+
+- No TGA-specific preset/processing strings on the FTIR page; baseline region uses spectral / cm⁻¹ wording.
+- Run summary warning count matches the validation panel when `warnings` list and `warning_count` disagree.
+- Library unavailable: clear configuration messaging; match table not shown as a no-match table.
+- Pre-run results column is less repetitive.
+
+**Verification**
+
+- `rtk pytest tests/test_ftir_dash_page.py tests/test_analysis_page_components.py -q`
+- `rtk pytest tests/test_ftir_dash_page.py tests/test_dsc_dash_page.py tests/test_tga_dash_page.py -q`
 
 ---
 

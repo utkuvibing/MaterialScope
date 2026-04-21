@@ -312,6 +312,24 @@ def test_build_ftir_quality_card_collapsed_when_clean():
     assert getattr(card, "open", True) is False
 
 
+def test_build_ftir_quality_card_warning_count_matches_warning_list():
+    mod = _import_ftir_page()
+    detail = {
+        "validation": {
+            "status": "warn",
+            "warnings": ["a"] * 10,
+            "issues": [],
+            "warning_count": 11,
+            "issue_count": 0,
+        },
+        "result": {},
+    }
+    card = mod._build_ftir_quality_card(detail, {}, "en")
+    text = str(card).lower()
+    assert "10 warnings" in text
+    assert "11 warnings" not in text
+
+
 def test_build_ftir_analysis_summary_shows_instrument_and_vendor():
     mod = _import_ftir_page()
     dataset_detail = {
@@ -336,6 +354,14 @@ def test_build_ftir_raw_metadata_panel_splits_user_and_technical():
     assert "sample_name" in s
     assert "internal_vendor_blob" in s
     assert "Technical details" in s or "Teknik detaylar" in s
+
+
+def test_build_top_match_panel_library_unavailable_is_configuration_message():
+    mod = _import_ftir_page()
+    panel = mod._build_top_match_panel({"match_status": "library_unavailable"}, [], "en")
+    s = str(panel).lower()
+    assert "reference library" in s
+    assert "alert" in s
 
 
 def test_build_top_match_panel_renders_hero_summary():
@@ -713,9 +739,10 @@ def test_build_figure_omits_normalized_when_backend_flags_shared_axis_unhelpful(
     assert legend_norm not in names
 
 
-def test_build_match_table_library_unavailable_copy():
+def test_build_match_table_library_unavailable_is_hidden():
     mod = _import_ftir_page()
     table = mod._build_match_table([], "en", summary={"match_status": "library_unavailable"})
-    s = str(table)
-    assert "dash.analysis.ftir.match.library_unavailable_body" not in s
-    assert "tooling" in s.lower()
+    s = str(table).lower()
+    assert "d-none" in s
+    assert "match_data_table" not in s
+    assert "no match" not in s
