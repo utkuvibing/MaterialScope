@@ -26,6 +26,11 @@ from core.ftir_literature_query_builder import (
     build_ftir_literature_query,
     build_ftir_query_presentation,
 )
+from core.raman_literature_query_builder import (
+    _raman_query_is_too_narrow,
+    build_raman_literature_query,
+    build_raman_query_presentation,
+)
 from core.thermal_literature_query_builder import (
     build_dsc_literature_query,
     build_dta_literature_query,
@@ -104,6 +109,16 @@ FTIR_DIRECT_MODALITY_TERMS = (
     "ir spectroscopy",
     "mid-infrared",
     "molecular spectroscopy",
+)
+
+RAMAN_DISTRACTOR_TERMS = FTIR_DISTRACTOR_TERMS
+RAMAN_DIRECT_MODALITY_TERMS = (
+    "raman",
+    "raman spectroscopy",
+    "raman scattering",
+    "stokes",
+    "anti-stokes",
+    "vibrational spectroscopy",
 )
 
 
@@ -855,8 +870,8 @@ def _ftir_precision_signals(query_payload: Mapping[str, Any]) -> dict[str, Any]:
         _dedupe(
             [
                 "spectral similarity",
-                "infrared absorption",
-                "infrared bands",
+                "raman shift",
+                "raman bands",
                 "vibrational modes",
                 "library matching",
             ]
@@ -1016,6 +1031,225 @@ def _ftir_comparison_note(
         )
     return (
         f"{anchor}Metadata or abstracts overlap the query for {subject}, but the linkage is too weak to treat as FTIR-specific supporting evidence. {basis_note}"
+    )
+
+
+def _raman_query_payload(record: Mapping[str, Any]) -> dict[str, Any]:
+    return build_raman_literature_query(record)
+
+
+def _raman_subject_tokens(query_payload: Mapping[str, Any], record: Mapping[str, Any]) -> set[str]:
+    tokens: set[str] = set()
+    summary = dict(record.get("summary") or {})
+    metadata = dict(record.get("metadata") or {})
+    snap = dict(query_payload.get("evidence_snapshot") or {})
+    values = [
+        query_payload.get("query_display_title"),
+        summary.get("sample_name"),
+        metadata.get("sample_name"),
+        metadata.get("display_name"),
+        snap.get("sample_name"),
+        snap.get("top_match_name"),
+    ]
+    values.extend(_as_list(snap.get("wavenumber_terms")))
+    values.extend(_as_list(snap.get("wavenumber_anchors")))
+    for value in values:
+        cleaned = _clean_text(value)
+        if not cleaned:
+            continue
+        tokens.add(cleaned.lower())
+        tokens.update(_tokenize(cleaned))
+    return {token for token in tokens if token}
+
+
+def _raman_subject_label(query_payload: Mapping[str, Any], record: Mapping[str, Any]) -> str:
+    summary = dict(record.get("summary") or {})
+    metadata = dict(record.get("metadata") or {})
+    return (
+        _clean_text(query_payload.get("query_display_title"))
+        or _clean_text(summary.get("top_match_name"))
+        or _clean_text(summary.get("sample_name"))
+        or _clean_text(metadata.get("sample_name"))
+        or _clean_text(metadata.get("display_name"))
+        or "the RAMAN result"
+    )
+
+
+def _raman_precision_signals(query_payload: Mapping[str, Any]) -> dict[str, Any]:
+    snap = dict(query_payload.get("evidence_snapshot") or {})
+    entity_terms = _dedupe(
+        [
+            _clean_text(query_payload.get("query_display_title")),
+            _clean_text(snap.get("sample_name")),
+            _clean_text(snap.get("top_match_name")),
+        ]
+    )
+    process_terms = _dedupe([_clean_text(t) for t in _as_list(snap.get("wavenumber_terms")) if _clean_text(t)])
+    process_terms.extend(
+        _dedupe(
+            [
+                "spectral similarity",
+                "infrared absorption",
+                "infrared bands",
+                "vibrational modes",
+                "library matching",
+            ]
+        )
+    )
+    modality_terms = list(RAMAN_DIRECT_MODALITY_TERMS)
+    wn_numeric = [_clean_text(w) for w in _as_list(snap.get("wavenumber_anchors")) if _clean_text(w)]
+    return {
+        "entity_terms": entity_terms,
+        "process_terms": process_terms,
+        "modality_terms": modality_terms,
+        "wavenumber_terms": wn_numeric,
+    }
+
+
+def _raman_relevance_score(
+    *,
+    source_text: str,
+    access_class: str,
+    query_payload: Mapping[str, Any],
+    overlap: int,
+) -> tuple[int, bool, int, int]:
+    signals = _raman_precision_signals(query_payload)
+    entity_hits = _phrase_overlap_count(source_text, signals["entity_terms"])
+    process_hits = _phrase_overlap_count(source_text, signals["process_terms"])
+    modality_hits = _phrase_overlap_count(source_text, signals["modality_terms"])
+    wn_hits = _phrase_overlap_count(source_text, signals["wavenumber_terms"])
+    distractor_hits = _phrase_overlap_count(source_text, list(RAMAN_DISTRACTOR_TERMS))
+    direct_modality = _phrase_overlap_count(source_text, list(RAMAN_DIRECT_MODALITY_TERMS))
+
+    score = overlap
+    score += entity_hits * 4
+    score += process_hits * 3
+    score += modality_hits * 4
+    score += wn_hits * 3
+    score += direct_modality * 2
+    if direct_modality and (entity_hits or process_hits):
+        score += 6
+    if access_class in {"open_access_full_text", "user_provided_document"}:
+        score += 2
+    if distractor_hits:
+        direct_signal = int(bool(entity_hits)) + int(bool(process_hits)) + int(bool(modality_hits or direct_modality))
+        if direct_signal == 0:
+            score -= distractor_hits * 6
+        elif direct_signal == 1:
+            score -= distractor_hits * 4
+        else:
+            score -= distractor_hits * 2
+
+    low_specificity = (
+        score < 12
+        and access_class in {"metadata_only", "abstract_only"}
+        and not (direct_modality and (entity_hits or wn_hits))
+        and process_hits == 0
+    )
+    return score, low_specificity, wn_hits, entity_hits
+
+
+def _raman_validation_posture(
+    *,
+    access_class: str,
+    overlap: int,
+    source_text: str,
+    hint: str,
+    precision_score: int,
+    wavenumber_hits: int = 0,
+    entity_hits: int = 0,
+    modality_hits: int = 0,
+) -> str:
+    lowered = source_text.lower()
+    if hint in {"contradicts", "contradict"} or any(phrase in lowered for phrase in CONTRADICT_PHRASES):
+        return "alternative_interpretation"
+    if modality_hits == 0:
+        return "non_validating"
+    if precision_score >= 10 and access_class in {"open_access_full_text", "user_provided_document", "abstract_only"}:
+        if entity_hits >= 1 or wavenumber_hits >= 1:
+            return "related_support"
+    if precision_score >= 5:
+        return "contextual_only"
+    return "non_validating"
+
+
+def _raman_evidence_scope(
+    *,
+    query_payload: Mapping[str, Any],
+    source_text: str,
+    search_mode: str,
+    subject_trust: str,
+    entity_hits: int,
+    wavenumber_hits: int,
+    posture: str,
+    low_specificity: bool,
+    modality_hits: int,
+) -> str:
+    if low_specificity and posture == "non_validating":
+        return "generic_context"
+    signals = _raman_precision_signals(query_payload)
+    process_hits = _phrase_overlap_count(source_text, signals["process_terms"])
+    snap = dict(query_payload.get("evidence_snapshot") or {})
+    if search_mode == "known_material" and subject_trust == "trusted" and entity_hits >= 1:
+        return "material_specific"
+    if modality_hits >= 1 and (process_hits >= 1 or wavenumber_hits >= 1):
+        return "behavior_level"
+    if modality_hits >= 1:
+        return "behavior_level"
+    if str(snap.get("match_status") or "").lower() == "matched" and _clean_text(snap.get("top_match_name")) and entity_hits >= 1:
+        return "behavior_level"
+    return "generic_context"
+
+
+def _raman_comparison_note(
+    *,
+    subject: str,
+    posture: str,
+    query_payload: Mapping[str, Any],
+    access_field: str,
+) -> str:
+    snap = dict(query_payload.get("evidence_snapshot") or {})
+    evidence_basis = _thermal_evidence_basis(access_field, "")
+    basis_note = (
+        "Reasoning used accessible open-access or user-provided text."
+        if evidence_basis == "oa_backed"
+        else "Reasoning used accessible abstract-level text."
+        if evidence_basis == "abstract_backed"
+        else "Reasoning was limited to metadata-level overlap."
+    )
+    peak_n = _clean_int(snap.get("peak_count"))
+    top_match = _clean_text(snap.get("top_match_name"))
+    mstat = _clean_text(snap.get("match_status")).lower()
+    anchor = ""
+    if top_match and mstat == "matched":
+        anchor = (
+            f"The current RAMAN ranking highlights {top_match} as a qualitative library target (not a confirmed chemical identification). "
+        )
+    elif mstat == "library_unavailable":
+        anchor = (
+            "Reference-library matching was unavailable for this result, so external papers should be read as methodological context rather than "
+            "confirmation of an absent spectral ranking. "
+        )
+    elif mstat == "no_match":
+        anchor = "No library candidate met the similarity threshold; treat any external overlap as contextual spectroscopy background. "
+
+    if posture == "alternative_interpretation":
+        return (
+            f"{anchor}This paper discusses vibrational or Raman-related work relevant to {subject}, but it may favor an alternative reading "
+            f"rather than supporting the present RAMAN screening outcome. {basis_note}"
+        )
+    if posture == "related_support":
+        pk = f"Detected peak budget in-record: {peak_n}." if peak_n is not None else ""
+        return (
+            f"{anchor}This paper discusses RAMAN / vibrational evidence relevant to {subject}. "
+            f"It is directionally consistent with the recorded screening context; it remains contextual support—not validation. {pk} {basis_note}".strip()
+        )
+    if posture == "contextual_only":
+        return (
+            f"{anchor}This paper provides Raman or vibrational-spectroscopy context around {subject}, without tightly matching the retained peaks or ranking. {basis_note}"
+        )
+    return (
+        f"{anchor}Metadata or abstracts overlap the query for {subject}, but the linkage is too weak to treat as RAMAN-specific supporting evidence. {basis_note}"
     )
 
 
@@ -1238,6 +1472,260 @@ def _compare_ftir_result_to_literature(
             if provider_query_status == "not_configured"
             else "query_too_narrow"
             if not search_results and _ftir_query_is_too_narrow(query_payload)
+            else "query_too_narrow"
+            if provider_query_status == "query_too_narrow"
+            else "no_real_results"
+            if not search_results and provider_query_status in {"no_results", "success", ""}
+            else ""
+        ),
+        fixture_fallback_allowed=bool(search_filters.get("allow_fixture_fallback")),
+        query_display_title=_clean_text(query_presentation.get("display_title")),
+        query_display_mode=_clean_text(query_presentation.get("display_mode")),
+        query_display_terms=_as_list(query_presentation.get("display_terms")),
+        search_mode=search_mode,
+        subject_trust=subject_trust,
+        evidence_scope_summary=_thermal_evidence_scope_summary(comparisons),
+        low_specificity_retrieval=low_specificity_retrieval,
+        surfaced_comparison_count=len(comparisons),
+        evidence_specificity_summary=evidence_specificity,
+        executed_queries=executed_queries,
+        match_status_snapshot=_clean_text(summary.get("match_status")),
+        confidence_band_snapshot=_clean_text(summary.get("confidence_band")),
+        shared_peak_count_snapshot=_clean_int(evidence_snapshot.get("shared_peak_count") or evidence_snapshot.get("peak_count")),
+        coverage_ratio_snapshot=_clean_float(evidence_snapshot.get("coverage_ratio")),
+        weighted_overlap_score_snapshot=_clean_float(evidence_snapshot.get("top_match_score")),
+    ).to_dict()
+    if provider_error_message:
+        context["provider_error_message"] = provider_error_message
+
+    citations = sorted(citations_by_identity.values(), key=lambda item: item["citation_id"])
+    return {
+        "literature_context": normalize_literature_context(context),
+        "literature_claims": claims,
+        "literature_comparisons": normalize_literature_comparisons(comparisons),
+        "citations": normalize_citations(citations),
+    }
+
+
+def _compare_raman_result_to_literature(
+    record: Mapping[str, Any],
+    *,
+    provider: LiteratureProvider,
+    provider_scope: list[str],
+    max_claims: int,
+    filters: Mapping[str, Any] | None,
+    user_documents: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    comparison_run_id = f"litcmp_{uuid.uuid4().hex[:12]}"
+    analysis_type = "RAMAN"
+    query_payload = _raman_query_payload(record)
+    search_mode = _clean_text(query_payload.get("search_mode")).lower() or "behavior_first"
+    subject_trust = _clean_text(query_payload.get("subject_trust")).lower() or "absent"
+    query_presentation = build_raman_query_presentation(query_payload)
+    claims = extract_literature_claims(record, max_claims=max(1, int(max_claims or 1)))
+    normalized_user_documents = _normalize_user_document_sources(user_documents)
+
+    search_results: dict[str, dict[str, Any]] = {
+        _search_result_identity(source): copy.deepcopy(source)
+        for source in normalized_user_documents
+        if _search_result_identity(source)
+    }
+    provider_request_ids: list[str] = []
+    provider_result_sources = {
+        _clean_text((source.get("provenance") or {}).get("result_source"))
+        for source in normalized_user_documents
+        if _clean_text((source.get("provenance") or {}).get("result_source"))
+    }
+    search_filters = copy.deepcopy(dict(filters or {}))
+    modalities = [_clean_text(item).upper() for item in _as_list(search_filters.get("modalities")) if _clean_text(item)]
+    if analysis_type not in modalities:
+        modalities.insert(0, analysis_type)
+    search_filters["modalities"] = modalities
+    search_filters["analysis_type"] = analysis_type
+    search_filters.setdefault("top_k", 5)
+
+    executed_queries: list[str] = []
+    for query_text in _thermal_search_queries(query_payload):
+        executed_queries.append(query_text)
+        for candidate in provider.search(query_text, filters=search_filters):
+            source_key = _search_result_identity(candidate)
+            if not source_key:
+                continue
+            if source_key in search_results:
+                search_results[source_key] = merge_literature_candidates(search_results[source_key], candidate)
+            else:
+                search_results[source_key] = copy.deepcopy(candidate)
+            result_source = _clean_text((candidate.get("provenance") or {}).get("result_source"))
+            if result_source:
+                provider_result_sources.add(result_source)
+        for request_id in _provider_request_ids(provider):
+            if request_id and request_id not in provider_request_ids:
+                provider_request_ids.append(request_id)
+    provider_query_status = _provider_query_status(provider)
+    provider_error_message = _provider_error_message(provider)
+
+    citations_by_identity: dict[str, dict[str, Any]] = {}
+    comparisons_with_rank: list[tuple[int, bool, dict[str, Any]]] = []
+    accessible_source_ids: set[str] = set()
+    restricted_source_ids: set[str] = set()
+    used_access_fields: set[str] = set()
+    subject_tokens = _raman_subject_tokens(query_payload, record)
+    subject_label = _raman_subject_label(query_payload, record)
+    real_literature_available = False
+
+    for source in search_results.values():
+        source_identity = _search_result_identity(source)
+        access_class = _clean_text(source.get("access_class")).lower() or "metadata_only"
+        accessible = _fetch_accessible_text(source, provider=provider)
+        if accessible is None:
+            if access_class == "restricted_external":
+                restricted_source_ids.add(source_identity)
+            evidence_used: list[str] = []
+            access_field = "metadata_only"
+        else:
+            accessible_source_ids.add(source_identity)
+            access_field = _clean_text(accessible.get("field")).lower() or "abstract_text"
+            used_access_fields.add(access_field)
+            evidence_used = [_brief_evidence(_clean_text(accessible.get("text")))] if _clean_text(accessible.get("text")) else []
+
+        source_text = _thermal_source_text(source, accessible)
+        overlap = _thermal_subject_overlap(source_text, subject_tokens)
+        hint = _clean_text((source.get("provenance") or {}).get("comparison_hint")).lower()
+        precision_score, low_specificity, wavenumber_hits, entity_hits = _raman_relevance_score(
+            source_text=source_text,
+            access_class=access_class,
+            query_payload=query_payload,
+            overlap=overlap,
+        )
+        modality_hits = _phrase_overlap_count(source_text, _raman_precision_signals(query_payload)["modality_terms"])
+        posture = _raman_validation_posture(
+            access_class=access_class,
+            overlap=overlap,
+            source_text=source_text,
+            hint=hint,
+            precision_score=precision_score,
+            wavenumber_hits=wavenumber_hits,
+            entity_hits=entity_hits,
+            modality_hits=modality_hits,
+        )
+        note = _raman_comparison_note(
+            subject=subject_label,
+            posture=posture,
+            query_payload=query_payload,
+            access_field=access_field,
+        )
+        evidence_scope = _raman_evidence_scope(
+            query_payload=query_payload,
+            source_text=source_text,
+            search_mode=search_mode,
+            subject_trust=subject_trust,
+            entity_hits=entity_hits,
+            wavenumber_hits=wavenumber_hits,
+            posture=posture,
+            low_specificity=low_specificity,
+            modality_hits=modality_hits,
+        )
+        citation_key = citation_identity_key(source)
+        if citation_key not in citations_by_identity:
+            citations_by_identity[citation_key] = build_citation_entry(source, citation_id=f"ref{len(citations_by_identity) + 1}")
+        citation = citations_by_identity[citation_key]
+        provider_id = _clean_text((source.get("provenance") or {}).get("provider_id"))
+        if provider_id in REAL_BIBLIOGRAPHIC_PROVIDERS:
+            real_literature_available = True
+
+        claim = claims[0] if claims else {}
+        comparison = LiteratureComparison(
+            claim_id=str(claim.get("claim_id") or "C1"),
+            claim_text=str(claim.get("claim_text") or ""),
+            candidate_name=subject_label,
+            paper_title=_clean_text(source.get("title")),
+            paper_year=source.get("year"),
+            paper_journal=_clean_text(source.get("journal")),
+            paper_doi=_clean_text(source.get("doi")),
+            paper_url=_clean_text(source.get("url")),
+            provider_id=provider_id,
+            access_class=access_class,
+            comparison_note=note,
+            validation_posture=posture,
+            query_text=executed_queries[0] if executed_queries else _clean_text(query_payload.get("query_text")),
+            retrieved_sources=[_clean_text(source.get("source_id"))] if _clean_text(source.get("source_id")) else [],
+            support_label=_thermal_support_label_for_posture(posture),
+            rationale=note,
+            evidence_used=evidence_used,
+            citation_ids=[citation["citation_id"]],
+            confidence=_thermal_comparison_confidence(posture, access_class, overlap, precision_score=precision_score, access_field=access_field),
+            sources_considered=len(search_results),
+            evidence_scope=evidence_scope,
+        ).to_dict()
+        score = precision_score + (6 if posture == "related_support" else 4 if posture == "alternative_interpretation" else 2 if posture == "contextual_only" else 0)
+        comparisons_with_rank.append((score, low_specificity, comparison))
+
+    comparisons_with_rank.sort(key=lambda item: (-item[0], item[1], -(item[2].get("paper_year") or 0), str(item[2].get("paper_title") or "")))
+    surfaced_comparisons: list[dict[str, Any]] = []
+    seen_titles: set[str] = set()
+    strong_rows = [item for item in comparisons_with_rank if item[0] >= 10 and not item[1]]
+    candidate_rows = strong_rows if strong_rows else comparisons_with_rank
+    limit = 2 if strong_rows else 1
+    for _score, low_specificity, item in candidate_rows:
+        title_key = _clean_text(item.get("paper_title") or item.get("paper_doi") or item.get("paper_url")).casefold()
+        if title_key and title_key in seen_titles:
+            continue
+        if low_specificity and strong_rows:
+            continue
+        if title_key:
+            seen_titles.add(title_key)
+        surfaced_comparisons.append(item)
+        if len(surfaced_comparisons) >= limit:
+            break
+    if not surfaced_comparisons and comparisons_with_rank:
+        surfaced_comparisons = [comparisons_with_rank[0][2]]
+    comparisons = _merge_thermal_surfaced_comparisons(surfaced_comparisons)
+    low_specificity_retrieval = bool(comparisons_with_rank) and not strong_rows and all(item[1] for item in comparisons_with_rank[: min(len(comparisons_with_rank), 3)])
+    evidence_specificity = _thermal_evidence_specificity_summary(
+        source_count=len(search_results),
+        accessible_source_count=len(accessible_source_ids),
+        used_access_fields=used_access_fields,
+    )
+    evidence_snapshot = dict(query_payload.get("evidence_snapshot") or {})
+    summary = dict(record.get("summary") or {})
+    context = LiteratureContext(
+        mode="metadata_abstract_oa_only",
+        comparison_run_id=comparison_run_id,
+        provider_scope=provider_scope,
+        result_id=_clean_text(record.get("id")),
+        analysis_type=analysis_type,
+        provider_request_ids=provider_request_ids,
+        provider_result_source=(
+            "multi_provider_search"
+            if len(provider_scope) > 1
+            else (sorted(provider_result_sources)[0] if len(provider_result_sources) == 1 else _provider_result_source(provider, provider_scope=provider_scope))
+        ),
+        query_count=len(executed_queries),
+        source_count=len(search_results),
+        citation_count=len(citations_by_identity),
+        accessible_source_count=len(accessible_source_ids),
+        restricted_source_count=len(restricted_source_ids),
+        metadata_only_evidence=evidence_specificity == "metadata_only",
+        restricted_content_used=False,
+        generated_at_utc=datetime.now(timezone.utc).isoformat(),
+        query_text=executed_queries[0] if executed_queries else _clean_text(query_payload.get("query_text")),
+        candidate_name=subject_label,
+        candidate_display_name=subject_label,
+        real_literature_available=real_literature_available,
+        fixture_fallback_used=bool(search_filters.get("allow_fixture_fallback")) and not real_literature_available and any(
+            _is_fixture_source(source) for source in search_results.values()
+        ),
+        query_rationale=_clean_text(query_payload.get("query_rationale")),
+        provider_query_status=provider_query_status,
+        no_results_reason=(
+            "provider_unavailable"
+            if provider_query_status == "provider_unavailable"
+            else "request_failed"
+            if provider_query_status == "request_failed"
+            else "not_configured"
+            if provider_query_status == "not_configured"
+            else "query_too_narrow"
+            if not search_results and _raman_query_is_too_narrow(query_payload)
             else "query_too_narrow"
             if provider_query_status == "query_too_narrow"
             else "no_real_results"
@@ -2092,6 +2580,15 @@ def compare_result_to_literature(
         )
     if analysis_type == "FTIR":
         return _compare_ftir_result_to_literature(
+            record,
+            provider=active_provider,
+            provider_scope=scope,
+            max_claims=max_claims,
+            filters=filters,
+            user_documents=user_documents,
+        )
+    if analysis_type == "RAMAN":
+        return _compare_raman_result_to_literature(
             record,
             provider=active_provider,
             provider_scope=scope,

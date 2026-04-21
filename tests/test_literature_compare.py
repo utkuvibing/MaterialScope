@@ -11,6 +11,7 @@ import pytest
 from core.data_io import ThermalDataset
 from core.literature_claims import extract_literature_claims
 from core.ftir_literature_query_builder import build_ftir_literature_query
+from core.raman_literature_query_builder import build_raman_literature_query
 from core.literature_compare import _thermal_search_queries, attach_literature_package, compare_result_to_literature
 from core.literature_provider import (
     FixtureLiteratureProvider,
@@ -306,6 +307,91 @@ def _ftir_record(*, library_unavailable: bool = False, no_match: bool = False) -
     )
 
 
+def _raman_record(*, library_unavailable: bool = False, no_match: bool = False) -> dict:
+    if library_unavailable:
+        match_status = "library_unavailable"
+        confidence = "no_match"
+        top_name = None
+        top_score = 0.0
+        rows: list[dict[str, object]] = []
+    elif no_match:
+        match_status = "no_match"
+        confidence = "no_match"
+        top_name = None
+        top_score = 0.31
+        rows = [
+            {
+                "rank": 1,
+                "candidate_id": "weak",
+                "candidate_name": "Weak ref",
+                "normalized_score": 0.31,
+                "confidence_band": "no_match",
+                "evidence": {"shared_peak_count": 0, "matched_peak_pairs": []},
+            }
+        ]
+    else:
+        match_status = "matched"
+        confidence = "medium"
+        top_name = "Graphitic carbon reference"
+        top_score = 0.76
+        rows = [
+            {
+                "rank": 1,
+                "candidate_id": "ref_graphite",
+                "candidate_name": top_name,
+                "normalized_score": top_score,
+                "confidence_band": confidence,
+                "library_provider": "Fixture",
+                "evidence": {
+                    "shared_peak_count": 3,
+                    "coverage_ratio": 0.65,
+                    "matched_peak_pairs": [
+                        {"observed_position": 1582.0, "reference_position": 1580.0},
+                        {"observed_position": 1352.0, "reference_position": 1350.0},
+                    ],
+                },
+            }
+        ]
+    summary = {
+        "peak_count": 4,
+        "match_status": match_status,
+        "confidence_band": confidence,
+        "candidate_count": len(rows),
+        "top_match_id": (rows[0]["candidate_id"] if rows else None),
+        "top_match_name": top_name,
+        "top_match_score": top_score,
+        "library_result_source": "not_configured" if library_unavailable else "cloud_search",
+        "library_request_id": "req_raman_1",
+        "sample_name": "CNT film",
+    }
+    if library_unavailable:
+        summary["caution_message"] = "Reference spectral library matching was unavailable for this run."
+    scientific_context = build_scientific_reasoning(
+        analysis_type="RAMAN",
+        summary=summary,
+        rows=rows,
+        metadata={"sample_name": "CNT film", "display_name": "CNT film RAMAN"},
+        fit_quality={"confidence_band": confidence, "top_match_score": top_score},
+        validation={"status": "pass", "warnings": [], "issues": []},
+    )
+    processing = {
+        "workflow_template_label": "raman.general",
+        "method_context": {"raman_signal_role": "counts"},
+    }
+    return make_result_record(
+        result_id="raman_demo",
+        analysis_type="RAMAN",
+        status="stable",
+        dataset_key="raman_demo",
+        metadata={"sample_name": "CNT film", "display_name": "CNT film RAMAN"},
+        summary=summary,
+        rows=rows,
+        processing=processing,
+        scientific_context=scientific_context,
+        validation={"status": "pass", "warnings": [], "issues": []},
+    )
+
+
 def _multi_claim_record() -> dict:
     record = _base_record()
     record["scientific_context"] = {
@@ -393,7 +479,7 @@ def test_fixture_provider_search_returns_ranked_candidates():
 
 def test_compare_result_to_literature_limits_max_claims():
     record = _multi_claim_record()
-    record["analysis_type"] = "RAMAN"
+    record["analysis_type"] = "KINETICS"
     package = compare_result_to_literature(
         record,
         provider=StubProvider(
@@ -543,6 +629,50 @@ def test_ftir_compare_no_real_results_when_search_succeeds_but_empty():
     status = package["literature_context"]["provider_query_status"]
     assert status in {"success", "no_results"}
     assert package["literature_context"]["no_results_reason"] == "no_real_results"
+
+
+def test_raman_scientific_reasoning_excludes_generic_placeholder():
+    record = _raman_record()
+    text = " ".join(c.get("claim", "") for c in record["scientific_context"].get("scientific_claims") or [])
+    assert "not specialized for this analysis type yet" not in text.lower()
+    assert "raman" in text.lower()
+
+
+def test_raman_literature_query_includes_modality_when_library_unavailable():
+    record = _raman_record(library_unavailable=True)
+    payload = build_raman_literature_query(record)
+    assert "raman" in payload["query_text"].lower()
+    assert "raman spectroscopy" in payload["query_text"].lower() or "vibrational spectroscopy" in payload["query_text"].lower()
+    assert payload["evidence_snapshot"]["match_status"] == "library_unavailable"
+
+
+def test_raman_compare_openalex_traceability_and_executed_queries():
+    record = _raman_record()
+    provider = OpenAlexLikeLiteratureProvider(
+        search_client=lambda query, filters: {
+            "request_id": "openalex_req_raman",
+            "result_source": "openalex_api",
+            "query_status": "success",
+            "results": [
+                {
+                    "id": "https://openalex.org/W_raman",
+                    "display_name": "Raman spectroscopy screening of graphitic films",
+                    "publication_year": 2024,
+                    "doi": "https://doi.org/10.1000/raman-study",
+                    "authorships": [{"author": {"display_name": "C. Spectroscopist"}}],
+                    "primary_location": {"source": {"display_name": "Vibrational Spectroscopy"}},
+                }
+            ],
+        }
+    )
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["openalex_like_provider"], max_claims=2)
+    context = package["literature_context"]
+    assert context["analysis_type"] == "RAMAN"
+    assert context["provider_request_ids"] == ["openalex_req_raman"]
+    assert context["query_display_title"]
+    assert context["executed_queries"]
+    joined_claims = " ".join(c.get("claim_text", "") for c in package["literature_claims"])
+    assert "not specialized for this analysis type yet" not in joined_claims.lower()
 
 
 def test_tga_query_builder_strips_filename_artifacts_and_adds_scientific_fallbacks():
@@ -1071,7 +1201,7 @@ def test_weak_metadata_only_neighbors_are_filtered_from_surfaced_thermal_compari
 )
 def test_comparison_engine_assigns_expected_labels(hint: str, access_class: str, expected_label: str):
     record = _base_record()
-    record["analysis_type"] = "RAMAN"
+    record["analysis_type"] = "KINETICS"
     package = compare_result_to_literature(
         record,
         provider=StubProvider(
@@ -1098,7 +1228,7 @@ def test_comparison_engine_assigns_expected_labels(hint: str, access_class: str,
 
 def test_restricted_content_guardrail_excludes_closed_access_reasoning():
     record = _base_record()
-    record["analysis_type"] = "RAMAN"
+    record["analysis_type"] = "KINETICS"
     package = compare_result_to_literature(
         record,
         provider=StubProvider(
@@ -1123,7 +1253,7 @@ def test_restricted_content_guardrail_excludes_closed_access_reasoning():
 
 def test_user_provided_document_is_compared_and_cited():
     record = _base_record()
-    record["analysis_type"] = "RAMAN"
+    record["analysis_type"] = "KINETICS"
     package = compare_result_to_literature(
         record,
         provider=StubProvider([]),

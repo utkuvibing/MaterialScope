@@ -198,3 +198,44 @@ FTIR preprocessing / peak detection / matching produced scientifically misleadin
 ### Next check
 
 Monitor for regressions in Raman (shares `_execute_spectral_batch`) and future peak-detector extensions.
+
+---
+
+## BUG-005 — Raman Dash inherited generic literature/reasoning path and FTIR warning wording
+
+### Title
+
+Raman used generic scientific-context path and could surface FTIR-labelled spectral warnings
+
+### Status
+
+**Closed**
+
+### Symptoms
+
+- Raman literature compare path did not use Raman-specialized query/compare semantics.
+- Raman scientific context could fall back to generic placeholder reasoning.
+- Shared spectral warnings could contain FTIR-prefixed wording on Raman runs.
+
+### Repro steps
+
+1. Run Raman analysis and inspect literature context/reasoning payload outputs.
+2. Trigger warning-producing Raman spectral conditions (e.g., baseline suppression / normalization skip).
+3. Observe terminology and dispatch behavior.
+
+### Likely cause
+
+Raman was still wired through generic literature/reasoning branches in core logic, and shared spectral warning strings were hardcoded with FTIR label text.
+
+### Files involved
+
+- `core/raman_literature_query_builder.py`
+- `core/literature_compare.py`
+- `core/scientific_reasoning.py`
+- `core/batch_runner.py`
+- `dash_app/pages/raman.py`
+- `utils/i18n.py`
+
+### Next check
+
+Covered by targeted tests for Raman Dash page, literature compare, and scientific reasoning; watch for regressions when shared spectral helpers change.

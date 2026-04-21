@@ -8,6 +8,42 @@ The **FTIR Dash UI copy and validation alignment** slice is **complete**. Start 
 
 ---
 
+### Archived: Raman Dash full migration + Raman literature/reasoning specialization (done, 2026-04-21)
+
+**Goal:** Bring the Raman Dash page to FTIR/DSC/TGA/DTA maturity with full Streamlit-era capability parity in a Dash-native shell, while implementing Raman-specific literature and reasoning paths (no normal Raman fallback to generic).
+
+**In scope**
+
+- [`dash_app/pages/raman.py`](dash_app/pages/raman.py): full product-grade page surface with Setup/Processing/Run tabs; processing draft controls; history (undo/redo/reset); presets; run flow; standardized right-column result sections; literature compare integration.
+- [`dash_app/components/raman_explore.py`](dash_app/components/raman_explore.py): Raman processing draft equality + undo/redo helpers.
+- [`core/raman_literature_query_builder.py`](core/raman_literature_query_builder.py): deterministic Raman literature query payload and presentation helpers.
+- [`core/literature_compare.py`](core/literature_compare.py): Raman-specific compare helper chain + dispatch branch in `compare_result_to_literature`.
+- [`core/scientific_reasoning.py`](core/scientific_reasoning.py): `_build_raman_reasoning` and analysis dispatcher branch for RAMAN.
+- [`core/batch_runner.py`](core/batch_runner.py): modality-aware spectral warning labels and Raman method-context signal flags to avoid FTIR wording leakage.
+- [`utils/i18n.py`](utils/i18n.py): complete `dash.analysis.raman.*` namespace for page chrome, processing/presets, quality/raw metadata, figure/top-match/literature text.
+- Tests: [`tests/test_raman_dash_page.py`](tests/test_raman_dash_page.py), [`tests/test_literature_compare.py`](tests/test_literature_compare.py), [`tests/test_scientific_reasoning.py`](tests/test_scientific_reasoning.py).
+
+**Acceptance**
+
+- Raman UI/UX follows the same mature Dash analysis shell and section ordering used by FTIR/DSC/TGA/DTA.
+- Raman exposes full processing draft lifecycle (controls, history, presets, run overrides) and stable result rendering.
+- Raman literature compare uses dedicated Raman query/compare semantics with traceable context fields and no generic-path fallback in normal Raman execution.
+- Raman scientific reasoning no longer emits generic “not specialized” placeholder text.
+- Raman page strings come from `dash.analysis.raman.*` namespace, without TGA/FTIR key fallback dependence.
+- Shared spectral warnings on Raman outputs use Raman wording (not FTIR wording).
+
+**Verification**
+
+- `rtk python -m py_compile core/batch_runner.py core/literature_compare.py core/scientific_reasoning.py core/raman_literature_query_builder.py dash_app/pages/raman.py dash_app/components/raman_explore.py utils/i18n.py tests/test_raman_dash_page.py tests/test_literature_compare.py tests/test_scientific_reasoning.py`
+- `rtk pytest -q tests/test_raman_dash_page.py`
+- `rtk pytest -q tests/test_literature_compare.py`
+- `rtk pytest -q tests/test_scientific_reasoning.py`
+- `rtk pytest -q tests/test_raman_dash_page.py tests/test_literature_compare.py tests/test_scientific_reasoning.py`
+- `rtk pytest -q tests/test_dash_figure_capture_wiring.py tests/test_batch_runner.py -k "raman"`
+- `rtk pytest -q tests/test_backend_details.py -k "raman and literature"`
+
+---
+
 ### Archived: FTIR Dash UI — modality-specific copy, validation counts, library state (done, 2026-04-21)
 
 **Goal:** Remove TGA/DSC thermal leftovers from the FTIR Dash page; align warning counts everywhere with the same rule as the warning list; treat `library_unavailable` as tooling, not a spectral no-match; simplify the pre-run empty state without changing analysis behavior.

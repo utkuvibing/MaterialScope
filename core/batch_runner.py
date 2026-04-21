@@ -1414,6 +1414,7 @@ def _execute_spectral_batch(
             "top_candidate_score": round(top_score, 4),
         }
 
+    modality_label = "FTIR" if analysis_type == "FTIR" else "RAMAN"
     processing = update_method_context(
         processing,
         {
@@ -1434,29 +1435,31 @@ def _execute_spectral_batch(
             "library_offline_limited_mode": bool(library_offline_limited_mode),
             "ftir_signal_role": signal_role,
             "ftir_inverted_for_transmittance": was_inverted,
+            "raman_signal_role": signal_role if analysis_type == "RAMAN" else "",
+            "raman_inverted_for_transmittance": was_inverted if analysis_type == "RAMAN" else False,
         },
         analysis_type=analysis_type,
     )
     validation = validate_thermal_dataset(dataset, analysis_type=analysis_type, processing=processing)
-    ftir_warnings: list[str] = []
+    spectral_warnings: list[str] = []
     if signal_role == "unknown":
-        ftir_warnings.append(
-            "FTIR signal role is uncertain (absorbance vs transmittance); review unit metadata and interpret results with caution."
+        spectral_warnings.append(
+            f"{modality_label} signal role is uncertain (absorbance vs transmittance); review unit metadata and interpret results with caution."
         )
     if was_inverted:
-        ftir_warnings.append(
-            "FTIR signal was interpreted as transmittance and inverted for analysis; peak positions are accurate but intensities are on an inverted scale."
+        spectral_warnings.append(
+            f"{modality_label} signal was interpreted as transmittance and inverted for analysis; peak positions are accurate but intensities are on an inverted scale."
         )
     if baseline_suppressed:
-        ftir_warnings.append(f"FTIR baseline estimation was suppressed because the fit was implausible: {baseline_reason}")
+        spectral_warnings.append(f"{modality_label} baseline estimation was suppressed because the fit was implausible: {baseline_reason}")
     if normalization_skipped:
-        ftir_warnings.append(f"FTIR normalization was skipped: {norm_reason}")
+        spectral_warnings.append(f"{modality_label} normalization was skipped: {norm_reason}")
     if peak_fallback:
-        ftir_warnings.append(f"FTIR peak detection used fallback logic: {peak_reason}")
+        spectral_warnings.append(f"{modality_label} peak detection used fallback logic: {peak_reason}")
     elif not observed_peaks:
-        ftir_warnings.append(f"FTIR peak detection returned no peaks: {peak_reason}")
+        spectral_warnings.append(f"{modality_label} peak detection returned no peaks: {peak_reason}")
 
-    for w in ftir_warnings:
+    for w in spectral_warnings:
         if w not in validation.setdefault("warnings", []):
             validation["warnings"].append(w)
     validation["warning_count"] = len(validation.get("warnings", []))

@@ -4,6 +4,35 @@
 
 ---
 
+## 2026-04-21 — Raman Dash page promoted to full product-grade analysis shell
+
+**Decision:**
+
+1. Raman Dash page is now structured to match the mature modality pages (FTIR/DSC/TGA/DTA): explicit **Setup / Processing / Run** tabs on the left, and standardized results surface ordering on the right (summary → metrics → quality → figure → top-match → peak cards → table → processing → raw metadata → literature).
+2. Raman processing state follows the shared draft lifecycle pattern: normalized draft store, control hydration, undo/redo/reset history, preset load/save/save-as/delete, and `processing_overrides` forwarding through `/analysis/run`.
+3. Raman page strings are sourced from **`dash.analysis.raman.*`** namespace so modality-specific UX text does not depend on TGA/FTIR copy.
+
+**Reason:** Raman had a first-slice page shape and incomplete parity versus the product-grade analysis pages, creating UX inconsistency and feature gaps during the Streamlit → Dash migration.
+
+**Consequence / future:** Raman now shares the same operational model as other mature pages, so future enhancements (new controls, richer cards, capture/export polish) can follow the established cross-modality callback/store patterns.
+
+---
+
+## 2026-04-21 — Raman-specific literature + scientific reasoning paths (no generic fallback in normal Raman flow)
+
+**Decision:**
+
+1. Add deterministic Raman query payload builder in [`core/raman_literature_query_builder.py`](core/raman_literature_query_builder.py), including modality-first Raman terminology, evidence snapshot, display terms, and “query-too-narrow” guard.
+2. Route `analysis_type == "RAMAN"` to dedicated `_compare_raman_result_to_literature` in [`core/literature_compare.py`](core/literature_compare.py), mirroring FTIR-level traceability (`executed_queries`, provider state, surfaced comparison ranking) with Raman-specific relevance/posture/evidence-scope logic.
+3. Add `_build_raman_reasoning` and dispatcher branch in [`core/scientific_reasoning.py`](core/scientific_reasoning.py) so Raman records avoid generic “not specialized” reasoning output.
+4. In shared spectral batch flow ([`core/batch_runner.py`](core/batch_runner.py)), warning strings are modality-aware (`FTIR` vs `RAMAN`) and Raman method-context signal flags are persisted to prevent cross-modality labeling leakage.
+
+**Reason:** Raman previously inherited generic literature/reasoning behavior and could surface FTIR wording in shared spectral warnings, reducing interpretability and modality trust.
+
+**Consequence / future:** Raman literature/reasoning semantics now evolve independently of generic fallback paths; FTIR and Raman can share architecture while preserving modality-specific language and scoring behavior.
+
+---
+
 ## 2026-04-21 — Combined Dash server: library cloud URL bootstrap + POSIX Windows-path env sanitation
 
 **Decision:**

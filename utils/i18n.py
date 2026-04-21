@@ -943,6 +943,302 @@ TRANSLATIONS = {
         "tr": "Önce bir Raman analizi çalıştırın.",
         "en": "Run a RAMAN analysis first.",
     },
+    "dash.analysis.raman.top_match": {"tr": "En iyi eşleşme: {name}", "en": "Top match: {name}"},
+    "dash.analysis.raman.baseline": {"tr": "Taban çizgisi: {detail}", "en": "Baseline: {detail}"},
+    "dash.analysis.raman.normalization": {"tr": "Normalizasyon: {detail}", "en": "Normalization: {detail}"},
+    "dash.analysis.raman.peak_detection": {"tr": "Tepe algılama: {detail}", "en": "Peak Detection: {detail}"},
+    "dash.analysis.raman.similarity_matching": {"tr": "Benzerlik eşlemesi: {detail}", "en": "Similarity Matching: {detail}"},
+    "dash.analysis.raman.library": {"tr": "Kütüphane: {mode} (kaynak: {source})", "en": "Library: {mode} (source: {source})"},
+    "dash.analysis.raman.literature.ready": {
+        "tr": "Kaydedilmiş RAMAN sonucunu literatür kaynaklarıyla karşılaştırın.",
+        "en": "Compare the saved RAMAN result to literature sources.",
+    },
+    "dash.analysis.raman.literature.empty": {
+        "tr": "Literatür karşılaştırmasını etkinleştirmek için önce bir RAMAN analizi çalıştırın.",
+        "en": "Run an RAMAN analysis first to enable literature comparison.",
+    },
+    "dash.analysis.raman.literature.missing_result": {
+        "tr": "Önce bir RAMAN analizi çalıştırın.",
+        "en": "Run an RAMAN analysis first.",
+    },
+    "dash.analysis.raman.match.library_unavailable_body": {
+        "tr": (
+            "Referans spektral kütüphanesi bu çalıştırma için yapılandırılmamış veya kullanılamıyor; "
+            "bu durum kimyasal bir 'eşleşme yok' sonucu olarak yorumlanmamalıdır."
+        ),
+        "en": (
+            "The reference spectral library was not configured or was unavailable for this run; "
+            "treat this as a tooling limitation rather than a spectroscopic 'no match' conclusion."
+        ),
+    },
+    "dash.analysis.raman.literature.technical_details_title": {
+        "tr": "Teknik arama ayrıntıları",
+        "en": "Technical search details",
+    },
+    "dash.analysis.raman.literature.technical.provider_status": {"tr": "Sağlayıcı durumu", "en": "Provider status"},
+    "dash.analysis.raman.literature.technical.no_results_reason": {
+        "tr": "Sonuç alınamama nedeni",
+        "en": "No-results reason",
+    },
+    "dash.analysis.raman.literature.technical.source_count": {"tr": "Kaynak sayısı", "en": "Source count"},
+    "dash.analysis.raman.literature.technical.citation_count": {"tr": "Atıf sayısı", "en": "Citation count"},
+    "dash.analysis.raman.literature.technical.provider_note": {"tr": "Sağlayıcı notu", "en": "Provider note"},
+    "dash.analysis.raman.literature.technical.query": {"tr": "Teknik sorgu", "en": "Technical query"},
+    "dash.analysis.raman.literature.technical.search_mode": {"tr": "Arama modu", "en": "Search mode"},
+    "dash.analysis.raman.literature.technical.subject_trust": {"tr": "Konu güveni", "en": "Subject trust"},
+    "dash.analysis.raman.literature.technical.display_terms": {"tr": "Görünen terimler", "en": "Display terms"},
+    "dash.analysis.raman.literature.technical.fallback_queries": {"tr": "Yedek sorgular", "en": "Fallback queries"},
+    "dash.analysis.raman.top_match": {"tr": "En iyi eşleşme: {name}", "en": "Top match: {name}"},
+    "dash.analysis.raman.baseline": {"tr": "Taban çizgisi: {detail}", "en": "Baseline: {detail}"},
+    "dash.analysis.raman.normalization": {"tr": "Normalizasyon: {detail}", "en": "Normalization: {detail}"},
+    "dash.analysis.raman.peak_detection": {"tr": "Tepe algılama: {detail}", "en": "Peak Detection: {detail}"},
+    "dash.analysis.raman.similarity_matching": {"tr": "Benzerlik eşlemesi: {detail}", "en": "Similarity Matching: {detail}"},
+    "dash.analysis.raman.library": {"tr": "Kütüphane: {mode} (kaynak: {source})", "en": "Library: {mode} (source: {source})"},
+    "dash.analysis.raman.literature.ready": {
+        "tr": "Kaydedilmiş Raman sonucunu literatür kaynaklarıyla karşılaştırın.",
+        "en": "Compare the saved RAMAN result to literature sources.",
+    },
+    "dash.analysis.raman.title": {"tr": "RAMAN analizi", "en": "RAMAN Analysis"},
+    "dash.analysis.raman.caption": {
+        "tr": "RAMAN uyumlu veri seti seçin, şablonu seçin ve spektral analizi çalıştırın.",
+        "en": "Select an RAMAN-eligible dataset, choose a workflow template, and run spectral analysis.",
+    },
+    "dash.analysis.raman.run_btn": {"tr": "RAMAN analizini çalıştır", "en": "Run RAMAN Analysis"},
+    "dash.analysis.raman.empty_import": {"tr": "Önce bir RAMAN dosyası içe aktarın.", "en": "Import an RAMAN file first."},
+    "dash.analysis.raman.workflow_fallback": {"tr": "RAMAN analiz iş akışı.", "en": "RAMAN analysis workflow."},
+    "dash.analysis.raman.template.raman.general.label": {"tr": "Genel RAMAN", "en": "General RAMAN"},
+    "dash.analysis.raman.template.raman.functional_groups.label": {"tr": "Fonksiyonel grup taraması", "en": "Functional Group Screening"},
+    "dash.analysis.raman.template.raman.general.desc": {
+        "tr": "Genel RAMAN: hareketli ortalama yumuşatma, doğrusal taban çizgisi, vektör normalizasyonu, tepe algılama, kosinüs/Pearson benzerliği.",
+        "en": "General RAMAN: Moving-average smoothing, linear baseline, vector normalization, peak detection, cosine/Pearson similarity matching.",
+    },
+    "dash.analysis.raman.template.raman.functional_groups.desc": {
+        "tr": "Fonksiyonel grup taraması: daha kısa yumuşatma, daha toleranslı tepe algılama, fonksiyonel grup tanıma için daha geniş benzerlik.",
+        "en": "Functional Group Screening: Shorter smoothing window, more permissive peak detection, broader similarity matching for functional group identification.",
+    },
+    "dash.analysis.raman.summary.empty": {"tr": "RAMAN analiz özeti boş.", "en": "RAMAN analysis summary is empty."},
+    "dash.analysis.raman.summary.card_title": {"tr": "Analiz Özeti", "en": "Analysis Summary"},
+    "dash.analysis.raman.summary.instrument_label": {"tr": "Cihaz", "en": "Instrument"},
+    "dash.analysis.raman.summary.vendor_label": {"tr": "Üretici", "en": "Vendor"},
+    "dash.analysis.raman.summary.dataset_label": {"tr": "Veri Seti", "en": "Dataset"},
+    "dash.analysis.raman.summary.sample_label": {"tr": "Numune", "en": "Sample"},
+    "dash.analysis.raman.tab.setup": {"tr": "Kurulum", "en": "Setup"},
+    "dash.analysis.raman.tab.processing": {"tr": "İşleme", "en": "Processing"},
+    "dash.analysis.raman.tab.run": {"tr": "Çalıştır", "en": "Run"},
+    "dash.analysis.raman.presets.title": {"tr": "RAMAN presetleri", "en": "RAMAN Presets"},
+    "dash.analysis.raman.presets.help.overview": {
+        "tr": (
+            "İş akışı şablonunu ve tam RAMAN işleme taslağını (yumuşatma, taban çizgisi, normalizasyon, "
+            "tepe algılama, benzerlik) kaydedin; aynı ada tekrar kaydetmek üzerine yazar. Analiz türü başına en fazla 10 preset."
+        ),
+        "en": (
+            "Save the workflow template and full RAMAN processing draft (smoothing, baseline, normalization, "
+            "peak detection, similarity matching). Saving again with the same name overwrites that preset. "
+            "Up to 10 presets per analysis type."
+        ),
+    },
+    "dash.analysis.raman.presets.caption": {
+        "tr": "{analysis_type} presetleri: {count}/{max_count}",
+        "en": "{analysis_type} presets: {count}/{max_count}",
+    },
+    "dash.analysis.raman.presets.select_label": {"tr": "Kayıtlı presetler", "en": "Saved presets"},
+    "dash.analysis.raman.presets.load_btn": {"tr": "Yükle", "en": "Load"},
+    "dash.analysis.raman.presets.delete_btn": {"tr": "Sil", "en": "Delete"},
+    "dash.analysis.raman.presets.save_name_label": {"tr": "Preset adı (Save As)", "en": "Preset name (Save As)"},
+    "dash.analysis.raman.presets.save_name_placeholder": {"tr": "Yeni veya mevcut ad", "en": "New or existing name"},
+    "dash.analysis.raman.presets.save_btn": {"tr": "Seçileni kaydet", "en": "Save (selected)"},
+    "dash.analysis.raman.presets.saveas_btn": {"tr": "Farklı kaydet", "en": "Save As"},
+    "dash.analysis.raman.presets.save_hint": {
+        "tr": "Seçili presetin üzerine yazmak için Save; ad alanıyla yeni veya başka ada kaydetmek için Save As.",
+        "en": "Save overwrites the selected preset. Save As uses the name field to create or overwrite by that name.",
+    },
+    "dash.analysis.raman.presets.loaded": {
+        "tr": "'{preset}' presetinin ayarları yüklendi.",
+        "en": "Loaded preset '{preset}'.",
+    },
+    "dash.analysis.raman.presets.loaded_line": {
+        "tr": "Yüklü preset: {preset}",
+        "en": "Loaded preset: {preset}",
+    },
+    "dash.analysis.raman.presets.saved": {
+        "tr": "'{preset}' presetine kaydedildi ({template}).",
+        "en": "Saved preset '{preset}' ({template}).",
+    },
+    "dash.analysis.raman.presets.deleted": {
+        "tr": "'{preset}' preseti silindi.",
+        "en": "Deleted preset '{preset}'.",
+    },
+    "dash.analysis.raman.presets.save_failed": {
+        "tr": "Preset kaydedilemedi: {error}",
+        "en": "Could not save preset: {error}",
+    },
+    "dash.analysis.raman.presets.delete_failed": {
+        "tr": "Preset silinemedi: {error}",
+        "en": "Could not delete preset: {error}",
+    },
+    "dash.analysis.raman.presets.load_failed": {
+        "tr": "Preset yüklenemedi: {error}",
+        "en": "Could not load preset: {error}",
+    },
+    "dash.analysis.raman.presets.list_failed": {
+        "tr": "Preset listesi alınamadı: {error}",
+        "en": "Could not load presets: {error}",
+    },
+    "dash.analysis.raman.presets.save_name_required": {
+        "tr": "Save As için bir preset adı girin.",
+        "en": "Enter a preset name for Save As.",
+    },
+    "dash.analysis.raman.presets.select_required": {
+        "tr": "Önce listeden bir preset seçin.",
+        "en": "Select a preset from the list first.",
+    },
+    "dash.analysis.raman.presets.dirty_no_baseline": {
+        "tr": "Kayıtlı preset anlık görüntüsü yok (karşılaştırmak için preset yükleyin veya kaydedin).",
+        "en": "No saved preset snapshot yet (load or save a preset to compare).",
+    },
+    "dash.analysis.raman.presets.clean": {"tr": "Yüklü preset ile uyumlu", "en": "Matches loaded preset"},
+    "dash.analysis.raman.presets.dirty": {
+        "tr": "Yüklü presetten farklı (kaydedilmemiş değişiklikler)",
+        "en": "Modified vs loaded preset",
+    },
+    "dash.analysis.raman.processing.history_title": {"tr": "İşleme geçmişi", "en": "Processing history"},
+    "dash.analysis.raman.processing.history_hint": {
+        "tr": (
+            "Yalnızca işleme taslağını etkiler: yumuşatma, taban çizgisi, normalizasyon, tepe algılama ve "
+            "benzerlik eşleştirme ayarları; preset adı ayrı tutulur."
+        ),
+        "en": (
+            "Affects the processing draft only: smoothing, baseline, normalization, peak detection, and "
+            "similarity-matching settings; the preset name is kept separately."
+        ),
+    },
+    "dash.analysis.raman.processing.undo_btn": {"tr": "Geri al", "en": "Undo"},
+    "dash.analysis.raman.processing.redo_btn": {"tr": "İleri al", "en": "Redo"},
+    "dash.analysis.raman.processing.reset_btn": {"tr": "Varsayılanlara dön", "en": "Reset to defaults"},
+    "dash.analysis.raman.processing.history_status_undo": {
+        "tr": "Önceki işleme taslağı geri yüklendi.",
+        "en": "Restored previous processing draft.",
+    },
+    "dash.analysis.raman.processing.history_status_redo": {
+        "tr": "Sonraki işleme taslağı geri yüklendi.",
+        "en": "Restored next processing draft.",
+    },
+    "dash.analysis.raman.processing.history_status_reset": {
+        "tr": "İşleme varsayılanlarına dönüldü; preset kirli durumu şablona göre güncellenir.",
+        "en": "Processing reset to defaults; preset dirty state updates against your template.",
+    },
+    "dash.analysis.raman.processing.smoothing_card_title": {"tr": "Yumuşatma", "en": "Smoothing"},
+    "dash.analysis.raman.processing.smoothing_card_hint": {
+        "tr": "İçe aktarılan RAMAN spektrumu üzerinde uygulanan yumuşatma; presetlere dahildir.",
+        "en": "Smoothing applied to the imported RAMAN spectrum before baseline correction; included in presets.",
+    },
+    "dash.analysis.raman.processing.smooth.method": {"tr": "Yöntem", "en": "Method"},
+    "dash.analysis.raman.processing.smooth.window": {"tr": "Pencere uzunluğu", "en": "Window length"},
+    "dash.analysis.raman.processing.smooth.polyorder": {"tr": "Polinom derecesi", "en": "Polynomial order"},
+    "dash.analysis.raman.processing.smooth.sigma": {"tr": "Sigma", "en": "Sigma"},
+    "dash.analysis.raman.processing.smooth.savgol": {"tr": "Savitzky–Golay", "en": "Savitzky–Golay"},
+    "dash.analysis.raman.processing.smooth.moving_average": {"tr": "Hareketli ortalama", "en": "Moving average"},
+    "dash.analysis.raman.processing.smooth.gaussian": {"tr": "Gauss", "en": "Gaussian"},
+    "dash.analysis.raman.baseline.title": {"tr": "Taban çizgisi", "en": "Baseline"},
+    "dash.analysis.raman.baseline.help.method": {
+        "tr": "ASLS çoğu spektrum için uygundur; doğrusal düz ofsetler için; lastik bant düzensiz ofsetler için.",
+        "en": "ASLS fits most spectra; linear for gentle offsets; rubberband for uneven offsets.",
+    },
+    "dash.analysis.raman.baseline.method": {"tr": "Taban çizgisi yöntemi", "en": "Baseline method"},
+    "dash.analysis.raman.baseline.lam": {"tr": "Lambda (asls)", "en": "Lambda (asls)"},
+    "dash.analysis.raman.baseline.p": {"tr": "Asimetri p (asls)", "en": "Asymmetry p (asls)"},
+    "dash.analysis.raman.baseline.region_section": {
+        "tr": "Spektral bölge (dalga sayısı) penceresi",
+        "en": "Spectral region (wavenumber) window",
+    },
+    "dash.analysis.raman.baseline.help.enable_region": {
+        "tr": "İsteğe bağlı: taban çizgisini yalnızca seçilen cm⁻¹ aralığında uyarlamak için etkinleştirin.",
+        "en": "Optional: constrain baseline fitting to the selected wavenumber interval (cm^-1).",
+    },
+    "dash.analysis.raman.baseline.region_min": {"tr": "Min (cm⁻¹)", "en": "Min (cm^-1)"},
+    "dash.analysis.raman.baseline.region_max": {"tr": "Maks (cm⁻¹)", "en": "Max (cm^-1)"},
+    "dash.analysis.raman.quality.card_title": {"tr": "Doğrulama ve kalite", "en": "Validation and quality"},
+    "dash.analysis.raman.quality.empty": {
+        "tr": "Çalıştırma sonrası doğrulama özeti burada görünür.",
+        "en": "Validation summary will appear here after a run.",
+    },
+    "dash.analysis.raman.quality.status_label": {"tr": "Durum", "en": "Status"},
+    "dash.analysis.raman.quality.warnings_label": {"tr": "Uyarılar", "en": "Warnings"},
+    "dash.analysis.raman.quality.issues_label": {"tr": "Sorunlar", "en": "Issues"},
+    "dash.analysis.raman.quality.badge_warnings": {"tr": "{n} uyarı", "en": "{n} warnings"},
+    "dash.analysis.raman.quality.badge_issues": {"tr": "{n} sorun", "en": "{n} issues"},
+    "dash.analysis.raman.raw_metadata.card_title": {"tr": "Ham meta veri", "en": "Raw metadata"},
+    "dash.analysis.raman.raw_metadata.empty": {
+        "tr": "Bu veri seti için ek meta veri yok.",
+        "en": "No extra metadata for this dataset.",
+    },
+    "dash.analysis.raman.raw_metadata.technical_details": {"tr": "Teknik ayrıntılar", "en": "Technical details"},
+    "dash.analysis.raman.library.reference_title": {"tr": "Referans kütüphanesi", "en": "Reference library"},
+    "dash.analysis.raman.library.not_configured_for_run": {
+        "tr": "Bu çalıştırma için referans kütüphanesi yapılandırılmadı.",
+        "en": "Reference library not configured for this run.",
+    },
+    "dash.analysis.raman.metric.score_not_applicable": {"tr": "—", "en": "—"},
+    "dash.analysis.raman.empty_results_hint": {
+        "tr": (
+            "Metrikler, doğrulama, kütüphane eşleşmesi, tepeler ve işleme ayrıntıları bir RAMAN çalıştırmasından sonra burada görünür."
+        ),
+        "en": (
+            "Metrics, validation, library matching, peaks, and processing details will appear here after you run RAMAN analysis."
+        ),
+    },
+    "dash.analysis.raman.normalization.title": {"tr": "Normalizasyon", "en": "Normalization"},
+    "dash.analysis.raman.normalization.hint": {"tr": "Spektrumu vektör, maksimum veya SNV ile normalize edin.", "en": "Normalize the spectrum using vector, max, or SNV."},
+    "dash.analysis.raman.normalization.method": {"tr": "Normalizasyon yöntemi", "en": "Normalization method"},
+    "dash.analysis.raman.norm.vector": {"tr": "Vektör", "en": "Vector"},
+    "dash.analysis.raman.norm.max": {"tr": "Maksimum", "en": "Max"},
+    "dash.analysis.raman.norm.snv": {"tr": "SNV", "en": "SNV"},
+    "dash.analysis.raman.peaks.title": {"tr": "Spektral Tepeler", "en": "Spectral Peaks"},
+    "dash.analysis.raman.peaks.hint": {"tr": "Belirginlik, mesafe ve maksimum tepe sayısı ile tepe algılama ayarları.", "en": "Peak detection settings using prominence, distance, and max peak count."},
+    "dash.analysis.raman.peaks.prominence": {"tr": "Belirginlik", "en": "Prominence"},
+    "dash.analysis.raman.peaks.distance": {"tr": "Mesafe", "en": "Distance"},
+    "dash.analysis.raman.peaks.max_peaks": {"tr": "Maksimum tepe", "en": "Max peaks"},
+    "dash.analysis.raman.peaks.truncation_note": {"tr": "{shown}/{total} tepe gösteriliyor. Tam liste tabloda.", "en": "Showing {shown}/{total} peaks. See full table below."},
+    "dash.analysis.raman.similarity.title": {"tr": "Benzerlik Eşleştirme", "en": "Similarity Matching"},
+    "dash.analysis.raman.similarity.hint": {"tr": "Kütüphane araması için en iyi aday sayısı ve minimum skor.", "en": "Top candidate count and minimum score for library search."},
+    "dash.analysis.raman.similarity.top_n": {"tr": "En iyi N", "en": "Top N"},
+    "dash.analysis.raman.similarity.minimum_score": {"tr": "Minimum skor", "en": "Minimum score"},
+    "dash.analysis.raman.top_match.title": {"tr": "En İyi Eşleşme", "en": "Top Match"},
+    "dash.analysis.raman.figure.section_title": {"tr": "RAMAN Spektrumu", "en": "RAMAN Spectrum"},
+    "dash.analysis.raman.figure.run_summary": {"tr": "Tepeler: {peaks} | En iyi: {match} | Durum: {status} | Güven: {confidence}", "en": "Peaks: {peaks} | Top: {match} | Status: {status} | Confidence: {confidence}"},
+    "dash.analysis.raman.legend_normalized_spectrum": {"tr": "Normalize spektrum", "en": "Normalized Spectrum"},
+    "dash.analysis.raman.raw_quality.card_title": {"tr": "Ham Veri Kalitesi", "en": "Raw Data Quality"},
+    "dash.analysis.raman.raw_quality.card_hint": {"tr": "Çalıştırmadan önce veri setinin sağlamlığını değerlendirin.", "en": "Assess dataset sanity before running analysis."},
+    "dash.analysis.raman.raw_quality.pick_dataset": {"tr": "Kalite bilgisi için bir veri seti seçin.", "en": "Select a dataset to see quality information."},
+    "dash.analysis.raman.raw_quality.load_failed": {"tr": "Kalite yüklenemedi: {error}", "en": "Failed to load quality: {error}"},
+    "dash.analysis.raman.raw_quality.stat_points": {"tr": "Nokta sayısı: {n:,}", "en": "Points: {n:,}"},
+    "dash.analysis.raman.raw_quality.stat_axis_range": {"tr": "Dalga sayısı aralığı: {a0:.1f} – {a1:.1f} cm⁻¹", "en": "Wavenumber range: {a0:.1f} – {a1:.1f} cm^-1"},
+    "dash.analysis.raman.raw_quality.stat_signal_range": {"tr": "Sinyal aralığı: {s0:.4f} – {s1:.4f} {u}", "en": "Signal range: {s0:.4f} – {s1:.4f} {u}"},
+    "dash.analysis.raman.raw_quality.stat_missing": {"tr": "Eksik/geçersiz nokta: {n}", "en": "Missing/invalid points: {n}"},
+    "dash.analysis.raman.raw_quality.stat_baseline_drift": {"tr": "Taban çizgisi kayması: {drift}", "en": "Baseline drift: {drift}"},
+    "dash.analysis.raman.raw_quality.stat_spacing_cv": {"tr": "Aralık düzensizliği (CV): {cv}", "en": "Spacing irregularity (CV): {cv}"},
+    "dash.analysis.raman.raw_quality.empty_missing_series": {"tr": "Veri eksik.", "en": "Data missing."},
+    "dash.analysis.raman.raw_quality.empty_too_few_points": {"tr": "Çok az nokta.", "en": "Too few points."},
+    "dash.analysis.raman.raw_quality.hint.axis_non_monotonic": {"tr": "Dalga sayısı ekseni tek yönlü değil; spektral sıralamayı gözden geçirin.", "en": "Wavenumber axis is not monotonic; review spectral ordering."},
+    "dash.analysis.raman.raw_quality.hint.axis_mostly_decreasing": {"tr": "Dalga sayısı azalan; bu RAMAN için yaygındır.", "en": "Wavenumber is decreasing; this is common for RAMAN."},
+    "dash.analysis.raman.raw_quality.hint.axis_mostly_increasing": {"tr": "Dalga sayısı artan; azalan eksen bekleniyordu.", "en": "Wavenumber is increasing; decreasing axis expected."},
+    "dash.analysis.raman.raw_quality.hint.strong_baseline_drift": {"tr": "Güçlü taban çizgisi kayması; taban düzeltmesi önerilir.", "en": "Strong baseline drift; baseline correction recommended."},
+    "dash.analysis.raman.raw_quality.hint.moderate_baseline_drift": {"tr": "Orta düzey taban çizgisi kayması.", "en": "Moderate baseline drift."},
+    "dash.analysis.raman.raw_quality.hint.irregular_spacing": {"tr": "Aralık düzensizliği yüksek; örnekleme tutarsızlığı olabilir.", "en": "High spacing irregularity; sampling inconsistency possible."},
+    "dash.analysis.raman.raw_quality.hint.somewhat_irregular_spacing": {"tr": "Aralık düzensizliği hafif.", "en": "Slight spacing irregularity."},
+    "dash.analysis.raman.workflow_guide.title": {"tr": "İş Akışı Rehberi", "en": "Workflow Guide"},
+    "dash.analysis.raman.workflow_guide.intro": {"tr": "RAMAN analizi için standart adımlar:", "en": "Standard steps for RAMAN analysis:"},
+    "dash.analysis.raman.workflow_guide.step1": {"tr": "Bir RAMAN veri seti seçin.", "en": "Select an RAMAN dataset."},
+    "dash.analysis.raman.workflow_guide.step2": {"tr": "İş akışı şablonu ve ön işleme parametrelerini ayarlayın.", "en": "Choose a workflow template and tuning parameters."},
+    "dash.analysis.raman.workflow_guide.step3": {"tr": "Analizi çalıştırın ve spektral tepeleri inceleyin.", "en": "Run analysis and inspect spectral peaks."},
+    "dash.analysis.raman.workflow_guide.step4": {"tr": "Kütüphane eşleştirmesini ve literatür karşılaştırmasını inceleyin.", "en": "Review library matches and literature comparison."},
+    "dash.analysis.label.position": {"tr": "Pozisyon (cm⁻¹)", "en": "Position (cm^-1)"},
+    "dash.analysis.label.intensity": {"tr": "Yoğunluk", "en": "Intensity"},
+    "dash.analysis.raman.title": {"tr": "Raman analizi", "en": "RAMAN Analysis"},
+    "dash.analysis.raman.caption": {
+        "tr": "Raman uyumlu veri seti seçin, şablonu seçin ve spektral eşleştirmeyi çalıştırın.",
+        "en": "Select a RAMAN-eligible dataset, choose a workflow template, and run spectral matching.",
+    },
     "dash.analysis.xrd.top_candidate": {"tr": "En iyi aday: {name}", "en": "Top candidate: {name}"},
     "dash.analysis.xrd.axis_role_note": {
         "tr": "Eksen rolü: {role}; çıktı 2θ odaklı difraktogram olarak gösteriliyor.",

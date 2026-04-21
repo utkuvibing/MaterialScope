@@ -1,4 +1,4 @@
-# Session — MaterialScope
+﻿# Session — MaterialScope
 
 **Purpose:** **Current working state**, **carryover**, and **next step** only.
 
@@ -6,25 +6,42 @@
 
 - **Project:** MaterialScope
 - **Branch:** `web-dash-plotly-migration`
-- **Last slice:** FTIR Dash page — modality-specific UI copy, validation count alignment, library-unavailable presentation, quieter pre-run empty state — **committed and pushed** (`feac858`).
+- **Last slice:** Raman Dash full migration — full Dash-native page parity, Raman-specific literature/reasoning specialization, Raman i18n namespace completion, and regression tests — **implemented and verified in this session**.
 
 ## What was done this session
 
-1. **`dash.analysis.ftir.*` i18n** in [`utils/i18n.py`](utils/i18n.py): FTIR-only presets, tabs, processing history, smoothing, baseline (wavenumber window, cm⁻¹), quality/raw-metadata strings; removed reliance on TGA thermal copy for the FTIR page.
-2. **[`dash_app/pages/ftir.py`](dash_app/pages/ftir.py):** Wired all of the above; baseline uses FTIR keys; `library_unavailable` shows a reference-library info alert and hides the match table; pre-run empty state uses one metrics hint plus hidden deferred slots; lighter layout (cards mainly for summary + figure).
-3. **[`dash_app/components/analysis_page.py`](dash_app/components/analysis_page.py):** `finalized_validation_warning_issue_counts()`; `interpret_run_result` uses list-derived warning count for the saved-run banner.
-4. **Tests:** [`tests/test_ftir_dash_page.py`](tests/test_ftir_dash_page.py), [`tests/test_analysis_page_components.py`](tests/test_analysis_page_components.py) updated/extended.
-5. **Library env / WSL dev (this chat):** combined Dash startup bootstrap, POSIX Windows-path env sanitation, `spectral_library_diagnostics` + FTIR diagnostics tool/README/`.env.example` updates; tests under `tests/test_path_env.py`, `tests/test_library_combined_bootstrap.py`.
+1. **Raman page rebuilt to mature Dash analysis architecture** in [`dash_app/pages/raman.py`](dash_app/pages/raman.py):
+   - Setup / Processing / Run tabs
+   - Processing draft hydration and run override wiring
+   - Undo/redo/reset history flow
+   - Preset lifecycle (list/load/save/save-as/delete)
+   - Standardized results surface order aligned with DSC/TGA/DTA/FTIR
+   - Quality, raw metadata, figure, top-match, peak cards, table, processing summary, literature compare
+2. **Raman processing helper module** added in [`dash_app/components/raman_explore.py`](dash_app/components/raman_explore.py) for draft comparison and undo/redo utilities.
+3. **Raman literature specialization** delivered:
+   - Dedicated Raman query builder: [`core/raman_literature_query_builder.py`](core/raman_literature_query_builder.py)
+   - Raman-specific compare path + dispatch in [`core/literature_compare.py`](core/literature_compare.py)
+4. **Raman scientific reasoning specialization** added in [`core/scientific_reasoning.py`](core/scientific_reasoning.py), so Raman no longer falls to generic placeholder reasoning.
+5. **Cross-modality warning-label leakage fixed** in shared spectral runner [`core/batch_runner.py`](core/batch_runner.py) by emitting modality-aware FTIR/RAMAN warning text.
+6. **Raman i18n namespace expanded** in [`utils/i18n.py`](utils/i18n.py) under `dash.analysis.raman.*` to remove fallback dependence on TGA/FTIR keys for Raman UI chrome.
+7. **Tests updated and expanded**:
+   - [`tests/test_raman_dash_page.py`](tests/test_raman_dash_page.py)
+   - [`tests/test_literature_compare.py`](tests/test_literature_compare.py)
+   - [`tests/test_scientific_reasoning.py`](tests/test_scientific_reasoning.py)
 
 ## What was verified
 
-- `rtk pytest tests/test_ftir_dash_page.py tests/test_analysis_page_components.py -q` — pass.
-- `rtk pytest tests/test_ftir_dash_page.py tests/test_dsc_dash_page.py tests/test_tga_dash_page.py -q` — pass.
-- `rtk pytest tests/test_path_env.py tests/test_library_combined_bootstrap.py tests/test_deployment_contract.py tests/test_dash_server.py tests/test_batch_runner.py -k ftir_batch -q` — pass (library env slice).
+- `rtk python -m py_compile core/batch_runner.py core/literature_compare.py core/scientific_reasoning.py core/raman_literature_query_builder.py dash_app/pages/raman.py dash_app/components/raman_explore.py utils/i18n.py tests/test_raman_dash_page.py tests/test_literature_compare.py tests/test_scientific_reasoning.py` — pass.
+- `rtk pytest -q tests/test_raman_dash_page.py` — pass (**42 passed**).
+- `rtk pytest -q tests/test_literature_compare.py` — pass (**75 passed**).
+- `rtk pytest -q tests/test_scientific_reasoning.py` — pass (**9 passed**).
+- `rtk pytest -q tests/test_raman_dash_page.py tests/test_literature_compare.py tests/test_scientific_reasoning.py` — pass (**126 passed**).
+- `rtk pytest -q tests/test_dash_figure_capture_wiring.py tests/test_batch_runner.py -k "raman"` — pass (**3 passed**).
+- `rtk pytest -q tests/test_backend_details.py -k "raman and literature"` — pass (**1 passed**).
 
 ## Next step
 
-- Optional: apply the same **list-derived validation counts** pattern to DSC/TGA/DTA quality cards if any still prefer numeric `warning_count` over list length.
-- Optional: **RAMAN** Dash page — mirror FTIR-style modality i18n if it still borrows TGA strings.
+- Run the full repository test suite when convenient to refresh global confidence beyond targeted Raman/spectral slices.
+- If desired, apply the same strict modality-specific i18n coverage check to every analysis page namespace as a CI guard.
 
 **Process defaults:** **`00-workflow.mdc`**.
