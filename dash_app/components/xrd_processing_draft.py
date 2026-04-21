@@ -43,16 +43,19 @@ _XRD_TEMPLATE_DEFAULTS: dict[str, dict[str, Any]] = {
 _XRD_PLOT_DEFAULTS: dict[str, Any] = {
     "show_peak_labels": True,
     "label_density_mode": "smart",
-    "max_labels": 10,
+    "max_labels": 8,
     "min_label_intensity_ratio": 0.12,
     "marker_size": 8,
     "label_position_precision": 2,
     "label_intensity_precision": 0,
-    "show_matched_peaks": True,
-    "show_unmatched_observed": True,
-    "show_unmatched_reference": True,
+    # Match overlays off by default — enable under Plot appearance (advanced).
+    "show_matched_peaks": False,
+    "show_unmatched_observed": False,
+    "show_unmatched_reference": False,
     "show_match_connectors": False,
     "show_match_labels": False,
+    # Smoothed / baseline as separate traces (advanced).
+    "show_intermediate_traces": False,
     "style_preset": "color_shape",
     "only_selected_candidate": True,
     "x_range_enabled": False,
@@ -360,6 +363,7 @@ def xrd_draft_from_control_values(
     plot_y_max,
     plot_log_y,
     plot_lw,
+    plot_show_intermediate,
 ) -> dict[str, Any]:
     plot = {
         "show_peak_labels": bool(plot_show_labels),
@@ -374,6 +378,7 @@ def xrd_draft_from_control_values(
         "show_unmatched_reference": bool(plot_u_ref),
         "show_match_connectors": bool(plot_conn),
         "show_match_labels": bool(plot_m_lbl),
+        "show_intermediate_traces": bool(plot_show_intermediate),
         "style_preset": str(plot_style or "color_shape"),
         "x_range_enabled": bool(plot_x_en),
         "x_min": plot_x_min,

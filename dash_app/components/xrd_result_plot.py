@@ -20,16 +20,17 @@ _XRD_MATCH_STYLE = {
 _XRD_PLOT_FALLBACK = {
     "show_peak_labels": True,
     "label_density_mode": "smart",
-    "max_labels": 10,
+    "max_labels": 8,
     "min_label_intensity_ratio": 0.12,
     "marker_size": 8,
     "label_position_precision": 2,
     "label_intensity_precision": 0,
-    "show_matched_peaks": True,
-    "show_unmatched_observed": True,
-    "show_unmatched_reference": True,
+    "show_matched_peaks": False,
+    "show_unmatched_observed": False,
+    "show_unmatched_reference": False,
     "show_match_connectors": False,
     "show_match_labels": False,
+    "show_intermediate_traces": False,
     "style_preset": "color_shape",
     "x_range_enabled": False,
     "x_min": None,
@@ -119,6 +120,10 @@ def normalize_xrd_plot_settings(payload: Mapping[str, Any] | None) -> dict[str, 
         settings["show_match_connectors"],
     )
     settings["show_match_labels"] = _coerce_plot_bool(source.get("show_match_labels"), settings["show_match_labels"])
+    settings["show_intermediate_traces"] = _coerce_plot_bool(
+        source.get("show_intermediate_traces"),
+        settings.get("show_intermediate_traces", False),
+    )
     style_preset = str(source.get("style_preset") or settings["style_preset"]).strip().lower()
     settings["style_preset"] = style_preset if style_preset in {"color_shape", "color_only", "shape_only"} else "color_shape"
     settings["x_range_enabled"] = _coerce_plot_bool(source.get("x_range_enabled"), settings["x_range_enabled"])
@@ -249,6 +254,7 @@ def build_xrd_result_figure(
     has_overlay = has_corrected or has_smoothed
 
     fig = go.Figure()
+    show_intermediate = bool(settings.get("show_intermediate_traces"))
     if has_raw:
         fig.add_trace(
             go.Scatter(
@@ -258,9 +264,10 @@ def build_xrd_result_figure(
                 name=legend_raw,
                 line=dict(color="#94A3B8", width=max(0.8, line_width - 0.4)),
                 opacity=0.35 if has_overlay else 0.95,
+                showlegend=bool(show_intermediate) or not has_overlay,
             )
         )
-    if has_smoothed:
+    if show_intermediate and has_smoothed:
         fig.add_trace(
             go.Scatter(
                 x=axis,
@@ -271,7 +278,7 @@ def build_xrd_result_figure(
                 opacity=0.85 if has_corrected else 1.0,
             )
         )
-    if has_baseline:
+    if show_intermediate and has_baseline:
         fig.add_trace(
             go.Scatter(
                 x=axis,
@@ -449,9 +456,17 @@ def build_xrd_result_figure(
         hovermode="x unified",
         xaxis_title=axis_title,
         yaxis_title=translate_ui(loc, "dash.analysis.figure.axis_intensity_au"),
-        margin=dict(l=64, r=28, t=96, b=56),
-        height=520,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        margin=dict(l=64, r=24, t=88, b=72),
+        height=500,
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.14,
+            xanchor="left",
+            x=0,
+            font=dict(size=10),
+            traceorder="normal",
+        ),
     )
 
     x_min = settings.get("x_min")

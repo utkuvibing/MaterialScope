@@ -1273,6 +1273,11 @@ TRANSLATIONS = {
     "dash.analysis.xrd.literature.max_claims": {"tr": "Maks. iddia sayısı", "en": "Max Claims"},
     "dash.analysis.xrd.literature.persist": {"tr": "Projeye kaydet", "en": "Persist to project"},
     "dash.analysis.xrd.literature.compare_btn": {"tr": "Karşılaştır", "en": "Compare"},
+    "dash.analysis.xrd.literature.options_summary": {"tr": "Karşılaştırma seçenekleri", "en": "Compare options"},
+    "dash.analysis.xrd.literature.evidence_list_summary": {
+        "tr": "Tam referans kanıtı ({n})",
+        "en": "Full reference evidence ({n})",
+    },
     "dash.analysis.xrd.literature.evidence_show_more": {"tr": "{n} kaynak daha göster", "en": "Show {n} more references"},
     "dash.analysis.xrd.literature.evidence_show_more_hint": {"tr": "(genişlet)", "en": "(expand)"},
     "dash.analysis.xrd.literature.claims_show_more": {"tr": "{n} iddia daha göster", "en": "Show {n} more claims"},
@@ -1458,6 +1463,14 @@ TRANSLATIONS = {
     "dash.analysis.xrd.figure.artifacts_title": {"tr": "Kayıtlı şekiller", "en": "Saved figures"},
     "dash.analysis.xrd.figure.artifacts_primary": {"tr": "Rapor grafiği: {label}", "en": "Report figure: {label}"},
     "dash.analysis.xrd.figure.artifacts_primary_none": {"tr": "Rapor grafiği henüz kaydedilmedi", "en": "No primary report figure registered yet"},
+    "dash.analysis.xrd.figure.artifacts_details_summary": {
+        "tr": "Şekil ekleri (anlık görüntüler ve rapor)",
+        "en": "Figure artifacts (snapshots & report)",
+    },
+    "dash.analysis.xrd.figure.artifacts_registry_summary": {
+        "tr": "Kayıt durumu ve şekil anahtarları",
+        "en": "Registry & capture status",
+    },
     "dash.analysis.xrd.figure.artifacts_keys_heading": {"tr": "Kayıtlı anahtarlar ({n})", "en": "Registered keys ({n})"},
     "dash.analysis.xrd.figure.artifacts_empty": {"tr": "Henüz ek şekil anahtarı yok", "en": "No additional figure keys yet"},
     "dash.analysis.xrd.figure.artifacts_status": {"tr": "Durum: {status}", "en": "Status: {status}"},
@@ -1585,6 +1598,15 @@ TRANSLATIONS = {
     "dash.analysis.xrd.plot.y_max": {"tr": "Y max", "en": "Y max"},
     "dash.analysis.xrd.plot.log_y": {"tr": "Log Y", "en": "Log Y"},
     "dash.analysis.xrd.plot.line_width": {"tr": "Çizgi kalınlığı", "en": "Line width"},
+    "dash.analysis.xrd.plot.advanced_section": {"tr": "Grafik görünümü (gelişmiş)", "en": "Plot appearance (advanced)"},
+    "dash.analysis.xrd.plot.advanced_hint": {
+        "tr": "Katmanlar, eşleşme bindirmeleri ve eksen seçenekleri.",
+        "en": "Layers, match overlays, and axis options.",
+    },
+    "dash.analysis.xrd.plot.show_intermediate": {
+        "tr": "Yumuşatılmış ve taban çizgisi izlerini göster",
+        "en": "Show smoothed & baseline traces",
+    },
     "dash.analysis.xrd.plot.density.smart": {"tr": "Akıllı", "en": "Smart"},
     "dash.analysis.xrd.plot.density.all": {"tr": "Tümü", "en": "All"},
     "dash.analysis.xrd.plot.density.selected": {"tr": "Seçili", "en": "Selected"},

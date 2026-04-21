@@ -138,6 +138,7 @@ def test_layout_contains_key_div_ids():
         "xrd-figure-use-report-btn",
         "xrd-figure-artifact-status",
         "xrd-result-figure-artifacts",
+        "xrd-figure-artifacts-summary",
         "xrd-result-figure",
         "xrd-result-top-match",
         "xrd-result-candidate-cards",
@@ -145,6 +146,7 @@ def test_layout_contains_key_div_ids():
         "xrd-result-processing",
         "xrd-result-raw-metadata",
         "xrd-literature-compare-btn",
+        "xrd-literature-options-summary",
         "xrd-literature-max-claims",
         "xrd-literature-persist",
         "xrd-literature-output",
@@ -210,7 +212,7 @@ def test_build_xrd_figure_artifacts_panel_lists_keys():
     )
     s = str(panel)
     assert "XRD Analysis - ds" in s
-    assert "Registered keys" in s
+    assert "Registry" in s or "Kayıt" in s
 
 
 def test_xrd_figure_artifact_i18n_keys_resolve():
@@ -275,7 +277,7 @@ def test_match_card_renders_candidate_and_score():
     card_html = str(card)
     assert "Candidate 1" in card_html
     assert "alpha-Al2O3" in card_html
-    assert "0.8123" in card_html
+    assert "0.812" in card_html
 
 
 def test_build_match_cards_empty():

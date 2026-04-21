@@ -33,8 +33,6 @@ from dash_app.components.analysis_page import (
 from dash_app.components.chrome import page_header
 from dash_app.components.data_preview import dataset_table
 from dash_app.components.literature_compare_ui import (
-    LITERATURE_COMPACT_ALTERNATIVE_PREVIEW_LIMIT,
-    LITERATURE_COMPACT_EVIDENCE_PREVIEW_LIMIT,
     build_literature_compare_card,
     coerce_literature_max_claims,
     literature_compare_status_alert,
@@ -190,45 +188,47 @@ def _match_card(row: dict, idx: int, loc: str = "en") -> dbc.Card:
             [
                 html.Div(
                     [
-                        html.I(className="bi bi-bullseye me-2", style={"color": color, "fontSize": "1.1rem"}),
-                        html.Strong(translate_ui(loc, "dash.analysis.label.candidate_n", n=idx + 1), className="me-2"),
+                        html.I(className="bi bi-bullseye me-1", style={"color": color, "fontSize": "0.95rem"}),
+                        html.Strong(translate_ui(loc, "dash.analysis.label.candidate_n", n=idx + 1), className="me-2 small"),
                         html.Span(
                             _confidence_band_label(loc, confidence),
                             className="badge",
-                            style={"backgroundColor": color, "color": "white", "fontSize": "0.75rem"},
+                            style={"backgroundColor": color, "color": "white", "fontSize": "0.68rem"},
                         ),
                     ],
-                    className="mb-2",
+                    className="mb-1",
                 ),
                 dbc.Row(
                     [
                         dbc.Col(
-                            [html.Small(translate_ui(loc, "dash.analysis.label.phase"), className="text-muted d-block"), html.Span(candidate)],
-                            md=4,
+                            [html.Small(translate_ui(loc, "dash.analysis.label.phase"), className="text-muted d-block"), html.Span(candidate, className="small")],
+                            md=5,
                         ),
                         dbc.Col(
-                            [html.Small(translate_ui(loc, "dash.analysis.label.formula"), className="text-muted d-block"), html.Span(formula)],
-                            md=2,
-                        ),
-                        dbc.Col(
-                            [html.Small(translate_ui(loc, "dash.analysis.label.score"), className="text-muted d-block"), html.Span(f"{score:.4f}")],
+                            [html.Small(translate_ui(loc, "dash.analysis.label.score"), className="text-muted d-block"), html.Span(f"{score:.3f}", className="small")],
                             md=2,
                         ),
                         dbc.Col(
                             [
                                 html.Small(translate_ui(loc, "dash.analysis.label.shared_peaks"), className="text-muted d-block"),
-                                html.Span(shared_peaks),
+                                html.Span(shared_peaks, className="small"),
                             ],
                             md=2,
                         ),
                         dbc.Col(
-                            [html.Small(translate_ui(loc, "dash.analysis.label.provider"), className="text-muted d-block"), html.Span(provider)],
-                            md=2,
+                            [html.Small(translate_ui(loc, "dash.analysis.label.provider"), className="text-muted d-block"), html.Span(provider, className="small text-break")],
+                            md=3,
                         ),
                     ],
-                    className="g-2",
+                    className="g-1",
                 ),
-                html.Hr(className="my-2"),
+                html.Div(
+                    [
+                        html.Small(translate_ui(loc, "dash.analysis.label.formula"), className="text-muted me-1"),
+                        html.Span(formula, className="small font-monospace"),
+                    ],
+                    className="mt-1",
+                ),
                 html.P(
                     translate_ui(
                         loc,
@@ -237,11 +237,13 @@ def _match_card(row: dict, idx: int, loc: str = "en") -> dbc.Card:
                         coverage=coverage_ratio,
                         delta=mean_delta,
                     ),
-                    className="mb-0 text-muted small",
+                    className="mb-0 text-muted small mt-1 lh-sm",
                 ),
-            ]
+            ],
+            className="py-2 px-2",
         ),
-        className="mb-2",
+        outline=True,
+        className="mb-2 shadow-none",
     )
 
 
@@ -293,7 +295,7 @@ def _xrd_processing_history_card() -> dbc.Card:
                 html.Div(id="xrd-history-status", className="small text-muted"),
             ]
         ),
-        className="mb-3",
+        className="mb-2",
     )
 
 
@@ -328,7 +330,7 @@ def _xrd_preset_card() -> dbc.Card:
                 html.Div(id="xrd-preset-status", className="small text-muted"),
             ]
         ),
-        className="mb-3",
+        className="mb-2",
     )
 
 
@@ -358,7 +360,7 @@ def _axis_card() -> dbc.Card:
                 ),
             ]
         ),
-        className="mb-3",
+        className="mb-2",
     )
 
 
@@ -386,7 +388,7 @@ def _smooth_card() -> dbc.Card:
                 ),
             ]
         ),
-        className="mb-3",
+        className="mb-2",
     )
 
 
@@ -414,7 +416,7 @@ def _baseline_card() -> dbc.Card:
                 ),
             ]
         ),
-        className="mb-3",
+        className="mb-2",
     )
 
 
@@ -435,7 +437,7 @@ def _peak_card() -> dbc.Card:
                 ),
             ]
         ),
-        className="mb-3",
+        className="mb-2",
     )
 
 
@@ -468,27 +470,27 @@ def _match_card_controls() -> dbc.Card:
                 ),
             ]
         ),
-        className="mb-3",
+        className="mb-2",
     )
 
 
-def _plot_card() -> dbc.Card:
-    return dbc.Card(
+def _xrd_plot_settings_advanced_block() -> html.Details:
+    """Plot appearance controls — collapsed by default to reduce Processing-tab noise."""
+    inner = dbc.Card(
         dbc.CardBody(
             [
-                html.H5(id="xrd-plot-card-title", className="card-title mb-2"),
-                html.P(id="xrd-plot-card-hint", className="small text-muted mb-2"),
+                html.P(id="xrd-plot-advanced-hint", className="small text-muted mb-2"),
                 dbc.Row(
                     [
                         dbc.Col(dbc.Checkbox(id="xrd-plot-labels", value=True), md=6),
-                        dbc.Col(dbc.Checkbox(id="xrd-plot-matched", value=True), md=6),
+                        dbc.Col(dbc.Checkbox(id="xrd-plot-matched", value=False), md=6),
                     ],
                     className="g-2",
                 ),
                 dbc.Row(
                     [
-                        dbc.Col(dbc.Checkbox(id="xrd-plot-uobs", value=True), md=6),
-                        dbc.Col(dbc.Checkbox(id="xrd-plot-uref", value=True), md=6),
+                        dbc.Col(dbc.Checkbox(id="xrd-plot-uobs", value=False), md=6),
+                        dbc.Col(dbc.Checkbox(id="xrd-plot-uref", value=False), md=6),
                     ],
                     className="g-2",
                 ),
@@ -499,7 +501,20 @@ def _plot_card() -> dbc.Card:
                     ],
                     className="g-2",
                 ),
-                html.H6(id="xrd-plot-advanced-title", className="mt-3 mb-2 small text-muted text-uppercase"),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Checkbox(id="xrd-plot-intermediate", value=False, className="me-2"),
+                                html.Span(id="xrd-plot-intermediate-label", className="small align-middle"),
+                            ],
+                            width="auto",
+                            className="d-flex align-items-center",
+                        ),
+                    ],
+                    className="g-2 mb-1",
+                ),
+                html.H6(id="xrd-plot-advanced-title", className="mt-2 mb-2 small text-muted text-uppercase"),
                 dbc.Label(id="xrd-plot-density-label", html_for="xrd-plot-density", className="mb-1"),
                 dbc.Select(
                     id="xrd-plot-density",
@@ -512,7 +527,7 @@ def _plot_card() -> dbc.Card:
                 ),
                 dbc.Row(
                     [
-                        dbc.Col([dbc.Label(id="xrd-plot-maxlab-label", html_for="xrd-plot-maxlab", className="mb-1"), dbc.Input(id="xrd-plot-maxlab", type="number", min=1, max=60, value=10)], md=4),
+                        dbc.Col([dbc.Label(id="xrd-plot-maxlab-label", html_for="xrd-plot-maxlab", className="mb-1"), dbc.Input(id="xrd-plot-maxlab", type="number", min=1, max=60, value=8)], md=4),
                         dbc.Col([dbc.Label(id="xrd-plot-minratio-label", html_for="xrd-plot-minratio", className="mb-1"), dbc.Input(id="xrd-plot-minratio", type="number", min=0, max=1, step=0.01, value=0.12)], md=4),
                         dbc.Col([dbc.Label(id="xrd-plot-msize-label", html_for="xrd-plot-msize", className="mb-1"), dbc.Input(id="xrd-plot-msize", type="number", min=4, max=20, value=8)], md=4),
                     ],
@@ -549,9 +564,24 @@ def _plot_card() -> dbc.Card:
                     ],
                     className="g-2 mt-2",
                 ),
-            ]
+            ],
+            className="py-2",
         ),
-        className="mb-3",
+        className="border-0 bg-transparent shadow-none",
+    )
+    return html.Details(
+        [
+            html.Summary(
+                [
+                    html.Span(className="ta-details-chevron"),
+                    html.Span(id="xrd-plot-advanced-summary", className="ms-1 fw-semibold"),
+                ],
+                className="ta-details-summary py-2",
+            ),
+            html.Div(inner, className="ta-details-body mt-1"),
+        ],
+        className="ta-ms-details mb-2",
+        open=False,
     )
 
 
@@ -584,7 +614,7 @@ def _left_tabs() -> dbc.Tabs:
                     _baseline_card(),
                     _peak_card(),
                     _match_card_controls(),
-                    _plot_card(),
+                    _xrd_plot_settings_advanced_block(),
                 ],
                 tab_id="xrd-tab-processing",
                 label_class_name="ta-tab-label",
@@ -629,36 +659,63 @@ layout = html.Div(
                         _xrd_result_section(
                             html.Div(
                                 [
-                                    html.Div(id="xrd-result-figure-controls", className="mb-2"),
-                                    dbc.Row(
+                                    dbc.Card(
+                                        dbc.CardBody(
+                                            [
+                                                html.Div(id="xrd-result-figure", className="ta-xrd-figure-host"),
+                                                html.Div(
+                                                    className="d-flex flex-wrap align-items-center gap-2 pt-2 mt-1 border-top border-secondary-subtle",
+                                                    children=[
+                                                        html.Div(
+                                                            id="xrd-result-figure-controls",
+                                                            className="flex-grow-1",
+                                                            style={"minWidth": "200px", "maxWidth": "520px"},
+                                                        ),
+                                                        html.Div(
+                                                            className="d-flex align-items-center gap-1 flex-shrink-0 ms-auto",
+                                                            children=[
+                                                                dbc.Button(
+                                                                    id="xrd-figure-save-snapshot-btn",
+                                                                    color="secondary",
+                                                                    size="sm",
+                                                                    outline=True,
+                                                                    disabled=True,
+                                                                ),
+                                                                dbc.Button(
+                                                                    id="xrd-figure-use-report-btn",
+                                                                    color="primary",
+                                                                    size="sm",
+                                                                    disabled=True,
+                                                                ),
+                                                            ],
+                                                        ),
+                                                    ],
+                                                ),
+                                                html.Div(id="xrd-figure-artifact-status", className="small mt-1 text-muted"),
+                                            ],
+                                            className="pb-1",
+                                        ),
+                                        className="shadow-sm border-0 bg-body-secondary bg-opacity-10",
+                                    ),
+                                    html.Details(
                                         [
-                                            dbc.Col(
-                                                dbc.Button(
-                                                    id="xrd-figure-save-snapshot-btn",
-                                                    color="secondary",
-                                                    size="sm",
-                                                    outline=True,
-                                                    disabled=True,
-                                                    className="me-2",
-                                                ),
-                                                width="auto",
+                                            html.Summary(
+                                                [
+                                                    html.Span(className="ta-details-chevron"),
+                                                    html.Span(id="xrd-figure-artifacts-summary", className="ms-1 small text-muted"),
+                                                ],
+                                                className="ta-details-summary py-2",
                                             ),
-                                            dbc.Col(
-                                                dbc.Button(
-                                                    id="xrd-figure-use-report-btn",
-                                                    color="primary",
-                                                    size="sm",
-                                                    disabled=True,
-                                                ),
-                                                width="auto",
+                                            html.Div(
+                                                id="xrd-result-figure-artifacts",
+                                                className="ta-details-body mt-1 small",
                                             ),
                                         ],
-                                        className="g-2 mb-2",
+                                        className="ta-ms-details mb-0",
+                                        open=False,
                                     ),
-                                    html.Div(id="xrd-figure-artifact-status", className="small text-muted mb-2"),
-                                    html.Div(id="xrd-result-figure-artifacts", className="mb-2"),
-                                    html.Div(id="xrd-result-figure", className="mb-2"),
-                                ]
+                                ],
+                                className="xrd-figure-surface",
                             ),
                             role="hero",
                         ),
@@ -667,7 +724,10 @@ layout = html.Div(
                         _xrd_result_section(html.Div(id="xrd-result-table", className="mb-2"), role="support"),
                         _xrd_result_section(html.Div(id="xrd-result-processing", className="mb-2"), role="support"),
                         _xrd_result_section(html.Div(id="xrd-result-raw-metadata", className="mb-2"), role="support"),
-                        _xrd_result_section(build_literature_compare_card(id_prefix="xrd"), role="secondary"),
+                        _xrd_result_section(
+                            build_literature_compare_card(id_prefix="xrd", class_name="mb-2 border-secondary-subtle", compact_toolbar=True),
+                            role="secondary",
+                        ),
                     ],
                     md=8,
                     className="dsc-results-surface",
@@ -1189,8 +1249,9 @@ def render_xrd_processing_history_chrome(locale_data):
     Output("xrd-match-min-label", "children"),
     Output("xrd-match-iw-label", "children"),
     Output("xrd-match-maj-label", "children"),
-    Output("xrd-plot-card-title", "children"),
-    Output("xrd-plot-card-hint", "children"),
+    Output("xrd-plot-advanced-summary", "children"),
+    Output("xrd-plot-advanced-hint", "children"),
+    Output("xrd-plot-intermediate-label", "children"),
     Output("xrd-plot-advanced-title", "children"),
     Output("xrd-plot-density-label", "children"),
     Output("xrd-plot-maxlab-label", "children"),
@@ -1264,8 +1325,9 @@ def render_xrd_processing_cards_chrome(locale_data):
         translate_ui(loc, "dash.analysis.xrd.match.minimum_score"),
         translate_ui(loc, "dash.analysis.xrd.match.intensity_weight"),
         translate_ui(loc, "dash.analysis.xrd.match.major_fraction"),
-        translate_ui(loc, "dash.analysis.xrd.plot.card_title"),
-        translate_ui(loc, "dash.analysis.xrd.plot.hint"),
+        translate_ui(loc, "dash.analysis.xrd.plot.advanced_section"),
+        translate_ui(loc, "dash.analysis.xrd.plot.advanced_hint"),
+        translate_ui(loc, "dash.analysis.xrd.plot.show_intermediate"),
         translate_ui(loc, "dash.analysis.xrd.plot.advanced_title"),
         translate_ui(loc, "dash.analysis.xrd.plot.label_density"),
         translate_ui(loc, "dash.analysis.xrd.plot.max_labels"),
@@ -1352,6 +1414,7 @@ def toggle_xrd_baseline_windows(method):
     Output("xrd-plot-ymax", "value"),
     Output("xrd-plot-logy", "value"),
     Output("xrd-plot-lw", "value"),
+    Output("xrd-plot-intermediate", "value"),
     Input("xrd-preset-hydrate", "data"),
     Input("xrd-history-hydrate", "data"),
     State("xrd-processing-draft", "data"),
@@ -1386,9 +1449,9 @@ def hydrate_xrd_processing_controls(_p, _h, draft):
         float(mc.get("xrd_match_intensity_weight", 0.35)),
         float(mc.get("xrd_match_major_peak_fraction", 0.4)),
         bool(ps.get("show_peak_labels", True)),
-        bool(ps.get("show_matched_peaks", True)),
-        bool(ps.get("show_unmatched_observed", True)),
-        bool(ps.get("show_unmatched_reference", True)),
+        bool(ps.get("show_matched_peaks", False)),
+        bool(ps.get("show_unmatched_observed", False)),
+        bool(ps.get("show_unmatched_reference", False)),
         bool(ps.get("show_match_connectors", False)),
         bool(ps.get("show_match_labels", False)),
         str(ps.get("label_density_mode") or "smart"),
@@ -1406,6 +1469,7 @@ def hydrate_xrd_processing_controls(_p, _h, draft):
         ps.get("y_max"),
         bool(ps.get("log_y", False)),
         float(ps.get("line_width", 2.0)),
+        bool(ps.get("show_intermediate_traces", False)),
     )
 
 
@@ -1456,6 +1520,7 @@ def hydrate_xrd_processing_controls(_p, _h, draft):
     Input("xrd-plot-ymax", "value"),
     Input("xrd-plot-logy", "value"),
     Input("xrd-plot-lw", "value"),
+    Input("xrd-plot-intermediate", "value"),
     State("xrd-processing-draft", "data"),
     State("xrd-processing-undo-stack", "data"),
     State("xrd-processing-redo-stack", "data"),
@@ -1505,6 +1570,7 @@ def sync_xrd_processing_draft(
     pl_yb,
     pl_log,
     pl_lw,
+    pl_intermediate,
     prev_draft,
     undo_stack,
     redo_stack,
@@ -1553,6 +1619,7 @@ def sync_xrd_processing_draft(
         plot_y_max=pl_yb,
         plot_log_y=pl_log,
         plot_lw=pl_lw,
+        plot_show_intermediate=bool(pl_intermediate),
     )
     old_norm = normalize_xrd_processing_draft(prev_draft)
     new_norm = normalize_xrd_processing_draft(new_draft)
@@ -1727,7 +1794,7 @@ def _build_xrd_figure_artifacts_panel(
     *,
     previews: dict[str, str] | None = None,
 ) -> html.Div:
-    """Read-only gallery: report label, optional PNG previews (Slice 5), and key list."""
+    """Snapshots / report figure state — kept visually light; registry text behind nested disclosure."""
     fa = figure_artifacts if isinstance(figure_artifacts, dict) else {}
     keys = [str(k).strip() for k in (fa.get("figure_keys") or []) if isinstance(k, str) and str(k).strip()]
     primary = fa.get("report_figure_key")
@@ -1735,24 +1802,22 @@ def _build_xrd_figure_artifacts_panel(
     status = str(fa.get("report_figure_status") or "").strip()
     err = str(fa.get("report_figure_error") or "").strip()
 
-    title = html.H6(translate_ui(loc, "dash.analysis.xrd.figure.artifacts_title"), className="card-title mb-2")
     if not keys and not primary_s and not status and not err:
-        body = [
-            title,
-            html.P(translate_ui(loc, "dash.analysis.xrd.figure.artifacts_none"), className="small text-muted mb-0"),
-        ]
         return html.Div(
-            dbc.Card(dbc.CardBody(body), className="border shadow-sm"),
+            html.P(translate_ui(loc, "dash.analysis.xrd.figure.artifacts_none"), className="small text-muted mb-0"),
             className="xrd-figure-artifacts-panel",
         )
 
     if primary_s:
         primary_line = html.P(
             translate_ui(loc, "dash.analysis.xrd.figure.artifacts_primary", label=primary_s),
-            className="small mb-2",
+            className="small mb-2 mb-md-1",
         )
     else:
-        primary_line = html.P(translate_ui(loc, "dash.analysis.xrd.figure.artifacts_primary_none"), className="small text-muted mb-2")
+        primary_line = html.P(
+            translate_ui(loc, "dash.analysis.xrd.figure.artifacts_primary_none"),
+            className="small text-muted mb-2 mb-md-1",
+        )
 
     previews_block: list[Any] = []
     if previews is not None:
@@ -1762,7 +1827,7 @@ def _build_xrd_figure_artifacts_panel(
             previews_block.append(
                 html.Div(
                     translate_ui(loc, "dash.analysis.xrd.figure.artifacts_previews_heading"),
-                    className="small fw-semibold text-muted mb-2",
+                    className="small fw-semibold text-muted mb-1",
                 )
             )
             cols: list[Any] = []
@@ -1778,14 +1843,14 @@ def _build_xrd_figure_artifacts_panel(
                                     src=src,
                                     alt=pk,
                                     className="img-fluid rounded border mb-1",
-                                    style={"maxHeight": "110px", "objectFit": "contain"},
+                                    style={"maxHeight": "88px", "objectFit": "contain"},
                                 ),
                                 html.Div(badge + label_short, className="small text-muted text-break"),
                             ],
                             xs=12,
                             sm=6,
                             md=4,
-                            className="mb-2",
+                            className="mb-1",
                         )
                     )
                 else:
@@ -1795,34 +1860,24 @@ def _build_xrd_figure_artifacts_panel(
                                 html.Div(
                                     translate_ui(loc, "dash.analysis.xrd.figure.artifacts_preview_missing"),
                                     className="bg-light border rounded d-flex align-items-center justify-content-center text-muted small mb-1",
-                                    style={"height": "110px"},
+                                    style={"height": "88px"},
                                 ),
                                 html.Div(badge + label_short, className="small text-muted text-break"),
                             ],
                             xs=12,
                             sm=6,
                             md=4,
-                            className="mb-2",
+                            className="mb-1",
                         )
                     )
-            previews_block.append(dbc.Row(cols, className="g-2 mb-2"))
+            previews_block.append(dbc.Row(cols, className="g-2 mb-1"))
         if len(ordered) > MAX_XRD_FIGURE_PREVIEW_TILES:
             previews_block.append(
                 html.P(
                     translate_ui(loc, "dash.analysis.xrd.figure.artifacts_previews_truncated", n=len(ordered) - MAX_XRD_FIGURE_PREVIEW_TILES),
-                    className="small text-muted mb-2",
+                    className="small text-muted mb-1",
                 )
             )
-
-    if keys:
-        keys_heading = html.Div(
-            translate_ui(loc, "dash.analysis.xrd.figure.artifacts_keys_heading", n=len(keys)),
-            className="small fw-semibold text-muted mb-1",
-        )
-        keys_list = html.Ul([html.Li(html.Code(k), className="small") for k in keys], className="small mb-2 ps-3")
-    else:
-        keys_heading = html.Div()
-        keys_list = html.P(translate_ui(loc, "dash.analysis.xrd.figure.artifacts_empty"), className="small text-muted mb-2")
 
     meta_lines: list[Any] = []
     if status:
@@ -1832,11 +1887,31 @@ def _build_xrd_figure_artifacts_panel(
     if err:
         meta_lines.append(html.P(translate_ui(loc, "dash.analysis.xrd.figure.artifacts_error", err=err), className="small text-danger mb-0"))
 
-    body = [title, primary_line, *previews_block, keys_heading, keys_list, *meta_lines]
-    return html.Div(
-        dbc.Card(dbc.CardBody(body), className="border shadow-sm"),
-        className="xrd-figure-artifacts-panel",
+    if keys:
+        keys_block = html.Ul([html.Li(html.Code(k), className="small") for k in keys], className="small mb-0 ps-3")
+    else:
+        keys_block = html.P(translate_ui(loc, "dash.analysis.xrd.figure.artifacts_empty"), className="small text-muted mb-0")
+
+    registry = html.Details(
+        [
+            html.Summary(
+                [
+                    html.Span(className="ta-details-chevron"),
+                    html.Span(translate_ui(loc, "dash.analysis.xrd.figure.artifacts_registry_summary"), className="ms-1 small"),
+                ],
+                className="ta-details-summary py-1",
+            ),
+            html.Div(
+                [*meta_lines, keys_block],
+                className="ta-details-body mt-2",
+            ),
+        ],
+        className="ta-ms-details mb-0 mt-2",
+        open=False,
     )
+
+    body: list[Any] = [primary_line, *previews_block, registry]
+    return html.Div(body, className="xrd-figure-artifacts-panel")
 
 
 def _build_xrd_analysis_summary(dataset_detail: dict, summary: dict, result_meta: dict, loc: str, *, locale_data: str | None) -> html.Div:
@@ -2025,17 +2100,19 @@ def _build_xrd_top_match_hero(summary: dict, rows: list, loc: str) -> html.Div:
                         else (dbc.Alert(caution, color="warning", className="mt-2 mb-0 py-1 small") if caution else html.Div()),
                     ]
                 ),
-                className="border",
+                className="border border-primary-subtle shadow-sm",
             ),
         ]
     )
 
 
 def _build_match_cards(rows: list, summary: dict, loc: str = "en") -> html.Div:
-    cards: list = [html.H5(translate_ui(loc, "dash.analysis.section.candidate_matches"), className="mb-3")]
+    cards: list = [
+        html.H6(translate_ui(loc, "dash.analysis.section.candidate_matches"), className="mb-2 text-muted text-uppercase small"),
+    ]
     caution_message = str(summary.get("caution_message") or "").strip()
     if caution_message:
-        cards.append(dbc.Alert(caution_message, color="warning", className="mb-3"))
+        cards.append(dbc.Alert(caution_message, color="warning", className="mb-2 py-1 small"))
     top_name = str(summary.get("top_candidate_name") or "").strip()
     if top_name:
         cards.append(
@@ -2063,8 +2140,8 @@ def _build_xrd_match_table(rows: list, loc: str = "en") -> html.Div:
     if not rows:
         return html.Div(
             [
-                html.H5(translate_ui(loc, "dash.analysis.section.candidate_evidence_table"), className="mb-3"),
-                html.P(translate_ui(loc, "dash.analysis.state.no_match_data"), className="text-muted"),
+                html.H6(translate_ui(loc, "dash.analysis.section.candidate_evidence_table"), className="mb-2 text-muted small"),
+                html.P(translate_ui(loc, "dash.analysis.state.no_match_data"), className="text-muted small mb-0"),
             ]
         )
     flat = [_flatten_xrd_table_row(r) if isinstance(r, dict) else r for r in rows]
@@ -2084,7 +2161,7 @@ def _build_xrd_match_table(rows: list, loc: str = "en") -> html.Div:
     ]
     return html.Div(
         [
-            html.H5(translate_ui(loc, "dash.analysis.section.candidate_evidence_table"), className="mb-3"),
+            html.H6(translate_ui(loc, "dash.analysis.section.candidate_evidence_table"), className="mb-2 text-muted small"),
             dataset_table(flat, columns, table_id="xrd-matches-table"),
         ]
     )
@@ -2240,10 +2317,21 @@ def display_xrd_result(result_id, _refresh, locale_data, project_id):
     proc_view = processing_details_section(processing, extra_lines=proc_extra, locale_data=locale_data)
     opts = [{"label": f"#{i + 1} {_display_candidate_name(r, loc)[:48]}", "value": i} for i, r in enumerate(rows) if isinstance(r, dict)]
     controls = html.Div(
-        [
-            dbc.Label(translate_ui(loc, "dash.analysis.xrd.figure.overlay_label"), className="mb-1"),
-            dcc.Dropdown(id="xrd-candidate-overlay", options=opts, value=0, clearable=False),
-        ]
+        className="d-flex flex-wrap align-items-center gap-2 w-100",
+        children=[
+            dbc.Label(
+                translate_ui(loc, "dash.analysis.xrd.figure.overlay_label"),
+                className="small text-muted mb-0 text-nowrap flex-shrink-0",
+            ),
+            dcc.Dropdown(
+                id="xrd-candidate-overlay",
+                options=opts,
+                value=0,
+                clearable=False,
+                className="flex-grow-1",
+                style={"minWidth": "160px", "maxWidth": "100%"},
+            ),
+        ],
     )
     cache = {
         "project_id": project_id,
@@ -2332,6 +2420,7 @@ def render_xrd_result_figure_area(cache, overlay_idx, ui_theme, locale_data, pro
     Output("xrd-literature-max-claims-label", "children"),
     Output("xrd-literature-persist-label", "children"),
     Output("xrd-literature-compare-btn", "children"),
+    Output("xrd-literature-options-summary", "children"),
     Input("ui-locale", "data"),
     Input("xrd-latest-result-id", "data"),
 )
@@ -2347,6 +2436,7 @@ def render_xrd_literature_chrome(locale_data, result_id):
         literature_t(loc, f"{_XRD_LITERATURE_PREFIX}.max_claims", "Max Claims"),
         literature_t(loc, f"{_XRD_LITERATURE_PREFIX}.persist", "Persist to project"),
         literature_t(loc, f"{_XRD_LITERATURE_PREFIX}.compare_btn", "Compare"),
+        literature_t(loc, f"{_XRD_LITERATURE_PREFIX}.options_summary", "Compare options"),
     )
 
 
@@ -2391,8 +2481,9 @@ def compare_xrd_literature(n_clicks, project_id, result_id, max_claims, persist_
             payload,
             loc,
             i18n_prefix=_XRD_LITERATURE_PREFIX,
-            evidence_preview_limit=LITERATURE_COMPACT_EVIDENCE_PREVIEW_LIMIT,
-            alternative_preview_limit=LITERATURE_COMPACT_ALTERNATIVE_PREVIEW_LIMIT,
+            evidence_preview_limit=1,
+            alternative_preview_limit=1,
+            collapse_retained_evidence=True,
         ),
         literature_compare_status_alert(payload, loc, i18n_prefix=_XRD_LITERATURE_PREFIX),
     )
@@ -2407,6 +2498,7 @@ def _xrd_primary_report_figure_label(dataset_key: str | None, result_id: str | N
 @callback(
     Output("xrd-figure-save-snapshot-btn", "children"),
     Output("xrd-figure-use-report-btn", "children"),
+    Output("xrd-figure-artifacts-summary", "children"),
     Input("ui-locale", "data"),
 )
 def render_xrd_figure_artifact_button_labels(locale_data):
@@ -2414,6 +2506,7 @@ def render_xrd_figure_artifact_button_labels(locale_data):
     return (
         translate_ui(loc, "dash.analysis.xrd.figure.btn_snapshot"),
         translate_ui(loc, "dash.analysis.xrd.figure.btn_report"),
+        translate_ui(loc, "dash.analysis.xrd.figure.artifacts_details_summary"),
     )
 
 

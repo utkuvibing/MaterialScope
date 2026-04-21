@@ -26,59 +26,97 @@ def coerce_literature_max_claims(value: Any, *, default: int = 3) -> int:
     return max(1, min(10, n))
 
 
-def build_literature_compare_card(*, id_prefix: str, class_name: str = "mb-3") -> dbc.Card:
-    """Reusable literature compare card; element ids are ``{id_prefix}-literature-*``."""
-    return dbc.Card(
-        dbc.CardBody(
+def build_literature_compare_card(
+    *,
+    id_prefix: str,
+    class_name: str = "mb-3",
+    compact_toolbar: bool = False,
+) -> dbc.Card:
+    """Reusable literature compare card; element ids are ``{id_prefix}-literature-*``.
+
+    When *compact_toolbar* is True, compare options are tucked behind a collapsed summary
+    so the card leads with title, hint, status, and output (used on XRD for calmer UX).
+    """
+    controls_row = dbc.Row(
+        [
+            dbc.Col(
+                [
+                    dbc.Label(
+                        id=f"{id_prefix}-literature-max-claims-label",
+                        html_for=f"{id_prefix}-literature-max-claims",
+                    ),
+                    dbc.Input(
+                        id=f"{id_prefix}-literature-max-claims",
+                        type="number",
+                        min=1,
+                        max=10,
+                        step=1,
+                        value=3,
+                    ),
+                ],
+                md=6,
+            ),
+            dbc.Col(
+                [
+                    dbc.Checklist(
+                        id=f"{id_prefix}-literature-persist",
+                        options=[{"label": "", "value": "persist"}],
+                        value=[],
+                        switch=True,
+                        className="mt-2",
+                    ),
+                    dbc.Label(
+                        id=f"{id_prefix}-literature-persist-label",
+                        html_for=f"{id_prefix}-literature-persist",
+                        className="small",
+                    ),
+                ],
+                md=6,
+            ),
+        ],
+        className="g-2 mb-2",
+    )
+    compare_btn = dbc.Button(
+        id=f"{id_prefix}-literature-compare-btn",
+        color="primary",
+        size="sm",
+        disabled=True,
+        className="mb-2",
+    )
+    if compact_toolbar:
+        options_block = html.Details(
             [
-                html.H5(id=f"{id_prefix}-literature-card-title", className="card-title mb-3"),
-                html.Div(id=f"{id_prefix}-literature-hint", className="small text-muted mb-2"),
-                dbc.Row(
+                html.Summary(
                     [
-                        dbc.Col(
-                            [
-                                dbc.Label(
-                                    id=f"{id_prefix}-literature-max-claims-label",
-                                    html_for=f"{id_prefix}-literature-max-claims",
-                                ),
-                                dbc.Input(
-                                    id=f"{id_prefix}-literature-max-claims",
-                                    type="number",
-                                    min=1,
-                                    max=10,
-                                    step=1,
-                                    value=3,
-                                ),
-                            ],
-                            md=6,
-                        ),
-                        dbc.Col(
-                            [
-                                dbc.Checklist(
-                                    id=f"{id_prefix}-literature-persist",
-                                    options=[{"label": "", "value": "persist"}],
-                                    value=[],
-                                    switch=True,
-                                    className="mt-4",
-                                ),
-                                dbc.Label(
-                                    id=f"{id_prefix}-literature-persist-label",
-                                    html_for=f"{id_prefix}-literature-persist",
-                                    className="small",
-                                ),
-                            ],
-                            md=6,
+                        html.Span(className="ta-details-chevron"),
+                        html.Span(
+                            id=f"{id_prefix}-literature-options-summary",
+                            className="ms-1 small fw-semibold",
                         ),
                     ],
-                    className="g-2 mb-2",
+                    className="ta-details-summary py-1",
                 ),
-                dbc.Button(
-                    id=f"{id_prefix}-literature-compare-btn",
-                    color="primary",
-                    size="sm",
-                    disabled=True,
-                    className="mb-2",
-                ),
+                html.Div([controls_row, compare_btn], className="ta-details-body mt-2"),
+            ],
+            className="ta-ms-details mb-2",
+            open=False,
+        )
+        body_top: list[Any] = [
+            html.H6(id=f"{id_prefix}-literature-card-title", className="card-title mb-2"),
+            html.Div(id=f"{id_prefix}-literature-hint", className="small text-muted mb-2"),
+            options_block,
+        ]
+    else:
+        body_top = [
+            html.H5(id=f"{id_prefix}-literature-card-title", className="card-title mb-3"),
+            html.Div(id=f"{id_prefix}-literature-hint", className="small text-muted mb-2"),
+            controls_row,
+            compare_btn,
+        ]
+    return dbc.Card(
+        dbc.CardBody(
+            body_top
+            + [
                 html.Div(id=f"{id_prefix}-literature-status", className="small text-muted"),
                 html.Div(id=f"{id_prefix}-literature-output", className="mt-2"),
             ]
@@ -274,6 +312,7 @@ def render_literature_output(
     i18n_prefix: str,
     evidence_preview_limit: int | None = None,
     alternative_preview_limit: int | None = None,
+    collapse_retained_evidence: bool = False,
 ) -> html.Div:
     """Render literature compare payload as curated product-facing sections.
 
@@ -281,6 +320,9 @@ def render_literature_output(
     shown inline; the rest appear behind a collapsed details section. Dash analysis pages
     pass the module constants LITERATURE_COMPACT_EVIDENCE_PREVIEW_LIMIT for a consistent
     compact layout; pass None for the legacy full inline layout.
+
+    When *collapse_retained_evidence* is True, the retained-reference sections are wrapped
+    in a collapsed ``Details`` so the first read stays on interpretation claims and previews.
     """
     claims = payload.get("literature_claims") or []
     comparisons = payload.get("literature_comparisons") or []
@@ -629,39 +671,60 @@ def render_literature_output(
             )
         children.append(claims_block)
 
-    children.append(
-        html.Div(
-            [
-                html.H6(literature_t(loc, _k("retained_evidence_title"), "Retained literature evidence"), className="mt-2 mb-1"),
-                html.Div(
-                    [
-                        html.H6(literature_t(loc, _k("relevant_references"), "Relevant retained references"), className="mt-2 mb-1"),
-                        _evidence_rows_block(relevant_rows, evidence_preview_limit)
-                        if relevant_rows
-                        else html.P(
-                            literature_t(loc, _k("relevant_references_empty"), "No relevant retained references were found."),
-                            className="small text-muted mb-1",
-                        ),
-                    ]
-                ),
-                html.Div(
-                    [
-                        html.H6(
-                            literature_t(loc, _k("alternative_references"), "Alternative or non-validating references"),
-                            className="mt-2 mb-1",
-                        ),
-                        _evidence_rows_block(alternative_rows, alt_limit)
-                        if alternative_rows
-                        else html.P(
-                            literature_t(loc, _k("alternative_references_empty"), "No alternative or non-validating references were retained."),
-                            className="small text-muted mb-1",
-                        ),
-                    ]
-                ),
-            ],
-            className="mb-2",
-        )
+    retained_inner = html.Div(
+        [
+            html.H6(literature_t(loc, _k("retained_evidence_title"), "Retained literature evidence"), className="mt-2 mb-1"),
+            html.Div(
+                [
+                    html.H6(literature_t(loc, _k("relevant_references"), "Relevant retained references"), className="mt-2 mb-1"),
+                    _evidence_rows_block(relevant_rows, evidence_preview_limit)
+                    if relevant_rows
+                    else html.P(
+                        literature_t(loc, _k("relevant_references_empty"), "No relevant retained references were found."),
+                        className="small text-muted mb-1",
+                    ),
+                ]
+            ),
+            html.Div(
+                [
+                    html.H6(
+                        literature_t(loc, _k("alternative_references"), "Alternative or non-validating references"),
+                        className="mt-2 mb-1",
+                    ),
+                    _evidence_rows_block(alternative_rows, alt_limit)
+                    if alternative_rows
+                    else html.P(
+                        literature_t(loc, _k("alternative_references_empty"), "No alternative or non-validating references were retained."),
+                        className="small text-muted mb-1",
+                    ),
+                ]
+            ),
+        ],
+        className="mb-2",
     )
+    if collapse_retained_evidence:
+        n_refs = len(relevant_rows) + len(alternative_rows)
+        show_refs_key = _k("evidence_list_summary")
+        show_refs = translate_ui(loc, show_refs_key, n=n_refs)
+        if show_refs == show_refs_key:
+            show_refs = literature_t(loc, show_refs_key, "Full reference evidence ({n})").replace("{n}", str(n_refs))
+        retained_block = html.Details(
+            [
+                html.Summary(
+                    [
+                        html.Span(className="ta-details-chevron"),
+                        html.Span(show_refs, className="ms-1 small fw-semibold"),
+                    ],
+                    className="ta-details-summary py-1",
+                ),
+                html.Div(retained_inner, className="ta-details-body mt-2"),
+            ],
+            className="ta-ms-details mb-2",
+            open=False,
+        )
+    else:
+        retained_block = retained_inner
+    children.append(retained_block)
 
     if not has_retained_evidence:
         follow_up: list[str] = []

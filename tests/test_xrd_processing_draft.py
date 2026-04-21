@@ -56,6 +56,8 @@ def test_default_draft_has_all_sections_and_plot_settings():
     mc = d["method_context"]
     assert isinstance(mc.get("xrd_plot_settings"), dict)
     assert mc["xrd_plot_settings"].get("show_peak_labels") is True
+    assert mc["xrd_plot_settings"].get("show_matched_peaks") is False
+    assert mc["xrd_plot_settings"].get("show_intermediate_traces") is False
 
 
 def test_xrd_overrides_from_draft_matches_normalized_top_level():
