@@ -1,2 +1,0 @@
-- 2026-04-18: Added `_DTA_VIEW_MODES = ("result", "debug")` as the module-level contract for DTA figure rendering; `_build_dta_go_figure` now normalizes invalid modes back to `"result"` without changing current output.
-- 2026-04-18: Threaded `view_mode` through `_build_figure` and the PNG capture path, with capture callers explicitly pinning `view_mode="result"` so future debug-only rendering can be introduced without affecting saved/report figures.

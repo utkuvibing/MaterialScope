@@ -15,6 +15,23 @@ from core.result_serialization import split_valid_results
 from core.validation import validate_thermal_dataset
 
 
+def _figure_artifacts_meta(artifacts: Any) -> dict[str, Any]:
+    """Expose figure registration metadata without binary payloads."""
+    art = artifacts if isinstance(artifacts, dict) else {}
+    raw_keys = art.get("figure_keys")
+    keys: list[str] = []
+    if isinstance(raw_keys, list):
+        for item in raw_keys:
+            if isinstance(item, str) and item.strip() and item not in keys:
+                keys.append(item)
+    return {
+        "figure_keys": keys,
+        "report_figure_key": art.get("report_figure_key"),
+        "report_figure_status": art.get("report_figure_status"),
+        "report_figure_error": art.get("report_figure_error"),
+    }
+
+
 def _records_payload(frame: pd.DataFrame, *, limit: int | None = None) -> list[dict[str, Any]]:
     payload = frame.head(limit).copy() if limit is not None else frame.copy()
     payload = payload.where(pd.notna(payload), None)
@@ -105,6 +122,7 @@ def build_result_detail(state: dict[str, Any], result_id: str) -> dict[str, Any]
         "rows": copy.deepcopy(rows),
         "rows_preview": _records_payload(frame, limit=20) if not frame.empty else [],
         "row_count": len(rows),
+        "figure_artifacts": _figure_artifacts_meta(record.get("artifacts")),
     }
 
 

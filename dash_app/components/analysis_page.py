@@ -300,6 +300,59 @@ def capture_result_figure_from_layout(
     return captured_state
 
 
+def register_result_figure_from_layout_children(
+    *,
+    figure_children: Any,
+    project_id: str | None,
+    result_id: str | None,
+    label: str,
+    replace: bool,
+) -> dict[str, Any]:
+    """Render the first nested ``dcc.Graph`` to PNG and register it for a result.
+
+    Unlike :func:`capture_result_figure_from_layout`, this does not consult a
+    dedupe store: callers use it for explicit user actions (extra snapshots,
+    refreshing the primary report figure after overlay edits).
+
+    Returns
+    -------
+    dict
+        ``{"status": "ok", "figure_key": str}``, ``{"status": "skipped", "reason": str}``,
+        or ``{"status": "error", "reason": str}``.
+    """
+    if not result_id or not project_id:
+        return {"status": "skipped", "reason": "missing_project_or_result"}
+    clean_label = str(label or "").strip()
+    if not clean_label:
+        return {"status": "skipped", "reason": "empty_label"}
+
+    figure_payload = _extract_graph_figure_payload(figure_children)
+    if figure_payload is None:
+        return {"status": "skipped", "reason": "no_graph_in_layout"}
+
+    try:
+        fig = figure_payload if isinstance(figure_payload, go.Figure) else go.Figure(figure_payload)
+    except Exception as exc:
+        return {"status": "skipped", "reason": f"invalid_figure_payload: {exc}"}
+
+    png_bytes, render_meta = render_plotly_figure_png(fig)
+    if not png_bytes:
+        return {"status": "skipped", "reason": str(render_meta or "render_failed")}
+
+    from dash_app.api_client import register_result_figure
+
+    try:
+        response = register_result_figure(project_id, result_id, png_bytes, label=clean_label, replace=bool(replace))
+    except Exception as exc:
+        return {"status": "error", "reason": str(exc)}
+
+    persisted = str((response or {}).get("figure_key") or clean_label)
+    out: dict[str, Any] = {"status": "ok", "figure_key": persisted}
+    if render_meta:
+        out["render_mode"] = str(render_meta)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Execute callback helpers
 # ---------------------------------------------------------------------------

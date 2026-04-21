@@ -13,7 +13,7 @@ from typing import Any
 import httpx
 import plotly.graph_objects as go
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import Response
 
 from backend import BACKEND_API_VERSION
@@ -1127,6 +1127,65 @@ def create_app(
             result_id=result_id,
             figure_key=label,
             figure_keys=keys,
+        )
+
+    @app.get("/workspace/{project_id}/results/{result_id}/figure")
+    def result_get_figure_png(
+        project_id: str,
+        result_id: str,
+        figure_key: str = Query(..., min_length=1, description="Registered figure label for this result"),
+        max_edge: int | None = Query(
+            default=None,
+            ge=16,
+            le=4096,
+            description="Optional: downscale so max(width,height) <= max_edge (Slice 6 previews).",
+        ),
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> Response:
+        """Return stored PNG bytes for a figure key linked to this result (Slice 5 previews)."""
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        results = state.get("results") or {}
+        record = results.get(result_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail=f"Unknown result_id: {result_id}")
+
+        label = str(figure_key or "").strip()
+        if not label:
+            raise HTTPException(status_code=400, detail="figure_key must be non-empty.")
+
+        artifacts = dict(record.get("artifacts") or {})
+        allowed: set[str] = set()
+        raw_keys = artifacts.get("figure_keys")
+        if isinstance(raw_keys, list):
+            for item in raw_keys:
+                if isinstance(item, str) and item.strip():
+                    allowed.add(item.strip())
+        pk = artifacts.get("report_figure_key")
+        if isinstance(pk, str) and pk.strip():
+            allowed.add(pk.strip())
+
+        if label not in allowed:
+            raise HTTPException(
+                status_code=404,
+                detail="figure_key is not registered for this result.",
+            )
+
+        figures = state.get("figures") or {}
+        png_bytes = figures.get(label)
+        if not isinstance(png_bytes, (bytes, bytearray)) or len(png_bytes) == 0:
+            raise HTTPException(status_code=404, detail="Figure bytes are not available in the workspace store.")
+
+        body = bytes(png_bytes)
+        if max_edge is not None:
+            from core.figure_preview_resize import maybe_downscale_png_to_max_edge
+
+            body = maybe_downscale_png_to_max_edge(body, int(max_edge))
+
+        return Response(
+            content=body,
+            media_type="image/png",
+            headers={"Cache-Control": "private, max-age=60"},
         )
 
     @app.get("/presets/{analysis_type}", response_model=PresetListResponse)

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import inspect
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -70,6 +72,55 @@ def test_xrd_eligible_types():
     assert "UNKNOWN" in mod._XRD_ELIGIBLE_TYPES
 
 
+def test_xrd_literature_i18n_prefix_is_xrd_native():
+    mod = _import_xrd_page()
+    assert mod._XRD_LITERATURE_PREFIX == "dash.analysis.xrd.literature"
+
+
+def test_xrd_page_module_avoids_tga_literature_key_literals():
+    """Phase 8 guard: XRD literature must not reference TGA i18n tree."""
+    root = Path(__file__).resolve().parent.parent
+    text = (root / "dash_app" / "pages" / "xrd.py").read_text(encoding="utf-8")
+    lowered = text.lower()
+    assert "dash.analysis.tga.literature" not in lowered
+
+
+def test_compare_xrd_literature_callback_uses_xrd_literature_prefix():
+    mod = _import_xrd_page()
+    src = inspect.getsource(mod.compare_xrd_literature)
+    assert "_XRD_LITERATURE_PREFIX" in src or "dash.analysis.xrd.literature" in src
+
+
+def test_layout_uses_results_surface_class():
+    mod = _import_xrd_page()
+    assert "dsc-results-surface" in str(mod.layout)
+
+
+def test_layout_tab_shells_in_processing_order():
+    mod = _import_xrd_page()
+    s = str(mod.layout)
+    assert s.index("xrd-tab-setup-shell") < s.index("xrd-tab-processing-shell")
+    assert s.index("xrd-tab-processing-shell") < s.index("xrd-tab-run-shell")
+    assert s.index("xrd-left-tabs") < s.index("xrd-result-analysis-summary")
+
+
+def test_layout_contains_mature_history_and_preset_stores():
+    mod = _import_xrd_page()
+    s = str(mod.layout)
+    for sid in (
+        "xrd-processing-default",
+        "xrd-processing-undo-stack",
+        "xrd-processing-redo-stack",
+        "xrd-history-hydrate",
+        "xrd-preset-refresh",
+        "xrd-preset-hydrate",
+        "xrd-preset-loaded-name",
+        "xrd-preset-snapshot",
+        "xrd-result-cache",
+    ):
+        assert sid in s, f"missing store/control: {sid}"
+
+
 def test_layout_contains_key_div_ids():
     mod = _import_xrd_page()
     layout_str = str(mod.layout)
@@ -77,12 +128,22 @@ def test_layout_contains_key_div_ids():
     expected_ids = [
         "xrd-dataset-selector-area",
         "xrd-template-select",
+        "xrd-left-tabs",
         "xrd-run-btn",
+        "xrd-result-analysis-summary",
         "xrd-result-metrics",
+        "xrd-result-quality",
+        "xrd-result-figure-controls",
+        "xrd-figure-save-snapshot-btn",
+        "xrd-figure-use-report-btn",
+        "xrd-figure-artifact-status",
+        "xrd-result-figure-artifacts",
         "xrd-result-figure",
+        "xrd-result-top-match",
         "xrd-result-candidate-cards",
         "xrd-result-table",
         "xrd-result-processing",
+        "xrd-result-raw-metadata",
         "xrd-literature-compare-btn",
         "xrd-literature-max-claims",
         "xrd-literature-persist",
@@ -91,6 +152,7 @@ def test_layout_contains_key_div_ids():
         "xrd-refresh",
         "xrd-latest-result-id",
         "xrd-figure-captured",
+        "xrd-processing-draft",
     ]
     for div_id in expected_ids:
         assert div_id in layout_str, f"Missing layout element: {div_id}"
@@ -100,6 +162,89 @@ def test_layout_places_figure_before_candidate_cards():
     mod = _import_xrd_page()
     layout_str = str(mod.layout)
     assert layout_str.index("xrd-result-figure") < layout_str.index("xrd-result-candidate-cards")
+
+
+def test_xrd_figure_artifact_callback_clear_on_result_change(monkeypatch):
+    mod = _import_xrd_page()
+    monkeypatch.setattr(mod.dash, "callback_context", SimpleNamespace(triggered_id="xrd-latest-result-id"))
+    assert mod.xrd_figure_snapshot_or_report_figure(0, 0, "new-result", "proj", [], "en") == ""
+
+
+def test_xrd_figure_artifact_callback_save_snapshot_registers(monkeypatch):
+    import dash_app.api_client as api_client
+    from dash import dcc
+    import plotly.graph_objects as go
+
+    mod = _import_xrd_page()
+    captured: list[dict] = []
+
+    def _fake_register(**kwargs):
+        captured.append(dict(kwargs))
+        return {"status": "ok", "figure_key": kwargs["label"]}
+
+    monkeypatch.setattr(mod, "register_result_figure_from_layout_children", _fake_register)
+    monkeypatch.setattr(
+        api_client,
+        "workspace_result_detail",
+        lambda *_a, **_k: {"result": {"dataset_key": "sample_xrd"}},
+    )
+
+    monkeypatch.setattr(mod.dash, "callback_context", SimpleNamespace(triggered_id="xrd-figure-save-snapshot-btn"))
+    fig_child = html.Div(dcc.Graph(figure=go.Figure(data=[go.Scatter(x=[1, 2], y=[1, 2])])))
+    out = mod.xrd_figure_snapshot_or_report_figure(1, 0, "xrd_1", "proj-9", fig_child, "en")
+    assert captured and captured[0]["replace"] is False
+    assert captured[0]["result_id"] == "xrd_1"
+    assert "XRD Snapshot" in captured[0]["label"]
+    assert isinstance(out, dbc.Alert)
+
+
+def test_build_xrd_figure_artifacts_panel_lists_keys():
+    mod = _import_xrd_page()
+    panel = mod._build_xrd_figure_artifacts_panel(
+        {
+            "figure_keys": ["XRD Analysis - ds", "XRD Snapshot - ds - t"],
+            "report_figure_key": "XRD Analysis - ds",
+            "report_figure_status": "captured",
+        },
+        "en",
+    )
+    s = str(panel)
+    assert "XRD Analysis - ds" in s
+    assert "Registered keys" in s
+
+
+def test_xrd_figure_artifact_i18n_keys_resolve():
+    from utils.i18n import translate_ui
+
+    loc = "en"
+    assert translate_ui(loc, "dash.analysis.xrd.figure.btn_snapshot") != "dash.analysis.xrd.figure.btn_snapshot"
+    assert translate_ui(loc, "dash.analysis.xrd.figure.btn_report") != "dash.analysis.xrd.figure.btn_report"
+    assert "k1" in translate_ui(loc, "dash.analysis.xrd.figure.snapshot_ok", figure_key="k1")
+    assert "k2" in translate_ui(loc, "dash.analysis.xrd.figure.report_ok", figure_key="k2")
+    assert "r0" in translate_ui(loc, "dash.analysis.xrd.figure.artifact_skip", reason="r0")
+    assert "e0" in translate_ui(loc, "dash.analysis.xrd.figure.artifact_error", reason="e0")
+    assert translate_ui(loc, "dash.analysis.xrd.figure.artifacts_none") != "dash.analysis.xrd.figure.artifacts_none"
+    assert translate_ui(loc, "dash.analysis.xrd.figure.artifacts_previews_heading") != "dash.analysis.xrd.figure.artifacts_previews_heading"
+    assert "3" in translate_ui(loc, "dash.analysis.xrd.figure.artifacts_previews_truncated", n=3)
+
+
+def test_layout_mature_result_surface_ordering():
+    """Ordered surface: summary → metrics → quality → figure → top match → cards → table → processing → raw → literature."""
+    mod = _import_xrd_page()
+    s = str(mod.layout)
+    pairs = [
+        ("xrd-result-analysis-summary", "xrd-result-metrics"),
+        ("xrd-result-metrics", "xrd-result-quality"),
+        ("xrd-result-quality", "xrd-result-figure"),
+        ("xrd-result-figure", "xrd-result-top-match"),
+        ("xrd-result-top-match", "xrd-result-candidate-cards"),
+        ("xrd-result-candidate-cards", "xrd-result-table"),
+        ("xrd-result-table", "xrd-result-processing"),
+        ("xrd-result-processing", "xrd-result-raw-metadata"),
+        ("xrd-result-raw-metadata", "xrd-literature-compare-btn"),
+    ]
+    for a, b in pairs:
+        assert s.index(a) < s.index(b), f"expected {a} before {b}"
 
 
 def test_layout_places_literature_compare_after_processing():
@@ -277,6 +422,9 @@ def test_xrd_dash_page_import_and_run_via_server():
     detail = detail_response.json()
     assert detail["processing"]["workflow_template_id"] == "xrd.general"
     assert "candidate_count" in detail["summary"]
+    assert "figure_artifacts" in detail
+    assert isinstance(detail["figure_artifacts"], dict)
+    assert "figure_keys" in detail["figure_artifacts"]
 
     curves_response = client.get(f"/workspace/{project_id}/analysis-state/XRD/{dataset_key}")
     assert curves_response.status_code == 200

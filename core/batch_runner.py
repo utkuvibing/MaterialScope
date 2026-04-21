@@ -128,7 +128,7 @@ _XRD_TEMPLATE_DEFAULTS = {
     "xrd.general": {
         "axis_normalization": {"sort_axis": True, "deduplicate": "first", "axis_min": None, "axis_max": None},
         "smoothing": {"method": "savgol", "window_length": 11, "polyorder": 3},
-        "baseline": {"method": "rolling_minimum", "window_length": 31},
+        "baseline": {"method": "rolling_minimum", "window_length": 31, "smoothing_window": 9},
         "peak_detection": {"method": "scipy_find_peaks", "prominence": 0.08, "distance": 6, "width": 2, "max_peaks": 12},
         "method_context": {
             "xrd_match_metric": "peak_overlap_weighted",
@@ -142,7 +142,7 @@ _XRD_TEMPLATE_DEFAULTS = {
     "xrd.phase_screening": {
         "axis_normalization": {"sort_axis": True, "deduplicate": "first", "axis_min": 5.0, "axis_max": 90.0},
         "smoothing": {"method": "savgol", "window_length": 15, "polyorder": 3},
-        "baseline": {"method": "rolling_minimum", "window_length": 41},
+        "baseline": {"method": "rolling_minimum", "window_length": 41, "smoothing_window": 9},
         "peak_detection": {"method": "scipy_find_peaks", "prominence": 0.12, "distance": 8, "width": 3, "max_peaks": 16},
         "method_context": {
             "xrd_match_metric": "peak_overlap_weighted",
@@ -2532,6 +2532,7 @@ def _execute_xrd_batch(
     smoothing = copy.deepcopy((processing.get("signal_pipeline") or {}).get("smoothing") or {})
     baseline = copy.deepcopy((processing.get("signal_pipeline") or {}).get("baseline") or {})
     peak_detection = copy.deepcopy((processing.get("analysis_steps") or {}).get("peak_detection") or {})
+    method_ctx_early = (processing.get("method_context") or {}) if isinstance(processing, Mapping) else {}
 
     axis_min = _coerce_optional_float(axis_normalization.get("axis_min"))
     axis_max = _coerce_optional_float(axis_normalization.get("axis_max"))
@@ -2553,16 +2554,19 @@ def _execute_xrd_batch(
     library_context = manager.library_context("XRD")
     matching_config = _resolve_xrd_matching_config(processing)
     observed_space = _resolve_xrd_observed_space(dataset)
-    wavelength_angstrom = _coerce_optional_float(dataset.metadata.get("xrd_wavelength_angstrom"))
-    xrd_provenance_state = str(
-        (dataset.metadata or {}).get("xrd_provenance_state")
-        or ("complete" if wavelength_angstrom is not None else "incomplete")
-    ).strip()
-    xrd_provenance_warning = str((dataset.metadata or {}).get("xrd_provenance_warning") or "").strip()
-    if not xrd_provenance_warning and xrd_provenance_state.lower() != "complete":
-        xrd_provenance_warning = (
-            "XRD wavelength is not recorded; qualitative phase matching provenance remains incomplete."
-        )
+    wavelength_angstrom = _coerce_optional_float((dataset.metadata or {}).get("xrd_wavelength_angstrom"))
+    if wavelength_angstrom is None:
+        wavelength_angstrom = _coerce_optional_float(method_ctx_early.get("xrd_wavelength_angstrom"))
+    if wavelength_angstrom is not None:
+        xrd_provenance_state = "complete"
+        xrd_provenance_warning = ""
+    else:
+        xrd_provenance_state = str((dataset.metadata or {}).get("xrd_provenance_state") or "incomplete").strip()
+        xrd_provenance_warning = str((dataset.metadata or {}).get("xrd_provenance_warning") or "").strip()
+        if not xrd_provenance_warning:
+            xrd_provenance_warning = (
+                "XRD wavelength is not recorded; qualitative phase matching provenance remains incomplete."
+            )
     cloud_client = get_library_cloud_client()
     cloud_payload: Mapping[str, Any] | None = None
     references: list[dict[str, Any]] = []
@@ -2596,9 +2600,11 @@ def _execute_xrd_batch(
                 ],
                 "axis": axis.tolist(),
                 "signal": corrected.tolist(),
-                "xrd_axis_role": dataset.metadata.get("xrd_axis_role"),
-                "xrd_axis_unit": dataset.metadata.get("xrd_axis_unit") or (dataset.units or {}).get("temperature"),
-                "xrd_wavelength_angstrom": dataset.metadata.get("xrd_wavelength_angstrom"),
+                "xrd_axis_role": method_ctx_early.get("xrd_axis_role") or dataset.metadata.get("xrd_axis_role"),
+                "xrd_axis_unit": method_ctx_early.get("xrd_axis_unit")
+                or dataset.metadata.get("xrd_axis_unit")
+                or (dataset.units or {}).get("temperature"),
+                "xrd_wavelength_angstrom": wavelength_angstrom,
                 "preprocessing_metadata": {
                     "axis_normalization": axis_normalization,
                     "smoothing": smoothing,
@@ -2827,9 +2833,14 @@ def _execute_xrd_batch(
         {
             "batch_run_id": batch_run_id or "",
             "batch_template_runner": "compare_workspace",
-            "xrd_axis_role": dataset.metadata.get("xrd_axis_role") or "two_theta",
-            "xrd_axis_unit": (dataset.metadata.get("xrd_axis_unit") or (dataset.units or {}).get("temperature") or "degree_2theta"),
-            "xrd_wavelength_angstrom": dataset.metadata.get("xrd_wavelength_angstrom"),
+            "xrd_axis_role": method_ctx_early.get("xrd_axis_role") or dataset.metadata.get("xrd_axis_role") or "two_theta",
+            "xrd_axis_unit": (
+                method_ctx_early.get("xrd_axis_unit")
+                or dataset.metadata.get("xrd_axis_unit")
+                or (dataset.units or {}).get("temperature")
+                or "degree_2theta"
+            ),
+            "xrd_wavelength_angstrom": wavelength_angstrom,
             "xrd_provenance_state": xrd_provenance_state,
             "xrd_provenance_warning": xrd_provenance_warning,
             "xrd_comparison_space": observed_space,

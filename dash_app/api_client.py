@@ -228,6 +228,29 @@ def register_result_figure(
         return r.json()
 
 
+def fetch_result_figure_png(
+    project_id: str,
+    result_id: str,
+    figure_key: str,
+    *,
+    max_edge: int | None = None,
+) -> bytes:
+    """Download a registered PNG for this result (GET; same auth as other workspace calls).
+
+    When ``max_edge`` is set, the server may return a downscaled PNG (long edge <= max_edge).
+    """
+    params: dict[str, str | int] = {"figure_key": str(figure_key or "").strip()}
+    if max_edge is not None:
+        params["max_edge"] = int(max_edge)
+    with _client() as c:
+        r = c.get(
+            f"/workspace/{project_id}/results/{result_id}/figure",
+            params=params,
+        )
+        _raise_with_detail(r)
+        return r.content
+
+
 def list_analysis_presets(analysis_type: str) -> dict[str, Any]:
     """List saved processing presets for an analysis type."""
     with _client() as c:

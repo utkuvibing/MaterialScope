@@ -2,9 +2,43 @@
 
 **Purpose:** One active migration slice — scope, goal, and acceptance only.
 
-## Status: no active slice (2026-04-21)
+## Status: active — XRD execution queue (ordered slices) (2026-04-21)
 
-The **FTIR Dash UI copy and validation alignment** slice is **complete**. Start a new slice by replacing the status block above.
+**Execution order (run in sequence; update as slices land):**
+
+1. **Slice 1 — Phase 7 (figure artifacts):** Done — `register_result_figure_from_layout_children` in [`dash_app/components/analysis_page.py`](dash_app/components/analysis_page.py); XRD **Save snapshot** / **Use as report figure** + status in [`dash_app/pages/xrd.py`](dash_app/pages/xrd.py); i18n + tests.
+2. **Slice 2 — Phase 8 (literature / copy):** Done — [`tests/test_xrd_literature_query_builder.py`](tests/test_xrd_literature_query_builder.py) locks XRD query text/rationale to XRD-native language (no thermal leakage); existing `core/literature_compare.py` / `xrd_literature_query_builder.py` XRD path unchanged.
+3. **Slice 3 — Phase 9 (callback-depth):** Done — mocked `dash.callback_context` tests for `xrd_figure_snapshot_or_report_figure` + prior draft/layout tests remain the regression net.
+4. **Slice 4 — Phase 7 (figure gallery + API metadata):** Done — `figure_artifacts` on [`ResultDetailResponse`](backend/models.py) + [`build_result_detail`](backend/detail.py); XRD read-only **Saved figures** card ([`dash_app/pages/xrd.py`](dash_app/pages/xrd.py)); tests [`tests/test_result_detail_figure_artifacts.py`](tests/test_result_detail_figure_artifacts.py).
+5. **Slice 5 — Phase 7 (PNG thumbnails):** Done — `GET /workspace/{project_id}/results/{result_id}/figure?figure_key=` in [`backend/app.py`](backend/app.py) (key must belong to result artifacts); [`fetch_result_figure_png`](dash_app/api_client.py); XRD panel loads up to **6** inline **data URL** previews (server-side authed fetch, no token in browser `src`); tests [`tests/test_backend_figure_get.py`](tests/test_backend_figure_get.py).
+6. **Slice 6 — Phase 7 (preview downscale):** Done — optional `max_edge` query on the same GET ([`backend/app.py`](backend/app.py)); [`core/figure_preview_resize.py`](core/figure_preview_resize.py) (Pillow; invalid/missing Pillow → original bytes); [`fetch_result_figure_png(..., max_edge=...)`](dash_app/api_client.py); XRD previews use [`MAX_XRD_FIGURE_PREVIEW_MAX_EDGE`](dash_app/pages/xrd.py) (320); **Pillow** in [`requirements.txt`](requirements.txt); extended [`tests/test_backend_figure_get.py`](tests/test_backend_figure_get.py).
+
+**Verification (current)**
+
+- `rtk python -m py_compile backend/app.py backend/models.py backend/detail.py core/figure_preview_resize.py dash_app/components/analysis_page.py dash_app/pages/xrd.py dash_app/api_client.py utils/i18n.py tests/test_backend_figure_get.py tests/test_result_detail_figure_artifacts.py tests/test_xrd_dash_page.py`
+- `rtk pytest -q tests/test_backend_figure_get.py tests/test_result_detail_figure_artifacts.py tests/test_analysis_page_components.py::test_register_result_figure_from_layout_children_honors_replace_flag tests/test_analysis_page_components.py::test_register_result_figure_from_layout_children_skips_without_graph tests/test_xrd_dash_page.py tests/test_xrd_processing_draft.py tests/test_xrd_literature_query_builder.py tests/test_dash_figure_capture_wiring.py tests/test_backend_details.py`
+
+---
+
+### Phase 0 — Streamlit (`ui/xrd_page.py`) → Dash XRD parity matrix
+
+Dash implementation baseline: [`dash_app/pages/xrd.py`](dash_app/pages/xrd.py), [`dash_app/components/xrd_processing_draft.py`](dash_app/components/xrd_processing_draft.py), [`dash_app/components/xrd_result_plot.py`](dash_app/components/xrd_result_plot.py), [`dash_app/components/xrd_explore.py`](dash_app/components/xrd_explore.py), [`utils/i18n.py`](utils/i18n.py) (`dash.analysis.xrd.*`).
+
+| Group | Streamlit (`ui/xrd_page.py`) | Dash | Status |
+| --- | --- | --- | --- |
+| Page shell / tabs | `st.tabs`: Raw, Pipeline, Peaks, Matches, Results (exploratory split) | Left: **Setup / Processing / Run**; right: ordered result surface (`dsc-results-surface`) | **Partial** — deliberate mature-shell mapping, not a tab-for-tab clone |
+| Setup / template / dataset | Dataset + template + guide + preset panel patterns | `dataset_selection_card`, `workflow_template_card`, workflow guide, setup review (axis + λ), presets | **Parity** |
+| Input review / λ / provenance | Axis confirm, wavelength, provenance flags, warnings | `xrd-review-*`, `xrd-setup-import-warnings`, validation lines; `apply_dataset_review_to_method_context` via draft | **Parity** |
+| Processing controls | Pipeline + peaks UI sections | Full groups: axis, smooth, baseline, peaks, match, plot (incl. advanced plot block) | **Parity** |
+| Preset lifecycle | `preset_manager` integration | List/load/save/save-as/delete + dirty flag vs snapshot | **Parity** |
+| History undo/redo/reset | History tracker patterns | `xrd-processing-undo/redo/reset`, stacks, hydrate | **Parity** |
+| Run / gating | Run analysis when ready | `execute_card`, `/analysis/run` with `processing_overrides`, template id | **Parity** |
+| Result summary + quality | Results tab summary, validation | Analysis summary, metrics, quality collapsible | **Parity** |
+| Main figure + overlays | Plotly figure with layers + candidate | `build_xrd_result_figure` + overlay dropdown from result cache | **Parity** |
+| Candidate cards + evidence | Cards + table in Matches/Results | `_match_card`, `_build_match_cards`, `_build_xrd_match_table` | **Parity** |
+| Snapshots / report figure | Session `figures_store`, snapshot keys, `report_figure_key` | Auto capture + snapshot/report actions + **Saved figures** panel (`figure_artifacts`) + **GET figure** + **inline PNG previews** (data URLs) | **Parity** for report/export metadata + visual gallery; Streamlit session-only extras out of scope |
+| Literature compare | `render_literature_compare_panel` | Shared card + `literature_t` / `dash.analysis.xrd.literature.*` | **Parity** |
+| i18n | `t` / `tx` keys | `dash.analysis.xrd.*` + dedicated literature subtree | **Parity** (guard tests for TGA key misuse on page) |
 
 ---
 

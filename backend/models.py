@@ -340,6 +340,8 @@ class ResultDetailResponse(BaseModel):
     rows: list[dict[str, Any]] = Field(default_factory=list)
     rows_preview: list[dict[str, Any]]
     row_count: int
+    # PNG bytes live in workspace ``figures``; this is metadata only for UIs (exports, Dash gallery).
+    figure_artifacts: dict[str, Any] = Field(default_factory=dict)
 
 
 class LiteratureUserDocumentInput(BaseModel):

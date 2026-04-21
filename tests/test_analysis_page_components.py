@@ -10,6 +10,7 @@ import dash_app.components.analysis_page as analysis_page_mod
 from dash_app.components.analysis_page import (
     finalized_validation_warning_issue_counts,
     capture_result_figure_from_layout,
+    register_result_figure_from_layout_children,
     dataset_options,
     dataset_selector_block,
     eligible_datasets,
@@ -398,3 +399,62 @@ def test_capture_result_figure_from_layout_reads_serialized_children(monkeypatch
     )
     assert captured["ftir_result_1"]["status"] == "ok"
     assert captured["ftir_result_1"]["label"] == "FTIR Analysis - serialized_source"
+
+
+def test_register_result_figure_from_layout_children_honors_replace_flag(monkeypatch):
+    import dash_app.api_client as api_client
+
+    register_calls: list[dict] = []
+
+    monkeypatch.setattr(
+        analysis_page_mod,
+        "render_plotly_figure_png",
+        lambda _fig, **_k: (b"\x89PNG\r\n\x1a\nFAKE", None),
+    )
+    monkeypatch.setattr(
+        api_client,
+        "register_result_figure",
+        lambda pid, rid, png_bytes, *, label, replace=False: register_calls.append(
+            {"pid": pid, "rid": rid, "label": label, "replace": replace}
+        )
+        or {"figure_key": label, "figure_keys": [label]},
+    )
+
+    children = html.Div(
+        dcc.Graph(
+            figure=go.Figure(
+                data=[go.Scatter(x=[1.0, 2.0], y=[1.0, 2.0], mode="lines", name="X")]
+            )
+        )
+    )
+    snap = register_result_figure_from_layout_children(
+        figure_children=children,
+        project_id="p1",
+        result_id="r1",
+        label="XRD Snapshot - ds - 20260101T000000Z",
+        replace=False,
+    )
+    assert snap["status"] == "ok"
+    assert register_calls[-1]["replace"] is False
+
+    rep = register_result_figure_from_layout_children(
+        figure_children=children,
+        project_id="p1",
+        result_id="r1",
+        label="XRD Analysis - ds",
+        replace=True,
+    )
+    assert rep["status"] == "ok"
+    assert register_calls[-1]["replace"] is True
+
+
+def test_register_result_figure_from_layout_children_skips_without_graph():
+    out = register_result_figure_from_layout_children(
+        figure_children=html.Div("no graph"),
+        project_id="p",
+        result_id="r",
+        label="L",
+        replace=False,
+    )
+    assert out["status"] == "skipped"
+    assert out["reason"] == "no_graph_in_layout"
