@@ -6,7 +6,7 @@
 
 - **Project:** MaterialScope
 - **Branch:** `web-dash-plotly-migration`
-- **Last slice:** FTIR Dash page — modality-specific UI copy, validation count alignment, library-unavailable presentation, quieter pre-run empty state (committed and pushed; see latest commit on branch).
+- **Last slice:** FTIR Dash page — modality-specific UI copy, validation count alignment, library-unavailable presentation, quieter pre-run empty state — **committed and pushed** (`feac858`).
 
 ## What was done this session
 
