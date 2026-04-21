@@ -250,6 +250,7 @@ BACKEND_STARTUP_TIMEOUT_SECONDS=30
 ## Local Cloud-Library Development
 
 Use the same repo-root `.env` for Dash (`dash_app/server.py`), Streamlit (`app.py`), and backend (`backend/app.py`).
+**Start from [`.env.example`](.env.example)** — it lists the combined-Dash (8050) case first, then split-backend (8000), then legacy names.
 
 **Combined Dash + FastAPI (typical Linux / WSL dev):** the managed-library client must target the same HTTP
 origin as `/v1/library/*`. With `python -m dash_app.server` you usually want port **8050** (or omit
@@ -270,9 +271,10 @@ MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC=false
 MATERIALSCOPE_LIBRARY_CLOUD_URL=http://127.0.0.1:8000
 MATERIALSCOPE_LIBRARY_CLOUD_ENABLED=true
 MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH=true
-MATERIALSCOPE_LIBRARY_MIRROR_ROOT=C:\materialscope\build\reference_library_mirror_live
-MATERIALSCOPE_LIBRARY_HOSTED_ROOT=C:\materialscope\build\reference_library_hosted
 MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC=false
+# Optional mirror/hosted: omit on Linux/WSL (repo defaults), or use POSIX paths.
+# MATERIALSCOPE_LIBRARY_MIRROR_ROOT=C:\materialscope\build\reference_library_mirror_live
+# MATERIALSCOPE_LIBRARY_HOSTED_ROOT=C:\materialscope\build\reference_library_hosted
 ```
 
 Notes:
