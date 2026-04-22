@@ -235,6 +235,7 @@ def test_execute_dsc_batch_template_saves_normalized_record(thermal_dataset):
     assert outcome["record"]["processing"]["workflow_template_id"] == "dsc.polymer_tg"
     assert outcome["record"]["processing"]["workflow_template_version"] == 1
     assert outcome["record"]["processing"]["method_context"]["batch_run_id"] == "batch_dsc_demo"
+    assert outcome["record"]["processing"]["signal_pipeline"]["normalization"] == {"enabled": True}
     assert outcome["record"]["provenance"]["batch_run_id"] == "batch_dsc_demo"
     assert outcome["record"]["review"]["batch_runner"] == "compare_workspace"
     assert outcome["validation"]["status"] in {"pass", "warn"}
@@ -243,6 +244,40 @@ def test_execute_dsc_batch_template_saves_normalized_record(thermal_dataset):
     assert "dtg" in outcome["state"]
     assert np.asarray(outcome["state"]["dtg"]).size > 0
     assert outcome["summary_row"]["execution_status"] == "saved"
+
+
+def test_execute_dsc_batch_template_honors_normalization_override(thermal_dataset):
+    dataset = thermal_dataset.copy()
+
+    normalized = execute_batch_template(
+        dataset_key="synthetic_dsc_norm_on",
+        dataset=dataset,
+        analysis_type="DSC",
+        workflow_template_id="dsc.general",
+        batch_run_id="batch_dsc_norm_on",
+    )
+    raw = execute_batch_template(
+        dataset_key="synthetic_dsc_norm_off",
+        dataset=dataset,
+        analysis_type="DSC",
+        workflow_template_id="dsc.general",
+        existing_processing={"signal_pipeline": {"normalization": {"enabled": False}}},
+        batch_run_id="batch_dsc_norm_off",
+    )
+
+    assert normalized["status"] == "saved"
+    assert raw["status"] == "saved"
+    assert normalized["record"]["processing"]["signal_pipeline"]["normalization"] == {"enabled": True}
+    assert raw["record"]["processing"]["signal_pipeline"]["normalization"] == {"enabled": False}
+
+    normalized_smoothed = np.asarray(normalized["state"]["smoothed"], dtype=float)
+    raw_smoothed = np.asarray(raw["state"]["smoothed"], dtype=float)
+    np.testing.assert_allclose(
+        normalized_smoothed,
+        raw_smoothed / float(dataset.metadata["sample_mass"]),
+        rtol=1e-6,
+        atol=1e-9,
+    )
 
 
 def test_execute_tga_batch_template_saves_normalized_record(temperature_range, tga_signal):

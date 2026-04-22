@@ -105,6 +105,9 @@ _DSC_GLASS_TRANSITION_DEFAULTS: dict = {
     "mode": "auto",
     "region": None,
 }
+_DSC_NORMALIZATION_DEFAULTS: dict = {
+    "enabled": True,
+}
 _DSC_USER_FACING_METADATA_KEYS: frozenset[str] = frozenset({
     "sample_name",
     "display_name",
@@ -123,6 +126,7 @@ def _default_processing_draft() -> dict:
     return {
         "smoothing": copy.deepcopy(_DSC_SMOOTHING_DEFAULTS["savgol"]),
         "baseline": copy.deepcopy(_DSC_BASELINE_DEFAULTS["asls"]),
+        "normalization": copy.deepcopy(_DSC_NORMALIZATION_DEFAULTS),
         "peak_detection": copy.deepcopy(_DSC_PEAK_DETECTION_DEFAULTS),
         "glass_transition": copy.deepcopy(_DSC_GLASS_TRANSITION_DEFAULTS),
     }
@@ -246,15 +250,112 @@ def _normalize_glass_transition_values(enabled, rmin, rmax) -> dict:
     return {"mode": "auto", "region": [lower, upper]}
 
 
+def _normalize_normalization_values(enabled) -> dict:
+    if isinstance(enabled, str):
+        token = enabled.strip().lower()
+        if token in {"0", "false", "off", "no"}:
+            return {"enabled": False}
+        if token in {"1", "true", "on", "yes"}:
+            return {"enabled": True}
+    if enabled in (None, ""):
+        return copy.deepcopy(_DSC_NORMALIZATION_DEFAULTS)
+    return {"enabled": bool(enabled)}
+
+
+def _normalize_dsc_processing_draft(draft: dict | None) -> dict:
+    draft_payload = dict(draft or {})
+    smoothing = draft_payload.get("smoothing")
+    baseline = draft_payload.get("baseline")
+    normalization = draft_payload.get("normalization")
+    peak_detection = draft_payload.get("peak_detection")
+    glass_transition = draft_payload.get("glass_transition")
+
+    if isinstance(smoothing, dict):
+        smoothing = _normalize_smoothing_values(
+            smoothing.get("method"),
+            smoothing.get("window_length"),
+            smoothing.get("polyorder"),
+            smoothing.get("sigma"),
+        )
+    else:
+        smoothing = copy.deepcopy(_DSC_SMOOTHING_DEFAULTS["savgol"])
+
+    if isinstance(baseline, dict):
+        baseline_region = baseline.get("region")
+        baseline_enabled = isinstance(baseline_region, (list, tuple)) and len(baseline_region) == 2
+        baseline = _normalize_baseline_values(
+            baseline.get("method"),
+            baseline.get("lam"),
+            baseline.get("p"),
+            baseline.get("poly_order"),
+            baseline.get("max_half_window"),
+            baseline.get("n_anchors"),
+            baseline_enabled,
+            baseline_region[0] if baseline_enabled else None,
+            baseline_region[1] if baseline_enabled else None,
+        )
+    else:
+        baseline = copy.deepcopy(_DSC_BASELINE_DEFAULTS["asls"])
+
+    if isinstance(normalization, dict):
+        normalization = _normalize_normalization_values(normalization.get("enabled"))
+    else:
+        normalization = copy.deepcopy(_DSC_NORMALIZATION_DEFAULTS)
+
+    if isinstance(peak_detection, dict):
+        peak_detection = _normalize_peak_detection_values(
+            peak_detection.get("direction"),
+            peak_detection.get("prominence"),
+            peak_detection.get("distance"),
+        )
+    else:
+        peak_detection = copy.deepcopy(_DSC_PEAK_DETECTION_DEFAULTS)
+
+    if isinstance(glass_transition, dict):
+        tg_region = glass_transition.get("region")
+        tg_enabled = isinstance(tg_region, (list, tuple)) and len(tg_region) == 2
+        glass_transition = _normalize_glass_transition_values(
+            tg_enabled,
+            tg_region[0] if tg_enabled else None,
+            tg_region[1] if tg_enabled else None,
+        )
+    else:
+        glass_transition = copy.deepcopy(_DSC_GLASS_TRANSITION_DEFAULTS)
+
+    return {
+        "smoothing": smoothing,
+        "baseline": baseline,
+        "normalization": normalization,
+        "peak_detection": peak_detection,
+        "glass_transition": glass_transition,
+    }
+
+
+def _dsc_draft_from_loaded_processing(processing: dict | None) -> dict:
+    if not isinstance(processing, dict):
+        return copy.deepcopy(_default_processing_draft())
+    signal_pipeline = processing.get("signal_pipeline") or {}
+    analysis_steps = processing.get("analysis_steps") or {}
+    return _normalize_dsc_processing_draft(
+        {
+            "smoothing": signal_pipeline.get("smoothing") if isinstance(signal_pipeline.get("smoothing"), dict) else processing.get("smoothing"),
+            "baseline": signal_pipeline.get("baseline") if isinstance(signal_pipeline.get("baseline"), dict) else processing.get("baseline"),
+            "normalization": signal_pipeline.get("normalization") if isinstance(signal_pipeline.get("normalization"), dict) else processing.get("normalization"),
+            "peak_detection": analysis_steps.get("peak_detection") if isinstance(analysis_steps.get("peak_detection"), dict) else processing.get("peak_detection"),
+            "glass_transition": analysis_steps.get("glass_transition") if isinstance(analysis_steps.get("glass_transition"), dict) else processing.get("glass_transition"),
+        }
+    )
+
+
 def _apply_draft_section(draft: dict | None, section: str, values: dict) -> dict:
-    next_draft = copy.deepcopy(draft or {})
+    next_draft = _normalize_dsc_processing_draft(draft)
     next_draft[section] = copy.deepcopy(values)
-    return next_draft
+    return _normalize_dsc_processing_draft(next_draft)
 
 
 def _push_undo(undo: list | None, snapshot: dict | None) -> list:
     stack = list(undo or [])
-    stack.append(copy.deepcopy(snapshot or {}))
+    stack.append(_normalize_dsc_processing_draft(snapshot))
     if len(stack) > _UNDO_STACK_LIMIT:
         stack = stack[-_UNDO_STACK_LIMIT:]
     return stack
@@ -264,34 +365,35 @@ def _do_undo(draft: dict, undo: list | None, redo: list | None) -> tuple[dict, l
     undo_stack = list(undo or [])
     redo_stack = list(redo or [])
     if not undo_stack:
-        return copy.deepcopy(draft or {}), undo_stack, redo_stack
-    previous = undo_stack.pop()
-    redo_stack.append(copy.deepcopy(draft or {}))
-    return copy.deepcopy(previous), undo_stack, redo_stack
+        return _normalize_dsc_processing_draft(draft), undo_stack, redo_stack
+    previous = _normalize_dsc_processing_draft(undo_stack.pop())
+    redo_stack.append(_normalize_dsc_processing_draft(draft))
+    return previous, undo_stack, redo_stack
 
 
 def _do_redo(draft: dict, undo: list | None, redo: list | None) -> tuple[dict, list, list]:
     undo_stack = list(undo or [])
     redo_stack = list(redo or [])
     if not redo_stack:
-        return copy.deepcopy(draft or {}), undo_stack, redo_stack
-    following = redo_stack.pop()
-    undo_stack.append(copy.deepcopy(draft or {}))
-    return copy.deepcopy(following), undo_stack, redo_stack
+        return _normalize_dsc_processing_draft(draft), undo_stack, redo_stack
+    following = _normalize_dsc_processing_draft(redo_stack.pop())
+    undo_stack.append(_normalize_dsc_processing_draft(draft))
+    return following, undo_stack, redo_stack
 
 
 def _do_reset(draft: dict, undo: list | None, redo: list | None, defaults: dict | None) -> tuple[dict, list, list]:
-    reset_target = copy.deepcopy(defaults or _default_processing_draft())
-    if (draft or {}) == reset_target:
+    reset_target = _normalize_dsc_processing_draft(defaults or _default_processing_draft())
+    current = _normalize_dsc_processing_draft(draft)
+    if current == reset_target:
         return reset_target, list(undo or []), list(redo or [])
-    undo_stack = _push_undo(undo, draft)
+    undo_stack = _push_undo(undo, current)
     return reset_target, undo_stack, []
 
 
 def _overrides_from_draft(draft: dict | None) -> dict:
-    draft_payload = dict(draft or {})
+    draft_payload = _normalize_dsc_processing_draft(draft)
     combined: dict[str, dict] = {}
-    for section in ("smoothing", "baseline", "peak_detection", "glass_transition"):
+    for section in ("smoothing", "baseline", "normalization", "peak_detection", "glass_transition"):
         values = draft_payload.get(section)
         if isinstance(values, dict):
             combined[section] = copy.deepcopy(values)
@@ -379,6 +481,19 @@ def _preset_controls_card() -> dbc.Card:
                 ),
                 dbc.Button(id="dsc-preset-save-btn", color="primary", size="sm", className="mb-2"),
                 html.Div(id="dsc-preset-status", className="small text-muted"),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
+def _normalization_setup_card() -> dbc.Card:
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H5(id="dsc-normalization-card-title", className="card-title mb-2"),
+                html.P(id="dsc-normalization-card-hint", className="small text-muted mb-2"),
+                dbc.Checkbox(id="dsc-normalization-enabled", value=True, label=" "),
             ]
         ),
         className="mb-3",
@@ -713,6 +828,7 @@ def _dsc_left_column_tabs() -> dbc.Tabs:
                 [
                     dataset_selection_card("dsc-dataset-selector-area", card_title_id="dsc-dataset-card-title"),
                     html.Div(id="dsc-prerun-dataset-info", className="mb-3"),
+                    _normalization_setup_card(),
                     workflow_template_card(
                         "dsc-template-select",
                         "dsc-template-description",
@@ -987,6 +1103,21 @@ def render_dsc_processing_history_chrome(locale_data):
         translate_ui(loc, "dash.analysis.dsc.processing.undo_btn"),
         translate_ui(loc, "dash.analysis.dsc.processing.redo_btn"),
         translate_ui(loc, "dash.analysis.dsc.processing.reset_btn"),
+    )
+
+
+@callback(
+    Output("dsc-normalization-card-title", "children"),
+    Output("dsc-normalization-card-hint", "children"),
+    Output("dsc-normalization-enabled", "label"),
+    Input("ui-locale", "data"),
+)
+def render_dsc_normalization_chrome(locale_data):
+    loc = _loc(locale_data)
+    return (
+        translate_ui(loc, "dash.analysis.dsc.normalization.title"),
+        translate_ui(loc, "dash.analysis.dsc.normalization.hint"),
+        translate_ui(loc, "dash.analysis.dsc.normalization.enable"),
     )
 
 
@@ -1266,11 +1397,7 @@ def apply_dsc_preset(n_clicks, selected_name, draft, undo, locale_data):
         )
 
     processing = dict(payload.get("processing") or {})
-    next_draft = copy.deepcopy(draft or _default_processing_draft())
-    for section in ("smoothing", "baseline", "peak_detection", "glass_transition"):
-        values = processing.get(section)
-        if isinstance(values, dict):
-            next_draft[section] = copy.deepcopy(values)
+    next_draft = _dsc_draft_from_loaded_processing(processing)
 
     template_id_raw = str(payload.get("workflow_template_id") or "").strip()
     template_output = template_id_raw if template_id_raw in _DSC_TEMPLATE_IDS else dash.no_update
@@ -1452,6 +1579,24 @@ def render_dsc_baseline_region_chrome(locale_data):
     Output("dsc-processing-draft", "data", allow_duplicate=True),
     Output("dsc-processing-undo", "data", allow_duplicate=True),
     Output("dsc-processing-redo", "data", allow_duplicate=True),
+    Input("dsc-normalization-enabled", "value"),
+    State("dsc-processing-draft", "data"),
+    State("dsc-processing-undo", "data"),
+    prevent_initial_call=True,
+)
+def sync_dsc_normalization_from_setup(enabled, draft, undo):
+    current = _normalize_dsc_processing_draft(draft)
+    next_draft = copy.deepcopy(current)
+    next_draft["normalization"] = _normalize_normalization_values(enabled)
+    if next_draft == current:
+        raise dash.exceptions.PreventUpdate
+    return next_draft, _push_undo(undo, current), []
+
+
+@callback(
+    Output("dsc-processing-draft", "data", allow_duplicate=True),
+    Output("dsc-processing-undo", "data", allow_duplicate=True),
+    Output("dsc-processing-redo", "data", allow_duplicate=True),
     Input("dsc-smooth-apply-btn", "n_clicks"),
     State("dsc-smooth-method", "value"),
     State("dsc-smooth-window", "value"),
@@ -1560,7 +1705,7 @@ def dsc_processing_history_actions(n_undo, n_redo, n_reset, draft, undo, redo, d
     if not ctx.triggered:
         raise dash.exceptions.PreventUpdate
     trig = ctx.triggered_id
-    cur = draft or {}
+    cur = _normalize_dsc_processing_draft(draft)
 
     if trig == "dsc-undo-btn":
         if not n_undo:
@@ -1662,6 +1807,15 @@ def _tg_status_text(draft: dict | None, loc: str) -> str:
 
 
 @callback(
+    Output("dsc-normalization-enabled", "value"),
+    Input("dsc-processing-draft", "data"),
+)
+def sync_normalization_control(draft):
+    values = _normalize_dsc_processing_draft(draft).get("normalization") or {}
+    return bool(values.get("enabled", True))
+
+
+@callback(
     Output("dsc-smooth-method", "value"),
     Output("dsc-smooth-window", "value"),
     Output("dsc-smooth-polyorder", "value"),
@@ -1678,15 +1832,17 @@ def _tg_status_text(draft: dict | None, loc: str) -> str:
 )
 def sync_smoothing_controls(draft, undo, redo, defaults, locale_data):
     loc = _loc(locale_data)
-    values = (draft or {}).get("smoothing") or {}
+    normalized_draft = _normalize_dsc_processing_draft(draft)
+    normalized_defaults = _normalize_dsc_processing_draft(defaults)
+    values = normalized_draft.get("smoothing") or {}
     method = str(values.get("method") or "savgol")
     window_length = values.get("window_length", 11)
     polyorder = values.get("polyorder", 3)
     sigma = values.get("sigma", 2.0)
-    status = _smoothing_status_text(draft, loc)
+    status = _smoothing_status_text(normalized_draft, loc)
     undo_disabled = not bool(undo)
     redo_disabled = not bool(redo)
-    reset_disabled = (draft or {}) == (defaults or {})
+    reset_disabled = normalized_draft == normalized_defaults
     return method, window_length, polyorder, sigma, status, undo_disabled, redo_disabled, reset_disabled
 
 
@@ -1901,6 +2057,18 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
     proc_view = processing_details_section(
         processing,
         extra_lines=[
+            html.P(
+                translate_ui(
+                    loc,
+                    "dash.analysis.dsc.normalization",
+                    detail=translate_ui(
+                        loc,
+                        "dash.analysis.dsc.normalization.enabled"
+                        if bool((processing.get("signal_pipeline", {}).get("normalization", {}) or {}).get("enabled", True))
+                        else "dash.analysis.dsc.normalization.disabled",
+                    ),
+                )
+            ),
             html.P(translate_ui(loc, "dash.analysis.dsc.baseline", detail=processing.get("signal_pipeline", {}).get("baseline", {}))),
             html.P(
                 translate_ui(
@@ -2468,6 +2636,7 @@ def _build_dsc_processing_expansion_blocks(processing: dict, loc: str) -> html.D
     blocks: list[Any] = []
     pairs = [
         ("dash.analysis.dsc.processing.block_smoothing", sp.get("smoothing")),
+        ("dash.analysis.dsc.processing.block_normalization", sp.get("normalization")),
         ("dash.analysis.dsc.processing.block_baseline", sp.get("baseline")),
         ("dash.analysis.dsc.processing.block_peaks", asteps.get("peak_detection")),
         ("dash.analysis.dsc.processing.block_tg", asteps.get("glass_transition")),

@@ -41,18 +41,21 @@ _DSC_TEMPLATE_DEFAULTS = {
     "dsc.general": {
         "smoothing": {"method": "savgol", "window_length": 11, "polyorder": 3},
         "baseline": {"method": "asls"},
+        "normalization": {"enabled": True},
         "peak_detection": {"direction": "both"},
         "glass_transition": {"mode": "auto", "region": None},
     },
     "dsc.polymer_tg": {
         "smoothing": {"method": "savgol", "window_length": 15, "polyorder": 3},
         "baseline": {"method": "asls"},
+        "normalization": {"enabled": True},
         "peak_detection": {"direction": "both"},
         "glass_transition": {"mode": "auto", "region": None},
     },
     "dsc.polymer_melting_crystallization": {
         "smoothing": {"method": "savgol", "window_length": 11, "polyorder": 3},
         "baseline": {"method": "asls"},
+        "normalization": {"enabled": True},
         "peak_detection": {"direction": "both"},
         "glass_transition": {"mode": "auto", "region": None},
     },
@@ -328,8 +331,16 @@ def _execute_dsc_batch(
 
     smoothing = copy.deepcopy((processing.get("signal_pipeline") or {}).get("smoothing") or {})
     baseline = copy.deepcopy((processing.get("signal_pipeline") or {}).get("baseline") or {})
+    normalization = copy.deepcopy((processing.get("signal_pipeline") or {}).get("normalization") or {})
     peak_detection = copy.deepcopy((processing.get("analysis_steps") or {}).get("peak_detection") or {})
     glass_transition = copy.deepcopy((processing.get("analysis_steps") or {}).get("glass_transition") or {})
+    normalization_enabled = bool(normalization.get("enabled", True))
+    processing = update_processing_step(
+        processing,
+        "normalization",
+        {"enabled": normalization_enabled},
+        analysis_type="DSC",
+    )
     if peak_detection.get("prominence") in ("", 0, 0.0, None):
         peak_detection["prominence"] = None
     if peak_detection.get("distance") in ("", 0, 0.0, 1, None):
@@ -344,7 +355,8 @@ def _execute_dsc_batch(
 
     smooth_method = smoothing.pop("method", "savgol")
     processor.smooth(method=smooth_method, **smoothing)
-    processor.normalize()
+    if normalization_enabled:
+        processor.normalize()
     smoothed_signal = processor.get_result().smoothed_signal.copy()
 
     baseline_method = baseline.pop("method", "asls")

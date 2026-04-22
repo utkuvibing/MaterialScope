@@ -1,6 +1,36 @@
 # Decisions — MaterialScope
-
+ 
 **This file is the only durable log for design, architecture, and workflow commitments.** Session notes belong in **`.ai/SESSION.md`**; slice completion in **`.ai/TASK.md`**; defects in **`.ai/BUGS.md`**. Process details: **`.cursor/rules/00-workflow.mdc`**.
+ 
+---
+
+## 2026-04-22 — P0-5 completed: DSC mass normalization is a first-class processing step with default-ON backward compatibility
+
+**Decision:**
+
+1. DSC mass normalization is implemented as a first-class **`normalization`** processing section, not as ad-hoc UI state or `method_context`.
+2. The Dash DSC page exposes the control in the **Setup** tab, but the selected value persists end-to-end through **processing draft defaults, hydration, preset save/load, undo/redo/reset history, and `/analysis/run` processing overrides**.
+3. Backend DSC batch execution in `core/batch_runner.py` honors **`signal_pipeline.normalization.enabled`** explicitly and records the resolved normalization state in saved processing payloads.
+4. The default remains **enabled / on** so that introducing the control does not silently change existing scientific behavior for current templates and saved flows.
+
+**Reason:** The missing Dash control was a real parity gap, but the pre-existing backend behavior already normalized DSC by mass whenever sample mass was available. Making normalization explicit while preserving the old effective default closes the parity gap without introducing silent output drift.
+
+**Consequence / future:** Any future DSC UX/report/export work should treat normalization state as part of the authoritative processing trace. If product later wants to change the default, that must be treated as an intentional behavior change and called out separately.
+
+---
+
+## 2026-04-22 — P0-5 planning: DSC mass normalization will be user-controlled but default ON
+
+**Decision:**
+
+1. DSC Dash will gain an explicit **Normalize by mass** control, exposed in the **Setup** flow, but the effective normalization state must persist end-to-end through **draft/default state, preset save/load, undo/redo/reset history, run payloads, and backend execution**.
+2. The default for the new control is **enabled / on** unless an existing saved draft, preset, or other persisted processing payload explicitly records a different value.
+3. Backend DSC execution must **honor the selected value explicitly** instead of always normalizing whenever sample mass exists.
+4. This slice is intended to **close the Dash control gap without introducing a silent scientific behavior regression** for existing datasets and saved flows that already depend on today's effective always-normalized behavior.
+
+**Reason:** Users requested the missing Dash control parity, but switching the default to opt-in would silently change current DSC results for datasets with recorded sample mass. Preserving the current effective default while making the behavior explicit is the smallest safe P0 fix.
+
+**Consequence / future:** DSC processing and saved-result traces should record whether mass normalization was enabled so later UX/reporting work can surface the basis clearly. A future product decision may still change the default, but that would be a deliberate behavior change rather than an incidental side-effect of adding the control.
 
 ---
 

@@ -78,6 +78,8 @@ def test_layout_contains_parity_ids_and_stores():
         "dsc-result-table",
         "dsc-result-processing",
         "dsc-prerun-dataset-info",
+        "dsc-normalization-card-title",
+        "dsc-normalization-enabled",
         "dsc-literature-compare-btn",
     ]
     for element_id in expected_ids:
@@ -95,14 +97,24 @@ def test_default_processing_draft_has_all_sections():
     mod = _import_dsc_page()
     defaults = mod._default_processing_draft()
 
-    assert set(defaults.keys()) == {"smoothing", "baseline", "peak_detection", "glass_transition"}
+    assert set(defaults.keys()) == {"smoothing", "baseline", "normalization", "peak_detection", "glass_transition"}
     assert defaults["smoothing"]["method"] == "savgol"
     assert defaults["baseline"]["method"] == "asls"
     assert defaults["baseline"].get("region") is None
+    assert defaults["normalization"] == {"enabled": True}
     assert defaults["peak_detection"]["direction"] == "both"
     assert defaults["peak_detection"]["prominence"] is None
     assert defaults["peak_detection"]["distance"] is None
     assert defaults["glass_transition"] == {"mode": "auto", "region": None}
+
+
+def test_normalize_normalization_values_defaults_to_enabled():
+    mod = _import_dsc_page()
+
+    assert mod._normalize_normalization_values(None) == {"enabled": True}
+    assert mod._normalize_normalization_values(True) == {"enabled": True}
+    assert mod._normalize_normalization_values(False) == {"enabled": False}
+    assert mod._normalize_normalization_values("off") == {"enabled": False}
 
 
 def test_normalize_peak_detection_values_sanitizes_direction_and_distance():
@@ -138,6 +150,18 @@ def test_undo_redo_reset_cycle_for_processing_draft():
     assert redo_reset == []
 
 
+def test_sync_dsc_normalization_from_setup_updates_draft_and_undo():
+    mod = _import_dsc_page()
+    defaults = mod._default_processing_draft()
+
+    next_draft, undo, redo = mod.sync_dsc_normalization_from_setup(False, defaults, [])
+
+    assert next_draft["normalization"] == {"enabled": False}
+    assert undo == [defaults]
+    assert redo == []
+    assert mod.sync_normalization_control(next_draft) is False
+
+
 def test_overrides_from_draft_includes_all_user_sections():
     mod = _import_dsc_page()
 
@@ -145,23 +169,25 @@ def test_overrides_from_draft_includes_all_user_sections():
         {
             "smoothing": {"method": "savgol", "window_length": 15, "polyorder": 3},
             "baseline": {"method": "asls", "lam": 1e6, "p": 0.01, "region": [40.0, 200.0]},
+            "normalization": {"enabled": False},
             "peak_detection": {"direction": "down", "prominence": 0.02, "distance": 4},
             "glass_transition": {"mode": "auto", "region": [90.0, 180.0]},
             "other": {"ignored": True},
         }
     )
 
-    assert set(overrides.keys()) == {"smoothing", "baseline", "peak_detection", "glass_transition"}
+    assert set(overrides.keys()) == {"smoothing", "baseline", "normalization", "peak_detection", "glass_transition"}
     assert overrides["baseline"]["region"] == [40.0, 200.0]
+    assert overrides["normalization"] == {"enabled": False}
 
 
 def test_normalize_baseline_values_optional_region():
     mod = _import_dsc_page()
 
-    base = mod._normalize_baseline_values("asls", 1e6, 0.01, False, 10, 200)
+    base = mod._normalize_baseline_values("asls", 1e6, 0.01, region_enabled=False, region_min=10, region_max=200)
     assert base["region"] is None
 
-    restricted = mod._normalize_baseline_values("asls", 1e6, 0.01, True, 30.0, 180.0)
+    restricted = mod._normalize_baseline_values("asls", 1e6, 0.01, region_enabled=True, region_min=30.0, region_max=180.0)
     assert restricted["region"] == [30.0, 180.0]
 
 
@@ -218,6 +244,47 @@ def test_toggle_preset_action_buttons_requires_selection():
     assert mod.toggle_dsc_preset_action_buttons(None) == (True, True)
     assert mod.toggle_dsc_preset_action_buttons("  ") == (True, True)
     assert mod.toggle_dsc_preset_action_buttons("polymer-default") == (False, False)
+
+
+def test_apply_dsc_preset_loads_normalization_from_processing(monkeypatch):
+    mod = _import_dsc_page()
+    import dash_app.api_client as api_client
+
+    monkeypatch.setattr(
+        api_client,
+        "load_analysis_preset",
+        lambda *_args, **_kwargs: {
+            "workflow_template_id": "dsc.general",
+            "processing": {
+                "signal_pipeline": {
+                    "smoothing": {"method": "savgol", "window_length": 17, "polyorder": 3},
+                    "baseline": {"method": "asls", "lam": 1e5, "p": 0.02},
+                    "normalization": {"enabled": False},
+                },
+                "analysis_steps": {
+                    "peak_detection": {"direction": "up", "prominence": 0.01, "distance": 3},
+                    "glass_transition": {"mode": "auto", "region": [95.0, 180.0]},
+                },
+            },
+        },
+    )
+
+    defaults = mod._default_processing_draft()
+    next_draft, undo, redo, template_value, status, active_tab = mod.apply_dsc_preset(
+        1,
+        "preset-a",
+        defaults,
+        [],
+        "en",
+    )
+
+    assert next_draft["normalization"] == {"enabled": False}
+    assert next_draft["smoothing"]["window_length"] == 17
+    assert undo == [defaults]
+    assert redo == []
+    assert template_value == "dsc.general"
+    assert active_tab == "dsc-tab-run"
+    assert "preset-a" in status
 
 
 def test_build_event_cards_compacts_secondary_events():
@@ -306,6 +373,7 @@ def test_run_dsc_analysis_forwards_draft_overrides_and_refreshes(monkeypatch):
     draft = {
         "smoothing": {"method": "savgol", "window_length": 21, "polyorder": 3},
         "baseline": {"method": "asls", "lam": 1e5, "p": 0.02},
+        "normalization": {"enabled": False},
         "peak_detection": {"direction": "both", "prominence": 0.01, "distance": 2},
         "glass_transition": {"mode": "auto", "region": [90.0, 190.0]},
     }
@@ -406,6 +474,7 @@ def test_display_result_returns_new_surface_sections(monkeypatch):
                 "signal_pipeline": {
                     "smoothing": {"method": "savgol", "window_length": 11, "polyorder": 3},
                     "baseline": {"method": "asls", "lam": 1e6, "p": 0.01},
+                    "normalization": {"enabled": False},
                 },
                 "analysis_steps": {
                     "peak_detection": {"direction": "both", "prominence": 0.0, "distance": 1},
@@ -454,6 +523,7 @@ def test_display_result_returns_new_surface_sections(monkeypatch):
     assert len(outputs) == 9
     for item in outputs:
         assert item is not None
+    assert "Mass normalization: disabled" in str(outputs[7])
 
 
 def test_layout_places_figure_before_raw_metadata():
