@@ -165,6 +165,19 @@ def test_normalize_baseline_values_optional_region():
     assert restricted["region"] == [30.0, 180.0]
 
 
+def test_render_dsc_baseline_chrome_emits_extended_parameter_hints():
+    mod = _import_dsc_page()
+
+    tr = mod.render_dsc_baseline_chrome("tr")
+    en = mod.render_dsc_baseline_chrome("en")
+
+    assert len(tr) == 14 and len(en) == 14
+    assert "airPLS" in tr[2] and "airPLS" in en[2]
+    assert "polinom" in tr[11].lower() and "polynomial" in en[11].lower()
+    assert "snip" in tr[12].lower() and "snip" in en[12].lower()
+    assert "ankraj" in tr[13].lower() and "anchor" in en[13].lower()
+
+
 def test_build_derivative_panel_renders_when_dtg_present(monkeypatch):
     mod = _import_dsc_page()
     import dash_app.api_client as api_client

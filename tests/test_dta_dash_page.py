@@ -1120,6 +1120,21 @@ def test_normalize_baseline_values_gates_asls_params():
     asls = mod._normalize_baseline_values("asls", lam=50000, p=0.02)
     assert asls == {"method": "asls", "lam": 50000.0, "p": 0.02}
 
+    airpls = mod._normalize_baseline_values("airpls", lam=75000, p=0.02)
+    assert airpls == {"method": "airpls", "lam": 75000.0}
+
+    modpoly = mod._normalize_baseline_values("modpoly", lam=None, p=None, poly_order=7)
+    assert modpoly == {"method": "modpoly", "poly_order": 7}
+
+    imodpoly = mod._normalize_baseline_values("imodpoly", lam=None, p=None, poly_order=5)
+    assert imodpoly == {"method": "imodpoly", "poly_order": 5}
+
+    snip = mod._normalize_baseline_values("snip", lam=None, p=None, poly_order=None, max_half_window=33)
+    assert snip == {"method": "snip", "max_half_window": 33}
+
+    spline = mod._normalize_baseline_values("spline", lam=None, p=None, poly_order=None, max_half_window=None, n_anchors=8)
+    assert spline == {"method": "spline", "n_anchors": 8}
+
     linear = mod._normalize_baseline_values("linear", lam=123, p=0.5)
     assert linear == {"method": "linear"}
 
@@ -1133,6 +1148,70 @@ def test_normalize_baseline_values_gates_asls_params():
     assert clamped["method"] == "asls"
     assert clamped["lam"] == 1e-3
     assert clamped["p"] == 0.5
+
+
+def test_toggle_dta_baseline_parameter_groups_and_inputs_cover_extended_methods():
+    mod = _import_dta_page()
+
+    assert mod.toggle_baseline_parameter_groups("asls") == (
+        {"display": "block"},
+        {"display": "none"},
+        {"display": "none"},
+        {"display": "none"},
+    )
+    assert mod.toggle_baseline_parameter_groups("airpls") == (
+        {"display": "block"},
+        {"display": "none"},
+        {"display": "none"},
+        {"display": "none"},
+    )
+    assert mod.toggle_baseline_parameter_groups("modpoly") == (
+        {"display": "none"},
+        {"display": "block"},
+        {"display": "none"},
+        {"display": "none"},
+    )
+    assert mod.toggle_baseline_parameter_groups("snip") == (
+        {"display": "none"},
+        {"display": "none"},
+        {"display": "block"},
+        {"display": "none"},
+    )
+    assert mod.toggle_baseline_parameter_groups("spline") == (
+        {"display": "none"},
+        {"display": "none"},
+        {"display": "none"},
+        {"display": "block"},
+    )
+    assert mod.toggle_baseline_inputs("asls") == (False, False)
+    assert mod.toggle_baseline_inputs("airpls") == (False, True)
+    assert mod.toggle_baseline_inputs("linear") == (True, True)
+
+
+def test_apply_and_sync_dta_baseline_controls_cover_extended_methods():
+    mod = _import_dta_page()
+
+    updated, undo, redo = mod.apply_baseline(
+        1,
+        "snip",
+        None,
+        None,
+        None,
+        28,
+        None,
+        mod._default_processing_draft(),
+        [],
+    )
+
+    assert updated["baseline"] == {"method": "snip", "max_half_window": 28}
+    assert len(undo) == 1
+    assert redo == []
+
+    synced = mod.sync_baseline_controls(
+        {"baseline": {"method": "spline", "n_anchors": 9}},
+        "en",
+    )
+    assert synced == ("spline", 1e6, 0.01, 6, 40, 9, "Applied: Spline - anchors=9")
 
 
 def test_normalize_peak_detection_values_coerces_inputs():
@@ -2458,10 +2537,13 @@ def test_render_dta_baseline_chrome_emits_help_hints_tr_and_en():
     tr = mod.render_dta_baseline_chrome("tr")
     en = mod.render_dta_baseline_chrome("en")
 
-    assert len(tr) == 8 and len(en) == 8
-    assert "AsLS" in tr[5] or "AsLS" in en[5]
-    assert "1e7" in tr[6] and "1e7" in en[6]
-    assert "0.001" in tr[7] and "0.001" in en[7]
+    assert len(tr) == 14 and len(en) == 14
+    assert "AsLS" in tr[8] or "AsLS" in en[8]
+    assert "1e7" in tr[9] and "1e7" in en[9]
+    assert "0.001" in tr[10] and "0.001" in en[10]
+    assert "polinom" in tr[11].lower() and "polynomial" in en[11].lower()
+    assert "snip" in tr[12].lower() and "snip" in en[12].lower()
+    assert "ankraj" in tr[13].lower() and "anchor" in en[13].lower()
 
 
 def test_render_dta_peak_chrome_emits_help_hints_tr_and_en():

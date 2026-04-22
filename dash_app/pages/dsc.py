@@ -85,11 +85,16 @@ _DSC_SMOOTHING_DEFAULTS: dict[str, dict] = {
     "moving_average": {"method": "moving_average", "window_length": 11},
     "gaussian": {"method": "gaussian", "sigma": 2.0},
 }
-_BASELINE_METHODS = ("asls", "linear", "rubberband")
+_BASELINE_METHODS = ("asls", "airpls", "modpoly", "imodpoly", "snip", "rubberband", "linear", "spline")
 _DSC_BASELINE_DEFAULTS: dict[str, dict] = {
     "asls": {"method": "asls", "lam": 1e6, "p": 0.01, "region": None},
+    "airpls": {"method": "airpls", "lam": 1e6, "region": None},
+    "modpoly": {"method": "modpoly", "poly_order": 6, "region": None},
+    "imodpoly": {"method": "imodpoly", "poly_order": 6, "region": None},
+    "snip": {"method": "snip", "max_half_window": 40, "region": None},
     "linear": {"method": "linear", "region": None},
     "rubberband": {"method": "rubberband", "region": None},
+    "spline": {"method": "spline", "n_anchors": 6, "region": None},
 }
 _DSC_PEAK_DETECTION_DEFAULTS: dict = {
     "direction": "both",
@@ -190,7 +195,7 @@ def _normalize_baseline_region(enabled, rmin, rmax) -> list[float] | None:
     return [lower, upper]
 
 
-def _normalize_baseline_values(method: str | None, lam, p, region_enabled=None, region_min=None, region_max=None) -> dict:
+def _normalize_baseline_values(method: str | None, lam, p, poly_order=None, max_half_window=None, n_anchors=None, region_enabled=None, region_min=None, region_max=None) -> dict:
     token = str(method or "asls").strip().lower()
     if token not in _BASELINE_METHODS:
         token = "asls"
@@ -200,6 +205,18 @@ def _normalize_baseline_values(method: str | None, lam, p, region_enabled=None, 
         p_value = _coerce_float_positive(p, default=0.01, minimum=1e-4)
         p_value = min(p_value, 0.5)
         return {"method": "asls", "lam": lam_value, "p": p_value, "region": region}
+    if token == "airpls":
+        lam_value = _coerce_float_positive(lam, default=1e6, minimum=1e-3)
+        return {"method": "airpls", "lam": lam_value, "region": region}
+    if token in ("modpoly", "imodpoly"):
+        po = _coerce_int_positive(poly_order, default=6, minimum=1)
+        return {"method": token, "poly_order": po, "region": region}
+    if token == "snip":
+        mhw = _coerce_int_positive(max_half_window, default=40, minimum=1)
+        return {"method": "snip", "max_half_window": mhw, "region": region}
+    if token == "spline":
+        na = _coerce_int_positive(n_anchors, default=6, minimum=2)
+        return {"method": "spline", "n_anchors": na, "region": region}
     return {"method": token, "region": region}
 
 
@@ -436,8 +453,13 @@ def _smoothing_controls_card() -> dbc.Card:
 def _baseline_controls_card() -> dbc.Card:
     method_options = [
         {"label": "AsLS", "value": "asls"},
+        {"label": "airPLS", "value": "airpls"},
+        {"label": "Modified Polynomial", "value": "modpoly"},
+        {"label": "Improved Modified Polynomial", "value": "imodpoly"},
+        {"label": "SNIP", "value": "snip"},
         {"label": "Linear", "value": "linear"},
         {"label": "Rubberband", "value": "rubberband"},
+        {"label": "Spline", "value": "spline"},
     ]
     return dbc.Card(
         dbc.CardBody(
@@ -456,26 +478,88 @@ def _baseline_controls_card() -> dbc.Card:
                     ],
                     className="mb-2",
                 ),
-                dbc.Row(
-                    [
-                        dbc.Col(
+                html.Div(
+                    id="dsc-baseline-lam-p-group",
+                    children=[
+                        dbc.Row(
                             [
-                                dbc.Label(id="dsc-baseline-lam-label", html_for="dsc-baseline-lam"),
-                                dbc.Input(id="dsc-baseline-lam", type="number", min=1e-3, step=1e5, value=1e6),
-                                html.Small(id="dsc-baseline-lam-hint", className="form-text text-muted d-block mt-1"),
+                                dbc.Col(
+                                    [
+                                        dbc.Label(id="dsc-baseline-lam-label", html_for="dsc-baseline-lam"),
+                                        dbc.Input(id="dsc-baseline-lam", type="number", min=1e-3, step=1e5, value=1e6),
+                                        html.Small(id="dsc-baseline-lam-hint", className="form-text text-muted d-block mt-1"),
+                                    ],
+                                    md=6,
+                                ),
+                                dbc.Col(
+                                    [
+                                        dbc.Label(id="dsc-baseline-p-label", html_for="dsc-baseline-p"),
+                                        dbc.Input(id="dsc-baseline-p", type="number", min=1e-4, max=0.5, step=0.005, value=0.01),
+                                        html.Small(id="dsc-baseline-p-hint", className="form-text text-muted d-block mt-1"),
+                                    ],
+                                    md=6,
+                                ),
                             ],
-                            md=6,
-                        ),
-                        dbc.Col(
-                            [
-                                dbc.Label(id="dsc-baseline-p-label", html_for="dsc-baseline-p"),
-                                dbc.Input(id="dsc-baseline-p", type="number", min=1e-4, max=0.5, step=0.005, value=0.01),
-                                html.Small(id="dsc-baseline-p-hint", className="form-text text-muted d-block mt-1"),
-                            ],
-                            md=6,
+                            className="g-2 mb-2",
                         ),
                     ],
-                    className="g-2 mb-2",
+                ),
+                html.Div(
+                    id="dsc-baseline-poly-order-group",
+                    style={"display": "none"},
+                    children=[
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    [
+                                        dbc.Label(id="dsc-baseline-poly-order-label", html_for="dsc-baseline-poly-order"),
+                                        dbc.Input(id="dsc-baseline-poly-order", type="number", min=1, step=1, value=6),
+                                        html.Small(id="dsc-baseline-poly-order-hint", className="form-text text-muted d-block mt-1"),
+                                    ],
+                                    md=12,
+                                ),
+                            ],
+                            className="g-2 mb-2",
+                        ),
+                    ],
+                ),
+                html.Div(
+                    id="dsc-baseline-max-half-window-group",
+                    style={"display": "none"},
+                    children=[
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    [
+                                        dbc.Label(id="dsc-baseline-max-half-window-label", html_for="dsc-baseline-max-half-window"),
+                                        dbc.Input(id="dsc-baseline-max-half-window", type="number", min=1, step=1, value=40),
+                                        html.Small(id="dsc-baseline-max-half-window-hint", className="form-text text-muted d-block mt-1"),
+                                    ],
+                                    md=12,
+                                ),
+                            ],
+                            className="g-2 mb-2",
+                        ),
+                    ],
+                ),
+                html.Div(
+                    id="dsc-baseline-n-anchors-group",
+                    style={"display": "none"},
+                    children=[
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    [
+                                        dbc.Label(id="dsc-baseline-n-anchors-label", html_for="dsc-baseline-n-anchors"),
+                                        dbc.Input(id="dsc-baseline-n-anchors", type="number", min=2, step=1, value=6),
+                                        html.Small(id="dsc-baseline-n-anchors-hint", className="form-text text-muted d-block mt-1"),
+                                    ],
+                                    md=12,
+                                ),
+                            ],
+                            className="g-2 mb-2",
+                        ),
+                    ],
                 ),
                 html.H6(id="dsc-baseline-region-section-title", className="mt-2 mb-2 small text-muted text-uppercase"),
                 dbc.Row(
@@ -911,10 +995,16 @@ def render_dsc_processing_history_chrome(locale_data):
     Output("dsc-baseline-method-label", "children"),
     Output("dsc-baseline-lam-label", "children"),
     Output("dsc-baseline-p-label", "children"),
+    Output("dsc-baseline-poly-order-label", "children"),
+    Output("dsc-baseline-max-half-window-label", "children"),
+    Output("dsc-baseline-n-anchors-label", "children"),
     Output("dsc-baseline-apply-btn", "children"),
     Output("dsc-baseline-method-hint", "children"),
     Output("dsc-baseline-lam-hint", "children"),
     Output("dsc-baseline-p-hint", "children"),
+    Output("dsc-baseline-poly-order-hint", "children"),
+    Output("dsc-baseline-max-half-window-hint", "children"),
+    Output("dsc-baseline-n-anchors-hint", "children"),
     Input("ui-locale", "data"),
 )
 def render_dsc_baseline_chrome(locale_data):
@@ -924,10 +1014,16 @@ def render_dsc_baseline_chrome(locale_data):
         translate_ui(loc, "dash.analysis.dsc.baseline.method"),
         translate_ui(loc, "dash.analysis.dsc.baseline.lam"),
         translate_ui(loc, "dash.analysis.dsc.baseline.p"),
+        translate_ui(loc, "dash.analysis.dsc.baseline.poly_order"),
+        translate_ui(loc, "dash.analysis.dsc.baseline.max_half_window"),
+        translate_ui(loc, "dash.analysis.dsc.baseline.n_anchors"),
         translate_ui(loc, "dash.analysis.dsc.baseline.apply_btn"),
         translate_ui(loc, "dash.analysis.dsc.baseline.help.method"),
         translate_ui(loc, "dash.analysis.dsc.baseline.help.lam"),
         translate_ui(loc, "dash.analysis.dsc.baseline.help.p"),
+        translate_ui(loc, "dash.analysis.dsc.baseline.help.poly_order"),
+        translate_ui(loc, "dash.analysis.dsc.baseline.help.max_half_window"),
+        translate_ui(loc, "dash.analysis.dsc.baseline.help.n_anchors"),
     )
 
 
@@ -1276,6 +1372,28 @@ def toggle_smoothing_inputs(method):
 
 
 @callback(
+    Output("dsc-baseline-lam-p-group", "style"),
+    Output("dsc-baseline-poly-order-group", "style"),
+    Output("dsc-baseline-max-half-window-group", "style"),
+    Output("dsc-baseline-n-anchors-group", "style"),
+    Input("dsc-baseline-method", "value"),
+)
+def toggle_baseline_parameter_groups(method):
+    token = str(method or "asls").strip().lower()
+    show = {"display": "block"}
+    hide = {"display": "none"}
+    if token == "asls" or token == "airpls":
+        return show, hide, hide, hide
+    if token in ("modpoly", "imodpoly"):
+        return hide, show, hide, hide
+    if token == "snip":
+        return hide, hide, show, hide
+    if token == "spline":
+        return hide, hide, hide, show
+    return hide, hide, hide, hide
+
+
+@callback(
     Output("dsc-baseline-lam", "disabled"),
     Output("dsc-baseline-p", "disabled"),
     Input("dsc-baseline-method", "value"),
@@ -1284,6 +1402,8 @@ def toggle_baseline_inputs(method):
     token = str(method or "asls").strip().lower()
     if token == "asls":
         return False, False
+    if token == "airpls":
+        return False, True
     return True, True
 
 
@@ -1358,6 +1478,9 @@ def apply_smoothing(n_clicks, method, window, polyorder, sigma, draft, undo):
     State("dsc-baseline-method", "value"),
     State("dsc-baseline-lam", "value"),
     State("dsc-baseline-p", "value"),
+    State("dsc-baseline-poly-order", "value"),
+    State("dsc-baseline-max-half-window", "value"),
+    State("dsc-baseline-n-anchors", "value"),
     State("dsc-baseline-region-enabled", "value"),
     State("dsc-baseline-region-min", "value"),
     State("dsc-baseline-region-max", "value"),
@@ -1365,10 +1488,10 @@ def apply_smoothing(n_clicks, method, window, polyorder, sigma, draft, undo):
     State("dsc-processing-undo", "data"),
     prevent_initial_call=True,
 )
-def apply_baseline(n_clicks, method, lam, p, region_enabled, region_min, region_max, draft, undo):
+def apply_baseline(n_clicks, method, lam, p, poly_order, max_half_window, n_anchors, region_enabled, region_min, region_max, draft, undo):
     if not n_clicks:
         raise dash.exceptions.PreventUpdate
-    values = _normalize_baseline_values(method, lam, p, region_enabled, region_min, region_max)
+    values = _normalize_baseline_values(method, lam, p, poly_order, max_half_window, n_anchors, region_enabled, region_min, region_max)
     next_undo = _push_undo(undo, draft)
     next_draft = _apply_draft_section(draft, "baseline", values)
     return next_draft, next_undo, []
@@ -1480,13 +1603,32 @@ def _smoothing_status_text(draft: dict | None, loc: str) -> str:
 def _baseline_status_text(draft: dict | None, loc: str) -> str:
     values = (draft or {}).get("baseline") or {}
     method = str(values.get("method") or "asls")
-    method_label = {"asls": "AsLS", "linear": "Linear", "rubberband": "Rubberband"}.get(method, method)
+    method_label = {
+        "asls": "AsLS",
+        "airpls": "airPLS",
+        "modpoly": "ModPoly",
+        "imodpoly": "iModPoly",
+        "snip": "SNIP",
+        "linear": "Linear",
+        "rubberband": "Rubberband",
+        "spline": "Spline",
+    }.get(method, method)
     parts = [method_label]
-    if method == "asls":
+    if method in ("asls", "airpls"):
         if "lam" in values:
             parts.append(f"lam={values['lam']:g}")
+    if method == "asls":
         if "p" in values:
             parts.append(f"p={values['p']:g}")
+    if method in ("modpoly", "imodpoly"):
+        if "poly_order" in values:
+            parts.append(f"order={values['poly_order']}")
+    if method == "snip":
+        if "max_half_window" in values:
+            parts.append(f"window={values['max_half_window']}")
+    if method == "spline":
+        if "n_anchors" in values:
+            parts.append(f"anchors={values['n_anchors']}")
     region = values.get("region")
     if isinstance(region, (list, tuple)) and len(region) == 2:
         parts.append(
@@ -1552,6 +1694,9 @@ def sync_smoothing_controls(draft, undo, redo, defaults, locale_data):
     Output("dsc-baseline-method", "value"),
     Output("dsc-baseline-lam", "value"),
     Output("dsc-baseline-p", "value"),
+    Output("dsc-baseline-poly-order", "value"),
+    Output("dsc-baseline-max-half-window", "value"),
+    Output("dsc-baseline-n-anchors", "value"),
     Output("dsc-baseline-region-enabled", "value"),
     Output("dsc-baseline-region-min", "value"),
     Output("dsc-baseline-region-max", "value"),
@@ -1565,12 +1710,15 @@ def sync_baseline_controls(draft, locale_data):
     method = str(values.get("method") or "asls")
     lam = values.get("lam", 1e6)
     p = values.get("p", 0.01)
+    poly_order = values.get("poly_order", 6)
+    max_half_window = values.get("max_half_window", 40)
+    n_anchors = values.get("n_anchors", 6)
     region = values.get("region")
     enabled = isinstance(region, (list, tuple)) and len(region) == 2
     region_min = region[0] if enabled else None
     region_max = region[1] if enabled else None
     status = _baseline_status_text(draft, loc)
-    return method, lam, p, bool(enabled), region_min, region_max, status
+    return method, lam, p, poly_order, max_half_window, n_anchors, bool(enabled), region_min, region_max, status
 
 
 @callback(

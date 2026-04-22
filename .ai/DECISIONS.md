@@ -11,8 +11,8 @@
 1. All 6 analysis modalities (DSC, TGA, DTA, FTIR, Raman, XRD) are at **near parity** vs Streamlit. No modality is regressed or first-slice only.
 2. Prioritized remediation backlog agreed in execution order:
    - **P0-2 + P0-3 (done):** i18n key namespace leakage — DSC/DTA borrowing TGA processing history keys; TGA borrowing DSC quality/metadata/summary keys. 28 new keys, 32 reference swaps, 6 regression tests.
-   - **P1-1:** CSS class namespace cleanup — 5 modalities use `dsc-result-*` CSS classes; only DTA uses own-prefixed classes. Prerequisite for per-modality styling.
-   - **P0-1:** Baseline method gap — DSC/DTA expose 3 of 6 baseline methods (missing airpls, modpoly, imodpoly, snip).
+   - **P1-1 (done):** CSS class namespace cleanup — 5 modalities use `dsc-result-*` CSS classes; only DTA uses own-prefixed classes. Prerequisite for per-modality styling.
+   - **P0-1 (done):** Baseline method gap — DSC/DTA now expose the full core-supported baseline set; DTA callback wiring and DSC/DTA baseline i18n were completed.
    - **P0-4:** Similarity metric selector — FTIR/Raman lack cosine/pearson metric toggle that Streamlit exposes.
    - **P0-5:** DSC mass normalization — missing "Normalize by mass" control present in Streamlit.
    - **P1-2:** Figure capture toolbar — only XRD has snapshot/report toolbar; port to other modalities.
@@ -21,7 +21,7 @@
 
 **Reason:** Systematic modality-by-modality audit across 18 dimensions (page shell, processing controls, presets, undo/redo, run gating, results, quality, figure, literature, i18n, CSS) revealed no blocking gaps but several high-visibility consistency issues, especially for TR locale users seeing wrong-modality labels.
 
-**Consequence / future:** P0-2+P0-3 is landed; remaining items follow the agreed order. CSS cleanup (P1-1) unblocks per-modality styling work.
+**Consequence / future:** P0-2+P0-3, P1-1, and P0-1 are landed; remaining items follow the agreed order. CSS cleanup (P1-1) unblocks per-modality styling work, and the baseline parity fix establishes the full thermal baseline-method surface as the Dash default.
 
 ---
 

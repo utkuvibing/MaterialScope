@@ -110,14 +110,18 @@ _DTA_SMOOTHING_DEFAULTS: dict[str, dict] = {
 }
 # Baseline defaults mirror core/batch_runner._DTA_TEMPLATE_DEFAULTS["dta.general"]["baseline"]
 # plus the pybaselines asls default kwargs (lam=1e6, p=0.01) documented in core/baseline.py.
-# Phase 2a exposes the three most common DTA baseline methods; additional methods
-# (polynomial, modpoly, imodpoly, snip, spline, airpls) remain reachable through the
-# same override channel without UI work.
-_BASELINE_METHODS = ("asls", "linear", "rubberband")
+# Dash now exposes the full DTA baseline method set that core.baseline supports,
+# with method-specific parameter groups shown only when relevant.
+_BASELINE_METHODS = ("asls", "airpls", "modpoly", "imodpoly", "snip", "rubberband", "linear", "spline")
 _DTA_BASELINE_DEFAULTS: dict[str, dict] = {
     "asls": {"method": "asls", "lam": 1e6, "p": 0.01},
+    "airpls": {"method": "airpls", "lam": 1e6},
+    "modpoly": {"method": "modpoly", "poly_order": 6},
+    "imodpoly": {"method": "imodpoly", "poly_order": 6},
+    "snip": {"method": "snip", "max_half_window": 40},
     "linear": {"method": "linear"},
     "rubberband": {"method": "rubberband"},
+    "spline": {"method": "spline", "n_anchors": 6},
 }
 # Peak-detection defaults mirror core/batch_runner._DTA_TEMPLATE_DEFAULTS["dta.general"]["peak_detection"]
 # with two UI-visible knobs added (prominence, distance) that core/dta_processor.find_peaks already
@@ -247,12 +251,10 @@ def _smoothing_overrides_from_draft(draft: dict | None) -> dict:
     return {"smoothing": copy.deepcopy(section)}
 
 
-def _normalize_baseline_values(method: str | None, lam, p) -> dict:
+def _normalize_baseline_values(method: str | None, lam, p, poly_order=None, max_half_window=None, n_anchors=None) -> dict:
     """Build a canonical signal_pipeline.baseline values dict from raw control inputs.
 
-    Only the three methods wired into the Phase 2a UI (``asls``, ``linear``,
-    ``rubberband``) are emitted. Unknown methods fall back to ``asls`` so a stale
-    draft never produces an invalid payload.
+    Unknown methods fall back to ``asls`` so a stale draft never produces an invalid payload.
     """
     token = str(method or "asls").strip().lower()
     if token not in _BASELINE_METHODS:
@@ -261,6 +263,18 @@ def _normalize_baseline_values(method: str | None, lam, p) -> dict:
         lam_value = _coerce_float_positive(lam, default=1e6, minimum=1e-3)
         p_value = _coerce_float_in_range(p, default=0.01, minimum=1e-4, maximum=0.5)
         return {"method": "asls", "lam": lam_value, "p": p_value}
+    if token == "airpls":
+        lam_value = _coerce_float_positive(lam, default=1e6, minimum=1e-3)
+        return {"method": "airpls", "lam": lam_value}
+    if token in ("modpoly", "imodpoly"):
+        po = _coerce_int_positive(poly_order, default=6, minimum=1)
+        return {"method": token, "poly_order": po}
+    if token == "snip":
+        mhw = _coerce_int_positive(max_half_window, default=40, minimum=1)
+        return {"method": "snip", "max_half_window": mhw}
+    if token == "spline":
+        na = _coerce_int_positive(n_anchors, default=6, minimum=2)
+        return {"method": "spline", "n_anchors": na}
     return {"method": token}
 
 
@@ -803,14 +817,21 @@ def _smoothing_controls_card() -> dbc.Card:
 def _baseline_controls_card() -> dbc.Card:
     """User-tunable baseline controls (Phase 2a).
 
-    Method ∈ {asls, linear, rubberband}; lam + p are gated on asls. Apply pushes
-    the current draft onto the shared undo stack, mutates ``draft["baseline"]``,
-    and clears redo.     Undo/Redo/Reset live in the Processing history card; they operate on the full draft atomically.
+    Method ∈ {asls, airpls, modpoly, imodpoly, snip, linear, rubberband, spline};
+    method-specific parameters are gated by visibility. Apply pushes the current
+    draft onto the shared undo stack, mutates ``draft["baseline"]``, and clears
+    redo. Undo/Redo/Reset live in the Processing history card; they operate on
+    the full draft atomically.
     """
     method_options = [
         {"label": "AsLS", "value": "asls"},
+        {"label": "airPLS", "value": "airpls"},
+        {"label": "Modified Polynomial", "value": "modpoly"},
+        {"label": "Improved Modified Polynomial", "value": "imodpoly"},
+        {"label": "SNIP", "value": "snip"},
         {"label": "Linear", "value": "linear"},
         {"label": "Rubberband", "value": "rubberband"},
+        {"label": "Spline", "value": "spline"},
     ]
     return dbc.Card(
         dbc.CardBody(
@@ -836,45 +857,134 @@ def _baseline_controls_card() -> dbc.Card:
                     ],
                     className="mb-2",
                 ),
-                dbc.Row(
-                    [
-                        dbc.Col(
+                html.Div(
+                    id="dta-baseline-lam-p-group",
+                    children=[
+                        dbc.Row(
                             [
-                                dbc.Label(id="dta-baseline-lam-label", html_for="dta-baseline-lam"),
-                                dbc.Input(
-                                    id="dta-baseline-lam",
-                                    type="number",
-                                    min=1e-3,
-                                    step=1e5,
-                                    value=1e6,
+                                dbc.Col(
+                                    [
+                                        dbc.Label(id="dta-baseline-lam-label", html_for="dta-baseline-lam"),
+                                        dbc.Input(
+                                            id="dta-baseline-lam",
+                                            type="number",
+                                            min=1e-3,
+                                            step=1e5,
+                                            value=1e6,
+                                        ),
+                                        html.Small(
+                                            id="dta-baseline-lam-hint",
+                                            className="form-text text-muted d-block mt-1",
+                                        ),
+                                    ],
+                                    md=6,
                                 ),
-                                html.Small(
-                                    id="dta-baseline-lam-hint",
-                                    className="form-text text-muted d-block mt-1",
+                                dbc.Col(
+                                    [
+                                        dbc.Label(id="dta-baseline-p-label", html_for="dta-baseline-p"),
+                                        dbc.Input(
+                                            id="dta-baseline-p",
+                                            type="number",
+                                            min=1e-4,
+                                            max=0.5,
+                                            step=0.005,
+                                            value=0.01,
+                                        ),
+                                        html.Small(
+                                            id="dta-baseline-p-hint",
+                                            className="form-text text-muted d-block mt-1",
+                                        ),
+                                    ],
+                                    md=6,
                                 ),
                             ],
-                            md=6,
-                        ),
-                        dbc.Col(
-                            [
-                                dbc.Label(id="dta-baseline-p-label", html_for="dta-baseline-p"),
-                                dbc.Input(
-                                    id="dta-baseline-p",
-                                    type="number",
-                                    min=1e-4,
-                                    max=0.5,
-                                    step=0.005,
-                                    value=0.01,
-                                ),
-                                html.Small(
-                                    id="dta-baseline-p-hint",
-                                    className="form-text text-muted d-block mt-1",
-                                ),
-                            ],
-                            md=6,
+                            className="g-2 mb-2",
                         ),
                     ],
-                    className="g-2 mb-2",
+                ),
+                html.Div(
+                    id="dta-baseline-poly-order-group",
+                    style={"display": "none"},
+                    children=[
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    [
+                                        dbc.Label(id="dta-baseline-poly-order-label", html_for="dta-baseline-poly-order"),
+                                        dbc.Input(
+                                            id="dta-baseline-poly-order",
+                                            type="number",
+                                            min=1,
+                                            step=1,
+                                            value=6,
+                                        ),
+                                        html.Small(
+                                            id="dta-baseline-poly-order-hint",
+                                            className="form-text text-muted d-block mt-1",
+                                        ),
+                                    ],
+                                    md=12,
+                                ),
+                            ],
+                            className="g-2 mb-2",
+                        ),
+                    ],
+                ),
+                html.Div(
+                    id="dta-baseline-max-half-window-group",
+                    style={"display": "none"},
+                    children=[
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    [
+                                        dbc.Label(id="dta-baseline-max-half-window-label", html_for="dta-baseline-max-half-window"),
+                                        dbc.Input(
+                                            id="dta-baseline-max-half-window",
+                                            type="number",
+                                            min=1,
+                                            step=1,
+                                            value=40,
+                                        ),
+                                        html.Small(
+                                            id="dta-baseline-max-half-window-hint",
+                                            className="form-text text-muted d-block mt-1",
+                                        ),
+                                    ],
+                                    md=12,
+                                ),
+                            ],
+                            className="g-2 mb-2",
+                        ),
+                    ],
+                ),
+                html.Div(
+                    id="dta-baseline-n-anchors-group",
+                    style={"display": "none"},
+                    children=[
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    [
+                                        dbc.Label(id="dta-baseline-n-anchors-label", html_for="dta-baseline-n-anchors"),
+                                        dbc.Input(
+                                            id="dta-baseline-n-anchors",
+                                            type="number",
+                                            min=2,
+                                            step=1,
+                                            value=6,
+                                        ),
+                                        html.Small(
+                                            id="dta-baseline-n-anchors-hint",
+                                            className="form-text text-muted d-block mt-1",
+                                        ),
+                                    ],
+                                    md=12,
+                                ),
+                            ],
+                            className="g-2 mb-2",
+                        ),
+                    ],
                 ),
                 dbc.Button(
                     id="dta-baseline-apply-btn",
@@ -2571,11 +2681,30 @@ def _baseline_status_text(draft: dict | None, loc: str) -> str:
     """Build a concise status line summarizing the current baseline draft."""
     values = (draft or {}).get("baseline") or {}
     method = str(values.get("method") or "asls")
-    method_label = {"asls": "AsLS", "linear": "Linear", "rubberband": "Rubberband"}.get(method, method)
+    method_label = {
+        "asls": "AsLS",
+        "airpls": "airPLS",
+        "modpoly": "ModPoly",
+        "imodpoly": "iModPoly",
+        "snip": "SNIP",
+        "linear": "Linear",
+        "rubberband": "Rubberband",
+        "spline": "Spline",
+    }.get(method, method)
     parts = [method_label]
-    if method == "asls":
+    if method in ("asls", "airpls"):
         if "lam" in values:
             parts.append(f"lam={values['lam']:g}")
+    if method in ("modpoly", "imodpoly"):
+        if "poly_order" in values:
+            parts.append(f"order={values['poly_order']}")
+    if method == "snip":
+        if "max_half_window" in values:
+            parts.append(f"window={values['max_half_window']}")
+    if method == "spline":
+        if "n_anchors" in values:
+            parts.append(f"anchors={values['n_anchors']}")
+    if method == "asls":
         if "p" in values:
             parts.append(f"p={values['p']:g}")
     applied = translate_ui(loc, "dash.analysis.dta.baseline.applied")
@@ -2610,10 +2739,16 @@ def _peak_status_text(draft: dict | None, loc: str) -> str:
     Output("dta-baseline-method-label", "children"),
     Output("dta-baseline-lam-label", "children"),
     Output("dta-baseline-p-label", "children"),
+    Output("dta-baseline-poly-order-label", "children"),
+    Output("dta-baseline-max-half-window-label", "children"),
+    Output("dta-baseline-n-anchors-label", "children"),
     Output("dta-baseline-apply-btn", "children"),
     Output("dta-baseline-method-hint", "children"),
     Output("dta-baseline-lam-hint", "children"),
     Output("dta-baseline-p-hint", "children"),
+    Output("dta-baseline-poly-order-hint", "children"),
+    Output("dta-baseline-max-half-window-hint", "children"),
+    Output("dta-baseline-n-anchors-hint", "children"),
     Input("ui-locale", "data"),
 )
 def render_dta_baseline_chrome(locale_data):
@@ -2626,20 +2761,35 @@ def render_dta_baseline_chrome(locale_data):
     return (
         _t("dash.analysis.dta.baseline.title", "Baseline"),
         _t("dash.analysis.dta.baseline.method", "Baseline Method"),
-        _t("dash.analysis.dta.baseline.lam", "Lambda (asls)"),
+        _t("dash.analysis.dta.baseline.lam", "Lambda (AsLS / airPLS)"),
         _t("dash.analysis.dta.baseline.p", "Asymmetry p (asls)"),
+        _t("dash.analysis.dta.baseline.poly_order", "Polynomial order"),
+        _t("dash.analysis.dta.baseline.max_half_window", "Max half-window"),
+        _t("dash.analysis.dta.baseline.n_anchors", "Anchor count"),
         _t("dash.analysis.dta.baseline.apply_btn", "Apply Baseline"),
         _t(
             "dash.analysis.dta.baseline.help.method",
-            "AsLS handles curved drifting baselines; Linear fits a straight line (fast, good for short ranges); Rubberband wraps the signal from below.",
+            "AsLS handles curved drifting baselines; airPLS is adaptive for sharp peaks; ModPoly/iModPoly fit polynomial backgrounds; SNIP clips noise; Linear fits a straight line; Rubberband wraps the signal from below; Spline uses anchor points.",
         ),
         _t(
             "dash.analysis.dta.baseline.help.lam",
-            "AsLS baseline stiffness. Higher values (1e7+) keep the baseline flat; lower values (1e4) let it follow peaks — risks absorbing real events.",
+            "AsLS / airPLS baseline stiffness. Higher values (1e7+) keep the baseline flat; lower values (1e4) let it follow peaks — risks absorbing real events.",
         ),
         _t(
             "dash.analysis.dta.baseline.help.p",
             "AsLS asymmetry. Small values (0.001-0.01) push the baseline below exothermic peaks; use 0.1-0.5 when the baseline should pass above endotherms.",
+        ),
+        _t(
+            "dash.analysis.dta.baseline.help.poly_order",
+            "Polynomial order for ModPoly / iModPoly. Higher orders fit more complex backgrounds; typical range 3-8.",
+        ),
+        _t(
+            "dash.analysis.dta.baseline.help.max_half_window",
+            "SNIP half-window size. Larger values clip broader noise features; typical range 20-100.",
+        ),
+        _t(
+            "dash.analysis.dta.baseline.help.n_anchors",
+            "Number of automatically selected anchor points for the Spline baseline. More anchors follow the signal more closely; typical range 4-10.",
         ),
     )
 
@@ -2691,6 +2841,28 @@ def render_dta_peak_chrome(locale_data):
 
 
 @callback(
+    Output("dta-baseline-lam-p-group", "style"),
+    Output("dta-baseline-poly-order-group", "style"),
+    Output("dta-baseline-max-half-window-group", "style"),
+    Output("dta-baseline-n-anchors-group", "style"),
+    Input("dta-baseline-method", "value"),
+)
+def toggle_baseline_parameter_groups(method):
+    token = str(method or "asls").strip().lower()
+    show = {"display": "block"}
+    hide = {"display": "none"}
+    if token in ("asls", "airpls"):
+        return show, hide, hide, hide
+    if token in ("modpoly", "imodpoly"):
+        return hide, show, hide, hide
+    if token == "snip":
+        return hide, hide, show, hide
+    if token == "spline":
+        return hide, hide, hide, show
+    return hide, hide, hide, hide
+
+
+@callback(
     Output("dta-baseline-lam", "disabled"),
     Output("dta-baseline-p", "disabled"),
     Input("dta-baseline-method", "value"),
@@ -2699,6 +2871,8 @@ def toggle_baseline_inputs(method):
     token = str(method or "asls").strip().lower()
     if token == "asls":
         return False, False
+    if token == "airpls":
+        return False, True
     return True, True
 
 
@@ -2710,14 +2884,17 @@ def toggle_baseline_inputs(method):
     State("dta-baseline-method", "value"),
     State("dta-baseline-lam", "value"),
     State("dta-baseline-p", "value"),
+    State("dta-baseline-poly-order", "value"),
+    State("dta-baseline-max-half-window", "value"),
+    State("dta-baseline-n-anchors", "value"),
     State("dta-processing-draft", "data"),
     State("dta-processing-undo", "data"),
     prevent_initial_call=True,
 )
-def apply_baseline(n_clicks, method, lam, p, draft, undo):
+def apply_baseline(n_clicks, method, lam, p, poly_order, max_half_window, n_anchors, draft, undo):
     if not n_clicks:
         raise dash.exceptions.PreventUpdate
-    values = _normalize_baseline_values(method, lam, p)
+    values = _normalize_baseline_values(method, lam, p, poly_order, max_half_window, n_anchors)
     next_undo = _push_undo(undo, draft)
     next_draft = _apply_draft_section(draft, "baseline", values)
     return next_draft, next_undo, []
@@ -2749,6 +2926,9 @@ def apply_peak_detection(n_clicks, detect_exo, detect_endo, prominence, distance
     Output("dta-baseline-method", "value"),
     Output("dta-baseline-lam", "value"),
     Output("dta-baseline-p", "value"),
+    Output("dta-baseline-poly-order", "value"),
+    Output("dta-baseline-max-half-window", "value"),
+    Output("dta-baseline-n-anchors", "value"),
     Output("dta-baseline-status", "children"),
     Input("dta-processing-draft", "data"),
     Input("ui-locale", "data"),
@@ -2759,8 +2939,11 @@ def sync_baseline_controls(draft, locale_data):
     method = str(values.get("method") or "asls")
     lam = values.get("lam", 1e6)
     p = values.get("p", 0.01)
+    poly_order = values.get("poly_order", 6)
+    max_half_window = values.get("max_half_window", 40)
+    n_anchors = values.get("n_anchors", 6)
     status = _baseline_status_text(draft, loc)
-    return method, lam, p, status
+    return method, lam, p, poly_order, max_half_window, n_anchors, status
 
 
 @callback(

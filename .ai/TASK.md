@@ -4,6 +4,10 @@
 
 ## Status: active — Dash parity audit remediation backlog (2026-04-22)
 
+### Completed: P0-1 — Baseline method gap for DSC/DTA
+
+**Done (2026-04-22).** DSC and DTA Dash pages now expose the full baseline method set already supported by core (`asls`, `airpls`, `modpoly`, `imodpoly`, `snip`, `rubberband`, `linear`, `spline`). DTA baseline callbacks now persist method-specific parameters for `airpls`, `modpoly`, `imodpoly`, `snip`, and `spline`; both modalities gained missing TR/EN i18n keys for extended baseline controls and targeted regression coverage.
+
 ### Completed: P0-2 + P0-3 — i18n key namespace leakage fix
 
 **Done (2026-04-22).** DSC/DTA processing history labels and TGA quality/metadata/summary labels now use modality-native i18n keys instead of borrowing from TGA/DSC. 28 new keys, 32 reference swaps, 6 regression tests. Zero cross-namespace references remain.
@@ -22,7 +26,6 @@ Ordered by priority per the repo-wide parity audit:
 
 | # | Issue | Modalities | Effort | Key files |
 |---|---|---|---|---|
-| P0-1 | Baseline method gap: Dash exposes only 3 of 6 methods (missing airpls, modpoly, imodpoly, snip) | DSC, DTA | M | `dsc.py`, `dta.py` — add methods to `_BASELINE_METHODS` and controls cards |
 | P0-4 | Similarity matching metric selector missing (Streamlit exposes cosine/pearson) | FTIR, Raman | S | `ftir.py`, `raman.py` — add metric to similarity controls card |
 | P0-5 | DSC missing mass normalization control (Streamlit has "Normalize by mass" checkbox) | DSC | S | `dsc.py` — add normalize-by-mass toggle in Setup tab |
 
@@ -47,12 +50,11 @@ Ordered by priority per the repo-wide parity audit:
 ### Recommended execution order
 
 1. ~~P1-1 — CSS class namespace cleanup (done)~~
-2. P0-1 — Baseline method gap (medium, direct feature parity)
-3. P0-4 — Similarity metric selector (small)
-4. P0-5 — DSC mass normalization (small)
-5. P1-2 — Figure capture toolbar standardization (large, high UX value, use XRD as template)
-6. P1-3 + P1-4 — Shared boilerplate extraction (large, maintenance burden reduction)
-7. P2 items — polish and consistency
+2. P0-4 — Similarity metric selector (small)
+3. P0-5 — DSC mass normalization (small)
+4. P1-2 — Figure capture toolbar standardization (large, high UX value, use XRD as template)
+5. P1-3 + P1-4 — Shared boilerplate extraction (large, maintenance burden reduction)
+6. P2 items — polish and consistency
 
 ---
 
@@ -60,11 +62,11 @@ Ordered by priority per the repo-wide parity audit:
 
 | Modality | Streamlit lines | Dash lines | Parity | Key gaps |
 |---|---|---|---|---|
-| DSC | 818 | 2674 | Near | Baseline 3/6 methods; mass normalization missing |
+| DSC | 818 | 2674 | Near | Mass normalization missing |
 | TGA | 886 | 2360 | Near | Was borrowing DSC i18n keys (fixed); CSS class leakage |
-| DTA | 818 | 2973 | Near | Baseline 3/6 methods; cleanest CSS scoping |
+| DTA | 818 | 2973 | Near | Cleanest CSS scoping |
 | FTIR | 12 (delegates) | 2625 | Near | Similarity metric selector missing |
 | Raman | 12 (delegates) | 2630 | Near | Same as FTIR; literature compare is Dash improvement |
 | XRD | 2432 | 2697 | Near | Most complete figure toolbar; template for others |
 
-**Cross-cutting issues:** Boilerplate duplication (~40% of each page), baseline method truncation, figure capture inconsistency.
+**Cross-cutting issues:** Boilerplate duplication (~40% of each page), figure capture inconsistency.
