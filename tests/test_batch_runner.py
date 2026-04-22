@@ -4,12 +4,15 @@ import io
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 
+from backend.library_cloud_service import ManagedLibraryCloudService
 from core.batch_runner import (
     _match_xrd_reference_peaks,
+    _rank_spectral_matches,
     execute_batch_template,
     filter_batch_summary_rows,
     normalize_batch_summary_rows,
@@ -433,8 +436,56 @@ def test_execute_xrd_batch_template_returns_ranked_candidate_match_with_confiden
     assert rows[0]["evidence"]["matched_peak_pairs"][0]["reference_index"] >= 0
 
 
+def test_rank_spectral_matches_uses_selected_metric_for_scoring_and_ranking(monkeypatch):
+    axis = np.asarray([0.0, 1.0, 2.0], dtype=float)
+    references = [
+        {"candidate_id": "ref_a", "candidate_name": "Ref A", "axis": axis, "signal": np.asarray([1.0, 0.0, 0.0], dtype=float)},
+        {"candidate_id": "ref_b", "candidate_name": "Ref B", "axis": axis, "signal": np.asarray([2.0, 0.0, 0.0], dtype=float)},
+    ]
+
+    monkeypatch.setattr("core.batch_runner._apply_spectral_smoothing", lambda signal, config: np.asarray(signal, dtype=float))
+    monkeypatch.setattr("core.batch_runner._normalize_spectral_signal", lambda signal, config: (np.asarray(signal, dtype=float), True, ""))
+    monkeypatch.setattr(
+        "core.batch_runner._detect_spectral_peaks",
+        lambda axis, signal, config: ([{"position": float(axis[0]), "intensity": float(signal[0])}], False, ""),
+    )
+
+    def fake_similarity(query_signal, reference_signal, metric):
+        token = float(reference_signal[0])
+        if metric == "cosine":
+            return 0.9 if token == 1.0 else 0.2
+        if metric == "pearson":
+            return 0.1 if token == 1.0 else 0.95
+        raise AssertionError(metric)
+
+    monkeypatch.setattr("core.batch_runner._spectral_similarity", fake_similarity)
+
+    cosine_rows = _rank_spectral_matches(
+        axis=axis,
+        query_signal=np.asarray([1.0, 0.5, 0.0], dtype=float),
+        observed_peaks=[{"position": 0.0, "intensity": 1.0}],
+        references=references,
+        matching_config={"metric": "cosine", "top_n": 1, "minimum_score": 0.4},
+        peak_config={},
+    )
+    pearson_rows = _rank_spectral_matches(
+        axis=axis,
+        query_signal=np.asarray([1.0, 0.5, 0.0], dtype=float),
+        observed_peaks=[{"position": 0.0, "intensity": 1.0}],
+        references=references,
+        matching_config={"metric": "pearson", "top_n": 1, "minimum_score": 0.4},
+        peak_config={},
+    )
+
+    assert cosine_rows[0]["candidate_id"] == "ref_a"
+    assert cosine_rows[0]["evidence"]["metric"] == "cosine"
+    assert pearson_rows[0]["candidate_id"] == "ref_b"
+    assert pearson_rows[0]["evidence"]["metric"] == "pearson"
+
+
 def test_execute_ftir_batch_template_prefers_cloud_search_when_configured(monkeypatch):
     dataset = _make_spectral_dataset(analysis_type="FTIR")
+    captured: dict[str, object] = {}
 
     class _StubCloudClient:
         configured = True
@@ -442,6 +493,7 @@ def test_execute_ftir_batch_template_prefers_cloud_search_when_configured(monkey
 
         def search(self, *, analysis_type, payload):
             assert analysis_type == "FTIR"
+            captured["payload"] = payload
             return {
                 "request_id": "cloud_req_123",
                 "analysis_type": "FTIR",
@@ -487,6 +539,76 @@ def test_execute_ftir_batch_template_prefers_cloud_search_when_configured(monkey
     assert outcome["record"]["summary"]["library_request_id"] == "cloud_req_123"
     assert outcome["record"]["summary"]["top_match_id"] == "cloud_ref_ftir_1"
     assert outcome["record"]["rows"][0]["library_provider"] == "openspecy"
+    assert captured["payload"]["metric"] == "cosine"
+
+
+def test_managed_cloud_spectral_search_forwards_metric_to_ranker(monkeypatch, tmp_path):
+    class _HostedCatalog:
+        def live_provider_count(self, modality=None):
+            return 1
+
+        def __init__(self, root):
+            self.root = root
+
+        def load_entries(self, token):
+            assert token == "FTIR"
+            return [
+                {
+                    "candidate_id": "hosted_ref_1",
+                    "candidate_name": "Hosted Ref 1",
+                    "axis": [1.0, 2.0, 3.0],
+                    "signal": [0.1, 0.2, 0.3],
+                    "provider": "openspecy",
+                    "package_id": "openspecy_ftir_hosted",
+                    "package_version": "2026.03",
+                }
+            ]
+
+    service = ManagedLibraryCloudService(manager=SimpleNamespace(), hosted_catalog=_HostedCatalog(tmp_path))
+    service._authorize = lambda **kwargs: {"sub": "tester", "status": "trial"}
+    service._audit_search = lambda **kwargs: None
+
+    monkeypatch.setattr("core.batch_runner._sorted_axis_signal", lambda axis, signal: (axis, signal))
+    monkeypatch.setattr("core.batch_runner._apply_spectral_smoothing", lambda signal, config: signal)
+    monkeypatch.setattr("core.batch_runner._normalize_spectral_signal", lambda signal, config: (signal, True, ""))
+    monkeypatch.setattr(
+        "core.batch_runner._detect_spectral_peaks",
+        lambda axis, signal, config: ([{"position": float(axis[0]), "intensity": float(signal[0])}], False, ""),
+    )
+    captured: dict[str, object] = {}
+
+    def fake_rank(*, axis, query_signal, observed_peaks, references, matching_config, peak_config):
+        captured["matching_config"] = dict(matching_config)
+        return [
+            {
+                "rank": 1,
+                "candidate_id": "hosted_ref_1",
+                "candidate_name": "Hosted Ref 1",
+                "normalized_score": 0.91,
+                "confidence_band": "high",
+                "library_provider": "openspecy",
+                "library_package": "openspecy_ftir_hosted",
+                "library_version": "2026.03",
+                "evidence": {"metric": matching_config["metric"]},
+            }
+        ]
+
+    monkeypatch.setattr("core.batch_runner._rank_spectral_matches", fake_rank)
+
+    response = service.search_spectral(
+        analysis_type="FTIR",
+        request_payload={
+            "axis": [1.0, 2.0, 3.0],
+            "signal": [0.1, 0.2, 0.3],
+            "metric": "pearson",
+            "top_n": 1,
+            "minimum_score": 0.4,
+        },
+        authorization="Bearer ignored",
+    )
+
+    assert captured["matching_config"]["metric"] == "pearson"
+    assert response["rows"][0]["evidence"]["metric"] == "pearson"
 
 
 def test_execute_xrd_batch_template_uses_reference_d_spacing_for_non_cu_wavelength():

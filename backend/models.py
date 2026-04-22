@@ -121,6 +121,7 @@ class SpectralLibrarySearchRequest(BaseModel):
     preprocessing_metadata: dict[str, Any] = Field(default_factory=dict)
     sample_metadata: dict[str, Any] = Field(default_factory=dict)
     import_metadata: dict[str, Any] = Field(default_factory=dict)
+    metric: str | None = None
     top_n: int | None = None
     minimum_score: float | None = None
 

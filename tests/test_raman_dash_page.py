@@ -88,6 +88,7 @@ def test_layout_contains_section_ids_in_order():
         "raman-peak-prominence",
         "raman-peak-distance",
         "raman-peak-max-peaks",
+        "raman-sim-metric",
         "raman-sim-top-n",
         "raman-sim-minimum-score",
         "raman-result-analysis-summary",
@@ -136,6 +137,7 @@ def test_default_processing_draft_has_all_sections():
     assert defaults["baseline"]["method"] == "asls"
     assert defaults["normalization"]["method"] == "vector"
     assert defaults["peak_detection"]["prominence"] == 0.035
+    assert defaults["similarity_matching"]["metric"] == "cosine"
     assert defaults["similarity_matching"]["top_n"] == 3
 
 
@@ -172,7 +174,7 @@ def test_normalize_normalization_values_defaults():
 
 def test_normalize_similarity_matching_values():
     mod = _import_raman_page()
-    assert mod._normalize_similarity_matching_values(5, 0.6) == {"top_n": 5, "minimum_score": 0.6}
+    assert mod._normalize_similarity_matching_values(None, 5, 0.6, template_id="raman.polymorph_screening") == {"metric": "pearson", "top_n": 5, "minimum_score": 0.6}
 
 
 def test_undo_redo_reset_cycle_for_processing_draft():
@@ -210,22 +212,28 @@ def test_raman_overrides_from_draft_includes_all_sections():
         "baseline": {"method": "asls", "lam": 1e5, "p": 0.02, "region": [400.0, 1800.0]},
         "normalization": {"method": "snv"},
         "peak_detection": {"prominence": 0.08, "distance": 8, "max_peaks": 12},
-        "similarity_matching": {"top_n": 5, "minimum_score": 0.6},
+        "similarity_matching": {"metric": "pearson", "top_n": 5, "minimum_score": 0.6},
     }
     overrides = mod._raman_overrides_from_draft(draft)
     assert set(overrides.keys()) == {"smoothing", "baseline", "normalization", "peak_detection", "similarity_matching"}
     assert overrides["baseline"]["region"] == [400.0, 1800.0]
+    assert overrides["similarity_matching"]["metric"] == "pearson"
 
 
 def test_raman_draft_from_loaded_processing_nested():
     mod = _import_raman_page()
     processing = {
+        "workflow_template_id": "raman.polymorph_screening",
         "signal_pipeline": {"smoothing": {"method": "moving_average", "window_length": 9}},
-        "analysis_steps": {"peak_detection": {"prominence": 0.08, "distance": 6, "max_peaks": 8}},
+        "analysis_steps": {
+            "peak_detection": {"prominence": 0.08, "distance": 6, "max_peaks": 8},
+            "similarity_matching": {"top_n": 4, "minimum_score": 0.5},
+        },
     }
     draft = mod._raman_draft_from_loaded_processing(processing)
     assert draft["smoothing"]["method"] == "moving_average"
     assert draft["peak_detection"]["prominence"] == 0.08
+    assert draft["similarity_matching"]["metric"] == "pearson"
 
 
 def test_raman_preset_processing_body_for_save_includes_all_sections():
@@ -237,6 +245,7 @@ def test_raman_preset_processing_body_for_save_includes_all_sections():
     body = mod._raman_preset_processing_body_for_save(draft)
     assert set(body.keys()) == {"smoothing", "baseline", "normalization", "peak_detection", "similarity_matching"}
     assert body["smoothing"]["window_length"] == 15
+    assert body["similarity_matching"]["metric"] == "cosine"
 
 
 def test_raman_snapshots_equal_for_dirty_tracking():
@@ -256,10 +265,11 @@ def test_raman_controls_to_draft_normalizes_window_and_prominence():
         "asls", 1e6, 0.01, False, None, None,
         "vector",
         0.0, 1, 1,
-        3, 0.45,
+        "pearson", 3, 0.45,
     )
     assert d["smoothing"]["window_length"] % 2 == 1
     assert d["peak_detection"]["prominence"] == 0.0
+    assert d["similarity_matching"]["metric"] == "pearson"
 
 
 def test_run_raman_analysis_forwards_processing_overrides(monkeypatch):
@@ -275,7 +285,7 @@ def test_run_raman_analysis_forwards_processing_overrides(monkeypatch):
         1,
         "proj-1",
         "ds-1",
-        "raman.general",
+        "raman.polymorph_screening",
         {"smoothing": {"method": "savgol", "window_length": 21, "polyorder": 3}, "peak_detection": mod._default_raman_processing_draft()["peak_detection"]},
         0,
         0,
@@ -283,6 +293,7 @@ def test_run_raman_analysis_forwards_processing_overrides(monkeypatch):
     )
     assert captured.get("processing_overrides") is not None
     assert captured["processing_overrides"]["smoothing"]["window_length"] == 21
+    assert captured["processing_overrides"]["similarity_matching"]["metric"] == "pearson"
 
 
 def test_build_raman_quality_card_renders_validation_and_checks():
@@ -638,7 +649,7 @@ def test_preset_dirty_flag_renders_clean_when_snapshot_matches():
         "asls", 1e6, 0.01, False, None, None,
         "vector",
         0.035, 5, 12,
-        3, 0.45,
+        "cosine", 3, 0.45,
         snap,
     )
     assert "text-success" in str(flag)
@@ -654,7 +665,7 @@ def test_preset_dirty_flag_renders_dirty_when_snapshot_differs():
         "asls", 1e6, 0.01, False, None, None,
         "vector",
         0.035, 5, 12,
-        3, 0.45,
+        "cosine", 3, 0.45,
         snap,
     )
     assert "text-warning" in str(flag)

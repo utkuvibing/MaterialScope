@@ -113,6 +113,12 @@ _FTIR_BASELINE_DEFAULTS: dict[str, dict[str, Any]] = {
 _FTIR_NORMALIZATION_MODES = frozenset({"vector", "max", "snv"})
 _FTIR_NORMALIZATION_DEFAULTS: dict[str, Any] = {"method": "vector"}
 
+_FTIR_SIMILARITY_METRICS = frozenset({"cosine", "pearson"})
+_FTIR_TEMPLATE_SIMILARITY_METRICS: dict[str, str] = {
+    "ftir.general": "cosine",
+    "ftir.functional_groups": "cosine",
+}
+
 _FTIR_PEAK_DETECTION_DEFAULTS: dict[str, Any] = {
     "prominence": 0.035,
     "distance": 5,
@@ -120,6 +126,7 @@ _FTIR_PEAK_DETECTION_DEFAULTS: dict[str, Any] = {
 }
 
 _FTIR_SIMILARITY_MATCHING_DEFAULTS: dict[str, Any] = {
+    "metric": "cosine",
     "top_n": 3,
     "minimum_score": 0.45,
 }
@@ -172,13 +179,21 @@ def _coerce_float_non_negative(value, *, default: float) -> float:
 # ---------------------------------------------------------------------------
 
 
-def _default_ftir_processing_draft() -> dict[str, Any]:
+def _default_ftir_similarity_metric(template_id: str | None = None) -> str:
+    token = str(template_id or "").strip().lower()
+    return _FTIR_TEMPLATE_SIMILARITY_METRICS.get(token, "cosine")
+
+
+def _default_ftir_processing_draft(template_id: str | None = None) -> dict[str, Any]:
     return {
         "smoothing": copy.deepcopy(_FTIR_SMOOTHING_DEFAULTS["savgol"]),
         "baseline": copy.deepcopy(_FTIR_BASELINE_DEFAULTS["asls"]),
         "normalization": copy.deepcopy(_FTIR_NORMALIZATION_DEFAULTS),
         "peak_detection": copy.deepcopy(_FTIR_PEAK_DETECTION_DEFAULTS),
-        "similarity_matching": copy.deepcopy(_FTIR_SIMILARITY_MATCHING_DEFAULTS),
+        "similarity_matching": {
+            **copy.deepcopy(_FTIR_SIMILARITY_MATCHING_DEFAULTS),
+            "metric": _default_ftir_similarity_metric(template_id),
+        },
     }
 
 
@@ -242,13 +257,16 @@ def _normalize_peak_detection_values(prominence, distance, max_peaks) -> dict[st
     return {"prominence": prom, "distance": dist, "max_peaks": mp}
 
 
-def _normalize_similarity_matching_values(top_n, minimum_score) -> dict[str, Any]:
+def _normalize_similarity_matching_values(metric, top_n, minimum_score, *, template_id: str | None = None) -> dict[str, Any]:
+    metric_token = str(metric or "").strip().lower()
+    if metric_token not in _FTIR_SIMILARITY_METRICS:
+        metric_token = _default_ftir_similarity_metric(template_id)
     tn = _coerce_int_positive(top_n, default=3, minimum=1)
     ms = _coerce_float_non_negative(minimum_score, default=0.45)
-    return {"top_n": tn, "minimum_score": ms}
+    return {"metric": metric_token, "top_n": tn, "minimum_score": ms}
 
 
-def _normalize_ftir_processing_draft(draft: dict | None) -> dict[str, Any]:
+def _normalize_ftir_processing_draft(draft: dict | None, *, template_id: str | None = None) -> dict[str, Any]:
     d = dict(draft or {})
     sm = d.get("smoothing")
     bl = d.get("baseline")
@@ -277,9 +295,14 @@ def _normalize_ftir_processing_draft(draft: dict | None) -> dict[str, Any]:
         pk = copy.deepcopy(_FTIR_PEAK_DETECTION_DEFAULTS)
 
     if isinstance(sim, dict):
-        sim = _normalize_similarity_matching_values(sim.get("top_n"), sim.get("minimum_score"))
+        sim = _normalize_similarity_matching_values(
+            sim.get("metric"),
+            sim.get("top_n"),
+            sim.get("minimum_score"),
+            template_id=template_id,
+        )
     else:
-        sim = copy.deepcopy(_FTIR_SIMILARITY_MATCHING_DEFAULTS)
+        sim = _normalize_similarity_matching_values(None, None, None, template_id=template_id)
 
     return {
         "smoothing": sm,
@@ -305,20 +328,28 @@ def _ftir_draft_from_control_values(
     peak_prominence,
     peak_distance,
     peak_max_peaks,
+    sim_metric,
     sim_top_n,
     sim_minimum_score,
+    *,
+    template_id: str | None = None,
 ) -> dict[str, Any]:
     return {
         "smoothing": _normalize_smoothing_values(smooth_method, smooth_window, smooth_poly, smooth_sigma),
         "baseline": _normalize_baseline_values(baseline_method, baseline_lam, baseline_p, baseline_region_enabled, baseline_region_min, baseline_region_max),
         "normalization": _normalize_normalization_values(norm_method),
         "peak_detection": _normalize_peak_detection_values(peak_prominence, peak_distance, peak_max_peaks),
-        "similarity_matching": _normalize_similarity_matching_values(sim_top_n, sim_minimum_score),
+        "similarity_matching": _normalize_similarity_matching_values(
+            sim_metric,
+            sim_top_n,
+            sim_minimum_score,
+            template_id=template_id,
+        ),
     }
 
 
-def _ftir_overrides_from_draft(draft: dict | None) -> dict[str, Any]:
-    norm = _normalize_ftir_processing_draft(draft)
+def _ftir_overrides_from_draft(draft: dict | None, *, template_id: str | None = None) -> dict[str, Any]:
+    norm = _normalize_ftir_processing_draft(draft, template_id=template_id)
     return {
         "smoothing": copy.deepcopy(norm["smoothing"]),
         "baseline": copy.deepcopy(norm["baseline"]),
@@ -331,6 +362,7 @@ def _ftir_overrides_from_draft(draft: dict | None) -> dict[str, Any]:
 def _ftir_draft_from_loaded_processing(processing: dict | None) -> dict[str, Any]:
     if not isinstance(processing, dict):
         return copy.deepcopy(_default_ftir_processing_draft())
+    template_id = str(processing.get("workflow_template_id") or "").strip() or None
     sp = processing.get("signal_pipeline") or {}
     ast = processing.get("analysis_steps") or {}
     sm = sp.get("smoothing") if isinstance(sp.get("smoothing"), dict) else processing.get("smoothing")
@@ -338,17 +370,20 @@ def _ftir_draft_from_loaded_processing(processing: dict | None) -> dict[str, Any
     nm = sp.get("normalization") if isinstance(sp.get("normalization"), dict) else processing.get("normalization")
     pk = ast.get("peak_detection") if isinstance(ast.get("peak_detection"), dict) else processing.get("peak_detection")
     sim = ast.get("similarity_matching") if isinstance(ast.get("similarity_matching"), dict) else processing.get("similarity_matching")
-    return _normalize_ftir_processing_draft({
-        "smoothing": sm,
-        "baseline": bl,
-        "normalization": nm,
-        "peak_detection": pk,
-        "similarity_matching": sim,
-    })
+    return _normalize_ftir_processing_draft(
+        {
+            "smoothing": sm,
+            "baseline": bl,
+            "normalization": nm,
+            "peak_detection": pk,
+            "similarity_matching": sim,
+        },
+        template_id=template_id,
+    )
 
 
-def _ftir_preset_processing_body_for_save(draft: dict | None) -> dict[str, Any]:
-    norm = _normalize_ftir_processing_draft(draft)
+def _ftir_preset_processing_body_for_save(draft: dict | None, *, template_id: str | None = None) -> dict[str, Any]:
+    norm = _normalize_ftir_processing_draft(draft, template_id=template_id)
     return {
         "smoothing": copy.deepcopy(norm["smoothing"]),
         "baseline": copy.deepcopy(norm["baseline"]),
@@ -360,7 +395,7 @@ def _ftir_preset_processing_body_for_save(draft: dict | None) -> dict[str, Any]:
 
 def _ftir_ui_snapshot_dict(template_id: str | None, draft: dict | None) -> dict[str, Any]:
     tid = template_id if template_id in _FTIR_TEMPLATE_IDS else "ftir.general"
-    norm = _normalize_ftir_processing_draft(draft)
+    norm = _normalize_ftir_processing_draft(draft, template_id=tid)
     return {
         "workflow_template_id": tid,
         "smoothing": norm["smoothing"],
@@ -729,20 +764,27 @@ def _ftir_similarity_matching_controls_card() -> dbc.Card:
                     [
                         dbc.Col(
                             [
+                                dbc.Label(id="ftir-sim-metric-label", html_for="ftir-sim-metric", className="mb-1"),
+                                dbc.Select(id="ftir-sim-metric", options=[], value=_default_ftir_similarity_metric()),
+                            ],
+                            md=4,
+                        ),
+                        dbc.Col(
+                            [
                                 dbc.Label(id="ftir-sim-top-n-label", html_for="ftir-sim-top-n", className="mb-1"),
                                 dbc.Input(id="ftir-sim-top-n", type="number", min=1, step=1, value=3),
                             ],
-                            md=6,
+                            md=4,
                         ),
                         dbc.Col(
                             [
                                 dbc.Label(id="ftir-sim-minimum-score-label", html_for="ftir-sim-minimum-score", className="mb-1"),
                                 dbc.Input(id="ftir-sim-minimum-score", type="number", min=0, max=1, step=0.01, value=0.45),
                             ],
-                            md=6,
+                            md=4,
                         ),
                     ],
-                    className="g-2",
+                    className="g-3",
                 ),
             ]
         ),
@@ -1104,8 +1146,8 @@ def apply_ftir_preset(n_clicks, selected_name, hydrate_val, current_draft, undo_
     resolved_tid = template_id_raw if template_id_raw in _FTIR_TEMPLATE_IDS else "ftir.general"
     snap = _ftir_ui_snapshot_dict(resolved_tid, draft)
     status = translate_ui(loc, "dash.analysis.ftir.presets.loaded").format(preset=name)
-    old_norm = _normalize_ftir_processing_draft(current_draft)
-    new_norm = _normalize_ftir_processing_draft(draft)
+    old_norm = _normalize_ftir_processing_draft(current_draft, template_id=resolved_tid)
+    new_norm = _normalize_ftir_processing_draft(draft, template_id=resolved_tid)
     past2, fut2 = append_undo_after_edit(undo_stack, redo_stack, old_norm, new_norm)
     return (
         draft,
@@ -1169,7 +1211,7 @@ def save_ftir_preset(n_save, n_saveas, selected_name, save_name, draft, template
     else:
         raise dash.exceptions.PreventUpdate
 
-    processing_body = _ftir_preset_processing_body_for_save(draft)
+    processing_body = _ftir_preset_processing_body_for_save(draft, template_id=template_id)
     try:
         response = api_client.save_analysis_preset(
             _FTIR_PRESET_ANALYSIS_TYPE,
@@ -1261,6 +1303,7 @@ def render_ftir_preset_loaded_line(loaded_name, locale_data):
     Input("ftir-peak-prominence", "value"),
     Input("ftir-peak-distance", "value"),
     Input("ftir-peak-max-peaks", "value"),
+    Input("ftir-sim-metric", "value"),
     Input("ftir-sim-top-n", "value"),
     Input("ftir-sim-minimum-score", "value"),
     State("ftir-preset-snapshot", "data"),
@@ -1272,7 +1315,7 @@ def render_ftir_preset_dirty_flag(
     bl_m, bl_l, bl_p, bl_re, bl_rmin, bl_rmax,
     nm_m,
     pk_pr, pk_dist, pk_mp,
-    sim_tn, sim_ms,
+    sim_metric, sim_tn, sim_ms,
     snapshot,
 ):
     loc = _loc(locale_data)
@@ -1285,7 +1328,8 @@ def render_ftir_preset_dirty_flag(
             bl_m, bl_l, bl_p, bl_re, bl_rmin, bl_rmax,
             nm_m,
             pk_pr, pk_dist, pk_mp,
-            sim_tn, sim_ms,
+            sim_metric, sim_tn, sim_ms,
+            template_id=template_id,
         ),
     )
     if _ftir_snapshots_equal(snapshot, current):
@@ -1416,15 +1460,23 @@ def render_ftir_peak_chrome(locale_data):
 @callback(
     Output("ftir-similarity-card-title", "children"),
     Output("ftir-similarity-card-hint", "children"),
+    Output("ftir-sim-metric-label", "children"),
+    Output("ftir-sim-metric", "options"),
     Output("ftir-sim-top-n-label", "children"),
     Output("ftir-sim-minimum-score-label", "children"),
     Input("ui-locale", "data"),
 )
 def render_ftir_similarity_chrome(locale_data):
     loc = _loc(locale_data)
+    metric_options = [
+        {"label": translate_ui(loc, "dash.analysis.ftir.similarity.metric.cosine"), "value": "cosine"},
+        {"label": translate_ui(loc, "dash.analysis.ftir.similarity.metric.pearson"), "value": "pearson"},
+    ]
     return (
         translate_ui(loc, "dash.analysis.ftir.similarity.title"),
         translate_ui(loc, "dash.analysis.ftir.similarity.hint"),
+        translate_ui(loc, "dash.analysis.ftir.similarity.metric"),
+        metric_options,
         translate_ui(loc, "dash.analysis.ftir.similarity.top_n"),
         translate_ui(loc, "dash.analysis.ftir.similarity.minimum_score"),
     )
@@ -1491,14 +1543,16 @@ def toggle_ftir_baseline_region_inputs(enabled):
     Output("ftir-peak-prominence", "value"),
     Output("ftir-peak-distance", "value"),
     Output("ftir-peak-max-peaks", "value"),
+    Output("ftir-sim-metric", "value"),
     Output("ftir-sim-top-n", "value"),
     Output("ftir-sim-minimum-score", "value"),
     Input("ftir-preset-hydrate", "data"),
     Input("ftir-history-hydrate", "data"),
+    Input("ftir-template-select", "value"),
     State("ftir-processing-draft", "data"),
 )
-def hydrate_ftir_processing_controls(_preset_hydrate, _history_hydrate, draft):
-    d = _normalize_ftir_processing_draft(draft)
+def hydrate_ftir_processing_controls(_preset_hydrate, _history_hydrate, template_id, draft):
+    d = _normalize_ftir_processing_draft(draft, template_id=template_id)
     sm = d["smoothing"]
     bl = d["baseline"]
     nm = d["normalization"]
@@ -1524,6 +1578,7 @@ def hydrate_ftir_processing_controls(_preset_hydrate, _history_hydrate, draft):
     dist = int(pk.get("distance", 5))
     mp = int(pk.get("max_peaks", 10))
 
+    metric = str(sim.get("metric") or _default_ftir_similarity_metric(template_id))
     top_n = int(sim.get("top_n", 3))
     min_score = float(sim.get("minimum_score", 0.45))
 
@@ -1532,7 +1587,7 @@ def hydrate_ftir_processing_controls(_preset_hydrate, _history_hydrate, draft):
         bl_method, lam, p, bool(enabled), region_min, region_max,
         norm_method,
         prom, dist, mp,
-        top_n, min_score,
+        metric, top_n, min_score,
     )
 
 
@@ -1559,6 +1614,8 @@ def hydrate_ftir_processing_controls(_preset_hydrate, _history_hydrate, draft):
     Input("ftir-peak-prominence", "value"),
     Input("ftir-peak-distance", "value"),
     Input("ftir-peak-max-peaks", "value"),
+    Input("ftir-template-select", "value"),
+    Input("ftir-sim-metric", "value"),
     Input("ftir-sim-top-n", "value"),
     Input("ftir-sim-minimum-score", "value"),
     State("ftir-processing-draft", "data"),
@@ -1571,18 +1628,21 @@ def sync_ftir_processing_draft_from_controls(
     bl_m, bl_l, bl_p, bl_re, bl_rmin, bl_rmax,
     nm_m,
     pk_pr, pk_dist, pk_mp,
-    sim_tn, sim_ms,
+    template_id, sim_metric, sim_tn, sim_ms,
     prev_draft, undo_stack, redo_stack,
 ):
+    ctx = dash.callback_context
+    metric_value = None if ctx.triggered_id == "ftir-template-select" else sim_metric
     new_draft = _ftir_draft_from_control_values(
         sm_m, sm_w, sm_p, sm_s,
         bl_m, bl_l, bl_p, bl_re, bl_rmin, bl_rmax,
         nm_m,
         pk_pr, pk_dist, pk_mp,
-        sim_tn, sim_ms,
+        metric_value, sim_tn, sim_ms,
+        template_id=template_id,
     )
-    old_norm = _normalize_ftir_processing_draft(prev_draft)
-    new_norm = _normalize_ftir_processing_draft(new_draft)
+    old_norm = _normalize_ftir_processing_draft(prev_draft, template_id=template_id)
+    new_norm = _normalize_ftir_processing_draft(new_draft, template_id=template_id)
     past2, fut2 = append_undo_after_edit(undo_stack, redo_stack, old_norm, new_norm)
     return new_norm, past2, fut2
 
@@ -1601,16 +1661,17 @@ def sync_ftir_processing_draft_from_controls(
     State("ftir-processing-redo-stack", "data"),
     State("ftir-history-hydrate", "data"),
     State("ftir-processing-default", "data"),
+    State("ftir-template-select", "value"),
     State("ui-locale", "data"),
     prevent_initial_call=True,
 )
-def ftir_processing_history_actions(n_undo, n_redo, n_reset, draft, undo_stack, redo_stack, hist_hydrate, defaults, locale_data):
+def ftir_processing_history_actions(n_undo, n_redo, n_reset, draft, undo_stack, redo_stack, hist_hydrate, defaults, template_id, locale_data):
     loc = _loc(locale_data)
     ctx = dash.callback_context
     if not ctx.triggered:
         raise dash.exceptions.PreventUpdate
     trig = ctx.triggered_id
-    cur = _normalize_ftir_processing_draft(draft)
+    cur = _normalize_ftir_processing_draft(draft, template_id=template_id)
     past = undo_stack or []
     fut = redo_stack or []
     h = int(hist_hydrate or 0)
@@ -1636,7 +1697,11 @@ def ftir_processing_history_actions(n_undo, n_redo, n_reset, draft, undo_stack, 
     if trig == "ftir-processing-reset-btn":
         if not n_reset:
             raise dash.exceptions.PreventUpdate
-        default_draft = _normalize_ftir_processing_draft(copy.deepcopy(defaults or _default_ftir_processing_draft()))
+        default_seed = copy.deepcopy(defaults or _default_ftir_processing_draft(template_id))
+        if isinstance(default_seed.get("similarity_matching"), dict):
+            default_seed["similarity_matching"] = dict(default_seed["similarity_matching"])
+            default_seed["similarity_matching"].pop("metric", None)
+        default_draft = _normalize_ftir_processing_draft(default_seed, template_id=template_id)
         if ftir_draft_processing_equal(cur, default_draft):
             raise dash.exceptions.PreventUpdate
         past_list = [copy.deepcopy(x) for x in past if isinstance(x, dict)]
@@ -1687,7 +1752,7 @@ def run_ftir_analysis(n_clicks, project_id, dataset_key, template_id, processing
 
     from dash_app.api_client import analysis_run
 
-    overrides = _ftir_overrides_from_draft(processing_draft)
+    overrides = _ftir_overrides_from_draft(processing_draft, template_id=template_id)
     try:
         result = analysis_run(
             project_id=project_id,

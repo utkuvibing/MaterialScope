@@ -12,6 +12,10 @@
 
 **Done (2026-04-22).** DSC/DTA processing history labels and TGA quality/metadata/summary labels now use modality-native i18n keys instead of borrowing from TGA/DSC. 28 new keys, 32 reference swaps, 6 regression tests. Zero cross-namespace references remain.
 
+### Completed: P0-4 — Similarity matching metric selector for FTIR/Raman
+
+**Done (2026-04-22).** FTIR and Raman Dash pages now expose `cosine` / `pearson` similarity metric selectors and persist the chosen metric through processing drafts, presets, dirty tracking, undo/redo/reset, and run payload overrides. Metric defaults are template-first with `cosine` fallback, and backend local ranking plus cloud spectral search now honor the selected metric end-to-end. Focused verification passed: `pytest tests/test_ftir_dash_page.py tests/test_raman_dash_page.py tests/test_batch_runner.py -q` → 116 passed.
+
 ### Completed: P1-1 — CSS class namespace cleanup
 
 **Done (2026-04-22).** Shared structural result-role classes migrated from modality-specific `dsc-*`/`dta-*` prefixes to generic `ms-*` prefix across all 6 pages + CSS. Per-modality root page hooks (`{modality}-page`) added for future styling flexibility. TGA derivative class leakage fixed (`dsc-derivative-*` → `tga-derivative-*`). DTA-only debug classes preserved. 260/261 tests pass (1 pre-existing unrelated failure).
@@ -26,7 +30,6 @@ Ordered by priority per the repo-wide parity audit:
 
 | # | Issue | Modalities | Effort | Key files |
 |---|---|---|---|---|
-| P0-4 | Similarity matching metric selector missing (Streamlit exposes cosine/pearson) | FTIR, Raman | S | `ftir.py`, `raman.py` — add metric to similarity controls card |
 | P0-5 | DSC missing mass normalization control (Streamlit has "Normalize by mass" checkbox) | DSC | S | `dsc.py` — add normalize-by-mass toggle in Setup tab |
 
 #### P1 — maturity and consistency fixes
@@ -50,7 +53,7 @@ Ordered by priority per the repo-wide parity audit:
 ### Recommended execution order
 
 1. ~~P1-1 — CSS class namespace cleanup (done)~~
-2. P0-4 — Similarity metric selector (small)
+2. ~~P0-4 — Similarity metric selector (done)~~
 3. P0-5 — DSC mass normalization (small)
 4. P1-2 — Figure capture toolbar standardization (large, high UX value, use XRD as template)
 5. P1-3 + P1-4 — Shared boilerplate extraction (large, maintenance burden reduction)
@@ -65,7 +68,7 @@ Ordered by priority per the repo-wide parity audit:
 | DSC | 818 | 2674 | Near | Mass normalization missing |
 | TGA | 886 | 2360 | Near | Was borrowing DSC i18n keys (fixed); CSS class leakage |
 | DTA | 818 | 2973 | Near | Cleanest CSS scoping |
-| FTIR | 12 (delegates) | 2625 | Near | Similarity metric selector missing |
+| FTIR | 12 (delegates) | 2625 | Near | Figure capture toolbar inconsistency; fewer spectral plot toggles than Streamlit |
 | Raman | 12 (delegates) | 2630 | Near | Same as FTIR; literature compare is Dash improvement |
 | XRD | 2432 | 2697 | Near | Most complete figure toolbar; template for others |
 

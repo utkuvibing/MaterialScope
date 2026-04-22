@@ -649,6 +649,7 @@ class ManagedLibraryCloudService:
         normalized_signal, _, _ = _normalize_spectral_signal(smoothed, {"method": "vector"})
         top_n = max(1, int(request_payload.get("top_n") or 5))
         minimum_score = float(request_payload.get("minimum_score") or 0.45)
+        metric = str(request_payload.get("metric") or "cosine").strip().lower() or "cosine"
         peak_config = {"prominence": 0.05, "min_distance": 6, "max_peaks": 12}
         observed_peaks, _, _ = _detect_spectral_peaks(axis, normalized_signal, peak_config)
         top_n_internal = top_n if token != "RAMAN" else max(top_n * 5, 10)
@@ -659,7 +660,7 @@ class ManagedLibraryCloudService:
             query_signal=normalized_signal,
             observed_peaks=observed_peaks,
             references=references,
-            matching_config={"top_n": top_n_internal, "minimum_score": minimum_score},
+            matching_config={"metric": metric, "top_n": top_n_internal, "minimum_score": minimum_score},
             peak_config=peak_config,
         )
         rows = self._attach_hosted_row_provenance(rows, reference_lookup=reference_lookup)

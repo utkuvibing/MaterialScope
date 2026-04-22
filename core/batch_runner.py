@@ -1157,6 +1157,13 @@ def _shared_peak_count(observed_peaks: list[dict[str, float]], reference_peaks: 
     return shared
 
 
+def _resolve_spectral_matching_metric(matching_config: Mapping[str, Any]) -> str:
+    token = str((matching_config or {}).get("metric") or "").strip().lower()
+    if token in {"cosine", "pearson", "cosine_prerank_then_pearson_peak_overlap"}:
+        return token
+    return "cosine"
+
+
 def _rank_spectral_matches(
     *,
     axis: np.ndarray,
@@ -1168,9 +1175,11 @@ def _rank_spectral_matches(
 ) -> list[dict[str, Any]]:
     top_n = int(matching_config.get("top_n") or 3)
     minimum_score = float(matching_config.get("minimum_score") or 0.45)
+    metric = _resolve_spectral_matching_metric(matching_config)
     if top_n < 1:
         top_n = 1
 
+    prerank_metric = "cosine" if metric == "cosine_prerank_then_pearson_peak_overlap" else metric
     preranked: list[dict[str, Any]] = []
     for reference in references:
         reference_axis = reference["axis"]
@@ -1179,19 +1188,19 @@ def _rank_spectral_matches(
         reference_smoothed = _apply_spectral_smoothing(interpolated, {"method": "none"})
         reference_normalized, _, _ = _normalize_spectral_signal(reference_smoothed, {"method": "vector"})
         reference_peaks, _, _ = _detect_spectral_peaks(axis, reference_normalized, peak_config)
-        cosine_score = _spectral_similarity(query_signal, reference_normalized, "cosine")
+        prerank_score = _spectral_similarity(query_signal, reference_normalized, prerank_metric)
         preranked.append(
             {
                 "reference": reference,
                 "reference_normalized": reference_normalized,
                 "reference_peaks": reference_peaks,
-                "cosine_score": cosine_score,
+                "prerank_score": prerank_score,
             }
         )
 
     preranked.sort(
         key=lambda item: (
-            -float(item["cosine_score"]),
+            -float(item["prerank_score"]),
             -int((item["reference"] or {}).get("priority") or 0),
             str((item["reference"] or {}).get("candidate_id") or ""),
         )
@@ -1204,8 +1213,12 @@ def _rank_spectral_matches(
         reference_peaks = item["reference_peaks"]
         shared = _shared_peak_count(observed_peaks, reference_peaks)
         overlap_ratio = float(shared / max(len(observed_peaks), len(reference_peaks), 1))
+        cosine_score = _spectral_similarity(query_signal, reference_normalized, "cosine")
         pearson_score = _spectral_similarity(query_signal, reference_normalized, "pearson")
-        score = float(max(0.0, min(1.0, (0.7 * pearson_score) + (0.3 * overlap_ratio))))
+        if metric == "cosine_prerank_then_pearson_peak_overlap":
+            score = float(max(0.0, min(1.0, (0.7 * pearson_score) + (0.3 * overlap_ratio))))
+        else:
+            score = float(_spectral_similarity(query_signal, reference_normalized, metric))
         confidence_band = _confidence_band(score, minimum_score)
         ranked.append(
             {
@@ -1217,12 +1230,14 @@ def _rank_spectral_matches(
                 "library_package": reference.get("package_id") or "",
                 "library_version": reference.get("package_version") or "",
                 "evidence": {
-                    "metric": "cosine_prerank_then_pearson_peak_overlap",
+                    "metric": metric,
                     "observed_peak_count": len(observed_peaks),
                     "reference_peak_count": len(reference_peaks),
                     "shared_peak_count": shared,
                     "peak_overlap_ratio": round(overlap_ratio, 4),
-                    "cosine_prerank_score": round(float(item["cosine_score"]), 4),
+                    "prerank_metric": prerank_metric,
+                    "prerank_score": round(float(item["prerank_score"]), 4),
+                    "cosine_score": round(cosine_score, 4),
                     "pearson_score": round(pearson_score, 4),
                     "library_provider": reference.get("provider") or "",
                     "library_package": reference.get("package_id") or "",
@@ -1318,6 +1333,7 @@ def _execute_spectral_batch(
                 "import_metadata": {
                     "import_review_required": bool((dataset.metadata or {}).get("import_review_required")),
                 },
+                "metric": str(similarity_matching.get("metric") or "cosine"),
                 "top_n": int(similarity_matching.get("top_n") or 3),
                 "minimum_score": float(similarity_matching.get("minimum_score") or 0.45),
             },
@@ -1421,7 +1437,7 @@ def _execute_spectral_batch(
             "batch_run_id": batch_run_id or "",
             "batch_template_runner": "compare_workspace",
             "reference_candidate_count": len(references),
-            "matching_metric": "cosine_prerank_then_pearson_peak_overlap",
+            "matching_metric": str(similarity_matching.get("metric") or "cosine"),
             "matching_top_n": int(similarity_matching.get("top_n") or 3),
             "matching_minimum_score": minimum_score,
             "library_sync_mode": library_context["library_sync_mode"],

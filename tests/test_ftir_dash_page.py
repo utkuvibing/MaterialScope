@@ -80,6 +80,7 @@ def test_layout_contains_section_ids_in_order():
         "ftir-peak-prominence",
         "ftir-peak-distance",
         "ftir-peak-max-peaks",
+        "ftir-sim-metric",
         "ftir-sim-top-n",
         "ftir-sim-minimum-score",
         "ftir-result-analysis-summary",
@@ -128,6 +129,7 @@ def test_default_processing_draft_has_all_sections():
     assert defaults["baseline"]["method"] == "asls"
     assert defaults["normalization"]["method"] == "vector"
     assert defaults["peak_detection"]["prominence"] == 0.035
+    assert defaults["similarity_matching"]["metric"] == "cosine"
     assert defaults["similarity_matching"]["top_n"] == 3
 
 
@@ -164,7 +166,7 @@ def test_normalize_normalization_values_defaults():
 
 def test_normalize_similarity_matching_values():
     mod = _import_ftir_page()
-    assert mod._normalize_similarity_matching_values(5, 0.6) == {"top_n": 5, "minimum_score": 0.6}
+    assert mod._normalize_similarity_matching_values("pearson", 5, 0.6) == {"metric": "pearson", "top_n": 5, "minimum_score": 0.6}
 
 
 def test_undo_redo_reset_cycle_for_processing_draft():
@@ -202,22 +204,28 @@ def test_ftir_overrides_from_draft_includes_all_sections():
         "baseline": {"method": "asls", "lam": 1e5, "p": 0.02, "region": [400.0, 1800.0]},
         "normalization": {"method": "snv"},
         "peak_detection": {"prominence": 0.08, "distance": 8, "max_peaks": 12},
-        "similarity_matching": {"top_n": 5, "minimum_score": 0.6},
+        "similarity_matching": {"metric": "pearson", "top_n": 5, "minimum_score": 0.6},
     }
     overrides = mod._ftir_overrides_from_draft(draft)
     assert set(overrides.keys()) == {"smoothing", "baseline", "normalization", "peak_detection", "similarity_matching"}
     assert overrides["baseline"]["region"] == [400.0, 1800.0]
+    assert overrides["similarity_matching"]["metric"] == "pearson"
 
 
 def test_ftir_draft_from_loaded_processing_nested():
     mod = _import_ftir_page()
     processing = {
+        "workflow_template_id": "ftir.functional_groups",
         "signal_pipeline": {"smoothing": {"method": "moving_average", "window_length": 9}},
-        "analysis_steps": {"peak_detection": {"prominence": 0.08, "distance": 6, "max_peaks": 8}},
+        "analysis_steps": {
+            "peak_detection": {"prominence": 0.08, "distance": 6, "max_peaks": 8},
+            "similarity_matching": {"top_n": 4, "minimum_score": 0.5},
+        },
     }
     draft = mod._ftir_draft_from_loaded_processing(processing)
     assert draft["smoothing"]["method"] == "moving_average"
     assert draft["peak_detection"]["prominence"] == 0.08
+    assert draft["similarity_matching"]["metric"] == "cosine"
 
 
 def test_ftir_preset_processing_body_for_save_includes_all_sections():
@@ -229,6 +237,7 @@ def test_ftir_preset_processing_body_for_save_includes_all_sections():
     body = mod._ftir_preset_processing_body_for_save(draft)
     assert set(body.keys()) == {"smoothing", "baseline", "normalization", "peak_detection", "similarity_matching"}
     assert body["smoothing"]["window_length"] == 15
+    assert body["similarity_matching"]["metric"] == "cosine"
 
 
 def test_ftir_snapshots_equal_for_dirty_tracking():
@@ -248,10 +257,11 @@ def test_ftir_controls_to_draft_normalizes_window_and_prominence():
         "asls", 1e6, 0.01, False, None, None,
         "vector",
         0.0, 1, 1,
-        3, 0.45,
+        "pearson", 3, 0.45,
     )
     assert d["smoothing"]["window_length"] % 2 == 1
     assert d["peak_detection"]["prominence"] == 0.0
+    assert d["similarity_matching"]["metric"] == "pearson"
 
 
 def test_run_ftir_analysis_forwards_processing_overrides(monkeypatch):
@@ -275,6 +285,7 @@ def test_run_ftir_analysis_forwards_processing_overrides(monkeypatch):
     )
     assert captured.get("processing_overrides") is not None
     assert captured["processing_overrides"]["smoothing"]["window_length"] == 21
+    assert captured["processing_overrides"]["similarity_matching"]["metric"] == "cosine"
 
 
 def test_build_ftir_quality_card_renders_validation_and_checks():
@@ -630,7 +641,7 @@ def test_preset_dirty_flag_renders_clean_when_snapshot_matches():
         "asls", 1e6, 0.01, False, None, None,
         "vector",
         0.035, 5, 12,
-        3, 0.45,
+        "cosine", 3, 0.45,
         snap,
     )
     assert "text-success" in str(flag)
@@ -646,7 +657,7 @@ def test_preset_dirty_flag_renders_dirty_when_snapshot_differs():
         "asls", 1e6, 0.01, False, None, None,
         "vector",
         0.035, 5, 12,
-        3, 0.45,
+        "cosine", 3, 0.45,
         snap,
     )
     assert "text-warning" in str(flag)

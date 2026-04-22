@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-04-22 — P0-4 completed: FTIR/Raman similarity metric is template-first and backend-honored end-to-end
+
+**Decision:**
+
+1. FTIR and Raman Dash pages expose a similarity metric selector with exactly **`cosine`** and **`pearson`** options; no additional spectral matching metrics are introduced in this slice.
+2. Metric defaults are **template-first**, with **`cosine`** as the fallback when a template does not specify one. Raman template defaults may intentionally differ by workflow (for example, polymorph-oriented Raman templates may default to `pearson`).
+3. The selected metric is part of the persisted processing state and must flow through **processing drafts, hydration, dirty tracking, preset save/load, undo/redo/reset, and `/analysis/run` processing overrides**.
+4. Backend spectral matching must honor the selected metric in **both** local ranking (`core/batch_runner.py::_rank_spectral_matches`) and cloud spectral search (`backend/library_cloud_service.py::search_spectral` + `backend/models.py::SpectralLibrarySearchRequest`). UI exposure without backend propagation is not considered complete.
+
+**Reason:** Streamlit already exposed cosine/pearson selection for spectral matching, while Dash FTIR/Raman lacked that control and previously relied on backend behavior that effectively hardcoded the metric path. End-to-end parity required both UI persistence and backend enforcement.
+
+**Consequence / future:** Future spectral-matching work must treat `metric` as a first-class processing parameter for FTIR/Raman. If new metrics are added later, they must be reflected consistently in templates, preset payloads, batch/cloud ranking paths, and targeted regression tests.
+
+---
+
 ## 2026-04-22 — Repo-wide Dash vs Streamlit parity audit: remediation backlog agreed
 
 **Decision:**
@@ -13,7 +28,7 @@
    - **P0-2 + P0-3 (done):** i18n key namespace leakage — DSC/DTA borrowing TGA processing history keys; TGA borrowing DSC quality/metadata/summary keys. 28 new keys, 32 reference swaps, 6 regression tests.
    - **P1-1 (done):** CSS class namespace cleanup — 5 modalities use `dsc-result-*` CSS classes; only DTA uses own-prefixed classes. Prerequisite for per-modality styling.
    - **P0-1 (done):** Baseline method gap — DSC/DTA now expose the full core-supported baseline set; DTA callback wiring and DSC/DTA baseline i18n were completed.
-   - **P0-4:** Similarity metric selector — FTIR/Raman lack cosine/pearson metric toggle that Streamlit exposes.
+   - **P0-4 (done):** Similarity metric selector — FTIR/Raman now expose cosine/pearson metric selection with template-first defaults and backend-honored local/cloud matching.
    - **P0-5:** DSC mass normalization — missing "Normalize by mass" control present in Streamlit.
    - **P1-2:** Figure capture toolbar — only XRD has snapshot/report toolbar; port to other modalities.
    - **P1-3 + P1-4:** Shared boilerplate extraction — duplicated coercion helpers, preset cards, quality cards, metadata panels across 6 pages.
