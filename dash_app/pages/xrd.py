@@ -81,6 +81,8 @@ _XRD_RESULT_CARD_ROLES = {
     "secondary": "dsc-result-secondary",
 }
 
+_XRD_LEFT_PANEL_CARD = "xrd-left-panel-card mb-2"
+
 _XRD_USER_FACING_METADATA_KEYS: frozenset[str] = frozenset({
     "sample_name",
     "display_name",
@@ -142,8 +144,9 @@ def _display_candidate_name(row: dict, loc: str) -> str:
 
 
 def _xrd_result_section(child: Any, *, role: str = "support") -> html.Div:
+    """Wraps one band on the right-hand results column; spacing comes from ``xrd-result-surface-block`` in CSS."""
     role_class = _XRD_RESULT_CARD_ROLES.get(role, _XRD_RESULT_CARD_ROLES["support"])
-    return html.Div(child, className=f"dsc-result-section {role_class}")
+    return html.Div(child, className=f"dsc-result-section xrd-result-surface-block {role_class}")
 
 
 def _xrd_collapsible_section(
@@ -188,12 +191,12 @@ def _match_card(row: dict, idx: int, loc: str = "en") -> dbc.Card:
             [
                 html.Div(
                     [
-                        html.I(className="bi bi-bullseye me-1", style={"color": color, "fontSize": "0.95rem"}),
-                        html.Strong(translate_ui(loc, "dash.analysis.label.candidate_n", n=idx + 1), className="me-2 small"),
+                        html.I(className="bi bi-bullseye me-1", style={"color": color, "fontSize": "0.9rem", "opacity": 0.9}),
+                        html.Strong(translate_ui(loc, "dash.analysis.label.candidate_n", n=idx + 1), className="me-2 small text-body-secondary"),
                         html.Span(
                             _confidence_band_label(loc, confidence),
                             className="badge",
-                            style={"backgroundColor": color, "color": "white", "fontSize": "0.68rem"},
+                            style={"backgroundColor": color, "color": "white", "fontSize": "0.65rem", "fontWeight": 500},
                         ),
                     ],
                     className="mb-1",
@@ -240,10 +243,10 @@ def _match_card(row: dict, idx: int, loc: str = "en") -> dbc.Card:
                     className="mb-0 text-muted small mt-1 lh-sm",
                 ),
             ],
-            className="py-2 px-2",
+            className="py-2 px-2 xrd-candidate-card-body",
         ),
         outline=True,
-        className="mb-2 shadow-none",
+        className="mb-2 shadow-none xrd-candidate-card border-secondary-subtle",
     )
 
 
@@ -272,9 +275,10 @@ def _xrd_setup_review_card() -> dbc.Card:
                 dbc.Input(id="xrd-review-wavelength", type="number", step=0.0001, min=0, value=None),
                 html.Div(id="xrd-setup-import-warnings", className="small mt-2"),
                 html.Div(id="xrd-setup-validation", className="small mt-2"),
-            ]
+            ],
+            className="xrd-left-panel-card-body",
         ),
-        className="mb-3",
+        className="xrd-left-panel-card mb-3",
     )
 
 
@@ -293,9 +297,10 @@ def _xrd_processing_history_card() -> dbc.Card:
                     className="g-2 align-items-center mb-1",
                 ),
                 html.Div(id="xrd-history-status", className="small text-muted"),
-            ]
+            ],
+            className="xrd-left-panel-card-body",
         ),
-        className="mb-2",
+        className=_XRD_LEFT_PANEL_CARD,
     )
 
 
@@ -328,9 +333,10 @@ def _xrd_preset_card() -> dbc.Card:
                     className="g-2 mb-2 align-items-center",
                 ),
                 html.Div(id="xrd-preset-status", className="small text-muted"),
-            ]
+            ],
+            className="xrd-left-panel-card-body",
         ),
-        className="mb-2",
+        className=_XRD_LEFT_PANEL_CARD,
     )
 
 
@@ -358,9 +364,10 @@ def _axis_card() -> dbc.Card:
                     ],
                     className="g-2 mt-2",
                 ),
-            ]
+            ],
+            className="xrd-left-panel-card-body",
         ),
-        className="mb-2",
+        className=_XRD_LEFT_PANEL_CARD,
     )
 
 
@@ -386,9 +393,10 @@ def _smooth_card() -> dbc.Card:
                     ],
                     className="g-2 mt-2",
                 ),
-            ]
+            ],
+            className="xrd-left-panel-card-body",
         ),
-        className="mb-2",
+        className=_XRD_LEFT_PANEL_CARD,
     )
 
 
@@ -414,9 +422,10 @@ def _baseline_card() -> dbc.Card:
                     ],
                     className="g-2 mt-2",
                 ),
-            ]
+            ],
+            className="xrd-left-panel-card-body",
         ),
-        className="mb-2",
+        className=_XRD_LEFT_PANEL_CARD,
     )
 
 
@@ -435,9 +444,10 @@ def _peak_card() -> dbc.Card:
                     ],
                     className="g-2",
                 ),
-            ]
+            ],
+            className="xrd-left-panel-card-body",
         ),
-        className="mb-2",
+        className=_XRD_LEFT_PANEL_CARD,
     )
 
 
@@ -468,9 +478,10 @@ def _match_card_controls() -> dbc.Card:
                     ],
                     className="g-2 mt-2",
                 ),
-            ]
+            ],
+            className="xrd-left-panel-card-body",
         ),
-        className="mb-2",
+        className=_XRD_LEFT_PANEL_CARD,
     )
 
 
@@ -565,7 +576,7 @@ def _xrd_plot_settings_advanced_block() -> html.Details:
                     className="g-2 mt-2",
                 ),
             ],
-            className="py-2",
+            className="py-2 px-2 xrd-left-panel-card-body",
         ),
         className="border-0 bg-transparent shadow-none",
     )
@@ -580,7 +591,7 @@ def _xrd_plot_settings_advanced_block() -> html.Details:
             ),
             html.Div(inner, className="ta-details-body mt-1"),
         ],
-        className="ta-ms-details mb-2",
+        className="ta-ms-details mb-1",
         open=False,
     )
 
@@ -607,14 +618,19 @@ def _left_tabs() -> dbc.Tabs:
             ),
             dbc.Tab(
                 [
-                    _xrd_processing_history_card(),
-                    _xrd_preset_card(),
-                    _axis_card(),
-                    _smooth_card(),
-                    _baseline_card(),
-                    _peak_card(),
-                    _match_card_controls(),
-                    _xrd_plot_settings_advanced_block(),
+                    html.Div(
+                        [
+                            _xrd_processing_history_card(),
+                            _xrd_preset_card(),
+                            _axis_card(),
+                            _smooth_card(),
+                            _baseline_card(),
+                            _peak_card(),
+                            _match_card_controls(),
+                            _xrd_plot_settings_advanced_block(),
+                        ],
+                        className="xrd-processing-tab-pane",
+                    )
                 ],
                 tab_id="xrd-tab-processing",
                 label_class_name="ta-tab-label",
@@ -654,64 +670,72 @@ layout = html.Div(
                 dbc.Col(
                     [
                         _xrd_result_section(result_placeholder_card("xrd-result-analysis-summary"), role="context"),
-                        _xrd_result_section(html.Div(id="xrd-result-metrics", className="mb-2"), role="context"),
-                        _xrd_result_section(html.Div(id="xrd-result-quality", className="mb-2"), role="support"),
+                        _xrd_result_section(html.Div(id="xrd-result-metrics", className="mb-0"), role="context"),
+                        _xrd_result_section(html.Div(id="xrd-result-quality", className="mb-0"), role="support"),
                         _xrd_result_section(
                             html.Div(
                                 [
                                     dbc.Card(
                                         dbc.CardBody(
                                             [
-                                                html.Div(id="xrd-result-figure", className="ta-xrd-figure-host"),
+                                                html.Div(id="xrd-result-figure", className="ta-xrd-figure-host mb-0"),
                                                 html.Div(
-                                                    className="d-flex flex-wrap align-items-center gap-2 pt-2 mt-1 border-top border-secondary-subtle",
+                                                    className="xrd-figure-toolbar d-flex flex-wrap align-items-stretch gap-2 pt-2 mt-2 border-top border-secondary-subtle",
                                                     children=[
                                                         html.Div(
                                                             id="xrd-result-figure-controls",
-                                                            className="flex-grow-1",
-                                                            style={"minWidth": "200px", "maxWidth": "520px"},
+                                                            className="xrd-figure-toolbar__overlay flex-grow-1 d-flex align-items-center",
+                                                            style={"minWidth": "min(100%, 12.5rem)"},
                                                         ),
-                                                        html.Div(
-                                                            className="d-flex align-items-center gap-1 flex-shrink-0 ms-auto",
-                                                            children=[
+                                                        dbc.ButtonGroup(
+                                                            [
                                                                 dbc.Button(
                                                                     id="xrd-figure-save-snapshot-btn",
                                                                     color="secondary",
                                                                     size="sm",
                                                                     outline=True,
                                                                     disabled=True,
+                                                                    className="text-nowrap",
                                                                 ),
                                                                 dbc.Button(
                                                                     id="xrd-figure-use-report-btn",
                                                                     color="primary",
                                                                     size="sm",
                                                                     disabled=True,
+                                                                    className="text-nowrap",
                                                                 ),
                                                             ],
+                                                            className="xrd-figure-toolbar__actions flex-shrink-0 align-self-center",
                                                         ),
                                                     ],
                                                 ),
-                                                html.Div(id="xrd-figure-artifact-status", className="small mt-1 text-muted"),
+                                                html.Div(
+                                                    id="xrd-figure-artifact-status",
+                                                    className="xrd-figure-artifact-status small mt-2 text-muted",
+                                                ),
                                             ],
-                                            className="pb-1",
+                                            className="xrd-figure-shell-body",
                                         ),
-                                        className="shadow-sm border-0 bg-body-secondary bg-opacity-10",
+                                        className="dsc-result-figure-shell shadow-sm mb-0",
                                     ),
                                     html.Details(
                                         [
                                             html.Summary(
                                                 [
                                                     html.Span(className="ta-details-chevron"),
-                                                    html.Span(id="xrd-figure-artifacts-summary", className="ms-1 small text-muted"),
+                                                    html.Span(
+                                                        id="xrd-figure-artifacts-summary",
+                                                        className="ms-1 small text-muted xrd-artifacts-summary-label",
+                                                    ),
                                                 ],
-                                                className="ta-details-summary py-2",
+                                                className="ta-details-summary py-1 xrd-artifacts-disclosure-summary",
                                             ),
                                             html.Div(
                                                 id="xrd-result-figure-artifacts",
-                                                className="ta-details-body mt-1 small",
+                                                className="ta-details-body mt-2 small text-muted xrd-artifacts-body",
                                             ),
                                         ],
-                                        className="ta-ms-details mb-0",
+                                        className="ta-ms-details ta-xrd-artifacts-disclosure mb-0 mt-2",
                                         open=False,
                                     ),
                                 ],
@@ -719,13 +743,17 @@ layout = html.Div(
                             ),
                             role="hero",
                         ),
-                        _xrd_result_section(html.Div(id="xrd-result-top-match", className="mb-2"), role="support"),
-                        _xrd_result_section(html.Div(id="xrd-result-candidate-cards", className="mb-2"), role="support"),
-                        _xrd_result_section(html.Div(id="xrd-result-table", className="mb-2"), role="support"),
-                        _xrd_result_section(html.Div(id="xrd-result-processing", className="mb-2"), role="support"),
-                        _xrd_result_section(html.Div(id="xrd-result-raw-metadata", className="mb-2"), role="support"),
+                        _xrd_result_section(html.Div(id="xrd-result-top-match", className="mb-0"), role="support"),
+                        _xrd_result_section(html.Div(id="xrd-result-candidate-cards", className="mb-0"), role="support"),
+                        _xrd_result_section(html.Div(id="xrd-result-table", className="mb-0"), role="support"),
+                        _xrd_result_section(html.Div(id="xrd-result-processing", className="mb-0"), role="support"),
+                        _xrd_result_section(html.Div(id="xrd-result-raw-metadata", className="mb-0"), role="support"),
                         _xrd_result_section(
-                            build_literature_compare_card(id_prefix="xrd", class_name="mb-2 border-secondary-subtle", compact_toolbar=True),
+                            build_literature_compare_card(
+                                id_prefix="xrd",
+                                class_name="xrd-literature-card mb-0 border-0 shadow-none bg-transparent",
+                                compact_toolbar=True,
+                            ),
                             role="secondary",
                         ),
                     ],
@@ -1811,12 +1839,12 @@ def _build_xrd_figure_artifacts_panel(
     if primary_s:
         primary_line = html.P(
             translate_ui(loc, "dash.analysis.xrd.figure.artifacts_primary", label=primary_s),
-            className="small mb-2 mb-md-1",
+            className="small mb-1 text-body-secondary xrd-artifacts-primary-line",
         )
     else:
         primary_line = html.P(
             translate_ui(loc, "dash.analysis.xrd.figure.artifacts_primary_none"),
-            className="small text-muted mb-2 mb-md-1",
+            className="small text-muted mb-1 xrd-artifacts-primary-line opacity-75",
         )
 
     previews_block: list[Any] = []
@@ -1827,7 +1855,7 @@ def _build_xrd_figure_artifacts_panel(
             previews_block.append(
                 html.Div(
                     translate_ui(loc, "dash.analysis.xrd.figure.artifacts_previews_heading"),
-                    className="small fw-semibold text-muted mb-1",
+                    className="small text-muted mb-1 fw-normal xrd-artifacts-previews-label",
                 )
             )
             cols: list[Any] = []
@@ -1842,10 +1870,10 @@ def _build_xrd_figure_artifacts_panel(
                                 html.Img(
                                     src=src,
                                     alt=pk,
-                                    className="img-fluid rounded border mb-1",
-                                    style={"maxHeight": "88px", "objectFit": "contain"},
+                                    className="img-fluid rounded border border-secondary-subtle mb-1 xrd-artifact-preview-img",
+                                    style={"maxHeight": "72px", "objectFit": "contain", "opacity": 0.94},
                                 ),
-                                html.Div(badge + label_short, className="small text-muted text-break"),
+                                html.Div(badge + label_short, className="small text-muted text-break opacity-90"),
                             ],
                             xs=12,
                             sm=6,
@@ -1859,10 +1887,10 @@ def _build_xrd_figure_artifacts_panel(
                             [
                                 html.Div(
                                     translate_ui(loc, "dash.analysis.xrd.figure.artifacts_preview_missing"),
-                                    className="bg-light border rounded d-flex align-items-center justify-content-center text-muted small mb-1",
-                                    style={"height": "88px"},
+                                    className="border border-secondary-subtle rounded d-flex align-items-center justify-content-center text-muted small mb-1 bg-body-secondary bg-opacity-25",
+                                    style={"height": "72px"},
                                 ),
-                                html.Div(badge + label_short, className="small text-muted text-break"),
+                                html.Div(badge + label_short, className="small text-muted text-break opacity-90"),
                             ],
                             xs=12,
                             sm=6,
@@ -1870,7 +1898,7 @@ def _build_xrd_figure_artifacts_panel(
                             className="mb-1",
                         )
                     )
-            previews_block.append(dbc.Row(cols, className="g-2 mb-1"))
+            previews_block.append(dbc.Row(cols, className="g-2 mb-0 xrd-artifact-preview-row"))
         if len(ordered) > MAX_XRD_FIGURE_PREVIEW_TILES:
             previews_block.append(
                 html.P(
@@ -1882,22 +1910,28 @@ def _build_xrd_figure_artifacts_panel(
     meta_lines: list[Any] = []
     if status:
         meta_lines.append(
-            html.P(translate_ui(loc, "dash.analysis.xrd.figure.artifacts_status", status=status), className="small text-muted mb-1")
+            html.P(
+                translate_ui(loc, "dash.analysis.xrd.figure.artifacts_status", status=status),
+                className="small text-muted mb-1 xrd-artifacts-registry-status opacity-80",
+            )
         )
     if err:
         meta_lines.append(html.P(translate_ui(loc, "dash.analysis.xrd.figure.artifacts_error", err=err), className="small text-danger mb-0"))
 
     if keys:
-        keys_block = html.Ul([html.Li(html.Code(k), className="small") for k in keys], className="small mb-0 ps-3")
+        keys_block = html.Ul([html.Li(html.Code(k), className="small") for k in keys], className="small mb-0 ps-3 xrd-artifacts-key-list")
     else:
-        keys_block = html.P(translate_ui(loc, "dash.analysis.xrd.figure.artifacts_empty"), className="small text-muted mb-0")
+        keys_block = html.P(translate_ui(loc, "dash.analysis.xrd.figure.artifacts_empty"), className="small text-muted mb-0 opacity-85")
 
     registry = html.Details(
         [
             html.Summary(
                 [
                     html.Span(className="ta-details-chevron"),
-                    html.Span(translate_ui(loc, "dash.analysis.xrd.figure.artifacts_registry_summary"), className="ms-1 small"),
+                    html.Span(
+                        translate_ui(loc, "dash.analysis.xrd.figure.artifacts_registry_summary"),
+                        className="ms-1 small text-muted xrd-artifacts-registry-summary-label",
+                    ),
                 ],
                 className="ta-details-summary py-1",
             ),
@@ -1906,7 +1940,7 @@ def _build_xrd_figure_artifacts_panel(
                 className="ta-details-body mt-2",
             ),
         ],
-        className="ta-ms-details mb-0 mt-2",
+        className="ta-ms-details mb-0 mt-1 xrd-artifacts-registry-disclosure",
         open=False,
     )
 
@@ -1944,7 +1978,7 @@ def _build_xrd_analysis_summary(dataset_detail: dict, summary: dict, result_meta
     ]
     return html.Div(
         [
-            html.H5(translate_ui(loc, "dash.analysis.xrd.summary.card_title"), className="mb-3"),
+            html.H5(translate_ui(loc, "dash.analysis.xrd.summary.card_title"), className="mb-2"),
             html.Dl(dl_rows, className="row mb-0"),
         ]
     )
@@ -2066,7 +2100,10 @@ def _build_xrd_top_match_hero(summary: dict, rows: list, loc: str) -> html.Div:
     badge_color = "secondary" if rejected else "success"
     return html.Div(
         [
-            html.H5(translate_ui(loc, "dash.analysis.xrd.section.top_match"), className="mb-2"),
+            html.H5(
+                translate_ui(loc, "dash.analysis.xrd.section.top_match"),
+                className="mb-2 small text-uppercase fw-semibold text-muted xrd-top-match-section-title",
+            ),
             dbc.Card(
                 dbc.CardBody(
                     [
@@ -2100,7 +2137,7 @@ def _build_xrd_top_match_hero(summary: dict, rows: list, loc: str) -> html.Div:
                         else (dbc.Alert(caution, color="warning", className="mt-2 mb-0 py-1 small") if caution else html.Div()),
                     ]
                 ),
-                className="border border-primary-subtle shadow-sm",
+                className="border border-primary-subtle shadow-sm xrd-top-match-hero-card",
             ),
         ]
     )
@@ -2108,7 +2145,10 @@ def _build_xrd_top_match_hero(summary: dict, rows: list, loc: str) -> html.Div:
 
 def _build_match_cards(rows: list, summary: dict, loc: str = "en") -> html.Div:
     cards: list = [
-        html.H6(translate_ui(loc, "dash.analysis.section.candidate_matches"), className="mb-2 text-muted text-uppercase small"),
+        html.H6(
+            translate_ui(loc, "dash.analysis.section.candidate_matches"),
+            className="mb-2 text-muted text-uppercase small fw-semibold xrd-candidates-section-title",
+        ),
     ]
     caution_message = str(summary.get("caution_message") or "").strip()
     if caution_message:
@@ -2140,9 +2180,13 @@ def _build_xrd_match_table(rows: list, loc: str = "en") -> html.Div:
     if not rows:
         return html.Div(
             [
-                html.H6(translate_ui(loc, "dash.analysis.section.candidate_evidence_table"), className="mb-2 text-muted small"),
+                html.H6(
+                    translate_ui(loc, "dash.analysis.section.candidate_evidence_table"),
+                    className="mb-2 text-body-secondary small fw-semibold xrd-evidence-table-title",
+                ),
                 html.P(translate_ui(loc, "dash.analysis.state.no_match_data"), className="text-muted small mb-0"),
-            ]
+            ],
+            className="xrd-evidence-table-section",
         )
     flat = [_flatten_xrd_table_row(r) if isinstance(r, dict) else r for r in rows]
     columns = [
@@ -2161,9 +2205,13 @@ def _build_xrd_match_table(rows: list, loc: str = "en") -> html.Div:
     ]
     return html.Div(
         [
-            html.H6(translate_ui(loc, "dash.analysis.section.candidate_evidence_table"), className="mb-2 text-muted small"),
-            dataset_table(flat, columns, table_id="xrd-matches-table"),
-        ]
+            html.H6(
+                translate_ui(loc, "dash.analysis.section.candidate_evidence_table"),
+                className="mb-2 text-body-secondary small fw-semibold xrd-evidence-table-title",
+            ),
+            html.Div(dataset_table(flat, columns, table_id="xrd-matches-table"), className="xrd-evidence-table-wrap"),
+        ],
+        className="xrd-evidence-table-section",
     )
 
 
@@ -2314,22 +2362,29 @@ def display_xrd_result(result_id, _refresh, locale_data, project_id):
             ),
         ]
     )
-    proc_view = processing_details_section(processing, extra_lines=proc_extra, locale_data=locale_data)
+    proc_view = html.Div(
+        processing_details_section(processing, extra_lines=proc_extra, locale_data=locale_data),
+        className="xrd-processing-details-wrap",
+    )
     opts = [{"label": f"#{i + 1} {_display_candidate_name(r, loc)[:48]}", "value": i} for i, r in enumerate(rows) if isinstance(r, dict)]
     controls = html.Div(
-        className="d-flex flex-wrap align-items-center gap-2 w-100",
+        className="d-flex flex-wrap align-items-center gap-2 w-100 xrd-overlay-toolbar-inner",
         children=[
             dbc.Label(
                 translate_ui(loc, "dash.analysis.xrd.figure.overlay_label"),
-                className="small text-muted mb-0 text-nowrap flex-shrink-0",
+                className="small text-muted mb-0 text-nowrap flex-shrink-0 xrd-overlay-label",
             ),
-            dcc.Dropdown(
-                id="xrd-candidate-overlay",
-                options=opts,
-                value=0,
-                clearable=False,
+            html.Div(
+                dcc.Dropdown(
+                    id="xrd-candidate-overlay",
+                    options=opts,
+                    value=0,
+                    clearable=False,
+                    className="xrd-overlay-dropdown-dash",
+                    style={"minWidth": "min(100%, 10rem)", "maxWidth": "100%"},
+                ),
                 className="flex-grow-1",
-                style={"minWidth": "160px", "maxWidth": "100%"},
+                style={"minWidth": "min(100%, 10rem)"},
             ),
         ],
     )
@@ -2570,7 +2625,7 @@ def xrd_figure_snapshot_or_report_figure(snap_clicks, report_clicks, latest_resu
         return dbc.Alert(
             translate_ui(loc, "dash.analysis.xrd.figure.artifact_skip", reason="missing_project_or_result"),
             color="warning",
-            className="py-1 mb-0 small",
+            className="py-1 mb-0 small xrd-figure-inline-alert",
         )
 
     from dash_app.api_client import workspace_result_detail
@@ -2581,7 +2636,7 @@ def xrd_figure_snapshot_or_report_figure(snap_clicks, report_clicks, latest_resu
         return dbc.Alert(
             translate_ui(loc, "dash.analysis.xrd.figure.artifact_error", reason=str(exc)),
             color="danger",
-            className="py-1 mb-0 small",
+            className="py-1 mb-0 small xrd-figure-inline-alert",
         )
     result_meta = detail.get("result", {}) or {}
     dataset_key = result_meta.get("dataset_key")
@@ -2608,17 +2663,17 @@ def xrd_figure_snapshot_or_report_figure(snap_clicks, report_clicks, latest_resu
             msg = translate_ui(loc, "dash.analysis.xrd.figure.snapshot_ok", figure_key=key)
         else:
             msg = translate_ui(loc, "dash.analysis.xrd.figure.report_ok", figure_key=key)
-        return dbc.Alert(msg, color="success", className="py-1 mb-0 small")
+        return dbc.Alert(msg, color="success", className="py-1 mb-0 small xrd-figure-inline-alert")
     if outcome.get("status") == "error":
         return dbc.Alert(
             translate_ui(loc, "dash.analysis.xrd.figure.artifact_error", reason=str(outcome.get("reason") or "")),
             color="danger",
-            className="py-1 mb-0 small",
+            className="py-1 mb-0 small xrd-figure-inline-alert",
         )
     return dbc.Alert(
         translate_ui(loc, "dash.analysis.xrd.figure.artifact_skip", reason=str(outcome.get("reason") or "")),
         color="secondary",
-        className="py-1 mb-0 small",
+        className="py-1 mb-0 small xrd-figure-inline-alert",
     )
 
 

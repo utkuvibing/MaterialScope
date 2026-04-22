@@ -1643,3 +1643,127 @@ html[data-theme="dark"] .main-content .dsc-results-surface .dsc-result-figure-sh
     min-height: 500px;
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* XRD analysis page — final surface polish (toolbar, rhythm, artifacts)     */
+/* -------------------------------------------------------------------------- */
+
+.main-content .dsc-results-surface .dsc-result-section.xrd-result-surface-block {
+  margin-bottom: 1.125rem;
+}
+
+.main-content .dsc-results-surface .dsc-result-section.xrd-result-surface-block:last-child {
+  margin-bottom: 0;
+}
+
+.main-content .dsc-results-surface .xrd-figure-surface .dsc-result-figure-shell > .card-body.xrd-figure-shell-body {
+  padding: 0.55rem 0.62rem 0.45rem;
+}
+
+@media (min-width: 576px) {
+  .main-content .dsc-results-surface .xrd-figure-surface .dsc-result-figure-shell > .card-body.xrd-figure-shell-body {
+    padding: 0.62rem 0.85rem 0.5rem;
+  }
+}
+
+.main-content .dsc-results-surface .xrd-figure-surface .ta-xrd-figure-host .js-plotly-plot {
+  min-height: 420px;
+}
+
+@media (min-width: 992px) {
+  .main-content .dsc-results-surface .xrd-figure-surface .ta-xrd-figure-host .js-plotly-plot {
+    min-height: 460px;
+  }
+}
+
+.main-content .dsc-results-surface .xrd-figure-toolbar {
+  align-items: center;
+  row-gap: 0.5rem;
+  column-gap: 0.65rem;
+}
+
+.main-content .dsc-results-surface .xrd-figure-toolbar__overlay {
+  flex: 1 1 12rem;
+  min-width: min(100%, 12rem);
+}
+
+.main-content .dsc-results-surface .xrd-figure-toolbar__actions.btn-group {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+@media (max-width: 575.98px) {
+  .main-content .dsc-results-surface .xrd-figure-toolbar__actions.btn-group {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+.main-content .dsc-results-surface .xrd-overlay-toolbar-inner .xrd-overlay-dropdown-dash {
+  width: 100%;
+}
+
+.main-content .dsc-results-surface .xrd-figure-artifact-status:empty {
+  display: none;
+}
+
+.main-content .dsc-results-surface .ta-xrd-artifacts-disclosure {
+  opacity: 0.96;
+}
+
+.main-content .dsc-results-surface .xrd-artifacts-disclosure-summary {
+  font-size: 0.8125rem;
+}
+
+.main-content .dsc-results-surface .xrd-artifacts-body {
+  border-left: 2px solid transparent;
+  padding-left: 0.35rem;
+}
+
+.main-content .dsc-results-surface .xrd-evidence-table-section {
+  margin-top: 0.25rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--ta-border);
+}
+
+.main-content .dsc-results-surface .xrd-evidence-table-wrap {
+  font-size: 0.875rem;
+}
+
+.main-content .dsc-results-surface .xrd-processing-details-wrap h5 {
+  margin-bottom: 0.5rem;
+  font-size: 1.01rem;
+}
+
+.main-content .dsc-results-surface .xrd-processing-details-wrap p:last-child {
+  margin-bottom: 0;
+}
+
+.main-content .xrd-processing-tab-pane .xrd-left-panel-card .card-body.xrd-left-panel-card-body {
+  padding: 0.72rem 0.82rem;
+}
+
+.main-content .xrd-processing-tab-pane .xrd-left-panel-card .card-title {
+  font-size: 0.98rem;
+  margin-bottom: 0.35rem;
+}
+
+.main-content .xrd-processing-tab-pane .xrd-left-panel-card .card-body.xrd-left-panel-card-body .small,
+.main-content .xrd-processing-tab-pane .xrd-left-panel-card .card-body.xrd-left-panel-card-body .form-text {
+  line-height: 1.45;
+}
+
+.main-content .dsc-results-surface .xrd-literature-card .card-body {
+  padding: 0.65rem 0.75rem;
+}
+
+.main-content .dsc-results-surface .xrd-literature-card .card-title {
+  font-size: 0.9rem;
+  margin-bottom: 0.35rem;
+  color: var(--ta-muted);
+}
+
+.main-content .dsc-results-surface .xrd-literature-card .ta-ms-details .ta-details-summary {
+  font-size: 0.8125rem;
+}

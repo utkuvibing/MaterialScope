@@ -212,7 +212,9 @@ def test_build_xrd_figure_artifacts_panel_lists_keys():
     )
     s = str(panel)
     assert "XRD Analysis - ds" in s
-    assert "Registry" in s or "Kayıt" in s
+    from utils.i18n import translate_ui
+
+    assert translate_ui("en", "dash.analysis.xrd.figure.artifacts_registry_summary") in s or "Kayıt" in s
 
 
 def test_xrd_figure_artifact_i18n_keys_resolve():
