@@ -16,6 +16,7 @@
 
 - `rtk pytest tests/test_xrd_dash_page.py -q` — **25** passed.
 - `rtk python -m py_compile dash_app/pages/xrd.py` — OK.
+- Changes **committed and pushed** to `origin/web-dash-plotly-migration`.
 
 ## Next step
 
