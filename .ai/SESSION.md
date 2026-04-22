@@ -15,15 +15,24 @@
   - Swapped 32 cross-namespace key references: 7 in `dash_app/pages/dsc.py`, 7 in `dash_app/pages/dta.py`, 18 in `dash_app/pages/tga.py`.
   - Added 6 regression tests (3 source-grep guards + 3 monkeypatch callback tests) across `tests/test_dsc_dash_page.py`, `tests/test_dta_dash_page.py`, `tests/test_tga_dash_page.py`.
   - Verified: zero cross-namespace i18n refs remain; 152/153 tests pass (1 pre-existing unrelated failure).
+- **P1-1 — CSS class namespace cleanup (completed 2026-04-22):**
+  - Renamed shared structural/result-role classes from modality-specific `dsc-*`/`dta-*` prefixes to generic `ms-*` prefix across all 6 pages + CSS: `ms-results-surface`, `ms-result-section`, `ms-result-{context,hero,support,secondary}`, `ms-result-figure-shell`, `ms-result-graph`, `ms-meta-{term,def,value}`.
+  - Added per-modality root page hooks (`dsc-page`, `dta-page`, `tga-page`, `ftir-page`, `raman-page`, `xrd-page`) for future per-modality styling flexibility.
+  - Fixed TGA derivative class leakage: `dsc-derivative-graph` → `tga-derivative-graph`, `dsc-derivative-helper` → `tga-derivative-helper`.
+  - Preserved DTA-only debug classes (`dta-figure-stack`, `dta-result-debug`, `dta-debug-shell`, `dta-debug-graph`) untouched.
+  - Merged duplicate DSC CSS section into shared generic section in `style.css`.
+  - Updated 6 test files to assert new generic class names.
+  - Files touched: `dash_app/assets/style.css`, `dash_app/pages/{dsc,dta,tga,ftir,raman,xrd}.py`, `tests/test_{dsc,dta,tga,ftir,raman,xrd}_dash_page.py`.
 
 ## What was verified
 
-- `rtk pytest tests/test_dsc_dash_page.py tests/test_dta_dash_page.py tests/test_tga_dash_page.py` — 152 passed, 1 pre-existing failure (`test_backend_register_figure_writes_state_and_artifacts` — 409 duplicate figure, unrelated).
-- Grep confirmed zero `dash.analysis.tga.processing.` refs in DSC/DTA and zero `dash.analysis.dsc.{quality,raw_metadata,summary}` refs in TGA.
+- `pytest tests/test_dsc_dash_page.py tests/test_dta_dash_page.py tests/test_tga_dash_page.py tests/test_ftir_dash_page.py tests/test_raman_dash_page.py tests/test_xrd_dash_page.py -q` — 260 passed, 1 pre-existing failure (`test_backend_register_figure_writes_state_and_artifacts` — 409 duplicate figure, unrelated).
+- Grep confirmed zero `dsc-result-section`, `dsc-result-context`, `dsc-result-hero`, `dsc-result-support`, `dsc-result-secondary`, `dsc-result-figure-shell`, `dsc-result-graph`, `dsc-results-surface`, `dsc-meta-term`, `dsc-meta-def`, `dsc-meta-value` in all touched pages, CSS, and tests.
+- Grep confirmed zero `dta-result-section`, `dta-result-context`, `dta-result-hero`, `dta-result-support`, `dta-result-secondary`, `dta-result-figure-shell`, `dta-result-graph`, `dta-results-surface`, `dta-meta-term`, `dta-meta-def`, `dta-meta-value` in all touched pages, CSS, and tests.
+- Negative check confirmed DTA-only debug classes (`dta-figure-stack`, `dta-result-debug`, `dta-debug-shell`, `dta-debug-graph`) still present in `dta.py` and `style.css`.
 
 ## Next step
 
-- **P1-1** — CSS class namespace cleanup (5 modalities use `dsc-result-*` classes; only DTA uses own-prefixed classes).
-- Then **P0-1** — Baseline method gap for DSC/DTA (3 of 6 methods exposed).
+- **P0-1** — Baseline method gap for DSC/DTA (3 of 6 methods exposed; missing airpls, modpoly, imodpoly, snip).
 
 **Process defaults:** **`00-workflow.mdc`**.

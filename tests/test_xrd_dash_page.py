@@ -93,7 +93,7 @@ def test_compare_xrd_literature_callback_uses_xrd_literature_prefix():
 
 def test_layout_uses_results_surface_class():
     mod = _import_xrd_page()
-    assert "dsc-results-surface" in str(mod.layout)
+    assert "ms-results-surface" in str(mod.layout)
 
 
 def test_layout_tab_shells_in_processing_order():

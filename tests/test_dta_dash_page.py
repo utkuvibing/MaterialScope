@@ -374,7 +374,7 @@ def test_build_figure_uses_corrected_as_primary_trace(monkeypatch):
     result_shell = panel_children[0]
     debug_shell = panel_children[1]
     assert isinstance(result_shell, html.Div)
-    assert "dta-result-figure-shell" in str(getattr(result_shell, "className", "") or "")
+    assert "ms-result-figure-shell" in str(getattr(result_shell, "className", "") or "")
     graph = result_shell.children
     assert isinstance(debug_shell, html.Div)
     assert "dta-result-debug" in str(getattr(debug_shell, "className", "") or "")
@@ -2534,9 +2534,9 @@ def test_layout_phase4_quality_and_raw_metadata_between_metrics_and_figure():
 def test_layout_mounts_dta_scoped_result_surface_classes():
     mod = _import_dta_page()
     layout_str = str(mod.layout)
-    assert "dta-results-surface" in layout_str
-    assert "dta-result-section" in layout_str
-    assert "dta-result-hero" in layout_str
+    assert "ms-results-surface" in layout_str
+    assert "ms-result-section" in layout_str
+    assert "ms-result-hero" in layout_str
 
 
 def test_format_dataset_metadata_value_handles_empty_and_numeric():
@@ -2574,7 +2574,7 @@ def test_build_dta_dataset_summary_en_shows_all_fields_when_present():
     assert "Sample A" in text
     assert "12.3 mg" in text
     assert "10 °C/min" in text
-    assert "dta-meta-value" in text
+    assert "ms-meta-value" in text
 
 
 def test_build_dta_dataset_summary_tr_translates_labels_and_units():
@@ -2630,8 +2630,8 @@ def test_build_dta_dataset_summary_wraps_values_in_tooltip_safe_meta_spans():
 
     assert isinstance(dataset_span, html.Span)
     assert isinstance(sample_span, html.Span)
-    assert "dta-meta-value" in str(getattr(dataset_span, "className", "") or "")
-    assert "dta-meta-value" in str(getattr(sample_span, "className", "") or "")
+    assert "ms-meta-value" in str(getattr(dataset_span, "className", "") or "")
+    assert "ms-meta-value" in str(getattr(sample_span, "className", "") or "")
     assert getattr(dataset_span, "title", "") == "very-long-dataset-file-name-with-many-segments.csv"
     assert getattr(sample_span, "title", "") == "Long Sample Name For DTA"
 

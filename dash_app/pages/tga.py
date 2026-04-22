@@ -70,10 +70,10 @@ _TGA_UNIT_MODE_IDS = ["auto", "percent", "absolute_mass"]
 _TGA_ELIGIBLE_TYPES = {"TGA", "UNKNOWN"}
 
 _TGA_RESULT_CARD_ROLES = {
-    "context": "dsc-result-context",
-    "hero": "dsc-result-hero",
-    "support": "dsc-result-support",
-    "secondary": "dsc-result-secondary",
+    "context": "ms-result-context",
+    "hero": "ms-result-hero",
+    "support": "ms-result-support",
+    "secondary": "ms-result-secondary",
 }
 _TGA_LITERATURE_PREFIX = "dash.analysis.tga.literature"
 
@@ -312,7 +312,7 @@ def _loc(locale_data: str | None) -> str:
 
 def _tga_result_section(child: Any, *, role: str = "support") -> html.Div:
     role_class = _TGA_RESULT_CARD_ROLES.get(role, _TGA_RESULT_CARD_ROLES["support"])
-    return html.Div(child, className=f"dsc-result-section {role_class}")
+    return html.Div(child, className=f"ms-result-section {role_class}")
 
 
 def _tga_collapsible_section(
@@ -694,11 +694,12 @@ layout = html.Div(
                         _tga_result_section(_literature_compare_card(), role="secondary"),
                     ],
                     md=8,
-                    className="dsc-results-surface",
+                    className="ms-results-surface",
                 ),
             ]
         ),
-    ]
+    ],
+    className="tga-page",
 )
 
 
@@ -1814,24 +1815,24 @@ def _build_tga_analysis_summary(
         heating_rate = na
 
     def _meta_value(value: str) -> html.Span:
-        return html.Span(value, className="dsc-meta-value", title=value)
+        return html.Span(value, className="ms-meta-value", title=value)
 
     dl_rows: list[Any] = [
-        html.Dt(translate_ui(loc, "dash.analysis.tga.summary.dataset_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(dataset_label), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.tga.summary.sample_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(sample_label), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.tga.summary.mass_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(sample_mass), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.tga.summary.heating_rate_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(heating_rate), className="col-sm-8 dsc-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.tga.summary.dataset_label"), className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(dataset_label), className="col-sm-8 ms-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.tga.summary.sample_label"), className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(sample_label), className="col-sm-8 ms-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.tga.summary.mass_label"), className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(sample_mass), className="col-sm-8 ms-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.tga.summary.heating_rate_label"), className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(heating_rate), className="col-sm-8 ms-meta-def"),
     ]
     atmosphere = _format_dataset_metadata_value(metadata.get("atmosphere"))
     if atmosphere:
         dl_rows.extend(
             [
-                html.Dt(translate_ui(loc, "dash.analysis.tga.summary.atmosphere_label"), className="col-sm-4 text-muted dsc-meta-term"),
-                html.Dd(_meta_value(atmosphere), className="col-sm-8 dsc-meta-def"),
+                html.Dt(translate_ui(loc, "dash.analysis.tga.summary.atmosphere_label"), className="col-sm-4 text-muted ms-meta-term"),
+                html.Dd(_meta_value(atmosphere), className="col-sm-8 ms-meta-def"),
             ]
         )
     return html.Div(
@@ -2149,7 +2150,7 @@ def _build_tga_dtg_panel(
             "responsive": True,
             "modeBarButtonsToRemove": ["lasso2d", "select2d", "toggleSpikelines", "hoverCompareCartesian"],
         },
-        className="ta-plot dsc-derivative-graph",
+        className="ta-plot tga-derivative-graph",
     )
     return html.Div(
         [
@@ -2157,7 +2158,7 @@ def _build_tga_dtg_panel(
             html.P(translate_ui(_ld, "dash.analysis.tga.dtg.caption"), className="small text-muted mb-2"),
             graph,
         ],
-        className="dsc-derivative-helper",
+        className="tga-derivative-helper",
     )
 
 

@@ -125,7 +125,7 @@ def test_layout_contains_section_ids_in_order():
 
 def test_layout_uses_results_surface_class():
     mod = _import_raman_page()
-    assert "dsc-results-surface" in str(mod.layout)
+    assert "ms-results-surface" in str(mod.layout)
 
 
 def test_default_processing_draft_has_all_sections():

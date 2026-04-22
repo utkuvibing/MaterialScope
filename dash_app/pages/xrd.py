@@ -75,10 +75,10 @@ MAX_XRD_FIGURE_PREVIEW_TILES = 6
 MAX_XRD_FIGURE_PREVIEW_MAX_EDGE = 320
 
 _XRD_RESULT_CARD_ROLES = {
-    "context": "dsc-result-context",
-    "hero": "dsc-result-hero",
-    "support": "dsc-result-support",
-    "secondary": "dsc-result-secondary",
+    "context": "ms-result-context",
+    "hero": "ms-result-hero",
+    "support": "ms-result-support",
+    "secondary": "ms-result-secondary",
 }
 
 _XRD_LEFT_PANEL_CARD = "xrd-left-panel-card mb-2"
@@ -146,7 +146,7 @@ def _display_candidate_name(row: dict, loc: str) -> str:
 def _xrd_result_section(child: Any, *, role: str = "support") -> html.Div:
     """Wraps one band on the right-hand results column; spacing comes from ``xrd-result-surface-block`` in CSS."""
     role_class = _XRD_RESULT_CARD_ROLES.get(role, _XRD_RESULT_CARD_ROLES["support"])
-    return html.Div(child, className=f"dsc-result-section xrd-result-surface-block {role_class}")
+    return html.Div(child, className=f"ms-result-section xrd-result-surface-block {role_class}")
 
 
 def _xrd_collapsible_section(
@@ -716,7 +716,7 @@ layout = html.Div(
                                             ],
                                             className="xrd-figure-shell-body",
                                         ),
-                                        className="dsc-result-figure-shell shadow-sm mb-0",
+                                        className="ms-result-figure-shell shadow-sm mb-0",
                                     ),
                                     html.Details(
                                         [
@@ -758,11 +758,12 @@ layout = html.Div(
                         ),
                     ],
                     md=8,
-                    className="dsc-results-surface",
+                    className="ms-results-surface",
                 ),
             ]
         ),
-    ]
+    ],
+    className="xrd-page",
 )
 
 # --- Callbacks: locale / tabs / guide ---
@@ -1964,17 +1965,17 @@ def _build_xrd_analysis_summary(dataset_detail: dict, summary: dict, result_meta
     vendor = _format_dataset_metadata_value(metadata.get("vendor")) or na
 
     def _meta_value(value: str) -> html.Span:
-        return html.Span(value, className="dsc-meta-value", title=value)
+        return html.Span(value, className="ms-meta-value", title=value)
 
     dl_rows: list[Any] = [
-        html.Dt(translate_ui(loc, "dash.analysis.xrd.summary.dataset_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(dataset_label), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.xrd.summary.sample_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(sample_label), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.xrd.summary.instrument_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(instrument), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.xrd.summary.vendor_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(vendor), className="col-sm-8 dsc-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.xrd.summary.dataset_label"), className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(dataset_label), className="col-sm-8 ms-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.xrd.summary.sample_label"), className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(sample_label), className="col-sm-8 ms-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.xrd.summary.instrument_label"), className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(instrument), className="col-sm-8 ms-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.xrd.summary.vendor_label"), className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(vendor), className="col-sm-8 ms-meta-def"),
     ]
     return html.Div(
         [
@@ -2063,8 +2064,8 @@ def _build_xrd_raw_metadata_panel(metadata: dict | None, loc: str) -> html.Detai
     for key in user_keys:
         user_rows.extend(
             [
-                html.Dt(str(key), className="col-sm-4 text-muted small dsc-meta-term"),
-                html.Dd(str(meta.get(key)), className="col-sm-8 small dsc-meta-def"),
+                html.Dt(str(key), className="col-sm-4 text-muted small ms-meta-term"),
+                html.Dd(str(meta.get(key)), className="col-sm-8 small ms-meta-def"),
             ]
         )
     tech_body = html.Ul([html.Li(f"{k}: {meta.get(k)}", className="small") for k in tech_keys], className="mb-0 ps-3")

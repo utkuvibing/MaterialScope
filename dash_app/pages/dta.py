@@ -95,10 +95,10 @@ _PRIMARY_EVENT_LIMIT = 4
 _DTA_VIEW_MODES = ("result", "debug")
 _EMPTY_SAMPLE_TOKENS = {"", "unknown", "n/a", "na", "none", "null", "unnamed"}
 _DTA_RESULT_CARD_ROLES = {
-    "context": "dta-result-context",
-    "hero": "dta-result-hero",
-    "support": "dta-result-support",
-    "secondary": "dta-result-secondary",
+    "context": "ms-result-context",
+    "hero": "ms-result-hero",
+    "support": "ms-result-support",
+    "secondary": "ms-result-secondary",
 }
 
 # Smoothing defaults mirror core/batch_runner._DTA_TEMPLATE_DEFAULTS["dta.general"]
@@ -1175,7 +1175,7 @@ def _dta_left_column_tabs() -> dbc.Tabs:
 
 def _dta_result_section(child: Any, *, role: str = "support") -> html.Div:
     role_class = _DTA_RESULT_CARD_ROLES.get(role, _DTA_RESULT_CARD_ROLES["support"])
-    return html.Div(child, className=f"dta-result-section {role_class}")
+    return html.Div(child, className=f"ms-result-section {role_class}")
 
 
 layout = html.Div(
@@ -1202,11 +1202,12 @@ layout = html.Div(
                         _dta_result_section(_literature_compare_card(), role="secondary"),
                     ],
                     md=8,
-                    className="dta-results-surface",
+                    className="ms-results-surface",
                 ),
             ]
         ),
-    ]
+    ],
+    className="dta-page",
 )
 
 
@@ -1760,19 +1761,19 @@ def _build_dta_dataset_summary(
     ) or na
 
     def _meta_value(value: str) -> html.Span:
-        return html.Span(value, className="dta-meta-value", title=value)
+        return html.Span(value, className="ms-meta-value", title=value)
 
     rows: list[Any] = [
         html.Dt(
             translate_ui(loc, "dash.analysis.dta.summary.dataset_label"),
-            className="col-sm-4 text-muted dta-meta-term",
+            className="col-sm-4 text-muted ms-meta-term",
         ),
-        html.Dd(_meta_value(dataset_label), className="col-sm-8 mb-2 dta-meta-def"),
+        html.Dd(_meta_value(dataset_label), className="col-sm-8 mb-2 ms-meta-def"),
         html.Dt(
             translate_ui(loc, "dash.analysis.dta.summary.sample_label"),
-            className="col-sm-4 text-muted dta-meta-term",
+            className="col-sm-4 text-muted ms-meta-term",
         ),
-        html.Dd(_meta_value(sample_label), className="col-sm-8 mb-2 dta-meta-def"),
+        html.Dd(_meta_value(sample_label), className="col-sm-8 mb-2 ms-meta-def"),
     ]
 
     mass_value = _format_dataset_metadata_value(metadata.get("sample_mass"))
@@ -1782,9 +1783,9 @@ def _build_dta_dataset_summary(
             [
                 html.Dt(
                     translate_ui(loc, "dash.analysis.dta.summary.mass_label"),
-                    className="col-sm-4 text-muted dta-meta-term",
+                    className="col-sm-4 text-muted ms-meta-term",
                 ),
-                html.Dd(_meta_value(f"{mass_value} {mass_unit}"), className="col-sm-8 mb-2 dta-meta-def"),
+                html.Dd(_meta_value(f"{mass_value} {mass_unit}"), className="col-sm-8 mb-2 ms-meta-def"),
             ]
         )
 
@@ -1799,9 +1800,9 @@ def _build_dta_dataset_summary(
             [
                 html.Dt(
                     translate_ui(loc, "dash.analysis.dta.summary.heating_rate_label"),
-                    className="col-sm-4 text-muted dta-meta-term",
+                    className="col-sm-4 text-muted ms-meta-term",
                 ),
-                html.Dd(_meta_value(f"{heating_value} {heating_unit}"), className="col-sm-8 mb-0 dta-meta-def"),
+                html.Dd(_meta_value(f"{heating_value} {heating_unit}"), className="col-sm-8 mb-0 ms-meta-def"),
             ]
         )
 
@@ -2304,9 +2305,9 @@ def _build_figure(
     result_graph = dcc.Graph(
         figure=fig,
         config=_dta_graph_config(view_mode),
-        className="ta-plot dta-result-graph",
+        className="ta-plot ms-result-graph",
     )
-    result_shell = html.Div(result_graph, className="dta-result-figure-shell")
+    result_shell = html.Div(result_graph, className="ms-result-figure-shell")
     if view_mode != "result":
         return result_shell
 

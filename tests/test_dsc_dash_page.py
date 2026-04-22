@@ -260,10 +260,10 @@ def test_build_figure_returns_result_shell_without_debug(monkeypatch):
     )
 
     assert isinstance(panel, html.Div)
-    assert "dsc-result-figure-shell" in str(getattr(panel, "className", "") or "")
+    assert "ms-result-figure-shell" in str(getattr(panel, "className", "") or "")
     graph = panel.children
     assert isinstance(graph, dcc.Graph)
-    assert "dsc-result-graph" in str(getattr(graph, "className", "") or "")
+    assert "ms-result-graph" in str(getattr(graph, "className", "") or "")
     assert graph.figure.layout.height == 600
 
 

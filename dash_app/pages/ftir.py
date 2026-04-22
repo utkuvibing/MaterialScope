@@ -81,10 +81,10 @@ _FTIR_PRESET_ANALYSIS_TYPE = "FTIR"
 _FTIR_LITERATURE_PREFIX = "dash.analysis.ftir.literature"
 
 _FTIR_RESULT_CARD_ROLES = {
-    "context": "dsc-result-context",
-    "hero": "dsc-result-hero",
-    "support": "dsc-result-support",
-    "secondary": "dsc-result-secondary",
+    "context": "ms-result-context",
+    "hero": "ms-result-hero",
+    "support": "ms-result-support",
+    "secondary": "ms-result-secondary",
 }
 
 _FTIR_USER_FACING_METADATA_KEYS: frozenset[str] = frozenset({
@@ -393,7 +393,7 @@ def _loc(locale_data: str | None) -> str:
 
 def _ftir_result_section(child: Any, *, role: str = "support") -> html.Div:
     role_class = _FTIR_RESULT_CARD_ROLES.get(role, _FTIR_RESULT_CARD_ROLES["support"])
-    return html.Div(child, className=f"dsc-result-section {role_class}")
+    return html.Div(child, className=f"ms-result-section {role_class}")
 
 
 def _ftir_library_unavailable(summary: dict | None) -> bool:
@@ -841,11 +841,12 @@ layout = html.Div(
                         _ftir_result_section(build_literature_compare_card(id_prefix="ftir"), role="secondary"),
                     ],
                     md=8,
-                    className="dsc-results-surface",
+                    className="ms-results-surface",
                 ),
             ]
         ),
-    ]
+    ],
+    className="ftir-page",
 )
 
 
@@ -2065,17 +2066,17 @@ def _build_ftir_analysis_summary(
     vendor = _format_dataset_metadata_value(metadata.get("vendor")) or na
 
     def _meta_value(value: str) -> html.Span:
-        return html.Span(value, className="dsc-meta-value", title=value)
+        return html.Span(value, className="ms-meta-value", title=value)
 
     dl_rows: list[Any] = [
-        html.Dt(translate_ui(loc, "dash.analysis.ftir.summary.dataset_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(dataset_label), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.ftir.summary.sample_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(sample_label), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.ftir.summary.instrument_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(instrument), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.ftir.summary.vendor_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(vendor), className="col-sm-8 dsc-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.ftir.summary.dataset_label"), className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(dataset_label), className="col-sm-8 ms-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.ftir.summary.sample_label"), className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(sample_label), className="col-sm-8 ms-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.ftir.summary.instrument_label"), className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(instrument), className="col-sm-8 ms-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.ftir.summary.vendor_label"), className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(vendor), className="col-sm-8 ms-meta-def"),
     ]
     return html.Div(
         [

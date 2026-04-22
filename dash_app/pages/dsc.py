@@ -72,10 +72,10 @@ _PEAK_TYPE_ICONS = {
     "step": "bi-arrow-right-circle",
 }
 _DSC_RESULT_CARD_ROLES = {
-    "context": "dsc-result-context",
-    "hero": "dsc-result-hero",
-    "support": "dsc-result-support",
-    "secondary": "dsc-result-secondary",
+    "context": "ms-result-context",
+    "hero": "ms-result-hero",
+    "support": "ms-result-support",
+    "secondary": "ms-result-secondary",
 }
 _DSC_LITERATURE_PREFIX = "dash.analysis.dsc.literature"
 
@@ -671,7 +671,7 @@ def _dsc_left_column_tabs() -> dbc.Tabs:
 
 def _dsc_result_section(child: Any, *, role: str = "support") -> html.Div:
     role_class = _DSC_RESULT_CARD_ROLES.get(role, _DSC_RESULT_CARD_ROLES["support"])
-    return html.Div(child, className=f"dsc-result-section {role_class}")
+    return html.Div(child, className=f"ms-result-section {role_class}")
 
 
 def _peak_card(row: dict, idx: int, loc: str) -> dbc.Card:
@@ -767,11 +767,12 @@ layout = html.Div(
                         _dsc_result_section(_literature_compare_card(), role="secondary"),
                     ],
                     md=8,
-                    className="dsc-results-surface",
+                    className="ms-results-surface",
                 ),
             ]
         ),
-    ]
+    ],
+    className="dsc-page",
 )
 
 
@@ -2187,17 +2188,17 @@ def _build_dsc_dataset_summary(
         heating_rate = na
 
     def _meta_value(value: str) -> html.Span:
-        return html.Span(value, className="dsc-meta-value", title=value)
+        return html.Span(value, className="ms-meta-value", title=value)
 
     rows: list[Any] = [
-        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.dataset_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(dataset_label), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.sample_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(sample_label), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.mass_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(sample_mass), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.heating_rate_label"), className="col-sm-4 text-muted dsc-meta-term"),
-        html.Dd(_meta_value(heating_rate), className="col-sm-8 dsc-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.dataset_label"), className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(dataset_label), className="col-sm-8 ms-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.sample_label"), className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(sample_label), className="col-sm-8 ms-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.mass_label"), className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(sample_mass), className="col-sm-8 ms-meta-def"),
+        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.heating_rate_label"), className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(heating_rate), className="col-sm-8 ms-meta-def"),
     ]
     return html.Div(
         [
@@ -2670,5 +2671,5 @@ def _build_figure(
     fig = _build_dsc_go_figure(project_id, dataset_key, summary, peak_rows, ui_theme, loc)
     if fig is None:
         return no_data_figure_msg(text=translate_ui(loc, "dash.analysis.dsc.no_plot_signal"), locale_data=_ld)
-    graph = dcc.Graph(figure=fig, config=_dsc_graph_config(), className="ta-plot dsc-result-graph")
-    return html.Div(graph, className="dsc-result-figure-shell")
+    graph = dcc.Graph(figure=fig, config=_dsc_graph_config(), className="ta-plot ms-result-graph")
+    return html.Div(graph, className="ms-result-figure-shell")

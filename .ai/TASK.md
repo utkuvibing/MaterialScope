@@ -8,6 +8,10 @@
 
 **Done (2026-04-22).** DSC/DTA processing history labels and TGA quality/metadata/summary labels now use modality-native i18n keys instead of borrowing from TGA/DSC. 28 new keys, 32 reference swaps, 6 regression tests. Zero cross-namespace references remain.
 
+### Completed: P1-1 — CSS class namespace cleanup
+
+**Done (2026-04-22).** Shared structural result-role classes migrated from modality-specific `dsc-*`/`dta-*` prefixes to generic `ms-*` prefix across all 6 pages + CSS. Per-modality root page hooks (`{modality}-page`) added for future styling flexibility. TGA derivative class leakage fixed (`dsc-derivative-*` → `tga-derivative-*`). DTA-only debug classes preserved. 260/261 tests pass (1 pre-existing unrelated failure).
+
 ---
 
 ### Remaining prioritized remediation backlog
@@ -26,11 +30,9 @@ Ordered by priority per the repo-wide parity audit:
 
 | # | Issue | Modalities | Effort | Key files |
 |---|---|---|---|---|
-| P1-1 | CSS class leakage: 5 modalities use `dsc-result-*` instead of generic or own-prefixed classes (DTA alone uses `dta-result-*`) | All | S | All 6 page `_RESULT_CARD_ROLES` dicts + CSS |
 | P1-2 | Figure capture inconsistency: only XRD has snapshot/report toolbar; others have auto-capture only | DSC, DTA, TGA, FTIR, Raman | L | Port XRD toolbar pattern to each page |
 | P1-3 | Shared boilerplate extraction: coercion helpers, preset card, quality card, metadata panel, history card all duplicated across 6 pages | All | L | New shared module(s) |
 | P1-4 | Duplicated coercion helpers (`_coerce_int_positive`, `_coerce_float_positive`, `_coerce_float_non_negative`) in DSC, DTA, FTIR, Raman | All | S | Extract to shared module |
-| P1-5 | TGA CSS class `dsc-derivative-graph` / `dsc-derivative-helper` | TGA | S | `tga.py` L2152, L2160 |
 | P1-7 | Regression tests for i18n leakage (done as part of P0-2+P0-3) | All | S | Done |
 
 #### P2 — cleanup, naming, polish
@@ -44,7 +46,7 @@ Ordered by priority per the repo-wide parity audit:
 
 ### Recommended execution order
 
-1. P1-1 — CSS class namespace cleanup (small, prerequisite for per-modality styling)
+1. ~~P1-1 — CSS class namespace cleanup (done)~~
 2. P0-1 — Baseline method gap (medium, direct feature parity)
 3. P0-4 — Similarity metric selector (small)
 4. P0-5 — DSC mass normalization (small)
@@ -65,4 +67,4 @@ Ordered by priority per the repo-wide parity audit:
 | Raman | 12 (delegates) | 2630 | Near | Same as FTIR; literature compare is Dash improvement |
 | XRD | 2432 | 2697 | Near | Most complete figure toolbar; template for others |
 
-**Cross-cutting issues:** CSS namespace leakage (5 modalities use `dsc-*` classes), boilerplate duplication (~40% of each page), baseline method truncation, figure capture inconsistency.
+**Cross-cutting issues:** Boilerplate duplication (~40% of each page), baseline method truncation, figure capture inconsistency.

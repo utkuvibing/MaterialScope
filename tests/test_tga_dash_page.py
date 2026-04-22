@@ -108,7 +108,7 @@ def test_layout_contains_section_ids_in_order():
 
 def test_layout_uses_results_surface_class():
     mod = _import_tga_page()
-    assert "dsc-results-surface" in str(mod.layout)
+    assert "ms-results-surface" in str(mod.layout)
 
 
 def test_build_tga_quality_card_renders_validation_and_checks():
@@ -317,7 +317,7 @@ def test_build_tga_dtg_panel_renders_graph(monkeypatch):
         },
     )
     panel = mod._build_tga_dtg_panel("proj", "ds", "light", "en", locale_data="en")
-    assert "dsc-derivative-helper" in str(getattr(panel, "className", "") or "")
+    assert "tga-derivative-helper" in str(getattr(panel, "className", "") or "")
     assert isinstance(panel.children[2], dcc.Graph)
 
 
