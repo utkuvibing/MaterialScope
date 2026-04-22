@@ -1478,14 +1478,14 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
     summary_empty = html.P(translate_ui(loc, "dash.analysis.tga.summary.empty"), className="text-muted")
     quality_empty = _tga_collapsible_section(
         loc,
-        "dash.analysis.dsc.quality.card_title",
-        html.P(translate_ui(loc, "dash.analysis.dsc.quality.empty"), className="text-muted mb-0"),
+        "dash.analysis.tga.quality.card_title",
+        html.P(translate_ui(loc, "dash.analysis.tga.quality.empty"), className="text-muted mb-0"),
         open=False,
     )
     raw_meta_empty = _tga_collapsible_section(
         loc,
-        "dash.analysis.dsc.raw_metadata.card_title",
-        html.P(translate_ui(loc, "dash.analysis.dsc.raw_metadata.empty"), className="text-muted mb-0"),
+        "dash.analysis.tga.raw_metadata.card_title",
+        html.P(translate_ui(loc, "dash.analysis.tga.raw_metadata.empty"), className="text-muted mb-0"),
         open=False,
     )
     if not result_id or not project_id:
@@ -1801,7 +1801,7 @@ def _build_tga_analysis_summary(
 
     sample_mass = _format_dataset_metadata_value(summary.get("sample_mass")) or _format_dataset_metadata_value(metadata.get("sample_mass"))
     if sample_mass:
-        sample_mass = f"{sample_mass} {translate_ui(loc, 'dash.analysis.dsc.summary.mass_unit')}"
+        sample_mass = f"{sample_mass} {translate_ui(loc, 'dash.analysis.tga.summary.mass_unit')}"
     else:
         sample_mass = na
 
@@ -1809,7 +1809,7 @@ def _build_tga_analysis_summary(
         metadata.get("heating_rate")
     )
     if heating_rate:
-        heating_rate = f"{heating_rate} {translate_ui(loc, 'dash.analysis.dsc.summary.heating_rate_unit')}"
+        heating_rate = f"{heating_rate} {translate_ui(loc, 'dash.analysis.tga.summary.heating_rate_unit')}"
     else:
         heating_rate = na
 
@@ -1817,13 +1817,13 @@ def _build_tga_analysis_summary(
         return html.Span(value, className="dsc-meta-value", title=value)
 
     dl_rows: list[Any] = [
-        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.dataset_label"), className="col-sm-4 text-muted dsc-meta-term"),
+        html.Dt(translate_ui(loc, "dash.analysis.tga.summary.dataset_label"), className="col-sm-4 text-muted dsc-meta-term"),
         html.Dd(_meta_value(dataset_label), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.sample_label"), className="col-sm-4 text-muted dsc-meta-term"),
+        html.Dt(translate_ui(loc, "dash.analysis.tga.summary.sample_label"), className="col-sm-4 text-muted dsc-meta-term"),
         html.Dd(_meta_value(sample_label), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.mass_label"), className="col-sm-4 text-muted dsc-meta-term"),
+        html.Dt(translate_ui(loc, "dash.analysis.tga.summary.mass_label"), className="col-sm-4 text-muted dsc-meta-term"),
         html.Dd(_meta_value(sample_mass), className="col-sm-8 dsc-meta-def"),
-        html.Dt(translate_ui(loc, "dash.analysis.dsc.summary.heating_rate_label"), className="col-sm-4 text-muted dsc-meta-term"),
+        html.Dt(translate_ui(loc, "dash.analysis.tga.summary.heating_rate_label"), className="col-sm-4 text-muted dsc-meta-term"),
         html.Dd(_meta_value(heating_rate), className="col-sm-8 dsc-meta-def"),
     ]
     atmosphere = _format_dataset_metadata_value(metadata.get("atmosphere"))
@@ -1863,21 +1863,21 @@ def _build_tga_quality_card(detail: dict, result_meta: dict, loc: str) -> html.D
     body_children: list[Any] = [
         html.P(
             [
-                html.Strong(translate_ui(loc, "dash.analysis.dsc.quality.status_label")),
+                html.Strong(translate_ui(loc, "dash.analysis.tga.quality.status_label")),
                 f" {status}",
             ],
             className="mb-2",
         ),
         html.P(
             [
-                html.Strong(translate_ui(loc, "dash.analysis.dsc.quality.warnings_label")),
+                html.Strong(translate_ui(loc, "dash.analysis.tga.quality.warnings_label")),
                 f" {wc}",
             ],
             className="mb-2",
         ),
         html.P(
             [
-                html.Strong(translate_ui(loc, "dash.analysis.dsc.quality.issues_label")),
+                html.Strong(translate_ui(loc, "dash.analysis.tga.quality.issues_label")),
                 f" {ic}",
             ],
             className="mb-2",
@@ -1974,7 +1974,7 @@ def _build_tga_quality_card(detail: dict, result_meta: dict, loc: str) -> html.D
         )
     return _tga_collapsible_section(
         loc,
-        "dash.analysis.dsc.quality.card_title",
+        "dash.analysis.tga.quality.card_title",
         inner,
         open=has_attention,
         summary_suffix=badges if badges else None,
@@ -2012,7 +2012,7 @@ def _tga_quality_check_entries(checks: Any) -> list[str]:
 def _build_tga_raw_metadata_panel(metadata: dict | None, loc: str) -> html.Details:
     meta = metadata if isinstance(metadata, dict) else {}
     if not meta:
-        inner = html.P(translate_ui(loc, "dash.analysis.dsc.raw_metadata.empty"), className="text-muted mb-0")
+        inner = html.P(translate_ui(loc, "dash.analysis.tga.raw_metadata.empty"), className="text-muted mb-0")
     else:
         user_keys = sorted(
             [k for k in meta if k in _TGA_USER_FACING_METADATA_KEYS],
@@ -2051,7 +2051,7 @@ def _build_tga_raw_metadata_panel(metadata: dict | None, loc: str) -> html.Detai
                         [
                             html.Span(className="ta-details-chevron"),
                             html.Span(
-                                translate_ui(loc, "dash.analysis.dsc.raw_metadata.technical_details") or "Technical details",
+                                translate_ui(loc, "dash.analysis.tga.raw_metadata.technical_details") or "Technical details",
                                 className="ms-1",
                             ),
                         ],
@@ -2067,9 +2067,9 @@ def _build_tga_raw_metadata_panel(metadata: dict | None, loc: str) -> html.Detai
         inner = (
             html.Div(body_parts)
             if body_parts
-            else html.P(translate_ui(loc, "dash.analysis.dsc.raw_metadata.empty"), className="text-muted mb-0")
+            else html.P(translate_ui(loc, "dash.analysis.tga.raw_metadata.empty"), className="text-muted mb-0")
         )
-    return _tga_collapsible_section(loc, "dash.analysis.dsc.raw_metadata.card_title", inner, open=False)
+    return _tga_collapsible_section(loc, "dash.analysis.tga.raw_metadata.card_title", inner, open=False)
 
 
 def _coerce_float_pair(tx: Any, dx: Any) -> tuple[float, float] | None:

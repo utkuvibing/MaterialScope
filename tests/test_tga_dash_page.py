@@ -437,3 +437,22 @@ def test_run_tga_analysis_forwards_processing_overrides(monkeypatch):
     )
     assert captured.get("processing_overrides") is not None
     assert captured["processing_overrides"]["smoothing"]["window_length"] == 21
+
+
+def test_tga_page_avoids_dsc_quality_metadata_summary_key_literals():
+    """Guard: TGA must not reference DSC quality, raw_metadata, or summary i18n keys."""
+    root = Path(__file__).resolve().parent.parent
+    text = (root / "dash_app" / "pages" / "tga.py").read_text(encoding="utf-8")
+    assert "dash.analysis.dsc.quality." not in text
+    assert "dash.analysis.dsc.raw_metadata." not in text
+    assert "dash.analysis.dsc.summary." not in text
+
+
+def test_tga_analysis_summary_uses_tga_namespace(monkeypatch):
+    mod = _import_tga_page()
+    monkeypatch.setattr(mod, "translate_ui", lambda loc, key, **kw: key)
+    result = mod._build_tga_analysis_summary({}, {}, {}, {}, "en")
+    text = str(result)
+    assert "dash.analysis.dsc.summary." not in text
+    assert "dash.analysis.dsc.quality." not in text
+    assert "dash.analysis.dsc.raw_metadata." not in text

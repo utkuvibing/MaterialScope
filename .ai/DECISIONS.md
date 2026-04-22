@@ -4,6 +4,27 @@
 
 ---
 
+## 2026-04-22 — Repo-wide Dash vs Streamlit parity audit: remediation backlog agreed
+
+**Decision:**
+
+1. All 6 analysis modalities (DSC, TGA, DTA, FTIR, Raman, XRD) are at **near parity** vs Streamlit. No modality is regressed or first-slice only.
+2. Prioritized remediation backlog agreed in execution order:
+   - **P0-2 + P0-3 (done):** i18n key namespace leakage — DSC/DTA borrowing TGA processing history keys; TGA borrowing DSC quality/metadata/summary keys. 28 new keys, 32 reference swaps, 6 regression tests.
+   - **P1-1:** CSS class namespace cleanup — 5 modalities use `dsc-result-*` CSS classes; only DTA uses own-prefixed classes. Prerequisite for per-modality styling.
+   - **P0-1:** Baseline method gap — DSC/DTA expose 3 of 6 baseline methods (missing airpls, modpoly, imodpoly, snip).
+   - **P0-4:** Similarity metric selector — FTIR/Raman lack cosine/pearson metric toggle that Streamlit exposes.
+   - **P0-5:** DSC mass normalization — missing "Normalize by mass" control present in Streamlit.
+   - **P1-2:** Figure capture toolbar — only XRD has snapshot/report toolbar; port to other modalities.
+   - **P1-3 + P1-4:** Shared boilerplate extraction — duplicated coercion helpers, preset cards, quality cards, metadata panels across 6 pages.
+   - **P2 items:** Polish, naming, and remaining consistency.
+
+**Reason:** Systematic modality-by-modality audit across 18 dimensions (page shell, processing controls, presets, undo/redo, run gating, results, quality, figure, literature, i18n, CSS) revealed no blocking gaps but several high-visibility consistency issues, especially for TR locale users seeing wrong-modality labels.
+
+**Consequence / future:** P0-2+P0-3 is landed; remaining items follow the agreed order. CSS cleanup (P1-1) unblocks per-modality styling work.
+
+---
+
 ## 2026-04-21 — Raman Dash page promoted to full product-grade analysis shell
 
 **Decision:**

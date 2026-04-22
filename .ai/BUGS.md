@@ -46,6 +46,50 @@ Smallest test, log, or experiment to advance status.
 
 ---
 
+## BUG-006 — i18n key namespace leakage across DSC, DTA, TGA Dash pages
+
+### Title
+
+DSC/DTA processing history labels borrowed TGA i18n keys; TGA quality/metadata/summary labels borrowed DSC keys
+
+### Status
+
+**Closed**
+
+### Symptoms
+
+- DSC processing history card showed TGA-namespaced keys (`dash.analysis.tga.processing.*`) for history title, undo button, status text.
+- DTA processing history card used the same TGA-namespaced keys.
+- TGA quality card, raw metadata panel, and analysis summary used DSC-namespaced keys (`dash.analysis.dsc.quality.*`, `dash.analysis.dsc.raw_metadata.*`, `dash.analysis.dsc.summary.*`).
+- TR locale users would see correct translations only if the borrowed namespace happened to have the same values; semantically incorrect ownership.
+
+### Repro steps
+
+1. Open DSC analysis page; switch locale to TR; observe processing history labels.
+2. Check source: `rg "dash.analysis.tga.processing." dash_app/pages/dsc.py dash_app/pages/dta.py`.
+3. Open TGA analysis page; observe quality card and metadata labels.
+4. Check source: `rg "dash.analysis.dsc.quality." dash_app/pages/tga.py`.
+
+### Likely cause
+
+During initial DSC/DTA history card implementation, TGA processing history i18n keys were reused as a shortcut. During TGA page buildout, DSC quality/metadata/summary keys were reused similarly. No regression tests existed to catch cross-namespace borrowing.
+
+### Files involved
+
+- `utils/i18n.py` — 28 new keys added (7 DSC, 7 DTA, 5 TGA quality, 3 TGA raw metadata, 6 TGA summary)
+- `dash_app/pages/dsc.py` — 7 key references swapped
+- `dash_app/pages/dta.py` — 7 key references swapped
+- `dash_app/pages/tga.py` — 18 key references swapped
+- `tests/test_dsc_dash_page.py` — 2 new regression tests
+- `tests/test_dta_dash_page.py` — 2 new regression tests
+- `tests/test_tga_dash_page.py` — 2 new regression tests
+
+### Next check
+
+Regression tests now guard against re-introduction: source-grep tests assert no leaked namespace literals; monkeypatch tests assert correct namespace in rendered output.
+
+---
+
 ## BUG-001 — Possible parity gaps during Streamlit → Dash migration
 
 ### Title

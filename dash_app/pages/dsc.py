@@ -897,11 +897,11 @@ def render_dsc_smoothing_chrome(locale_data):
 def render_dsc_processing_history_chrome(locale_data):
     loc = _loc(locale_data)
     return (
-        translate_ui(loc, "dash.analysis.tga.processing.history_title"),
+        translate_ui(loc, "dash.analysis.dsc.processing.history_title"),
         translate_ui(loc, "dash.analysis.dsc.processing.history_hint"),
-        translate_ui(loc, "dash.analysis.tga.processing.undo_btn"),
-        translate_ui(loc, "dash.analysis.tga.processing.redo_btn"),
-        translate_ui(loc, "dash.analysis.tga.processing.reset_btn"),
+        translate_ui(loc, "dash.analysis.dsc.processing.undo_btn"),
+        translate_ui(loc, "dash.analysis.dsc.processing.redo_btn"),
+        translate_ui(loc, "dash.analysis.dsc.processing.reset_btn"),
     )
 
 
@@ -1442,13 +1442,13 @@ def dsc_processing_history_actions(n_undo, n_redo, n_reset, draft, undo, redo, d
         if not n_undo:
             raise dash.exceptions.PreventUpdate
         next_draft, next_undo, next_redo = _do_undo(cur, undo, redo)
-        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.tga.processing.history_status_undo")
+        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.dsc.processing.history_status_undo")
 
     if trig == "dsc-redo-btn":
         if not n_redo:
             raise dash.exceptions.PreventUpdate
         next_draft, next_undo, next_redo = _do_redo(cur, undo, redo)
-        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.tga.processing.history_status_redo")
+        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.dsc.processing.history_status_redo")
 
     if trig == "dsc-reset-btn":
         if not n_reset:
@@ -1456,7 +1456,7 @@ def dsc_processing_history_actions(n_undo, n_redo, n_reset, draft, undo, redo, d
         next_draft, next_undo, next_redo = _do_reset(cur, undo, redo, defaults)
         if next_draft == cur and next_undo == (undo or []) and next_redo == (redo or []):
             raise dash.exceptions.PreventUpdate
-        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.tga.processing.history_status_reset")
+        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.dsc.processing.history_status_reset")
 
     raise dash.exceptions.PreventUpdate
 

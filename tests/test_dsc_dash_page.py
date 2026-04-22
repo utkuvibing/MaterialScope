@@ -581,3 +581,18 @@ def test_raw_metadata_technical_details_label_turkish():
     panel_html = str(panel)
     assert "Teknik detaylar" in panel_html
     assert "dash.analysis.dsc.raw_metadata.technical_details" not in panel_html
+
+
+def test_dsc_page_avoids_tga_processing_key_literals():
+    """Guard: DSC must not reference TGA processing i18n keys."""
+    root = Path(__file__).resolve().parent.parent
+    text = (root / "dash_app" / "pages" / "dsc.py").read_text(encoding="utf-8")
+    assert "dash.analysis.tga.processing." not in text
+
+
+def test_render_dsc_processing_history_chrome_uses_dsc_namespace(monkeypatch):
+    mod = _import_dsc_page()
+    monkeypatch.setattr(mod, "translate_ui", lambda loc, key, **kw: key)
+    result = mod.render_dsc_processing_history_chrome("en")
+    for output in result:
+        assert "dash.analysis.dsc.processing." in output, f"Leaked key: {output}"

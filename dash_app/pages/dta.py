@@ -2446,11 +2446,11 @@ def render_dta_processing_history_chrome(locale_data):
         return fallback if value == key else value
 
     return (
-        _t("dash.analysis.tga.processing.history_title", "Processing history"),
+        _t("dash.analysis.dta.processing.history_title", "Processing history"),
         _t("dash.analysis.dta.processing.history_hint", "Affects the processing draft only; preset selection is kept separate."),
-        _t("dash.analysis.tga.processing.undo_btn", "Undo"),
-        _t("dash.analysis.tga.processing.redo_btn", "Redo"),
-        _t("dash.analysis.tga.processing.reset_btn", "Reset to defaults"),
+        _t("dash.analysis.dta.processing.undo_btn", "Undo"),
+        _t("dash.analysis.dta.processing.redo_btn", "Redo"),
+        _t("dash.analysis.dta.processing.reset_btn", "Reset to defaults"),
     )
 
 
@@ -2518,13 +2518,13 @@ def dta_processing_history_actions(n_undo, n_redo, n_reset, draft, undo, redo, d
         if not n_undo:
             raise dash.exceptions.PreventUpdate
         next_draft, next_undo, next_redo = _do_undo(cur, undo, redo)
-        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.tga.processing.history_status_undo")
+        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.dta.processing.history_status_undo")
 
     if trig == "dta-redo-btn":
         if not n_redo:
             raise dash.exceptions.PreventUpdate
         next_draft, next_undo, next_redo = _do_redo(cur, undo, redo)
-        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.tga.processing.history_status_redo")
+        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.dta.processing.history_status_redo")
 
     if trig == "dta-reset-btn":
         if not n_reset:
@@ -2532,7 +2532,7 @@ def dta_processing_history_actions(n_undo, n_redo, n_reset, draft, undo, redo, d
         next_draft, next_undo, next_redo = _do_reset(cur, undo, redo, defaults)
         if next_draft == cur and next_undo == (undo or []) and next_redo == (redo or []):
             raise dash.exceptions.PreventUpdate
-        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.tga.processing.history_status_reset")
+        return next_draft, next_undo, next_redo, translate_ui(loc, "dash.analysis.dta.processing.history_status_reset")
 
     raise dash.exceptions.PreventUpdate
 

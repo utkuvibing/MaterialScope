@@ -2791,3 +2791,23 @@ def test_display_result_backend_error_preserves_empty_dataset_summary(monkeypatc
     assert len(panels) == 8
     assert "No results yet" in str(panels[0])
     assert "backend offline" in str(panels[1])
+
+
+def test_dta_page_avoids_tga_processing_key_literals():
+    """Guard: DTA must not reference TGA processing i18n keys."""
+    root = Path(__file__).resolve().parent.parent
+    text = (root / "dash_app" / "pages" / "dta.py").read_text(encoding="utf-8")
+    assert "dash.analysis.tga.processing." not in text
+
+
+def test_render_dta_processing_history_chrome_uses_dta_namespace(monkeypatch):
+    mod = _import_dta_page()
+    monkeypatch.setattr(mod, "translate_ui", lambda loc, key, **kw: key)
+    result = mod.render_dta_processing_history_chrome("en")
+    # The DTA _t() wrapper returns fallback when translate_ui returns the key,
+    # so outputs are either "dash.analysis.dta.processing.*" keys or fallback
+    # strings like "Processing history". Either way they must not reference
+    # another modality namespace.
+    for output in result:
+        assert "dash.analysis.tga." not in output, f"TGA namespace leaked: {output}"
+        assert "dash.analysis.dsc." not in output, f"DSC namespace leaked: {output}"
