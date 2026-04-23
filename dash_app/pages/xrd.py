@@ -32,6 +32,18 @@ from dash_app.components.analysis_page import (
 )
 from dash_app.components.chrome import page_header
 from dash_app.components.data_preview import dataset_table
+from dash_app.components.figure_artifacts import (
+    FIGURE_ARTIFACT_PREVIEW_MAX_EDGE,
+    FIGURE_ARTIFACT_PREVIEW_TILES,
+    build_figure_artifact_surface,
+    build_figure_artifacts_panel,
+    figure_action_from_trigger,
+    figure_action_metadata,
+    figure_action_status_alert,
+    figure_artifact_button_labels,
+    ordered_figure_preview_keys,
+    primary_report_figure_label,
+)
 from dash_app.components.literature_compare_ui import (
     build_literature_compare_card,
     coerce_literature_max_claims,
@@ -70,9 +82,9 @@ _TEMPLATE_OPTIONS = [{"label": tid, "value": tid} for tid in _XRD_TEMPLATE_IDS]
 _XRD_ELIGIBLE_TYPES = {"XRD", "UNKNOWN"}
 _XRD_PRESET_ANALYSIS_TYPE = "XRD"
 _XRD_LITERATURE_PREFIX = "dash.analysis.xrd.literature"
-MAX_XRD_FIGURE_PREVIEW_TILES = 6
+MAX_XRD_FIGURE_PREVIEW_TILES = FIGURE_ARTIFACT_PREVIEW_TILES
 # Long edge cap for inline data-URL previews (server GET ``max_edge``; Slice 6).
-MAX_XRD_FIGURE_PREVIEW_MAX_EDGE = 320
+MAX_XRD_FIGURE_PREVIEW_MAX_EDGE = FIGURE_ARTIFACT_PREVIEW_MAX_EDGE
 
 _XRD_RESULT_CARD_ROLES = {
     "context": "ms-result-context",
@@ -653,6 +665,7 @@ layout = html.Div(
     analysis_page_stores("xrd-refresh", "xrd-latest-result-id")
     + [
         dcc.Store(id="xrd-figure-captured", data={}),
+        dcc.Store(id="xrd-figure-artifact-refresh", data=0),
         dcc.Store(id="xrd-processing-default", data=copy.deepcopy(default_xrd_draft_for_template("xrd.general"))),
         dcc.Store(id="xrd-processing-draft", data=copy.deepcopy(default_xrd_draft_for_template("xrd.general"))),
         dcc.Store(id="xrd-processing-undo-stack", data=[]),
@@ -673,73 +686,10 @@ layout = html.Div(
                         _xrd_result_section(html.Div(id="xrd-result-metrics", className="mb-0"), role="context"),
                         _xrd_result_section(html.Div(id="xrd-result-quality", className="mb-0"), role="support"),
                         _xrd_result_section(
-                            html.Div(
-                                [
-                                    dbc.Card(
-                                        dbc.CardBody(
-                                            [
-                                                html.Div(id="xrd-result-figure", className="ta-xrd-figure-host mb-0"),
-                                                html.Div(
-                                                    className="xrd-figure-toolbar d-flex flex-wrap align-items-stretch gap-2 pt-2 mt-2 border-top border-secondary-subtle",
-                                                    children=[
-                                                        html.Div(
-                                                            id="xrd-result-figure-controls",
-                                                            className="xrd-figure-toolbar__overlay flex-grow-1 d-flex align-items-center",
-                                                            style={"minWidth": "min(100%, 12.5rem)"},
-                                                        ),
-                                                        dbc.ButtonGroup(
-                                                            [
-                                                                dbc.Button(
-                                                                    id="xrd-figure-save-snapshot-btn",
-                                                                    color="secondary",
-                                                                    size="sm",
-                                                                    outline=True,
-                                                                    disabled=True,
-                                                                    className="text-nowrap",
-                                                                ),
-                                                                dbc.Button(
-                                                                    id="xrd-figure-use-report-btn",
-                                                                    color="primary",
-                                                                    size="sm",
-                                                                    disabled=True,
-                                                                    className="text-nowrap",
-                                                                ),
-                                                            ],
-                                                            className="xrd-figure-toolbar__actions flex-shrink-0 align-self-center",
-                                                        ),
-                                                    ],
-                                                ),
-                                                html.Div(
-                                                    id="xrd-figure-artifact-status",
-                                                    className="xrd-figure-artifact-status small mt-2 text-muted",
-                                                ),
-                                            ],
-                                            className="xrd-figure-shell-body",
-                                        ),
-                                        className="ms-result-figure-shell shadow-sm mb-0",
-                                    ),
-                                    html.Details(
-                                        [
-                                            html.Summary(
-                                                [
-                                                    html.Span(className="ta-details-chevron"),
-                                                    html.Span(
-                                                        id="xrd-figure-artifacts-summary",
-                                                        className="ms-1 small text-muted xrd-artifacts-summary-label",
-                                                    ),
-                                                ],
-                                                className="ta-details-summary py-1 xrd-artifacts-disclosure-summary",
-                                            ),
-                                            html.Div(
-                                                id="xrd-result-figure-artifacts",
-                                                className="ta-details-body mt-2 small text-muted xrd-artifacts-body",
-                                            ),
-                                        ],
-                                        className="ta-ms-details ta-xrd-artifacts-disclosure mb-0 mt-2",
-                                        open=False,
-                                    ),
-                                ],
-                                className="xrd-figure-surface",
+                            build_figure_artifact_surface(
+                                "xrd",
+                                figure_host_class="ta-xrd-figure-host mb-0",
+                                control_slot_id="xrd-result-figure-controls",
                             ),
                             role="hero",
                         ),
@@ -1780,16 +1730,7 @@ def _format_dataset_metadata_value(value: Any) -> str | None:
 
 
 def _xrd_ordered_figure_preview_keys(fa: dict) -> list[str]:
-    """Prefer report figure first, then remaining registered keys (deduped)."""
-    keys = [str(k).strip() for k in (fa.get("figure_keys") or []) if isinstance(k, str) and str(k).strip()]
-    primary_s = str(fa.get("report_figure_key") or "").strip()
-    ordered: list[str] = []
-    if primary_s:
-        ordered.append(primary_s)
-    for k in keys:
-        if k not in ordered:
-            ordered.append(k)
-    return ordered
+    return ordered_figure_preview_keys(fa)
 
 
 def _xrd_fetch_figure_preview_data_urls(
@@ -1823,130 +1764,14 @@ def _build_xrd_figure_artifacts_panel(
     *,
     previews: dict[str, str] | None = None,
 ) -> html.Div:
-    """Snapshots / report figure state — kept visually light; registry text behind nested disclosure."""
-    fa = figure_artifacts if isinstance(figure_artifacts, dict) else {}
-    keys = [str(k).strip() for k in (fa.get("figure_keys") or []) if isinstance(k, str) and str(k).strip()]
-    primary = fa.get("report_figure_key")
-    primary_s = str(primary).strip() if primary not in (None, "") else ""
-    status = str(fa.get("report_figure_status") or "").strip()
-    err = str(fa.get("report_figure_error") or "").strip()
-
-    if not keys and not primary_s and not status and not err:
-        return html.Div(
-            html.P(translate_ui(loc, "dash.analysis.xrd.figure.artifacts_none"), className="small text-muted mb-0"),
-            className="xrd-figure-artifacts-panel",
-        )
-
-    if primary_s:
-        primary_line = html.P(
-            translate_ui(loc, "dash.analysis.xrd.figure.artifacts_primary", label=primary_s),
-            className="small mb-1 text-body-secondary xrd-artifacts-primary-line",
-        )
-    else:
-        primary_line = html.P(
-            translate_ui(loc, "dash.analysis.xrd.figure.artifacts_primary_none"),
-            className="small text-muted mb-1 xrd-artifacts-primary-line opacity-75",
-        )
-
-    previews_block: list[Any] = []
-    if previews is not None:
-        ordered = _xrd_ordered_figure_preview_keys(fa)
-        preview_keys = ordered[:MAX_XRD_FIGURE_PREVIEW_TILES]
-        if preview_keys:
-            previews_block.append(
-                html.Div(
-                    translate_ui(loc, "dash.analysis.xrd.figure.artifacts_previews_heading"),
-                    className="small text-muted mb-1 fw-normal xrd-artifacts-previews-label",
-                )
-            )
-            cols: list[Any] = []
-            for pk in preview_keys:
-                src = str((previews or {}).get(pk) or "").strip()
-                badge = "★ " if pk == primary_s else ""
-                label_short = pk if len(pk) <= 48 else pk[:45] + "…"
-                if src:
-                    cols.append(
-                        dbc.Col(
-                            [
-                                html.Img(
-                                    src=src,
-                                    alt=pk,
-                                    className="img-fluid rounded border border-secondary-subtle mb-1 xrd-artifact-preview-img",
-                                    style={"maxHeight": "72px", "objectFit": "contain", "opacity": 0.94},
-                                ),
-                                html.Div(badge + label_short, className="small text-muted text-break opacity-90"),
-                            ],
-                            xs=12,
-                            sm=6,
-                            md=4,
-                            className="mb-1",
-                        )
-                    )
-                else:
-                    cols.append(
-                        dbc.Col(
-                            [
-                                html.Div(
-                                    translate_ui(loc, "dash.analysis.xrd.figure.artifacts_preview_missing"),
-                                    className="border border-secondary-subtle rounded d-flex align-items-center justify-content-center text-muted small mb-1 bg-body-secondary bg-opacity-25",
-                                    style={"height": "72px"},
-                                ),
-                                html.Div(badge + label_short, className="small text-muted text-break opacity-90"),
-                            ],
-                            xs=12,
-                            sm=6,
-                            md=4,
-                            className="mb-1",
-                        )
-                    )
-            previews_block.append(dbc.Row(cols, className="g-2 mb-0 xrd-artifact-preview-row"))
-        if len(ordered) > MAX_XRD_FIGURE_PREVIEW_TILES:
-            previews_block.append(
-                html.P(
-                    translate_ui(loc, "dash.analysis.xrd.figure.artifacts_previews_truncated", n=len(ordered) - MAX_XRD_FIGURE_PREVIEW_TILES),
-                    className="small text-muted mb-1",
-                )
-            )
-
-    meta_lines: list[Any] = []
-    if status:
-        meta_lines.append(
-            html.P(
-                translate_ui(loc, "dash.analysis.xrd.figure.artifacts_status", status=status),
-                className="small text-muted mb-1 xrd-artifacts-registry-status opacity-80",
-            )
-        )
-    if err:
-        meta_lines.append(html.P(translate_ui(loc, "dash.analysis.xrd.figure.artifacts_error", err=err), className="small text-danger mb-0"))
-
-    if keys:
-        keys_block = html.Ul([html.Li(html.Code(k), className="small") for k in keys], className="small mb-0 ps-3 xrd-artifacts-key-list")
-    else:
-        keys_block = html.P(translate_ui(loc, "dash.analysis.xrd.figure.artifacts_empty"), className="small text-muted mb-0 opacity-85")
-
-    registry = html.Details(
-        [
-            html.Summary(
-                [
-                    html.Span(className="ta-details-chevron"),
-                    html.Span(
-                        translate_ui(loc, "dash.analysis.xrd.figure.artifacts_registry_summary"),
-                        className="ms-1 small text-muted xrd-artifacts-registry-summary-label",
-                    ),
-                ],
-                className="ta-details-summary py-1",
-            ),
-            html.Div(
-                [*meta_lines, keys_block],
-                className="ta-details-body mt-2",
-            ),
-        ],
-        className="ta-ms-details mb-0 mt-1 xrd-artifacts-registry-disclosure",
-        open=False,
+    return build_figure_artifacts_panel(
+        figure_artifacts,
+        loc,
+        previews=previews,
+        i18n_prefix="dash.analysis.xrd.figure",
+        class_prefix="xrd",
+        max_preview_tiles=MAX_XRD_FIGURE_PREVIEW_TILES,
     )
-
-    body: list[Any] = [primary_line, *previews_block, registry]
-    return html.Div(body, className="xrd-figure-artifacts-panel")
 
 
 def _build_xrd_analysis_summary(dataset_detail: dict, summary: dict, result_meta: dict, loc: str, *, locale_data: str | None) -> html.Div:
@@ -2546,9 +2371,7 @@ def compare_xrd_literature(n_clicks, project_id, result_id, max_claims, persist_
 
 
 def _xrd_primary_report_figure_label(dataset_key: str | None, result_id: str | None) -> str:
-    """Backend primary label for XRD (matches ``capture_result_figure_from_layout`` convention)."""
-    dk = str(dataset_key or "").strip() or str(result_id or "").strip() or "dataset"
-    return f"XRD Analysis - {dk}"
+    return primary_report_figure_label("XRD", dataset_key, result_id)
 
 
 @callback(
@@ -2559,11 +2382,7 @@ def _xrd_primary_report_figure_label(dataset_key: str | None, result_id: str | N
 )
 def render_xrd_figure_artifact_button_labels(locale_data):
     loc = _loc(locale_data)
-    return (
-        translate_ui(loc, "dash.analysis.xrd.figure.btn_snapshot"),
-        translate_ui(loc, "dash.analysis.xrd.figure.btn_report"),
-        translate_ui(loc, "dash.analysis.xrd.figure.artifacts_details_summary"),
-    )
+    return figure_artifact_button_labels(loc, i18n_prefix="dash.analysis.xrd.figure")
 
 
 @callback(
@@ -2579,13 +2398,11 @@ def toggle_xrd_figure_artifact_buttons(result_id):
 @callback(
     Output("xrd-result-figure-artifacts", "children"),
     Input("xrd-latest-result-id", "data"),
-    Input("xrd-refresh", "data"),
+    Input("xrd-figure-artifact-refresh", "data"),
     Input("ui-locale", "data"),
-    Input("xrd-figure-save-snapshot-btn", "n_clicks"),
-    Input("xrd-figure-use-report-btn", "n_clicks"),
     State("project-id", "data"),
 )
-def refresh_xrd_figure_artifacts_panel(result_id, _refresh, locale_data, _snap_n, _report_n, project_id):
+def refresh_xrd_figure_artifacts_panel(result_id, _artifact_refresh, locale_data, project_id):
     loc = _loc(locale_data)
     if not result_id or not project_id:
         return ""
@@ -2604,29 +2421,42 @@ def refresh_xrd_figure_artifacts_panel(result_id, _refresh, locale_data, _snap_n
 
 @callback(
     Output("xrd-figure-artifact-status", "children"),
+    Output("xrd-figure-artifact-refresh", "data"),
     Input("xrd-figure-save-snapshot-btn", "n_clicks"),
     Input("xrd-figure-use-report-btn", "n_clicks"),
     Input("xrd-latest-result-id", "data"),
     State("project-id", "data"),
     State("xrd-result-figure", "children"),
     State("ui-locale", "data"),
+    State("xrd-figure-artifact-refresh", "data"),
     prevent_initial_call=True,
 )
-def xrd_figure_snapshot_or_report_figure(snap_clicks, report_clicks, latest_result_id, project_id, figure_children, locale_data):
+def xrd_figure_snapshot_or_report_figure(snap_clicks, report_clicks, latest_result_id, project_id, figure_children, locale_data, refresh_value):
     loc = _loc(locale_data)
     ctx = dash.callback_context
     triggered_id = getattr(ctx, "triggered_id", None)
     if triggered_id is None:
         raise dash.exceptions.PreventUpdate
     if triggered_id == "xrd-latest-result-id":
-        return ""
-    if triggered_id not in ("xrd-figure-save-snapshot-btn", "xrd-figure-use-report-btn"):
+        return "", dash.no_update
+    action = figure_action_from_trigger(
+        triggered_id,
+        snapshot_button_id="xrd-figure-save-snapshot-btn",
+        report_button_id="xrd-figure-use-report-btn",
+    )
+    if action is None:
         raise dash.exceptions.PreventUpdate
     if not project_id or not latest_result_id:
-        return dbc.Alert(
-            translate_ui(loc, "dash.analysis.xrd.figure.artifact_skip", reason="missing_project_or_result"),
-            color="warning",
-            className="py-1 mb-0 small xrd-figure-inline-alert",
+        return (
+            figure_action_status_alert(
+                loc,
+                i18n_prefix="dash.analysis.xrd.figure",
+                action=action,
+                status="missing",
+                reason="missing_project_or_result",
+                class_prefix="xrd",
+            ),
+            dash.no_update,
         )
 
     from dash_app.api_client import workspace_result_detail
@@ -2634,47 +2464,71 @@ def xrd_figure_snapshot_or_report_figure(snap_clicks, report_clicks, latest_resu
     try:
         detail = workspace_result_detail(project_id, latest_result_id)
     except Exception as exc:
-        return dbc.Alert(
-            translate_ui(loc, "dash.analysis.xrd.figure.artifact_error", reason=str(exc)),
-            color="danger",
-            className="py-1 mb-0 small xrd-figure-inline-alert",
+        return (
+            figure_action_status_alert(
+                loc,
+                i18n_prefix="dash.analysis.xrd.figure",
+                action=action,
+                status="error",
+                reason=str(exc),
+                class_prefix="xrd",
+            ),
+            dash.no_update,
         )
     result_meta = detail.get("result", {}) or {}
     dataset_key = result_meta.get("dataset_key")
 
-    if triggered_id == "xrd-figure-save-snapshot-btn":
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        dk = str(dataset_key or "").strip() or str(latest_result_id)
-        label = f"XRD Snapshot - {dk} - {stamp}"
-        replace = False
-    else:
-        label = _xrd_primary_report_figure_label(str(dataset_key or "").strip() or None, latest_result_id)
-        replace = True
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    meta = figure_action_metadata(
+        action,
+        analysis_type="XRD",
+        dataset_key=str(dataset_key or "").strip() or None,
+        result_id=latest_result_id,
+        snapshot_stamp=stamp,
+    )
 
     outcome = register_result_figure_from_layout_children(
         figure_children=figure_children,
         project_id=project_id,
         result_id=latest_result_id,
-        label=label,
-        replace=replace,
+        label=str(meta.get("label") or ""),
+        replace=bool(meta.get("replace")),
     )
     if outcome.get("status") == "ok":
-        key = str(outcome.get("figure_key") or label)
-        if triggered_id == "xrd-figure-save-snapshot-btn":
-            msg = translate_ui(loc, "dash.analysis.xrd.figure.snapshot_ok", figure_key=key)
-        else:
-            msg = translate_ui(loc, "dash.analysis.xrd.figure.report_ok", figure_key=key)
-        return dbc.Alert(msg, color="success", className="py-1 mb-0 small xrd-figure-inline-alert")
-    if outcome.get("status") == "error":
-        return dbc.Alert(
-            translate_ui(loc, "dash.analysis.xrd.figure.artifact_error", reason=str(outcome.get("reason") or "")),
-            color="danger",
-            className="py-1 mb-0 small xrd-figure-inline-alert",
+        key = str(outcome.get("figure_key") or meta.get("label") or "")
+        return (
+            figure_action_status_alert(
+                loc,
+                i18n_prefix="dash.analysis.xrd.figure",
+                action=action,
+                status="ok",
+                figure_key=key,
+                class_prefix="xrd",
+            ),
+            (refresh_value or 0) + 1,
         )
-    return dbc.Alert(
-        translate_ui(loc, "dash.analysis.xrd.figure.artifact_skip", reason=str(outcome.get("reason") or "")),
-        color="secondary",
-        className="py-1 mb-0 small xrd-figure-inline-alert",
+    if outcome.get("status") == "error":
+        return (
+            figure_action_status_alert(
+                loc,
+                i18n_prefix="dash.analysis.xrd.figure",
+                action=action,
+                status="error",
+                reason=str(outcome.get("reason") or ""),
+                class_prefix="xrd",
+            ),
+            dash.no_update,
+        )
+    return (
+        figure_action_status_alert(
+            loc,
+            i18n_prefix="dash.analysis.xrd.figure",
+            action=action,
+            status="skipped",
+            reason=str(outcome.get("reason") or ""),
+            class_prefix="xrd",
+        ),
+        dash.no_update,
     )
 
 

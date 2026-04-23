@@ -80,6 +80,12 @@ def test_layout_contains_section_ids_in_order():
         "tga-result-metrics",
         "tga-result-quality",
         "tga-result-figure",
+        "tga-figure-save-snapshot-btn",
+        "tga-figure-use-report-btn",
+        "tga-figure-artifact-status",
+        "tga-result-figure-artifacts",
+        "tga-figure-artifacts-summary",
+        "tga-figure-artifact-refresh",
         "tga-result-dtg",
         "tga-result-step-cards",
         "tga-result-table",
@@ -356,6 +362,26 @@ def test_extract_graph_from_wrapped_tga_figure_area(monkeypatch):
     payload = _extract_graph_figure_payload(fig)
     assert payload is not None
     assert "Steps:" in str(fig) or "Adımlar:" in str(fig)
+
+
+def test_capture_tga_figure_delegates_to_shared_helper(monkeypatch):
+    mod = _import_tga_page()
+    captured_kwargs: dict = {}
+
+    def _fake_capture(**kwargs):
+        captured_kwargs.update(kwargs)
+        return {"tga_r_2": {"status": "ok"}}
+
+    monkeypatch.setattr(mod, "capture_result_figure_from_layout", _fake_capture)
+    result = mod.capture_tga_figure("tga_r_2", "proj-1", {"graph": True}, {"old": "state"})
+    assert result == {"tga_r_2": {"status": "ok"}}
+    assert captured_kwargs == {
+        "result_id": "tga_r_2",
+        "project_id": "proj-1",
+        "figure_children": {"graph": True},
+        "captured": {"old": "state"},
+        "analysis_type": "TGA",
+    }
 
 
 def test_tga_processing_draft_defaults_and_overrides():

@@ -24,9 +24,11 @@ from ``dash.analysis.raman.*`` keys in ``utils/i18n.py`` (not thermal/TGA copy).
 
 from __future__ import annotations
 
+import base64
 import copy
 import json
 import math
+from datetime import datetime, timezone
 from typing import Any
 
 import dash
@@ -37,6 +39,7 @@ import plotly.graph_objects as go
 from dash_app.components.analysis_page import (
     analysis_page_stores,
     capture_result_figure_from_layout,
+    register_result_figure_from_layout_children,
     dataset_selection_card,
     dataset_selector_block,
     eligible_datasets,
@@ -53,6 +56,17 @@ from dash_app.components.analysis_page import (
 )
 from dash_app.components.chrome import page_header
 from dash_app.components.data_preview import dataset_table
+from dash_app.components.figure_artifacts import (
+    FIGURE_ARTIFACT_PREVIEW_MAX_EDGE,
+    FIGURE_ARTIFACT_PREVIEW_TILES,
+    build_figure_artifact_surface,
+    build_figure_artifacts_panel,
+    figure_action_from_trigger,
+    figure_action_metadata,
+    figure_action_status_alert,
+    figure_artifact_button_labels,
+    ordered_figure_preview_keys,
+)
 from dash_app.components.raman_explore import (
     MAX_RAMAN_UNDO_DEPTH,
     append_undo_after_edit,
@@ -858,6 +872,7 @@ layout = html.Div(
     analysis_page_stores("raman-refresh", "raman-latest-result-id")
     + [
         dcc.Store(id="raman-figure-captured", data={}),
+        dcc.Store(id="raman-figure-artifact-refresh", data=0),
         dcc.Store(id="raman-processing-default", data=copy.deepcopy(_default_raman_processing_draft())),
         dcc.Store(id="raman-processing-draft", data=copy.deepcopy(_default_raman_processing_draft())),
         dcc.Store(id="raman-processing-undo-stack", data=[]),
@@ -879,7 +894,7 @@ layout = html.Div(
                         _raman_result_section(result_placeholder_card("raman-result-analysis-summary"), role="context"),
                         _raman_result_section(html.Div(id="raman-result-metrics", className="mb-2"), role="context"),
                         _raman_result_section(html.Div(id="raman-result-quality", className="mb-2"), role="support"),
-                        _raman_result_section(result_placeholder_card("raman-result-figure"), role="hero"),
+                        _raman_result_section(build_figure_artifact_surface("raman"), role="hero"),
                         _raman_result_section(html.Div(id="raman-result-top-match", className="mb-2"), role="support"),
                         _raman_result_section(html.Div(id="raman-result-peak-cards", className="mb-2"), role="support"),
                         _raman_result_section(html.Div(id="raman-result-match-table", className="mb-2"), role="support"),
@@ -2025,6 +2040,133 @@ def compare_raman_literature(n_clicks, project_id, result_id, max_claims, persis
             alternative_preview_limit=LITERATURE_COMPACT_ALTERNATIVE_PREVIEW_LIMIT,
         ),
         literature_compare_status_alert(payload, loc, i18n_prefix=_RAMAN_LITERATURE_PREFIX),
+    )
+
+
+def _raman_fetch_figure_preview_data_urls(project_id: str, result_id: str, figure_artifacts: dict) -> dict[str, str]:
+    from dash_app.api_client import fetch_result_figure_png
+
+    out: dict[str, str] = {}
+    for label in ordered_figure_preview_keys(figure_artifacts)[:FIGURE_ARTIFACT_PREVIEW_TILES]:
+        try:
+            raw = fetch_result_figure_png(project_id, result_id, label, max_edge=FIGURE_ARTIFACT_PREVIEW_MAX_EDGE)
+            out[label] = "data:image/png;base64," + base64.standard_b64encode(bytes(raw)).decode("ascii") if raw else ""
+        except Exception:
+            out[label] = ""
+    return out
+
+
+@callback(
+    Output("raman-figure-save-snapshot-btn", "children"),
+    Output("raman-figure-use-report-btn", "children"),
+    Output("raman-figure-artifacts-summary", "children"),
+    Input("ui-locale", "data"),
+)
+def render_raman_figure_artifact_button_labels(locale_data):
+    return figure_artifact_button_labels(_loc(locale_data))
+
+
+@callback(
+    Output("raman-figure-save-snapshot-btn", "disabled"),
+    Output("raman-figure-use-report-btn", "disabled"),
+    Input("raman-latest-result-id", "data"),
+)
+def toggle_raman_figure_artifact_buttons(result_id):
+    disabled = not bool(result_id)
+    return disabled, disabled
+
+
+@callback(
+    Output("raman-result-figure-artifacts", "children"),
+    Input("raman-latest-result-id", "data"),
+    Input("raman-figure-artifact-refresh", "data"),
+    Input("ui-locale", "data"),
+    State("project-id", "data"),
+)
+def refresh_raman_figure_artifacts_panel(result_id, _artifact_refresh, locale_data, project_id):
+    loc = _loc(locale_data)
+    if not result_id or not project_id:
+        return ""
+    from dash_app.api_client import workspace_result_detail
+
+    try:
+        detail = workspace_result_detail(project_id, result_id)
+    except Exception:
+        return ""
+    artifacts = detail.get("figure_artifacts") if isinstance(detail.get("figure_artifacts"), dict) else {}
+    previews = _raman_fetch_figure_preview_data_urls(project_id, result_id, artifacts) if ordered_figure_preview_keys(artifacts) else None
+    return build_figure_artifacts_panel(artifacts, loc, previews=previews)
+
+
+@callback(
+    Output("raman-figure-artifact-status", "children"),
+    Output("raman-figure-artifact-refresh", "data"),
+    Input("raman-figure-save-snapshot-btn", "n_clicks"),
+    Input("raman-figure-use-report-btn", "n_clicks"),
+    Input("raman-latest-result-id", "data"),
+    State("project-id", "data"),
+    State("raman-result-figure", "children"),
+    State("ui-locale", "data"),
+    State("raman-figure-artifact-refresh", "data"),
+    prevent_initial_call=True,
+)
+def raman_figure_snapshot_or_report_figure(_snap_clicks, _report_clicks, latest_result_id, project_id, figure_children, locale_data, refresh_value):
+    loc = _loc(locale_data)
+    triggered_id = getattr(dash.callback_context, "triggered_id", None)
+    if triggered_id == "raman-latest-result-id":
+        return "", dash.no_update
+    action = figure_action_from_trigger(
+        triggered_id,
+        snapshot_button_id="raman-figure-save-snapshot-btn",
+        report_button_id="raman-figure-use-report-btn",
+    )
+    if action is None:
+        raise dash.exceptions.PreventUpdate
+    if not project_id or not latest_result_id:
+        return (
+            figure_action_status_alert(loc, action=action, status="missing", reason="missing_project_or_result", class_prefix="raman"),
+            dash.no_update,
+        )
+
+    from dash_app.api_client import workspace_result_detail
+
+    try:
+        detail = workspace_result_detail(project_id, latest_result_id)
+    except Exception as exc:
+        return (
+            figure_action_status_alert(loc, action=action, status="error", reason=str(exc), class_prefix="raman"),
+            dash.no_update,
+        )
+    result_meta = detail.get("result", {}) or {}
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    meta = figure_action_metadata(
+        action,
+        analysis_type="RAMAN",
+        dataset_key=result_meta.get("dataset_key"),
+        result_id=latest_result_id,
+        snapshot_stamp=stamp,
+    )
+    outcome = register_result_figure_from_layout_children(
+        figure_children=figure_children,
+        project_id=project_id,
+        result_id=latest_result_id,
+        label=str(meta.get("label") or ""),
+        replace=bool(meta.get("replace")),
+    )
+    if outcome.get("status") == "ok":
+        key = str(outcome.get("figure_key") or meta.get("label") or "")
+        return (
+            figure_action_status_alert(loc, action=action, status="ok", figure_key=key, class_prefix="raman"),
+            (refresh_value or 0) + 1,
+        )
+    if outcome.get("status") == "error":
+        return (
+            figure_action_status_alert(loc, action=action, status="error", reason=str(outcome.get("reason") or ""), class_prefix="raman"),
+            dash.no_update,
+        )
+    return (
+        figure_action_status_alert(loc, action=action, status="skipped", reason=str(outcome.get("reason") or ""), class_prefix="raman"),
+        dash.no_update,
     )
 
 

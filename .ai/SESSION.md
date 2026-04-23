@@ -25,13 +25,22 @@
   - Added TR/EN i18n keys for the DSC normalization control and processing summary in `utils/i18n.py`.
   - Added targeted regression coverage in `tests/test_dsc_dash_page.py` and `tests/test_batch_runner.py` for draft defaults, setup syncing, preset persistence, run payload forwarding, and backend honoring.
 
+- **P1-2 — Figure capture toolbar standardization (completed 2026-04-23):**
+  - Added shared pure figure-artifact helpers in `dash_app/components/figure_artifacts.py`.
+  - Wrapped each modality's existing `<modality>-result-figure` slot with Snapshot / Report figure toolbar controls and artifact disclosure without renaming the figure slot.
+  - Preserved existing automatic capture callbacks; DTA keeps its result-mode auto-capture path.
+  - Refactored XRD onto shared helpers while preserving XRD toolbar IDs, overlay-control slot, and artifact action behavior.
+  - Updated graph extraction to traverse rendered components in visual order so DTA's result graph is selected before its debug graph.
+  - Added generic figure artifact i18n/CSS and regression coverage for helper behavior, explicit action replace semantics, auto-capture, and layout IDs.
+
 ## What was verified
 
 - `python -m pytest tests/test_ftir_dash_page.py tests/test_raman_dash_page.py tests/test_batch_runner.py -q` — 116 passed, 4 deprecation warnings from Dash `dash_table.DataTable`.
 - `python -m pytest -p no:cacheprovider tests/test_dsc_dash_page.py tests/test_batch_runner.py -q` — 67 passed, 2 deprecation warnings from Dash `dash_table.DataTable`.
+- `python -m pytest -p no:cacheprovider tests/test_analysis_page_components.py tests/test_xrd_dash_page.py tests/test_dsc_dash_page.py tests/test_dta_dash_page.py tests/test_tga_dash_page.py tests/test_ftir_dash_page.py tests/test_raman_dash_page.py -q` — 303 passed, 16 deprecation warnings from Plotly/Kaleido and Dash `dash_table.DataTable`.
 
 ## Next step
 
-- **P1-2** — Figure capture toolbar standardization: port the XRD snapshot/report toolbar pattern to the remaining modality pages while preserving existing auto-capture behavior.
+- **P1-3 + P1-4** — Shared boilerplate extraction: prioritize duplicated coercion helpers and reusable result-surface cards now that figure toolbar behavior is standardized.
 
 **Process defaults:** **`00-workflow.mdc`**.

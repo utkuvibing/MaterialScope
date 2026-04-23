@@ -12,9 +12,11 @@ Lets the user:
 
 from __future__ import annotations
 
+import base64
 import copy
 import json
 import math
+from datetime import datetime, timezone
 from typing import Any
 
 import dash
@@ -25,6 +27,7 @@ import plotly.graph_objects as go
 from core.figure_render import render_plotly_figure_png
 from dash_app.components.analysis_page import (
     analysis_page_stores,
+    register_result_figure_from_layout_children,
     dataset_selection_card,
     dataset_selector_block,
     eligible_datasets,
@@ -40,6 +43,17 @@ from dash_app.components.analysis_page import (
 )
 from dash_app.components.chrome import page_header
 from dash_app.components.data_preview import dataset_table
+from dash_app.components.figure_artifacts import (
+    FIGURE_ARTIFACT_PREVIEW_MAX_EDGE,
+    FIGURE_ARTIFACT_PREVIEW_TILES,
+    build_figure_artifact_surface,
+    build_figure_artifacts_panel,
+    figure_action_from_trigger,
+    figure_action_metadata,
+    figure_action_status_alert,
+    figure_artifact_button_labels,
+    ordered_figure_preview_keys,
+)
 from dash_app.components.literature_compare_ui import (
     LITERATURE_COMPACT_ALTERNATIVE_PREVIEW_LIMIT,
     LITERATURE_COMPACT_EVIDENCE_PREVIEW_LIMIT,
@@ -1110,6 +1124,7 @@ def _processing_draft_stores() -> list:
         dcc.Store(id="dta-processing-undo", data=[]),
         dcc.Store(id="dta-processing-redo", data=[]),
         dcc.Store(id="dta-figure-captured", data={}),
+        dcc.Store(id="dta-figure-artifact-refresh", data=0),
         dcc.Store(id="dta-preset-refresh", data=0),
     ]
 
@@ -1305,7 +1320,7 @@ layout = html.Div(
                         _dta_result_section(result_placeholder_card("dta-result-metrics"), role="context"),
                         _dta_result_section(result_placeholder_card("dta-result-quality"), role="support"),
                         _dta_result_section(result_placeholder_card("dta-result-raw-metadata"), role="support"),
-                        _dta_result_section(result_placeholder_card("dta-result-figure"), role="hero"),
+                        _dta_result_section(build_figure_artifact_surface("dta"), role="hero"),
                         _dta_result_section(result_placeholder_card("dta-result-peak-cards"), role="support"),
                         _dta_result_section(result_placeholder_card("dta-result-table"), role="support"),
                         _dta_result_section(result_placeholder_card("dta-result-processing"), role="support"),
@@ -3069,6 +3084,133 @@ def compare_dta_literature(n_clicks, project_id, result_id, max_claims, persist_
             alternative_preview_limit=LITERATURE_COMPACT_ALTERNATIVE_PREVIEW_LIMIT,
         ),
         literature_compare_status_alert(payload, loc, i18n_prefix=_prefix),
+    )
+
+
+def _dta_fetch_figure_preview_data_urls(project_id: str, result_id: str, figure_artifacts: dict) -> dict[str, str]:
+    from dash_app.api_client import fetch_result_figure_png
+
+    out: dict[str, str] = {}
+    for label in ordered_figure_preview_keys(figure_artifacts)[:FIGURE_ARTIFACT_PREVIEW_TILES]:
+        try:
+            raw = fetch_result_figure_png(project_id, result_id, label, max_edge=FIGURE_ARTIFACT_PREVIEW_MAX_EDGE)
+            out[label] = "data:image/png;base64," + base64.standard_b64encode(bytes(raw)).decode("ascii") if raw else ""
+        except Exception:
+            out[label] = ""
+    return out
+
+
+@callback(
+    Output("dta-figure-save-snapshot-btn", "children"),
+    Output("dta-figure-use-report-btn", "children"),
+    Output("dta-figure-artifacts-summary", "children"),
+    Input("ui-locale", "data"),
+)
+def render_dta_figure_artifact_button_labels(locale_data):
+    return figure_artifact_button_labels(_loc(locale_data))
+
+
+@callback(
+    Output("dta-figure-save-snapshot-btn", "disabled"),
+    Output("dta-figure-use-report-btn", "disabled"),
+    Input("dta-latest-result-id", "data"),
+)
+def toggle_dta_figure_artifact_buttons(result_id):
+    disabled = not bool(result_id)
+    return disabled, disabled
+
+
+@callback(
+    Output("dta-result-figure-artifacts", "children"),
+    Input("dta-latest-result-id", "data"),
+    Input("dta-figure-artifact-refresh", "data"),
+    Input("ui-locale", "data"),
+    State("project-id", "data"),
+)
+def refresh_dta_figure_artifacts_panel(result_id, _artifact_refresh, locale_data, project_id):
+    loc = _loc(locale_data)
+    if not result_id or not project_id:
+        return ""
+    from dash_app.api_client import workspace_result_detail
+
+    try:
+        detail = workspace_result_detail(project_id, result_id)
+    except Exception:
+        return ""
+    artifacts = detail.get("figure_artifacts") if isinstance(detail.get("figure_artifacts"), dict) else {}
+    previews = _dta_fetch_figure_preview_data_urls(project_id, result_id, artifacts) if ordered_figure_preview_keys(artifacts) else None
+    return build_figure_artifacts_panel(artifacts, loc, previews=previews)
+
+
+@callback(
+    Output("dta-figure-artifact-status", "children"),
+    Output("dta-figure-artifact-refresh", "data"),
+    Input("dta-figure-save-snapshot-btn", "n_clicks"),
+    Input("dta-figure-use-report-btn", "n_clicks"),
+    Input("dta-latest-result-id", "data"),
+    State("project-id", "data"),
+    State("dta-result-figure", "children"),
+    State("ui-locale", "data"),
+    State("dta-figure-artifact-refresh", "data"),
+    prevent_initial_call=True,
+)
+def dta_figure_snapshot_or_report_figure(_snap_clicks, _report_clicks, latest_result_id, project_id, figure_children, locale_data, refresh_value):
+    loc = _loc(locale_data)
+    triggered_id = getattr(dash.callback_context, "triggered_id", None)
+    if triggered_id == "dta-latest-result-id":
+        return "", dash.no_update
+    action = figure_action_from_trigger(
+        triggered_id,
+        snapshot_button_id="dta-figure-save-snapshot-btn",
+        report_button_id="dta-figure-use-report-btn",
+    )
+    if action is None:
+        raise dash.exceptions.PreventUpdate
+    if not project_id or not latest_result_id:
+        return (
+            figure_action_status_alert(loc, action=action, status="missing", reason="missing_project_or_result", class_prefix="dta"),
+            dash.no_update,
+        )
+
+    from dash_app.api_client import workspace_result_detail
+
+    try:
+        detail = workspace_result_detail(project_id, latest_result_id)
+    except Exception as exc:
+        return (
+            figure_action_status_alert(loc, action=action, status="error", reason=str(exc), class_prefix="dta"),
+            dash.no_update,
+        )
+    result_meta = detail.get("result", {}) or {}
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    meta = figure_action_metadata(
+        action,
+        analysis_type="DTA",
+        dataset_key=result_meta.get("dataset_key"),
+        result_id=latest_result_id,
+        snapshot_stamp=stamp,
+    )
+    outcome = register_result_figure_from_layout_children(
+        figure_children=figure_children,
+        project_id=project_id,
+        result_id=latest_result_id,
+        label=str(meta.get("label") or ""),
+        replace=bool(meta.get("replace")),
+    )
+    if outcome.get("status") == "ok":
+        key = str(outcome.get("figure_key") or meta.get("label") or "")
+        return (
+            figure_action_status_alert(loc, action=action, status="ok", figure_key=key, class_prefix="dta"),
+            (refresh_value or 0) + 1,
+        )
+    if outcome.get("status") == "error":
+        return (
+            figure_action_status_alert(loc, action=action, status="error", reason=str(outcome.get("reason") or ""), class_prefix="dta"),
+            dash.no_update,
+        )
+    return (
+        figure_action_status_alert(loc, action=action, status="skipped", reason=str(outcome.get("reason") or ""), class_prefix="dta"),
+        dash.no_update,
     )
 
 

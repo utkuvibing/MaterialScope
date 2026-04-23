@@ -117,6 +117,7 @@ def test_layout_contains_mature_history_and_preset_stores():
         "xrd-preset-loaded-name",
         "xrd-preset-snapshot",
         "xrd-result-cache",
+        "xrd-figure-artifact-refresh",
     ):
         assert sid in s, f"missing store/control: {sid}"
 
@@ -169,7 +170,7 @@ def test_layout_places_figure_before_candidate_cards():
 def test_xrd_figure_artifact_callback_clear_on_result_change(monkeypatch):
     mod = _import_xrd_page()
     monkeypatch.setattr(mod.dash, "callback_context", SimpleNamespace(triggered_id="xrd-latest-result-id"))
-    assert mod.xrd_figure_snapshot_or_report_figure(0, 0, "new-result", "proj", [], "en") == ""
+    assert mod.xrd_figure_snapshot_or_report_figure(0, 0, "new-result", "proj", [], "en", 3) == ("", mod.dash.no_update)
 
 
 def test_xrd_figure_artifact_callback_save_snapshot_registers(monkeypatch):
@@ -193,11 +194,40 @@ def test_xrd_figure_artifact_callback_save_snapshot_registers(monkeypatch):
 
     monkeypatch.setattr(mod.dash, "callback_context", SimpleNamespace(triggered_id="xrd-figure-save-snapshot-btn"))
     fig_child = html.Div(dcc.Graph(figure=go.Figure(data=[go.Scatter(x=[1, 2], y=[1, 2])])))
-    out = mod.xrd_figure_snapshot_or_report_figure(1, 0, "xrd_1", "proj-9", fig_child, "en")
+    out, refresh = mod.xrd_figure_snapshot_or_report_figure(1, 0, "xrd_1", "proj-9", fig_child, "en", 4)
     assert captured and captured[0]["replace"] is False
     assert captured[0]["result_id"] == "xrd_1"
     assert "XRD Snapshot" in captured[0]["label"]
     assert isinstance(out, dbc.Alert)
+    assert refresh == 5
+
+
+def test_xrd_figure_artifact_callback_report_registers_replace(monkeypatch):
+    import dash_app.api_client as api_client
+    from dash import dcc
+    import plotly.graph_objects as go
+
+    mod = _import_xrd_page()
+    captured: list[dict] = []
+
+    def _fake_register(**kwargs):
+        captured.append(dict(kwargs))
+        return {"status": "ok", "figure_key": kwargs["label"]}
+
+    monkeypatch.setattr(mod, "register_result_figure_from_layout_children", _fake_register)
+    monkeypatch.setattr(
+        api_client,
+        "workspace_result_detail",
+        lambda *_a, **_k: {"result": {"dataset_key": "sample_xrd"}},
+    )
+
+    monkeypatch.setattr(mod.dash, "callback_context", SimpleNamespace(triggered_id="xrd-figure-use-report-btn"))
+    fig_child = html.Div(dcc.Graph(figure=go.Figure(data=[go.Scatter(x=[1, 2], y=[1, 2])])))
+    out, refresh = mod.xrd_figure_snapshot_or_report_figure(0, 1, "xrd_1", "proj-9", fig_child, "en", 8)
+    assert captured and captured[0]["replace"] is True
+    assert captured[0]["label"] == "XRD Analysis - sample_xrd"
+    assert isinstance(out, dbc.Alert)
+    assert refresh == 9
 
 
 def test_build_xrd_figure_artifacts_panel_lists_keys():
@@ -215,6 +245,26 @@ def test_build_xrd_figure_artifacts_panel_lists_keys():
     from utils.i18n import translate_ui
 
     assert translate_ui("en", "dash.analysis.xrd.figure.artifacts_registry_summary") in s or "Kayıt" in s
+
+
+def test_capture_xrd_figure_delegates_to_shared_helper(monkeypatch):
+    mod = _import_xrd_page()
+    captured_kwargs: dict = {}
+
+    def _fake_capture(**kwargs):
+        captured_kwargs.update(kwargs)
+        return {"xrd_r_2": {"status": "ok"}}
+
+    monkeypatch.setattr(mod, "capture_result_figure_from_layout", _fake_capture)
+    result = mod.capture_xrd_figure("xrd_r_2", "proj-1", {"graph": True}, {"old": "state"})
+    assert result == {"xrd_r_2": {"status": "ok"}}
+    assert captured_kwargs == {
+        "result_id": "xrd_r_2",
+        "project_id": "proj-1",
+        "figure_children": {"graph": True},
+        "captured": {"old": "state"},
+        "analysis_type": "XRD",
+    }
 
 
 def test_xrd_figure_artifact_i18n_keys_resolve():

@@ -105,6 +105,12 @@ def test_layout_contains_key_div_ids():
         "dta-result-raw-metadata",
         "dta-result-peak-cards",
         "dta-result-figure",
+        "dta-figure-save-snapshot-btn",
+        "dta-figure-use-report-btn",
+        "dta-figure-artifact-status",
+        "dta-result-figure-artifacts",
+        "dta-figure-artifacts-summary",
+        "dta-figure-artifact-refresh",
         "dta-result-table",
         "dta-result-processing",
         "dta-refresh",
@@ -384,6 +390,9 @@ def test_build_figure_uses_corrected_as_primary_trace(monkeypatch):
     assert getattr(debug_details, "id", "") == "dta-debug-figure-details"
     corrected_trace = next(trace for trace in graph.figure.data if trace.name == "Corrected Signal")
     raw_trace = next(trace for trace in graph.figure.data if trace.name == "Raw Signal")
+    from dash_app.components.analysis_page import _extract_graph_figure_payload
+
+    assert _extract_graph_figure_payload(figure_panel) is graph.figure
     assert corrected_trace.line.width >= 3.0
     assert raw_trace.opacity <= 0.22
     assert graph.figure.layout.height == 600
@@ -1589,6 +1598,7 @@ def test_backend_register_figure_writes_state_and_artifacts():
         json={
             "figure_png_base64": _b64.b64encode(png).decode("ascii"),
             "figure_label": f"DTA Analysis - {dataset_key}",
+            "replace": True,
         },
     )
     assert register.status_code == 200, register.text

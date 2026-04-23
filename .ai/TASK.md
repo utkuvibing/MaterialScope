@@ -24,6 +24,10 @@
 
 **Done (2026-04-22).** Shared structural result-role classes migrated from modality-specific `dsc-*`/`dta-*` prefixes to generic `ms-*` prefix across all 6 pages + CSS. Per-modality root page hooks (`{modality}-page`) added for future styling flexibility. TGA derivative class leakage fixed (`dsc-derivative-*` → `tga-derivative-*`). DTA-only debug classes preserved. 260/261 tests pass (1 pre-existing unrelated failure).
 
+### Completed: P1-2 — Figure capture toolbar standardization
+
+**Done (2026-04-23).** DSC, DTA, TGA, FTIR, and Raman now expose XRD-style manual **Snapshot** and **Report figure** controls while preserving existing `<modality>-result-figure` display/capture contracts and automatic capture callbacks. XRD was refactored onto shared pure artifact helpers without changing its toolbar IDs or overlay slot. Artifact panels refresh on latest-result changes and successful explicit figure actions only. Focused verification passed: `python -m pytest -p no:cacheprovider tests/test_analysis_page_components.py tests/test_xrd_dash_page.py tests/test_dsc_dash_page.py tests/test_dta_dash_page.py tests/test_tga_dash_page.py tests/test_ftir_dash_page.py tests/test_raman_dash_page.py -q` → 303 passed.
+
 ---
 
 ### Remaining prioritized remediation backlog
@@ -41,7 +45,6 @@ Ordered by priority per the repo-wide parity audit:
 
 | # | Issue | Modalities | Effort | Key files |
 |---|---|---|---|---|
-| P1-2 | Figure capture inconsistency: only XRD has snapshot/report toolbar; others have auto-capture only | DSC, DTA, TGA, FTIR, Raman | L | Port XRD toolbar pattern to each page |
 | P1-3 | Shared boilerplate extraction: coercion helpers, preset card, quality card, metadata panel, history card all duplicated across 6 pages | All | L | New shared module(s) |
 | P1-4 | Duplicated coercion helpers (`_coerce_int_positive`, `_coerce_float_positive`, `_coerce_float_non_negative`) in DSC, DTA, FTIR, Raman | All | S | Extract to shared module |
 | P1-7 | Regression tests for i18n leakage (done as part of P0-2+P0-3) | All | S | Done |
@@ -60,7 +63,7 @@ Ordered by priority per the repo-wide parity audit:
 1. ~~P1-1 — CSS class namespace cleanup (done)~~
 2. ~~P0-4 — Similarity metric selector (done)~~
 3. ~~P0-5 — DSC mass normalization (done)~~
-4. P1-2 — Figure capture toolbar standardization (large, high UX value, use XRD as template)
+4. ~~P1-2 — Figure capture toolbar standardization (done)~~
 5. P1-3 + P1-4 — Shared boilerplate extraction (large, maintenance burden reduction)
 6. P2 items — polish and consistency
 
@@ -70,11 +73,11 @@ Ordered by priority per the repo-wide parity audit:
 
 | Modality | Streamlit lines | Dash lines | Parity | Key gaps |
 |---|---|---|---|---|
-| DSC | 818 | 2674 | Near | No remaining P0 gap; figure toolbar standardization still pending |
+| DSC | 818 | 2674 | Near | No remaining P0 gap |
 | TGA | 886 | 2360 | Near | Was borrowing DSC i18n keys (fixed); CSS class leakage |
 | DTA | 818 | 2973 | Near | Cleanest CSS scoping |
-| FTIR | 12 (delegates) | 2625 | Near | Figure capture toolbar inconsistency; fewer spectral plot toggles than Streamlit |
-| Raman | 12 (delegates) | 2630 | Near | Same as FTIR; literature compare is Dash improvement |
+| FTIR | 12 (delegates) | 2625 | Near | Fewer spectral plot toggles than Streamlit |
+| Raman | 12 (delegates) | 2630 | Near | Literature compare is Dash improvement; fewer spectral plot toggles than Streamlit |
 | XRD | 2432 | 2697 | Near | Most complete figure toolbar; template for others |
 
-**Cross-cutting issues:** Boilerplate duplication (~40% of each page), figure capture inconsistency.
+**Cross-cutting issues:** Boilerplate duplication (~40% of each page).

@@ -1553,6 +1553,61 @@ html[data-theme="dark"] .main-content .ms-results-surface .dta-debug-shell {
 
 
 /* -------------------------------------------------------------------------- */
+/* Shared analysis figure artifact surfaces                                  */
+/* -------------------------------------------------------------------------- */
+
+.main-content .ms-results-surface .ms-figure-surface .ms-result-figure-shell > .card-body.ms-figure-shell-body {
+  padding: 0.55rem 0.62rem 0.45rem;
+}
+
+@media (min-width: 576px) {
+  .main-content .ms-results-surface .ms-figure-surface .ms-result-figure-shell > .card-body.ms-figure-shell-body {
+    padding: 0.62rem 0.85rem 0.5rem;
+  }
+}
+
+.main-content .ms-results-surface .ms-figure-surface .ms-figure-toolbar {
+  align-items: center;
+  row-gap: 0.5rem;
+  column-gap: 0.65rem;
+}
+
+.main-content .ms-results-surface .ms-figure-toolbar__overlay {
+  flex: 1 1 12rem;
+  min-width: min(100%, 12rem);
+}
+
+.main-content .ms-results-surface .ms-figure-toolbar__actions.btn-group {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+@media (max-width: 575.98px) {
+  .main-content .ms-results-surface .ms-figure-toolbar__actions.btn-group {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+.main-content .ms-results-surface .ms-figure-artifact-status:empty {
+  display: none;
+}
+
+.main-content .ms-results-surface .ms-figure-artifacts-disclosure {
+  opacity: 0.96;
+}
+
+.main-content .ms-results-surface .ms-figure-artifacts-disclosure-summary {
+  font-size: 0.8125rem;
+}
+
+.main-content .ms-results-surface .ms-figure-artifacts-body {
+  border-left: 2px solid transparent;
+  padding-left: 0.35rem;
+}
+
+/* -------------------------------------------------------------------------- */
 /* XRD analysis page — final surface polish (toolbar, rhythm, artifacts)     */
 /* -------------------------------------------------------------------------- */
 

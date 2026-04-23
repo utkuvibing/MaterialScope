@@ -202,14 +202,29 @@ def analysis_page_stores(refresh_id: str, latest_result_id: str) -> list[dcc.Sto
 
 
 def _extract_graph_figure_payload(node: Any) -> Any:
-    """Return the first Plotly figure payload found in a component tree."""
+    """Return the first Plotly figure payload in visual component order.
+
+    Traversal is deterministic: inspect the current component before its
+    descendants, and visit children left-to-right / top-to-bottom as Dash
+    renders them. This keeps primary result graphs ahead of later debug graphs.
+    """
     stack: list[Any] = [node]
+
+    def _push_children(children: Any) -> None:
+        if children is None:
+            return
+        if isinstance(children, (list, tuple)):
+            for child in reversed(children):
+                stack.append(child)
+            return
+        stack.append(children)
+
     while stack:
         current = stack.pop()
         if current is None:
             continue
         if isinstance(current, (list, tuple)):
-            stack.extend(current)
+            _push_children(current)
             continue
         if isinstance(current, dict):
             props = current.get("props")
@@ -217,20 +232,15 @@ def _extract_graph_figure_payload(node: Any) -> Any:
                 figure_payload = props.get("figure")
                 if figure_payload is not None:
                     return figure_payload
-                children = props.get("children")
-                if children is not None:
-                    stack.append(children)
-            children = current.get("children")
-            if children is not None:
-                stack.append(children)
+                _push_children(props.get("children"))
+            if not isinstance(props, dict) or "children" not in props:
+                _push_children(current.get("children"))
             continue
         if hasattr(current, "figure"):
             figure_payload = getattr(current, "figure")
             if figure_payload is not None:
                 return figure_payload
-        children = getattr(current, "children", None)
-        if children is not None:
-            stack.append(children)
+        _push_children(getattr(current, "children", None))
     return None
 
 

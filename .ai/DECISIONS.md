@@ -4,6 +4,22 @@
  
 ---
 
+## 2026-04-23 — P1-2 completed: figure artifact toolbar is shared UI while result slots remain stable
+
+**Decision:**
+
+1. Manual figure artifact controls are standardized across all six Dash modalities as **Snapshot** and **Report figure** actions.
+2. The existing `<modality>-result-figure` slot remains the stable display/capture contract; toolbar surfaces wrap the slot instead of renaming or replacing it.
+3. Shared code for figure artifacts lives in `dash_app/components/figure_artifacts.py` and is limited to pure UI/metadata helpers. Page modules keep Dash callbacks, API calls, and result-specific orchestration.
+4. Artifact panels refresh only on latest-result changes and successful explicit snapshot/report actions; failed/skipped explicit actions update inline status without refetching artifacts.
+5. Figure extraction from Dash component trees now follows visual order (parent before descendants, children left-to-right/top-to-bottom) so primary result graphs are captured before later debug/secondary graphs.
+
+**Reason:** XRD had the clearest user-facing figure artifact controls, but other modalities only had background auto-capture. Standardizing the toolbar improves report UX while preserving existing auto-capture resilience and avoiding a backend API/schema change.
+
+**Consequence / future:** New analysis pages should use the shared figure artifact surface and keep their result figure slot stable. Any future debug-export feature should be explicit; default report figures remain primary/result-oriented.
+
+---
+
 ## 2026-04-22 — P0-5 completed: DSC mass normalization is a first-class processing step with default-ON backward compatibility
 
 **Decision:**

@@ -22,6 +22,14 @@ from dash_app.components.analysis_page import (
     processing_details_section,
     resolve_sample_name,
 )
+from dash_app.components.figure_artifacts import (
+    build_figure_artifacts_panel,
+    figure_action_metadata,
+    figure_artifact_button_labels,
+    figure_artifact_count,
+    ordered_figure_preview_keys,
+    primary_report_figure_label,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -309,6 +317,20 @@ def test_resolve_sample_name_prefers_display_name_over_key():
 # figure capture helper
 # ---------------------------------------------------------------------------
 
+def test_extract_graph_figure_payload_preserves_visual_order():
+    result_fig = go.Figure(data=[go.Scatter(x=[1], y=[1], name="result")])
+    debug_fig = go.Figure(data=[go.Scatter(x=[1], y=[2], name="debug")])
+    children = html.Div(
+        [
+            html.Div(dcc.Graph(figure=result_fig), id="result-slot"),
+            html.Details([html.Summary("Debug"), html.Div(dcc.Graph(figure=debug_fig))]),
+        ]
+    )
+
+    payload = analysis_page_mod._extract_graph_figure_payload(children)
+    assert payload is result_fig
+
+
 def test_capture_result_figure_from_layout_registers_primary_figure(monkeypatch):
     import dash_app.api_client as api_client
 
@@ -458,3 +480,54 @@ def test_register_result_figure_from_layout_children_skips_without_graph():
     )
     assert out["status"] == "skipped"
     assert out["reason"] == "no_graph_in_layout"
+
+
+# ---------------------------------------------------------------------------
+# figure artifact pure helpers
+# ---------------------------------------------------------------------------
+
+def test_figure_artifact_helpers_order_labels_and_actions():
+    artifacts = {
+        "figure_keys": ["DSC Snapshot - ds - t1", "DSC Analysis - ds", "DSC Snapshot - ds - t1"],
+        "report_figure_key": "DSC Analysis - ds",
+    }
+    assert ordered_figure_preview_keys(artifacts) == ["DSC Analysis - ds", "DSC Snapshot - ds - t1"]
+    assert figure_artifact_count(artifacts) == 2
+    assert primary_report_figure_label("dsc", "ds", "rid") == "DSC Analysis - ds"
+
+    snapshot = figure_action_metadata(
+        "snapshot",
+        analysis_type="DSC",
+        dataset_key="ds",
+        result_id="rid",
+        snapshot_stamp="20260423T000000Z",
+    )
+    assert snapshot["label"] == "DSC Snapshot - ds - 20260423T000000Z"
+    assert snapshot["replace"] is False
+
+    report = figure_action_metadata("report", analysis_type="DSC", dataset_key="ds", result_id="rid")
+    assert report["label"] == "DSC Analysis - ds"
+    assert report["replace"] is True
+
+
+def test_figure_artifact_panel_and_labels_render():
+    snap_label, report_label, details_label = figure_artifact_button_labels("en")
+    assert snap_label == "Snapshot"
+    assert report_label == "Report figure"
+    assert "Saved figures" in details_label
+
+    empty = build_figure_artifacts_panel({}, "en")
+    assert "No saved figures" in str(empty)
+
+    panel = build_figure_artifacts_panel(
+        {
+            "figure_keys": ["DSC Analysis - ds", "DSC Snapshot - ds - t"],
+            "report_figure_key": "DSC Analysis - ds",
+            "report_figure_status": "captured",
+        },
+        "en",
+        previews={"DSC Analysis - ds": "data:image/png;base64,AAA"},
+    )
+    s = str(panel)
+    assert "DSC Analysis - ds" in s
+    assert "Show registry keys" in s

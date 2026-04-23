@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import dash
@@ -73,6 +74,12 @@ def test_layout_contains_parity_ids_and_stores():
         "dsc-result-quality",
         "dsc-result-raw-metadata",
         "dsc-result-figure",
+        "dsc-figure-save-snapshot-btn",
+        "dsc-figure-use-report-btn",
+        "dsc-figure-artifact-status",
+        "dsc-result-figure-artifacts",
+        "dsc-figure-artifacts-summary",
+        "dsc-figure-artifact-refresh",
         "dsc-result-derivative",
         "dsc-result-event-cards",
         "dsc-result-table",
@@ -446,6 +453,34 @@ def test_capture_dsc_figure_delegates_to_shared_helper(monkeypatch):
         "captured": {"old": "state"},
         "analysis_type": "DSC",
     }
+
+
+def test_dsc_manual_figure_actions_use_expected_replace_semantics(monkeypatch):
+    import dash_app.api_client as api_client
+    import plotly.graph_objects as go
+
+    mod = _import_dsc_page()
+    calls: list[dict] = []
+
+    def _fake_register(**kwargs):
+        calls.append(dict(kwargs))
+        return {"status": "ok", "figure_key": kwargs["label"]}
+
+    monkeypatch.setattr(mod, "register_result_figure_from_layout_children", _fake_register)
+    monkeypatch.setattr(api_client, "workspace_result_detail", lambda *_a, **_k: {"result": {"dataset_key": "dsc_ds"}})
+    fig_child = html.Div(dcc.Graph(figure=go.Figure(data=[go.Scatter(x=[1], y=[1])])))
+
+    monkeypatch.setattr(mod.dash, "callback_context", SimpleNamespace(triggered_id="dsc-figure-save-snapshot-btn"))
+    _status, refresh = mod.dsc_figure_snapshot_or_report_figure(1, 0, "dsc_r", "proj", fig_child, "en", 0)
+    assert calls[-1]["replace"] is False
+    assert calls[-1]["label"].startswith("DSC Snapshot - dsc_ds - ")
+    assert refresh == 1
+
+    monkeypatch.setattr(mod.dash, "callback_context", SimpleNamespace(triggered_id="dsc-figure-use-report-btn"))
+    _status, refresh = mod.dsc_figure_snapshot_or_report_figure(1, 1, "dsc_r", "proj", fig_child, "en", 1)
+    assert calls[-1]["replace"] is True
+    assert calls[-1]["label"] == "DSC Analysis - dsc_ds"
+    assert refresh == 2
 
 
 def test_display_result_returns_new_surface_sections(monkeypatch):
