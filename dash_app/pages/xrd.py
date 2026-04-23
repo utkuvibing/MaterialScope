@@ -12,6 +12,11 @@ import dash
 import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
 
+from dash_app.components.analysis_boilerplate import (
+    build_collapsible_section,
+    build_load_saveas_preset_card,
+    build_processing_history_card,
+)
 from dash_app.components.analysis_page import (
     analysis_page_stores,
     capture_result_figure_from_layout,
@@ -169,20 +174,7 @@ def _xrd_collapsible_section(
     open: bool = False,
     summary_suffix: Any | None = None,
 ) -> html.Details:
-    summary_children: list[Any] = [
-        html.Span(className="ta-details-chevron"),
-        html.Span(translate_ui(loc, title_key), className="ms-1"),
-    ]
-    if summary_suffix is not None:
-        summary_children.append(summary_suffix)
-    return html.Details(
-        [
-            html.Summary(summary_children, className="ta-details-summary"),
-            html.Div(body, className="ta-details-body mt-2"),
-        ],
-        className="ta-ms-details mb-0",
-        open=open,
-    )
+    return build_collapsible_section(loc, title_key, body, open=open, summary_suffix=summary_suffix)
 
 
 def _match_card(row: dict, idx: int, loc: str = "en") -> dbc.Card:
@@ -295,60 +287,23 @@ def _xrd_setup_review_card() -> dbc.Card:
 
 
 def _xrd_processing_history_card() -> dbc.Card:
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                html.H6(id="xrd-processing-history-title", className="card-title mb-1"),
-                html.P(id="xrd-processing-history-hint", className="small text-muted mb-2"),
-                dbc.Row(
-                    [
-                        dbc.Col(dbc.Button(id="xrd-processing-undo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
-                        dbc.Col(dbc.Button(id="xrd-processing-redo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
-                        dbc.Col(dbc.Button(id="xrd-processing-reset-btn", color="secondary", size="sm", outline=True), width="auto"),
-                    ],
-                    className="g-2 align-items-center mb-1",
-                ),
-                html.Div(id="xrd-history-status", className="small text-muted"),
-            ],
-            className="xrd-left-panel-card-body",
-        ),
-        className=_XRD_LEFT_PANEL_CARD,
+    return build_processing_history_card(
+        title_id="xrd-processing-history-title",
+        hint_id="xrd-processing-history-hint",
+        undo_button_id="xrd-processing-undo-btn",
+        redo_button_id="xrd-processing-redo-btn",
+        reset_button_id="xrd-processing-reset-btn",
+        status_id="xrd-history-status",
+        card_class_name=_XRD_LEFT_PANEL_CARD,
+        body_class_name="xrd-left-panel-card-body",
     )
 
 
 def _xrd_preset_card() -> dbc.Card:
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                html.H5(id="xrd-preset-card-title", className="card-title mb-1"),
-                html.Small(id="xrd-preset-help", className="form-text text-muted d-block mb-2"),
-                html.Div(id="xrd-preset-caption", className="small text-muted mb-2"),
-                html.Div(id="xrd-preset-loaded-line", className="small mb-1"),
-                html.Div(id="xrd-preset-dirty-flag", className="small mb-2"),
-                dbc.Label(id="xrd-preset-select-label", html_for="xrd-preset-select", className="mb-1"),
-                dbc.Select(id="xrd-preset-select", options=[], value=None),
-                dbc.Row(
-                    [
-                        dbc.Col(dbc.Button(id="xrd-preset-load-btn", color="primary", size="sm", disabled=True, className="me-2"), width="auto"),
-                        dbc.Col(dbc.Button(id="xrd-preset-delete-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
-                    ],
-                    className="g-2 my-2 align-items-center",
-                ),
-                dbc.Label(id="xrd-preset-save-name-label", html_for="xrd-preset-save-name", className="mb-1"),
-                dbc.Input(id="xrd-preset-save-name", type="text", value="", maxLength=80),
-                html.Small(id="xrd-preset-save-hint", className="text-muted d-block my-1"),
-                dbc.Row(
-                    [
-                        dbc.Col(dbc.Button(id="xrd-preset-save-btn", color="primary", size="sm", className="me-2"), width="auto"),
-                        dbc.Col(dbc.Button(id="xrd-preset-saveas-btn", color="secondary", size="sm", outline=True), width="auto"),
-                    ],
-                    className="g-2 mb-2 align-items-center",
-                ),
-                html.Div(id="xrd-preset-status", className="small text-muted"),
-            ],
-            className="xrd-left-panel-card-body",
-        ),
-        className=_XRD_LEFT_PANEL_CARD,
+    return build_load_saveas_preset_card(
+        id_prefix="xrd",
+        card_class_name=_XRD_LEFT_PANEL_CARD,
+        body_class_name="xrd-left-panel-card-body",
     )
 
 

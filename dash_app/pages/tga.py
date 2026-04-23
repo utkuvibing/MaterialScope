@@ -24,6 +24,11 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
 import plotly.graph_objects as go
 
+from dash_app.components.analysis_boilerplate import (
+    build_collapsible_section,
+    build_load_saveas_preset_card,
+    build_processing_history_card,
+)
 from dash_app.components.analysis_page import (
     analysis_page_stores,
     capture_result_figure_from_layout,
@@ -74,6 +79,11 @@ from dash_app.components.tga_explore import (
     perform_undo,
     tga_draft_processing_equal,
 )
+from dash_app.components.processing_inputs import (
+    coerce_float_non_negative as _coerce_float_non_negative,
+    coerce_float_positive as _coerce_float_positive,
+    coerce_int_positive as _coerce_int_positive,
+)
 from dash_app.theme import PLOT_THEME, apply_figure_theme, normalize_ui_theme
 from utils.i18n import normalize_ui_locale, translate_ui
 
@@ -118,40 +128,6 @@ _TGA_STEP_DETECTION_DEFAULTS: dict[str, Any] = {
     "min_mass_loss": 0.5,
     "search_half_width": 80,
 }
-
-
-def _coerce_int_positive(value, *, default: int, minimum: int) -> int:
-    try:
-        if value in (None, ""):
-            return max(default, minimum)
-        parsed = int(float(value))
-    except (TypeError, ValueError):
-        return max(default, minimum)
-    return max(parsed, minimum)
-
-
-def _coerce_float_positive(value, *, default: float, minimum: float) -> float:
-    try:
-        if value in (None, ""):
-            return max(default, minimum)
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return max(default, minimum)
-    if not math.isfinite(parsed):
-        return max(default, minimum)
-    return max(parsed, minimum)
-
-
-def _coerce_float_non_negative(value, *, default: float) -> float:
-    try:
-        if value in (None, ""):
-            return max(default, 0.0)
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return max(default, 0.0)
-    if not math.isfinite(parsed) or parsed < 0:
-        return max(default, 0.0)
-    return parsed
 
 
 def _default_tga_processing_draft() -> dict[str, Any]:
@@ -337,23 +313,7 @@ def _tga_collapsible_section(
     open: bool = False,
     summary_suffix: Any | None = None,
 ) -> html.Details:
-    summary_children: list[Any] = [
-        html.Span(className="ta-details-chevron"),
-        html.Span(translate_ui(loc, title_key), className="ms-1"),
-    ]
-    if summary_suffix is not None:
-        if isinstance(summary_suffix, (list, tuple)):
-            summary_children.extend(summary_suffix)
-        else:
-            summary_children.append(summary_suffix)
-    return html.Details(
-        [
-            html.Summary(summary_children, className="ta-details-summary"),
-            html.Div(body, className="ta-details-body mt-2"),
-        ],
-        className="ta-ms-details mb-0",
-        open=open,
-    )
+    return build_collapsible_section(loc, title_key, body, open=open, summary_suffix=summary_suffix)
 
 
 def _literature_compare_card() -> dbc.Card:
@@ -388,23 +348,13 @@ def _tga_raw_quality_card() -> dbc.Card:
 
 
 def _tga_processing_history_card() -> dbc.Card:
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                html.H6(id="tga-processing-history-title", className="card-title mb-1"),
-                html.P(id="tga-processing-history-hint", className="small text-muted mb-2"),
-                dbc.Row(
-                    [
-                        dbc.Col(dbc.Button(id="tga-processing-undo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
-                        dbc.Col(dbc.Button(id="tga-processing-redo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
-                        dbc.Col(dbc.Button(id="tga-processing-reset-btn", color="secondary", size="sm", outline=True), width="auto"),
-                    ],
-                    className="g-2 align-items-center mb-1",
-                ),
-                html.Div(id="tga-history-status", className="small text-muted"),
-            ]
-        ),
-        className="mb-3",
+    return build_processing_history_card(
+        title_id="tga-processing-history-title",
+        hint_id="tga-processing-history-hint",
+        undo_button_id="tga-processing-undo-btn",
+        redo_button_id="tga-processing-redo-btn",
+        reset_button_id="tga-processing-reset-btn",
+        status_id="tga-history-status",
     )
 
 
@@ -491,44 +441,7 @@ def _unit_mode_card() -> dbc.Card:
 
 
 def _tga_preset_card() -> dbc.Card:
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                html.H5(id="tga-preset-card-title", className="card-title mb-1"),
-                html.Small(id="tga-preset-help", className="form-text text-muted d-block mb-2"),
-                html.Div(id="tga-preset-caption", className="small text-muted mb-2"),
-                html.Div(id="tga-preset-loaded-line", className="small mb-1"),
-                html.Div(id="tga-preset-dirty-flag", className="small mb-2"),
-                dbc.Label(id="tga-preset-select-label", html_for="tga-preset-select", className="mb-1"),
-                dbc.Select(id="tga-preset-select", options=[], value=None),
-                dbc.Row(
-                    [
-                        dbc.Col(
-                            dbc.Button(id="tga-preset-load-btn", color="primary", size="sm", disabled=True, className="me-2"),
-                            width="auto",
-                        ),
-                        dbc.Col(
-                            dbc.Button(id="tga-preset-delete-btn", color="secondary", size="sm", outline=True, disabled=True),
-                            width="auto",
-                        ),
-                    ],
-                    className="g-2 my-2 align-items-center",
-                ),
-                dbc.Label(id="tga-preset-save-name-label", html_for="tga-preset-save-name", className="mb-1"),
-                dbc.Input(id="tga-preset-save-name", type="text", value="", maxLength=80),
-                html.Small(id="tga-preset-save-hint", className="text-muted d-block my-1"),
-                dbc.Row(
-                    [
-                        dbc.Col(dbc.Button(id="tga-preset-save-btn", color="primary", size="sm", className="me-2"), width="auto"),
-                        dbc.Col(dbc.Button(id="tga-preset-saveas-btn", color="secondary", size="sm", outline=True), width="auto"),
-                    ],
-                    className="g-2 mb-2 align-items-center",
-                ),
-                html.Div(id="tga-preset-status", className="small text-muted"),
-            ]
-        ),
-        className="mb-3",
-    )
+    return build_load_saveas_preset_card(id_prefix="tga")
 
 
 def _tga_smoothing_controls_card() -> dbc.Card:

@@ -36,6 +36,13 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
 import plotly.graph_objects as go
 
+from dash_app.components.analysis_boilerplate import (
+    build_collapsible_section,
+    build_load_saveas_preset_card,
+    build_processing_history_card,
+    build_split_raw_metadata_panel,
+    build_validation_quality_card,
+)
 from dash_app.components.analysis_page import (
     analysis_page_stores,
     capture_result_figure_from_layout,
@@ -45,7 +52,6 @@ from dash_app.components.analysis_page import (
     eligible_datasets,
     empty_result_msg,
     execute_card,
-    finalized_validation_warning_issue_counts,
     interpret_run_result,
     metrics_row,
     no_data_figure_msg,
@@ -82,6 +88,11 @@ from dash_app.components.literature_compare_ui import (
     literature_compare_status_alert,
     literature_t,
     render_literature_output,
+)
+from dash_app.components.processing_inputs import (
+    coerce_float_non_negative as _coerce_float_non_negative,
+    coerce_float_positive as _coerce_float_positive,
+    coerce_int_positive as _coerce_int_positive,
 )
 from dash_app.theme import PLOT_THEME, normalize_ui_theme
 from utils.i18n import normalize_ui_locale, translate_ui
@@ -156,40 +167,6 @@ _RAMAN_TRUNCATE_PEAK_CARDS_WHEN = 9
 # ---------------------------------------------------------------------------
 # Coercion helpers
 # ---------------------------------------------------------------------------
-
-
-def _coerce_int_positive(value, *, default: int, minimum: int) -> int:
-    try:
-        if value in (None, ""):
-            return max(default, minimum)
-        parsed = int(float(value))
-    except (TypeError, ValueError):
-        return max(default, minimum)
-    return max(parsed, minimum)
-
-
-def _coerce_float_positive(value, *, default: float, minimum: float) -> float:
-    try:
-        if value in (None, ""):
-            return max(default, minimum)
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return max(default, minimum)
-    if not math.isfinite(parsed):
-        return max(default, minimum)
-    return max(parsed, minimum)
-
-
-def _coerce_float_non_negative(value, *, default: float) -> float:
-    try:
-        if value in (None, ""):
-            return max(default, 0.0)
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return max(default, 0.0)
-    if not math.isfinite(parsed) or parsed < 0:
-        return max(default, 0.0)
-    return parsed
 
 
 # ---------------------------------------------------------------------------
@@ -462,23 +439,7 @@ def _raman_collapsible_section(
     open: bool = False,
     summary_suffix: Any | None = None,
 ) -> html.Details:
-    summary_children: list[Any] = [
-        html.Span(className="ta-details-chevron"),
-        html.Span(translate_ui(loc, title_key), className="ms-1"),
-    ]
-    if summary_suffix is not None:
-        if isinstance(summary_suffix, (list, tuple)):
-            summary_children.extend(summary_suffix)
-        else:
-            summary_children.append(summary_suffix)
-    return html.Details(
-        [
-            html.Summary(summary_children, className="ta-details-summary"),
-            html.Div(body, className="ta-details-body mt-2"),
-        ],
-        className="ta-ms-details mb-0",
-        open=open,
-    )
+    return build_collapsible_section(loc, title_key, body, open=open, summary_suffix=summary_suffix)
 
 
 # ---------------------------------------------------------------------------
@@ -501,65 +462,18 @@ def _raman_workflow_guide_block() -> html.Details:
 
 
 def _raman_processing_history_card() -> dbc.Card:
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                html.H6(id="raman-processing-history-title", className="card-title mb-1"),
-                html.P(id="raman-processing-history-hint", className="small text-muted mb-2"),
-                dbc.Row(
-                    [
-                        dbc.Col(dbc.Button(id="raman-processing-undo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
-                        dbc.Col(dbc.Button(id="raman-processing-redo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
-                        dbc.Col(dbc.Button(id="raman-processing-reset-btn", color="secondary", size="sm", outline=True), width="auto"),
-                    ],
-                    className="g-2 align-items-center mb-1",
-                ),
-                html.Div(id="raman-history-status", className="small text-muted"),
-            ]
-        ),
-        className="mb-3",
+    return build_processing_history_card(
+        title_id="raman-processing-history-title",
+        hint_id="raman-processing-history-hint",
+        undo_button_id="raman-processing-undo-btn",
+        redo_button_id="raman-processing-redo-btn",
+        reset_button_id="raman-processing-reset-btn",
+        status_id="raman-history-status",
     )
 
 
 def _raman_preset_card() -> dbc.Card:
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                html.H5(id="raman-preset-card-title", className="card-title mb-1"),
-                html.Small(id="raman-preset-help", className="form-text text-muted d-block mb-2"),
-                html.Div(id="raman-preset-caption", className="small text-muted mb-2"),
-                html.Div(id="raman-preset-loaded-line", className="small mb-1"),
-                html.Div(id="raman-preset-dirty-flag", className="small mb-2"),
-                dbc.Label(id="raman-preset-select-label", html_for="raman-preset-select", className="mb-1"),
-                dbc.Select(id="raman-preset-select", options=[], value=None),
-                dbc.Row(
-                    [
-                        dbc.Col(
-                            dbc.Button(id="raman-preset-load-btn", color="primary", size="sm", disabled=True, className="me-2"),
-                            width="auto",
-                        ),
-                        dbc.Col(
-                            dbc.Button(id="raman-preset-delete-btn", color="secondary", size="sm", outline=True, disabled=True),
-                            width="auto",
-                        ),
-                    ],
-                    className="g-2 my-2 align-items-center",
-                ),
-                dbc.Label(id="raman-preset-save-name-label", html_for="raman-preset-save-name", className="mb-1"),
-                dbc.Input(id="raman-preset-save-name", type="text", value="", maxLength=80),
-                html.Small(id="raman-preset-save-hint", className="text-muted d-block my-1"),
-                dbc.Row(
-                    [
-                        dbc.Col(dbc.Button(id="raman-preset-save-btn", color="primary", size="sm", className="me-2"), width="auto"),
-                        dbc.Col(dbc.Button(id="raman-preset-saveas-btn", color="secondary", size="sm", outline=True), width="auto"),
-                    ],
-                    className="g-2 mb-2 align-items-center",
-                ),
-                html.Div(id="raman-preset-status", className="small text-muted"),
-            ]
-        ),
-        className="mb-3",
-    )
+    return build_load_saveas_preset_card(id_prefix="raman")
 
 
 def _raman_smoothing_controls_card() -> dbc.Card:
@@ -2299,105 +2213,27 @@ def _build_raman_analysis_summary(
 
 
 def _build_raman_quality_card(detail: dict, result_meta: dict, loc: str) -> html.Details:
-    validation = detail.get("validation") if isinstance(detail.get("validation"), dict) else {}
-    status = str(validation.get("status") or result_meta.get("validation_status") or "unknown")
-    warnings_list = validation.get("warnings") if isinstance(validation.get("warnings"), list) else []
-    issues_list = validation.get("issues") if isinstance(validation.get("issues"), list) else []
-    wc, ic = finalized_validation_warning_issue_counts(validation)
-
-    status_token = status.strip().lower()
-    if status_token in {"ok", "pass", "valid"} and wc == 0 and ic == 0:
-        alert_color = "success"
-    elif ic == 0:
-        alert_color = "warning"
-    else:
-        alert_color = "danger"
-
-    body_children: list[Any] = [
-        html.P([html.Strong(translate_ui(loc, "dash.analysis.raman.quality.status_label")), f" {status}"], className="mb-2"),
-        html.P([html.Strong(translate_ui(loc, "dash.analysis.raman.quality.warnings_label")), f" {wc}"], className="mb-2"),
-        html.P([html.Strong(translate_ui(loc, "dash.analysis.raman.quality.issues_label")), f" {ic}"], className="mb-0"),
-    ]
-    if warnings_list:
-        body_children.append(html.Ul([html.Li(str(w)) for w in warnings_list[:12]], className="small mb-0 mt-2"))
-    if issues_list:
-        body_children.append(html.Ul([html.Li(str(w)) for w in issues_list[:12]], className="small mb-0 mt-2"))
-
-    inner = dbc.Alert(body_children, color=alert_color, className="mb-0 ta-quality-alert")
-    has_attention = wc > 0 or ic > 0
-    badges: list[Any] = []
-    if wc:
-        badges.append(
-            dbc.Badge(
-                translate_ui(loc, "dash.analysis.raman.quality.badge_warnings", n=wc),
-                color="warning",
-                text_color="dark",
-                className="ms-2",
-                pill=True,
-            )
-        )
-    if ic:
-        badges.append(
-            dbc.Badge(
-                translate_ui(loc, "dash.analysis.raman.quality.badge_issues", n=ic),
-                color="danger",
-                className="ms-2",
-                pill=True,
-            )
-        )
-    return _raman_collapsible_section(
+    return build_validation_quality_card(
+        detail,
+        result_meta,
         loc,
-        "dash.analysis.raman.quality.card_title",
-        inner,
-        open=has_attention,
-        summary_suffix=badges if badges else None,
+        i18n_prefix="dash.analysis.raman.quality",
+        collapsible_builder=_raman_collapsible_section,
+        derive_counts_from_lists=True,
+        open_when_attention=True,
+        include_attention_badges=True,
     )
 
 
 def _build_raman_raw_metadata_panel(metadata: dict | None, loc: str) -> html.Details:
-    meta = metadata if isinstance(metadata, dict) else {}
-    if not meta:
-        inner = html.P(translate_ui(loc, "dash.analysis.raman.raw_metadata.empty"), className="text-muted mb-0")
-    else:
-        user_keys = sorted([k for k in meta if k in _RAMAN_USER_FACING_METADATA_KEYS], key=lambda k: str(k).lower())
-        tech_keys = sorted([k for k in meta if k not in _RAMAN_USER_FACING_METADATA_KEYS], key=lambda k: str(k).lower())
-
-        def _make_rows(keys: list[str]) -> list[Any]:
-            rows: list[Any] = []
-            for key in keys:
-                value = meta[key]
-                if isinstance(value, (dict, list)):
-                    text = json.dumps(value, ensure_ascii=False, indent=2)
-                else:
-                    fv = _format_dataset_metadata_value(value)
-                    text = fv if fv is not None else str(value)
-                rows.extend([
-                    html.Dt(str(key), className="col-sm-4 text-muted small"),
-                    html.Dd(html.Pre(text, className="small mb-0 ta-code-block p-2 rounded"), className="col-sm-8 mb-2"),
-                ])
-            return rows
-
-        body_parts: list[Any] = []
-        if user_keys:
-            body_parts.append(html.Dl(_make_rows(user_keys), className="row mb-0"))
-        if tech_keys:
-            tech_collapsible = html.Details(
-                [
-                    html.Summary(
-                        [
-                            html.Span(className="ta-details-chevron"),
-                            html.Span(translate_ui(loc, "dash.analysis.raman.raw_metadata.technical_details") or "Technical details", className="ms-1"),
-                        ],
-                        className="ta-details-summary",
-                    ),
-                    html.Div(html.Dl(_make_rows(tech_keys), className="row mb-0"), className="ta-details-body mt-2"),
-                ],
-                className="ta-ms-details mb-0",
-                open=False,
-            )
-            body_parts.append(html.Div(tech_collapsible, className="mt-2"))
-        inner = html.Div(body_parts) if body_parts else html.P(translate_ui(loc, "dash.analysis.raman.raw_metadata.empty"), className="text-muted mb-0")
-    return _raman_collapsible_section(loc, "dash.analysis.raman.raw_metadata.card_title", inner, open=False)
+    return build_split_raw_metadata_panel(
+        metadata,
+        loc,
+        i18n_prefix="dash.analysis.raman.raw_metadata",
+        user_facing_keys=_RAMAN_USER_FACING_METADATA_KEYS,
+        value_formatter=_format_dataset_metadata_value,
+        collapsible_builder=_raman_collapsible_section,
+    )
 
 
 def _finite_series(values: list | None) -> list[float]:

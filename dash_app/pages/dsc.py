@@ -23,6 +23,13 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
 import plotly.graph_objects as go
 
+from dash_app.components.analysis_boilerplate import (
+    build_apply_preset_card,
+    build_collapsible_section,
+    build_processing_history_card,
+    build_split_raw_metadata_panel,
+    build_validation_quality_card,
+)
 from dash_app.components.analysis_page import (
     analysis_page_stores,
     capture_result_figure_from_layout,
@@ -61,6 +68,11 @@ from dash_app.components.literature_compare_ui import (
     literature_compare_status_alert,
     literature_t,
     render_literature_output,
+)
+from dash_app.components.processing_inputs import (
+    coerce_float_non_negative as _coerce_float_non_negative,
+    coerce_float_positive as _coerce_float_positive,
+    coerce_int_positive as _coerce_int_positive,
 )
 from dash_app.theme import apply_figure_theme, normalize_ui_theme
 from utils.i18n import normalize_ui_locale, translate_ui
@@ -144,40 +156,6 @@ def _default_processing_draft() -> dict:
         "peak_detection": copy.deepcopy(_DSC_PEAK_DETECTION_DEFAULTS),
         "glass_transition": copy.deepcopy(_DSC_GLASS_TRANSITION_DEFAULTS),
     }
-
-
-def _coerce_int_positive(value, *, default: int, minimum: int) -> int:
-    try:
-        if value in (None, ""):
-            return max(default, minimum)
-        parsed = int(float(value))
-    except (TypeError, ValueError):
-        return max(default, minimum)
-    return max(parsed, minimum)
-
-
-def _coerce_float_positive(value, *, default: float, minimum: float) -> float:
-    try:
-        if value in (None, ""):
-            return max(default, minimum)
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return max(default, minimum)
-    if not math.isfinite(parsed):
-        return max(default, minimum)
-    return max(parsed, minimum)
-
-
-def _coerce_float_non_negative(value, *, default: float) -> float:
-    try:
-        if value in (None, ""):
-            return max(default, 0.0)
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return max(default, 0.0)
-    if not math.isfinite(parsed) or parsed < 0:
-        return max(default, 0.0)
-    return parsed
 
 
 def _normalize_smoothing_values(method: str | None, window_length, polyorder, sigma) -> dict:
@@ -436,70 +414,18 @@ _DSC_PRESET_ANALYSIS_TYPE = "DSC"
 
 def _dsc_processing_history_card() -> dbc.Card:
     """Undo / redo / reset for the shared DSC processing draft (same stack as Apply actions)."""
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                html.H6(id="dsc-processing-history-title", className="card-title mb-1"),
-                html.P(id="dsc-processing-history-hint", className="small text-muted mb-2"),
-                dbc.Row(
-                    [
-                        dbc.Col(dbc.Button(id="dsc-undo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
-                        dbc.Col(dbc.Button(id="dsc-redo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
-                        dbc.Col(dbc.Button(id="dsc-reset-btn", color="secondary", size="sm", outline=True), width="auto"),
-                    ],
-                    className="g-2 align-items-center mb-1",
-                ),
-                html.Div(id="dsc-history-status", className="small text-muted"),
-            ]
-        ),
-        className="mb-3",
+    return build_processing_history_card(
+        title_id="dsc-processing-history-title",
+        hint_id="dsc-processing-history-hint",
+        undo_button_id="dsc-undo-btn",
+        redo_button_id="dsc-redo-btn",
+        reset_button_id="dsc-reset-btn",
+        status_id="dsc-history-status",
     )
 
 
 def _preset_controls_card() -> dbc.Card:
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                html.H5(id="dsc-preset-card-title", className="card-title mb-1"),
-                html.Small(id="dsc-preset-help", className="form-text text-muted d-block mb-2"),
-                html.Div(id="dsc-preset-caption", className="small text-muted mb-2"),
-                dbc.Row(
-                    [
-                        dbc.Col(
-                            [
-                                dbc.Label(id="dsc-preset-select-label", html_for="dsc-preset-select"),
-                                dbc.Select(id="dsc-preset-select", options=[], value=None),
-                            ],
-                            md=12,
-                        ),
-                    ],
-                    className="mb-2",
-                ),
-                dbc.ButtonGroup(
-                    [
-                        dbc.Button(id="dsc-preset-apply-btn", color="primary", size="sm", disabled=True),
-                        dbc.Button(id="dsc-preset-delete-btn", color="secondary", size="sm", outline=True, disabled=True),
-                    ],
-                    className="mb-3",
-                ),
-                dbc.Row(
-                    [
-                        dbc.Col(
-                            [
-                                dbc.Label(id="dsc-preset-save-name-label", html_for="dsc-preset-save-name"),
-                                dbc.Input(id="dsc-preset-save-name", type="text", value="", maxLength=80),
-                            ],
-                            md=12,
-                        ),
-                    ],
-                    className="mb-2",
-                ),
-                dbc.Button(id="dsc-preset-save-btn", color="primary", size="sm", className="mb-2"),
-                html.Div(id="dsc-preset-status", className="small text-muted"),
-            ]
-        ),
-        className="mb-3",
-    )
+    return build_apply_preset_card(id_prefix="dsc")
 
 
 def _normalization_setup_card() -> dbc.Card:
@@ -2224,21 +2150,8 @@ def compare_dsc_literature(n_clicks, project_id, result_id, max_claims, persist_
     )
 
 
-def _dsc_collapsible_section(loc: str, title_key: str, body: Any, *, open: bool = False) -> html.Details:
-    return html.Details(
-        [
-            html.Summary(
-                [
-                    html.Span(className="ta-details-chevron"),
-                    html.Span(translate_ui(loc, title_key), className="ms-1"),
-                ],
-                className="ta-details-summary",
-            ),
-            html.Div(body, className="ta-details-body mt-2"),
-        ],
-        className="ta-ms-details mb-0",
-        open=open,
-    )
+def _dsc_collapsible_section(loc: str, title_key: str, body: Any, *, open: bool = False, summary_suffix: Any | None = None) -> html.Details:
+    return build_collapsible_section(loc, title_key, body, open=open, summary_suffix=summary_suffix)
 
 
 def _dsc_fetch_figure_preview_data_urls(project_id: str, result_id: str, figure_artifacts: dict) -> dict[str, str]:
@@ -2667,109 +2580,25 @@ def _build_dsc_dataset_summary(
 
 
 def _build_dsc_quality_card(detail: dict, result_meta: dict, loc: str) -> html.Details:
-    validation = detail.get("validation") if isinstance(detail.get("validation"), dict) else {}
-    status = str(validation.get("status") or result_meta.get("validation_status") or "unknown")
-    warnings_list = validation.get("warnings") if isinstance(validation.get("warnings"), list) else []
-    issues_list = validation.get("issues") if isinstance(validation.get("issues"), list) else []
-    wc = int(validation.get("warning_count", len(warnings_list)) or 0)
-    ic = int(validation.get("issue_count", len(issues_list)) or 0)
-
-    status_token = status.strip().lower()
-    if status_token in {"ok", "pass", "valid"} and wc == 0 and ic == 0:
-        alert_color = "success"
-    elif ic == 0:
-        alert_color = "warning"
-    else:
-        alert_color = "danger"
-
-    body_children: list[Any] = [
-        html.P(
-            [
-                html.Strong(translate_ui(loc, "dash.analysis.dsc.quality.status_label")),
-                f" {status}",
-            ],
-            className="mb-2",
-        ),
-        html.P(
-            [
-                html.Strong(translate_ui(loc, "dash.analysis.dsc.quality.warnings_label")),
-                f" {wc}",
-            ],
-            className="mb-2",
-        ),
-        html.P(
-            [
-                html.Strong(translate_ui(loc, "dash.analysis.dsc.quality.issues_label")),
-                f" {ic}",
-            ],
-            className="mb-0",
-        ),
-    ]
-    if warnings_list:
-        body_children.append(html.Ul([html.Li(str(w)) for w in warnings_list[:12]], className="small mb-0 mt-2"))
-    if issues_list:
-        body_children.append(html.Ul([html.Li(str(w)) for w in issues_list[:12]], className="small mb-0 mt-2"))
-
-    inner = dbc.Alert(body_children, color=alert_color, className="mb-0 ta-quality-alert")
-    return _dsc_collapsible_section(loc, "dash.analysis.dsc.quality.card_title", inner, open=False)
+    return build_validation_quality_card(
+        detail,
+        result_meta,
+        loc,
+        i18n_prefix="dash.analysis.dsc.quality",
+        collapsible_builder=_dsc_collapsible_section,
+        derive_counts_from_lists=False,
+    )
 
 
 def _build_dsc_raw_metadata_panel(metadata: dict | None, loc: str) -> html.Details:
-    meta = metadata if isinstance(metadata, dict) else {}
-    if not meta:
-        inner = html.P(translate_ui(loc, "dash.analysis.dsc.raw_metadata.empty"), className="text-muted mb-0")
-    else:
-        user_keys = sorted(
-            [k for k in meta if k in _DSC_USER_FACING_METADATA_KEYS],
-            key=lambda k: str(k).lower(),
-        )
-        tech_keys = sorted(
-            [k for k in meta if k not in _DSC_USER_FACING_METADATA_KEYS],
-            key=lambda k: str(k).lower(),
-        )
-
-        def _make_rows(keys: list[str]) -> list[Any]:
-            rows: list[Any] = []
-            for key in keys:
-                value = meta[key]
-                if isinstance(value, (dict, list)):
-                    text = json.dumps(value, ensure_ascii=False, indent=2)
-                else:
-                    fv = _format_dataset_metadata_value(value)
-                    text = fv if fv is not None else str(value)
-                rows.extend(
-                    [
-                        html.Dt(str(key), className="col-sm-4 text-muted small"),
-                        html.Dd(html.Pre(text, className="small mb-0 ta-code-block p-2 rounded"), className="col-sm-8 mb-2"),
-                    ]
-                )
-            return rows
-
-        body_parts: list[Any] = []
-        if user_keys:
-            body_parts.append(html.Dl(_make_rows(user_keys), className="row mb-0"))
-
-        if tech_keys:
-            tech_collapsible = html.Details(
-                [
-                    html.Summary(
-                        [
-                            html.Span(className="ta-details-chevron"),
-                            html.Span(translate_ui(loc, "dash.analysis.dsc.raw_metadata.technical_details") or "Technical details", className="ms-1"),
-                        ],
-                        className="ta-details-summary",
-                    ),
-                    html.Div(html.Dl(_make_rows(tech_keys), className="row mb-0"), className="ta-details-body mt-2"),
-                ],
-                className="ta-ms-details mb-0",
-                open=False,
-            )
-            body_parts.append(html.Div(tech_collapsible, className="mt-2"))
-
-        inner = html.Div(body_parts) if body_parts else html.P(
-            translate_ui(loc, "dash.analysis.dsc.raw_metadata.empty"), className="text-muted mb-0"
-        )
-    return _dsc_collapsible_section(loc, "dash.analysis.dsc.raw_metadata.card_title", inner, open=False)
+    return build_split_raw_metadata_panel(
+        metadata,
+        loc,
+        i18n_prefix="dash.analysis.dsc.raw_metadata",
+        user_facing_keys=_DSC_USER_FACING_METADATA_KEYS,
+        value_formatter=_format_dataset_metadata_value,
+        collapsible_builder=_dsc_collapsible_section,
+    )
 
 
 def _build_dsc_processing_expansion_blocks(processing: dict, loc: str) -> html.Div:

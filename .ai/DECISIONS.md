@@ -20,6 +20,22 @@
 
 ---
 
+## 2026-04-24 — P1-3/P1-4 shared boilerplate extraction stays pure UI/helper first
+
+**Decision:**
+
+1. Shared boilerplate extraction in this pass is limited to exact duplicated numeric coercion helpers and pure Dash UI builders.
+2. New shared modules are `dash_app/components/processing_inputs.py` for exact coercion helpers and `dash_app/components/analysis_boilerplate.py` for reusable history cards, preset cards, collapsible details, compatible quality cards, and compatible split raw metadata panels.
+3. Public Dash contracts remain page-owned: component IDs, callback Inputs/Outputs/States, result ordering, existing i18n keys, persistence semantics, and backend payloads must not change as part of this extraction.
+4. Callback orchestration, dirty-state logic, preset lifecycle callbacks, run callbacks, figure behavior, and modality-specific quality/raw metadata variants stay page-local until a later, separately planned pass.
+5. Helpers that render quality or metadata must receive modality-specific i18n prefixes/keys, user-facing metadata key sets, and formatter behavior as arguments; shared helpers must not hardcode modality wording.
+
+**Reason:** The six Dash modality pages had substantial repeated layout and coercion code, but callback flows and some result panels differ enough that broad extraction would increase regression risk. Pure helper extraction reduces maintenance burden while preserving behavior.
+
+**Consequence / future:** Future boilerplate cleanup should only extract callback or lifecycle logic after proving identical contracts across pages. DTA's `_coerce_float_non_negative(..., minimum=...)` remains local because it is a semantic variant, not an exact duplicate.
+
+---
+
 ## 2026-04-22 — P0-5 completed: DSC mass normalization is a first-class processing step with default-ON backward compatibility
 
 **Decision:**

@@ -7,6 +7,8 @@ import json
 import math
 from typing import Any
 
+from dash_app.components.processing_inputs import coerce_int_positive as _coerce_int_positive
+
 _XRD_TEMPLATE_IDS = ("xrd.general", "xrd.phase_screening")
 
 _XRD_TEMPLATE_DEFAULTS: dict[str, dict[str, Any]] = {
@@ -85,16 +87,6 @@ def default_xrd_draft_for_template(template_id: str | None) -> dict[str, Any]:
         "peak_detection": copy.deepcopy(src["peak_detection"]),
         "method_context": mc,
     }
-
-
-def _coerce_int_positive(value, *, default: int, minimum: int) -> int:
-    try:
-        if value in (None, ""):
-            return max(default, minimum)
-        parsed = int(float(value))
-    except (TypeError, ValueError):
-        return max(default, minimum)
-    return max(parsed, minimum)
 
 
 def _coerce_float_bounds(value, *, default: float, minimum: float, maximum: float) -> float:

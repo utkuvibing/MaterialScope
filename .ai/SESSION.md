@@ -33,14 +33,23 @@
   - Updated graph extraction to traverse rendered components in visual order so DTA's result graph is selected before its debug graph.
   - Added generic figure artifact i18n/CSS and regression coverage for helper behavior, explicit action replace semantics, auto-capture, and layout IDs.
 
+- **P1-3 + P1-4 — Shared boilerplate extraction, UI/helper pass (completed 2026-04-24):**
+  - Added shared numeric coercion helpers in `dash_app/components/processing_inputs.py` and replaced exact duplicates in DSC/DTA/TGA/FTIR/Raman plus XRD processing-draft normalization.
+  - Added pure shared UI builders in `dash_app/components/analysis_boilerplate.py` for processing history cards, apply-style preset cards, load/save-as preset cards, collapsible details, compatible validation quality cards, and split raw metadata panels.
+  - Refactored DSC/DTA/TGA/FTIR/Raman/XRD page card builders to use shared helpers while preserving component IDs, callback declarations, result ordering, i18n keys, and backend payload behavior.
+  - Kept callback orchestration, dirty-state logic, preset lifecycle callbacks, run callbacks, and modality-specific quality/raw metadata variants page-local.
+
 ## What was verified
 
 - `python -m pytest tests/test_ftir_dash_page.py tests/test_raman_dash_page.py tests/test_batch_runner.py -q` — 116 passed, 4 deprecation warnings from Dash `dash_table.DataTable`.
 - `python -m pytest -p no:cacheprovider tests/test_dsc_dash_page.py tests/test_batch_runner.py -q` — 67 passed, 2 deprecation warnings from Dash `dash_table.DataTable`.
 - `python -m pytest -p no:cacheprovider tests/test_analysis_page_components.py tests/test_xrd_dash_page.py tests/test_dsc_dash_page.py tests/test_dta_dash_page.py tests/test_tga_dash_page.py tests/test_ftir_dash_page.py tests/test_raman_dash_page.py -q` — 303 passed, 16 deprecation warnings from Plotly/Kaleido and Dash `dash_table.DataTable`.
+- `python -m pytest -p no:cacheprovider tests/test_analysis_page_components.py tests/test_dsc_dash_page.py tests/test_dta_dash_page.py tests/test_tga_dash_page.py tests/test_ftir_dash_page.py tests/test_raman_dash_page.py tests/test_xrd_dash_page.py -q` — 309 passed, 16 deprecation warnings from Plotly/Kaleido and Dash `dash_table.DataTable`.
+- Protected-ID render check for preset controls, history controls, result quality panels, and raw metadata panels across DSC/DTA/TGA/FTIR/Raman/XRD — passed.
+- Temporary Dash app import check for all six touched page modules — passed.
 
 ## Next step
 
-- **P1-3 + P1-4** — Shared boilerplate extraction: prioritize duplicated coercion helpers and reusable result-surface cards now that figure toolbar behavior is standardized.
+- Continue with deferred shared-boilerplate follow-ups only where patterns are genuinely compatible: callback orchestration/preset lifecycle helpers remain intentionally out of scope for the completed UI/helper pass.
 
 **Process defaults:** **`00-workflow.mdc`**.

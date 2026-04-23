@@ -7,6 +7,14 @@ from dash import dcc, html
 import plotly.graph_objects as go
 
 import dash_app.components.analysis_page as analysis_page_mod
+from dash_app.components.analysis_boilerplate import (
+    build_apply_preset_card,
+    build_collapsible_section,
+    build_load_saveas_preset_card,
+    build_processing_history_card,
+    build_split_raw_metadata_panel,
+    build_validation_quality_card,
+)
 from dash_app.components.analysis_page import (
     finalized_validation_warning_issue_counts,
     capture_result_figure_from_layout,
@@ -30,6 +38,146 @@ from dash_app.components.figure_artifacts import (
     ordered_figure_preview_keys,
     primary_report_figure_label,
 )
+from dash_app.components.processing_inputs import (
+    coerce_float_non_negative,
+    coerce_float_positive,
+    coerce_int_positive,
+)
+
+
+# ---------------------------------------------------------------------------
+# shared boilerplate extraction
+# ---------------------------------------------------------------------------
+
+def test_processing_input_coercion_helpers_preserve_duplicate_page_semantics():
+    assert coerce_int_positive(None, default=4, minimum=2) == 4
+    assert coerce_int_positive("", default=1, minimum=3) == 3
+    assert coerce_int_positive("6.7", default=1, minimum=3) == 6
+    assert coerce_int_positive("bad", default=1, minimum=3) == 3
+
+    assert coerce_float_positive(None, default=2.0, minimum=0.5) == 2.0
+    assert coerce_float_positive("-1", default=2.0, minimum=0.5) == 0.5
+    assert coerce_float_positive("nan", default=2.0, minimum=0.5) == 2.0
+    assert coerce_float_positive("1.25", default=2.0, minimum=0.5) == 1.25
+
+    assert coerce_float_non_negative(None, default=-1.0) == 0.0
+    assert coerce_float_non_negative("-0.2", default=1.0) == 1.0
+    assert coerce_float_non_negative("nan", default=1.0) == 1.0
+    assert coerce_float_non_negative("0.2", default=1.0) == 0.2
+
+
+def test_processing_history_card_uses_supplied_contract_ids():
+    card = build_processing_history_card(
+        title_id="abc-processing-history-title",
+        hint_id="abc-processing-history-hint",
+        undo_button_id="abc-processing-undo-btn",
+        redo_button_id="abc-processing-redo-btn",
+        reset_button_id="abc-processing-reset-btn",
+        status_id="abc-history-status",
+    )
+    rendered = str(card)
+    for expected in (
+        "abc-processing-history-title",
+        "abc-processing-history-hint",
+        "abc-processing-undo-btn",
+        "abc-processing-redo-btn",
+        "abc-processing-reset-btn",
+        "abc-history-status",
+    ):
+        assert expected in rendered
+
+
+def test_preset_card_variants_use_supplied_prefix_ids():
+    apply_card = build_apply_preset_card(id_prefix="abc")
+    apply_rendered = str(apply_card)
+    for expected in (
+        "abc-preset-card-title",
+        "abc-preset-select",
+        "abc-preset-apply-btn",
+        "abc-preset-delete-btn",
+        "abc-preset-save-name",
+        "abc-preset-save-btn",
+        "abc-preset-status",
+    ):
+        assert expected in apply_rendered
+
+    load_card = build_load_saveas_preset_card(id_prefix="xyz")
+    load_rendered = str(load_card)
+    for expected in (
+        "xyz-preset-card-title",
+        "xyz-preset-loaded-line",
+        "xyz-preset-dirty-flag",
+        "xyz-preset-select",
+        "xyz-preset-load-btn",
+        "xyz-preset-delete-btn",
+        "xyz-preset-save-name",
+        "xyz-preset-save-btn",
+        "xyz-preset-saveas-btn",
+        "xyz-preset-status",
+    ):
+        assert expected in load_rendered
+
+
+def test_collapsible_section_preserves_details_contract_and_suffix():
+    suffix = [dbc.Badge("2 warnings", color="warning", className="ms-2", pill=True)]
+    details = build_collapsible_section("en", "dash.analysis.dsc.quality.card_title", html.Div("body"), open=True, summary_suffix=suffix)
+    rendered = str(details)
+    assert "ta-ms-details mb-0" in rendered
+    assert "ta-details-summary" in rendered
+    assert "ta-details-body mt-2" in rendered
+    assert "ta-details-chevron" in rendered
+    assert "Validation and quality" in rendered
+    assert "2 warnings" in rendered
+    assert details.open is True
+
+
+def test_validation_quality_card_accepts_modality_prefix_and_count_policy():
+    detail = {
+        "validation": {
+            "status": "ok",
+            "warning_count": 4,
+            "issue_count": 3,
+            "warnings": ["one"],
+            "issues": [],
+        }
+    }
+    legacy_counts = build_validation_quality_card(
+        detail,
+        {},
+        "en",
+        i18n_prefix="dash.analysis.dsc.quality",
+        derive_counts_from_lists=False,
+    )
+    assert " 4" in str(legacy_counts)
+    assert " 3" in str(legacy_counts)
+
+    list_counts = build_validation_quality_card(
+        detail,
+        {},
+        "en",
+        i18n_prefix="dash.analysis.ftir.quality",
+        derive_counts_from_lists=True,
+        include_attention_badges=True,
+        open_when_attention=True,
+    )
+    rendered = str(list_counts)
+    assert "1 warning" in rendered
+    assert "0" in rendered
+    assert list_counts.open is True
+
+
+def test_split_raw_metadata_panel_accepts_key_set_and_formatter():
+    panel = build_split_raw_metadata_panel(
+        {"sample_name": "A", "technical": {"x": 1}},
+        "en",
+        i18n_prefix="dash.analysis.dsc.raw_metadata",
+        user_facing_keys=frozenset({"sample_name"}),
+        value_formatter=lambda value: str(value).strip() if value is not None else None,
+    )
+    rendered = str(panel)
+    assert "sample_name" in rendered
+    assert "technical" in rendered
+    assert "Technical details" in rendered
 
 
 # ---------------------------------------------------------------------------

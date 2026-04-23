@@ -25,6 +25,11 @@ from dash import Input, Output, State, callback, dcc, html
 import plotly.graph_objects as go
 
 from core.figure_render import render_plotly_figure_png
+from dash_app.components.analysis_boilerplate import (
+    build_apply_preset_card,
+    build_collapsible_section,
+    build_processing_history_card,
+)
 from dash_app.components.analysis_page import (
     analysis_page_stores,
     register_result_figure_from_layout_children,
@@ -62,6 +67,10 @@ from dash_app.components.literature_compare_ui import (
     literature_compare_status_alert,
     literature_t,
     render_literature_output,
+)
+from dash_app.components.processing_inputs import (
+    coerce_float_positive as _coerce_float_positive,
+    coerce_int_positive as _coerce_int_positive,
 )
 from dash_app.theme import apply_figure_theme, normalize_ui_theme
 from utils.i18n import normalize_ui_locale, translate_ui
@@ -182,28 +191,6 @@ def _normalize_smoothing_values(method: str | None, window_length, polyorder, si
         return {"method": "moving_average", "window_length": wl}
     sg = _coerce_float_positive(sigma, default=2.0, minimum=0.1)
     return {"method": "gaussian", "sigma": sg}
-
-
-def _coerce_int_positive(value, *, default: int, minimum: int) -> int:
-    try:
-        if value in (None, ""):
-            return max(default, minimum)
-        parsed = int(float(value))
-    except (TypeError, ValueError):
-        return max(default, minimum)
-    return max(parsed, minimum)
-
-
-def _coerce_float_positive(value, *, default: float, minimum: float) -> float:
-    try:
-        if value in (None, ""):
-            return max(default, minimum)
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return max(default, minimum)
-    if not math.isfinite(parsed):
-        return max(default, minimum)
-    return max(parsed, minimum)
 
 
 def _apply_draft_section(draft: dict | None, section: str, values: dict) -> dict:
@@ -1134,23 +1121,13 @@ _DTA_PRESET_ANALYSIS_TYPE = "DTA"
 
 def _dta_processing_history_card() -> dbc.Card:
     """Undo / redo / reset for the shared DTA processing draft (same stack as Apply actions)."""
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                html.H6(id="dta-processing-history-title", className="card-title mb-1"),
-                html.P(id="dta-processing-history-hint", className="small text-muted mb-2"),
-                dbc.Row(
-                    [
-                        dbc.Col(dbc.Button(id="dta-undo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
-                        dbc.Col(dbc.Button(id="dta-redo-btn", color="secondary", size="sm", outline=True, disabled=True), width="auto"),
-                        dbc.Col(dbc.Button(id="dta-reset-btn", color="secondary", size="sm", outline=True), width="auto"),
-                    ],
-                    className="g-2 align-items-center mb-1",
-                ),
-                html.Div(id="dta-history-status", className="small text-muted"),
-            ]
-        ),
-        className="mb-3",
+    return build_processing_history_card(
+        title_id="dta-processing-history-title",
+        hint_id="dta-processing-history-hint",
+        undo_button_id="dta-undo-btn",
+        redo_button_id="dta-redo-btn",
+        reset_button_id="dta-reset-btn",
+        status_id="dta-history-status",
     )
 
 
@@ -1163,83 +1140,7 @@ def _preset_controls_card() -> dbc.Card:
     shared undo stack, so an accidental apply can be reverted with Undo in the
     Processing history card.
     """
-    return dbc.Card(
-        dbc.CardBody(
-            [
-                html.H5(id="dta-preset-card-title", className="card-title mb-1"),
-                html.Small(
-                    id="dta-preset-help",
-                    className="form-text text-muted d-block mb-2",
-                ),
-                html.Div(id="dta-preset-caption", className="small text-muted mb-2"),
-                dbc.Row(
-                    [
-                        dbc.Col(
-                            [
-                                dbc.Label(
-                                    id="dta-preset-select-label",
-                                    html_for="dta-preset-select",
-                                ),
-                                dbc.Select(
-                                    id="dta-preset-select",
-                                    options=[],
-                                    value=None,
-                                ),
-                            ],
-                            md=12,
-                        ),
-                    ],
-                    className="mb-2",
-                ),
-                dbc.ButtonGroup(
-                    [
-                        dbc.Button(
-                            id="dta-preset-apply-btn",
-                            color="primary",
-                            size="sm",
-                            disabled=True,
-                        ),
-                        dbc.Button(
-                            id="dta-preset-delete-btn",
-                            color="secondary",
-                            size="sm",
-                            outline=True,
-                            disabled=True,
-                        ),
-                    ],
-                    className="mb-3",
-                ),
-                dbc.Row(
-                    [
-                        dbc.Col(
-                            [
-                                dbc.Label(
-                                    id="dta-preset-save-name-label",
-                                    html_for="dta-preset-save-name",
-                                ),
-                                dbc.Input(
-                                    id="dta-preset-save-name",
-                                    type="text",
-                                    value="",
-                                    maxLength=80,
-                                ),
-                            ],
-                            md=12,
-                        ),
-                    ],
-                    className="mb-2",
-                ),
-                dbc.Button(
-                    id="dta-preset-save-btn",
-                    color="primary",
-                    size="sm",
-                    className="mb-2",
-                ),
-                html.Div(id="dta-preset-status", className="small text-muted"),
-            ]
-        ),
-        className="mb-3",
-    )
+    return build_apply_preset_card(id_prefix="dta")
 
 
 def _dta_left_column_tabs() -> dbc.Tabs:
@@ -1688,22 +1589,9 @@ def run_dta_analysis(
     return alert, refresh, dash.no_update, dash.no_update
 
 
-def _dta_collapsible_section(loc: str, title_key: str, body: Any, *, open: bool = False) -> html.Details:
+def _dta_collapsible_section(loc: str, title_key: str, body: Any, *, open: bool = False, summary_suffix: Any | None = None) -> html.Details:
     """Collapsible card body — summary shows ``>>`` chevron + title; closed by default."""
-    return html.Details(
-        [
-            html.Summary(
-                [
-                    html.Span(className="ta-details-chevron"),
-                    html.Span(translate_ui(loc, title_key), className="ms-1"),
-                ],
-                className="ta-details-summary",
-            ),
-            html.Div(body, className="ta-details-body mt-2"),
-        ],
-        className="ta-ms-details mb-0",
-        open=open,
-    )
+    return build_collapsible_section(loc, title_key, body, open=open, summary_suffix=summary_suffix)
 
 
 @callback(

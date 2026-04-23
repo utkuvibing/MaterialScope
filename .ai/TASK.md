@@ -45,8 +45,8 @@ Ordered by priority per the repo-wide parity audit:
 
 | # | Issue | Modalities | Effort | Key files |
 |---|---|---|---|---|
-| P1-3 | Shared boilerplate extraction: coercion helpers, preset card, quality card, metadata panel, history card all duplicated across 6 pages | All | L | New shared module(s) |
-| P1-4 | Duplicated coercion helpers (`_coerce_int_positive`, `_coerce_float_positive`, `_coerce_float_non_negative`) in DSC, DTA, FTIR, Raman | All | S | Extract to shared module |
+| P1-3 | Shared boilerplate extraction UI/helper pass: history cards, preset cards, collapsible details, compatible quality/metadata helpers extracted; callback orchestration and incompatible modality-specific panels intentionally deferred | All | L | `dash_app/components/analysis_boilerplate.py` |
+| P1-4 | Exact duplicated coercion helpers extracted; DTA's non-negative helper variant with a `minimum` argument remains local because it is not an exact duplicate | All | S | `dash_app/components/processing_inputs.py` |
 | P1-7 | Regression tests for i18n leakage (done as part of P0-2+P0-3) | All | S | Done |
 
 #### P2 — cleanup, naming, polish
@@ -64,7 +64,7 @@ Ordered by priority per the repo-wide parity audit:
 2. ~~P0-4 — Similarity metric selector (done)~~
 3. ~~P0-5 — DSC mass normalization (done)~~
 4. ~~P1-2 — Figure capture toolbar standardization (done)~~
-5. P1-3 + P1-4 — Shared boilerplate extraction (large, maintenance burden reduction)
+5. ~~P1-3 + P1-4 — Shared boilerplate extraction UI/helper pass (done 2026-04-24)~~
 6. P2 items — polish and consistency
 
 ---
