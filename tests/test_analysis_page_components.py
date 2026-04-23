@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dash_bootstrap_components as dbc
 from dash import dcc, html
+import numpy as np
 import plotly.graph_objects as go
 
 import dash_app.components.analysis_page as analysis_page_mod
@@ -43,6 +44,12 @@ from dash_app.components.processing_inputs import (
     coerce_float_positive,
     coerce_int_positive,
 )
+from dash_app.components.spectral_explore import (
+    build_spectral_raw_quality_panel,
+    compute_spectral_raw_quality_stats,
+    downsample_spectral_rows,
+)
+from dash_app.components.spectral_plot_settings import normalize_spectral_plot_settings
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +71,47 @@ def test_processing_input_coercion_helpers_preserve_duplicate_page_semantics():
     assert coerce_float_non_negative("-0.2", default=1.0) == 1.0
     assert coerce_float_non_negative("nan", default=1.0) == 1.0
     assert coerce_float_non_negative("0.2", default=1.0) == 0.2
+
+
+def test_spectral_raw_quality_helpers_handle_empty_valid_and_validation_states():
+    empty = compute_spectral_raw_quality_stats(np.array([]), np.array([]))
+    assert empty["warnings"] == ["missing_series"]
+    empty_panel = build_spectral_raw_quality_panel(
+        empty,
+        "en",
+        i18n_prefix="dash.analysis.ftir.raw_quality",
+        signal_unit="a.u.",
+    )
+    assert "Data missing" in str(empty_panel)
+
+    rows = [{"temperature": 4000 - i * 10, "signal": float(i)} for i in range(12)]
+    axis, signal = downsample_spectral_rows(rows, ["temperature", "signal"])
+    valid = compute_spectral_raw_quality_stats(
+        axis,
+        signal,
+        validation={"warnings": ["review spacing"], "issues": []},
+    )
+    assert valid["point_count"] == 12
+    assert valid["axis_min"] == 3890.0
+    assert "axis_mostly_decreasing" in valid["hints"]
+    assert valid["validation_messages"] == ["review spacing"]
+    panel = build_spectral_raw_quality_panel(
+        valid,
+        "en",
+        i18n_prefix="dash.analysis.ftir.raw_quality",
+        signal_unit="a.u.",
+    )
+    rendered = str(panel)
+    assert "Points:" in rendered
+    assert "review spacing" in rendered
+
+
+def test_spectral_plot_settings_normalize_ranges_and_defaults():
+    settings = normalize_spectral_plot_settings({"x_range_enabled": True, "x_min": 4000, "x_max": 500, "export_scale": 9})
+    assert settings["reverse_x_axis"] is True
+    assert settings["x_min"] == 500.0
+    assert settings["x_max"] == 4000.0
+    assert settings["export_scale"] == 4
 
 
 def test_processing_history_card_uses_supplied_contract_ids():

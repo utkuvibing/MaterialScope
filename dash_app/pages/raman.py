@@ -94,6 +94,18 @@ from dash_app.components.processing_inputs import (
     coerce_float_positive as _coerce_float_positive,
     coerce_int_positive as _coerce_int_positive,
 )
+from dash_app.components.spectral_explore import (
+    build_spectral_raw_quality_panel,
+    compute_spectral_raw_quality_stats,
+    downsample_spectral_rows,
+)
+from dash_app.components.spectral_plot_settings import (
+    build_plotly_config as build_spectral_plotly_config,
+    build_spectral_plot_settings_card,
+    normalize_spectral_plot_settings,
+    spectral_legend_layout,
+    spectral_plot_settings_from_controls,
+)
 from dash_app.theme import PLOT_THEME, normalize_ui_theme
 from utils.i18n import normalize_ui_locale, translate_ui
 
@@ -461,6 +473,23 @@ def _raman_workflow_guide_block() -> html.Details:
     )
 
 
+def _raman_raw_quality_card() -> dbc.Card:
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H6(id="raman-raw-quality-card-title", className="card-title mb-1"),
+                html.P(id="raman-raw-quality-card-hint", className="small text-muted mb-2"),
+                html.Div(id="raman-raw-quality-panel", className="ms-spectral-raw-quality-panel"),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
+def _raman_plot_settings_card() -> dbc.Card:
+    return build_spectral_plot_settings_card("raman")
+
+
 def _raman_processing_history_card() -> dbc.Card:
     return build_processing_history_card(
         title_id="raman-processing-history-title",
@@ -744,6 +773,7 @@ def _raman_left_column_tabs() -> dbc.Tabs:
                         card_title_id="raman-workflow-card-title",
                     ),
                     _raman_workflow_guide_block(),
+                    _raman_raw_quality_card(),
                 ],
                 tab_id="raman-tab-setup",
                 label_class_name="ta-tab-label",
@@ -758,6 +788,7 @@ def _raman_left_column_tabs() -> dbc.Tabs:
                     _raman_normalization_controls_card(),
                     _raman_peak_detection_controls_card(),
                     _raman_similarity_matching_controls_card(),
+                    _raman_plot_settings_card(),
                 ],
                 tab_id="raman-tab-processing",
                 label_class_name="ta-tab-label",
@@ -796,6 +827,7 @@ layout = html.Div(
         dcc.Store(id="raman-preset-hydrate", data=0),
         dcc.Store(id="raman-preset-loaded-name", data=""),
         dcc.Store(id="raman-preset-snapshot", data=None),
+        dcc.Store(id="raman-plot-settings", data=normalize_spectral_plot_settings(None)),
         html.Div(id="raman-hero-slot"),
         dbc.Row(
             [
@@ -907,6 +939,161 @@ def render_raman_workflow_guide_chrome(locale_data):
         ]
     )
     return translate_ui(loc, f"{pfx}.title"), body
+
+
+@callback(
+    Output("raman-raw-quality-card-title", "children"),
+    Output("raman-raw-quality-card-hint", "children"),
+    Input("ui-locale", "data"),
+)
+def render_raman_raw_quality_chrome(locale_data):
+    loc = _loc(locale_data)
+    return translate_ui(loc, "dash.analysis.raman.raw_quality.card_title"), translate_ui(loc, "dash.analysis.raman.raw_quality.card_hint")
+
+
+@callback(
+    Output("raman-raw-quality-panel", "children"),
+    Input("project-id", "data"),
+    Input("raman-dataset-select", "value"),
+    Input("raman-refresh", "data"),
+    Input("ui-locale", "data"),
+)
+def render_raman_raw_quality_panel(project_id, dataset_key, _refresh, locale_data):
+    loc = _loc(locale_data)
+    if not project_id or not dataset_key:
+        return html.P(translate_ui(loc, "dash.analysis.raman.raw_quality.pick_dataset"), className="text-muted small mb-0")
+
+    from dash_app.api_client import workspace_dataset_data, workspace_dataset_detail
+
+    try:
+        detail = workspace_dataset_detail(project_id, dataset_key)
+        data = workspace_dataset_data(project_id, dataset_key)
+    except Exception as exc:
+        return html.P(translate_ui(loc, "dash.analysis.raman.raw_quality.load_failed", error=str(exc)), className="text-danger small mb-0")
+
+    rows = data.get("rows") or []
+    columns = data.get("columns") or []
+    axis, signal = downsample_spectral_rows(rows, columns)
+    validation = detail.get("validation") if isinstance(detail.get("validation"), dict) else {}
+    stats = compute_spectral_raw_quality_stats(axis, signal, validation=validation)
+    units = detail.get("units") if isinstance(detail.get("units"), dict) else {}
+    signal_unit = str(units.get("signal") or "")
+    return build_spectral_raw_quality_panel(
+        stats,
+        loc,
+        i18n_prefix="dash.analysis.raman.raw_quality",
+        signal_unit=signal_unit,
+    )
+
+
+@callback(
+    Output("raman-plot-card-title", "children"),
+    Output("raman-plot-card-hint", "children"),
+    Output("raman-plot-legend-mode-label", "children"),
+    Output("raman-plot-compact", "label"),
+    Output("raman-plot-show-grid", "label"),
+    Output("raman-plot-show-spikes", "label"),
+    Output("raman-plot-reverse-x-axis", "label"),
+    Output("raman-plot-export-scale-label", "children"),
+    Output("raman-plot-line-width-label", "children"),
+    Output("raman-plot-marker-size-label", "children"),
+    Output("raman-plot-show-raw", "label"),
+    Output("raman-plot-show-smoothed", "label"),
+    Output("raman-plot-show-corrected", "label"),
+    Output("raman-plot-show-normalized", "label"),
+    Output("raman-plot-show-peaks", "label"),
+    Output("raman-plot-x-range-enabled", "label"),
+    Output("raman-plot-y-range-enabled", "label"),
+    Input("ui-locale", "data"),
+)
+def render_raman_plot_settings_chrome(locale_data):
+    loc = _loc(locale_data)
+    pfx = "dash.analysis.spectral.plot"
+    return (
+        translate_ui(loc, f"{pfx}.card_title"),
+        translate_ui(loc, f"{pfx}.card_hint"),
+        translate_ui(loc, f"{pfx}.legend"),
+        translate_ui(loc, f"{pfx}.compact"),
+        translate_ui(loc, f"{pfx}.show_grid"),
+        translate_ui(loc, f"{pfx}.show_spikes"),
+        translate_ui(loc, f"{pfx}.reverse_x_axis"),
+        translate_ui(loc, f"{pfx}.export_scale"),
+        translate_ui(loc, f"{pfx}.line_width"),
+        translate_ui(loc, f"{pfx}.marker_size"),
+        translate_ui(loc, f"{pfx}.show_raw"),
+        translate_ui(loc, f"{pfx}.show_smoothed"),
+        translate_ui(loc, f"{pfx}.show_corrected"),
+        translate_ui(loc, f"{pfx}.show_normalized"),
+        translate_ui(loc, f"{pfx}.show_peaks"),
+        translate_ui(loc, f"{pfx}.x_lock"),
+        translate_ui(loc, f"{pfx}.y_lock"),
+    )
+
+
+@callback(
+    Output("raman-plot-settings", "data"),
+    Input("raman-plot-legend-mode", "value"),
+    Input("raman-plot-compact", "value"),
+    Input("raman-plot-show-grid", "value"),
+    Input("raman-plot-show-spikes", "value"),
+    Input("raman-plot-line-width-scale", "value"),
+    Input("raman-plot-marker-size-scale", "value"),
+    Input("raman-plot-export-scale", "value"),
+    Input("raman-plot-reverse-x-axis", "value"),
+    Input("raman-plot-show-raw", "value"),
+    Input("raman-plot-show-smoothed", "value"),
+    Input("raman-plot-show-corrected", "value"),
+    Input("raman-plot-show-normalized", "value"),
+    Input("raman-plot-show-peaks", "value"),
+    Input("raman-plot-x-range-enabled", "value"),
+    Input("raman-plot-x-min", "value"),
+    Input("raman-plot-x-max", "value"),
+    Input("raman-plot-y-range-enabled", "value"),
+    Input("raman-plot-y-min", "value"),
+    Input("raman-plot-y-max", "value"),
+)
+def update_raman_plot_settings(
+    legend_mode,
+    compact,
+    show_grid,
+    show_spikes,
+    line_width_scale,
+    marker_size_scale,
+    export_scale,
+    reverse_x_axis,
+    show_raw,
+    show_smoothed,
+    show_corrected,
+    show_normalized,
+    show_peaks,
+    x_range_enabled,
+    x_min,
+    x_max,
+    y_range_enabled,
+    y_min,
+    y_max,
+):
+    return spectral_plot_settings_from_controls(
+        legend_mode,
+        compact,
+        show_grid,
+        show_spikes,
+        line_width_scale,
+        marker_size_scale,
+        export_scale,
+        reverse_x_axis,
+        show_raw,
+        show_smoothed,
+        show_corrected,
+        show_normalized,
+        show_peaks,
+        x_range_enabled,
+        x_min,
+        x_max,
+        y_range_enabled,
+        y_min,
+        y_max,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1724,9 +1911,10 @@ def run_raman_analysis(n_clicks, project_id, dataset_key, template_id, processin
     Input("raman-refresh", "data"),
     Input("ui-theme", "data"),
     Input("ui-locale", "data"),
+    Input("raman-plot-settings", "data"),
     State("project-id", "data"),
 )
-def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
+def display_result(result_id, _refresh, ui_theme, locale_data, plot_settings, project_id):
     loc = _loc(locale_data)
     empty_msg = empty_result_msg(locale_data=locale_data)
     summary_empty = html.P(translate_ui(loc, "dash.analysis.raman.summary.empty"), className="text-muted")
@@ -1814,7 +2002,7 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
     top_match_area = empty_msg
     peak_cards_area = empty_msg
     if dataset_key:
-        figure_area = _build_figure(project_id, dataset_key, summary, ui_theme, loc)
+        figure_area = _build_figure(project_id, dataset_key, summary, ui_theme, loc, plot_settings=plot_settings)
         top_match_area = _build_top_match_panel(summary, rows, loc)
         peak_cards_area = _build_peak_cards_from_curves(project_id, dataset_key, summary, loc)
 
@@ -2260,7 +2448,15 @@ def _y_axis_range(*series: list | None) -> list[float] | None:
     return [y_min - padding, y_max + padding]
 
 
-def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: str | None, loc: str) -> html.Div:
+def _build_figure(
+    project_id: str,
+    dataset_key: str,
+    summary: dict,
+    ui_theme: str | None,
+    loc: str,
+    *,
+    plot_settings: dict | None = None,
+) -> html.Div:
     from dash_app.api_client import analysis_state_curves
 
     try:
@@ -2276,22 +2472,26 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
     normalized = curves.get("normalized", [])
     peaks = curves.get("peaks", [])
     diagnostics = curves.get("diagnostics") or {}
+    settings = normalize_spectral_plot_settings(plot_settings)
 
     has_corrected = bool(corrected and len(corrected) == len(wavenumber))
     has_smoothed = bool(smoothed and len(smoothed) == len(wavenumber))
     has_normalized_curve = bool(normalized and len(normalized) == len(wavenumber))
     has_baseline = bool(baseline and len(baseline) == len(wavenumber))
+    has_raw = bool(raw_signal and len(raw_signal) == len(wavenumber))
     plot_norm_primary = diagnostics.get("plot_normalized_primary_axis") is not False
-    show_normalized_trace = bool(has_normalized_curve and plot_norm_primary)
-    show_intermediate_smoothed = bool(has_smoothed and not has_corrected)
+    show_normalized_trace = bool(settings["show_normalized"] and has_normalized_curve and plot_norm_primary)
+    show_corrected_trace = bool(settings["show_corrected"] and has_corrected)
+    show_intermediate_smoothed = bool(settings["show_smoothed"] and has_smoothed and not show_corrected_trace)
+    show_raw_trace = bool(settings["show_raw"] and has_raw)
     show_baseline_trace = bool(has_baseline and has_corrected)
 
     has_overlay = bool(
         show_baseline_trace
         or show_intermediate_smoothed
-        or has_corrected
+        or show_corrected_trace
         or show_normalized_trace
-        or (bool(raw_signal and len(raw_signal) == len(wavenumber)) and (has_corrected or show_intermediate_smoothed))
+        or (show_raw_trace and (show_corrected_trace or show_intermediate_smoothed))
     )
 
     if not wavenumber:
@@ -2305,7 +2505,7 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
     hover_bg = "rgba(255,255,255,0.96)" if tone == "light" else "rgba(34,33,30,0.96)"
     hover_fg = "#1C1A1A" if tone == "light" else "#EEEDEA"
 
-    dominant_signal = corrected if has_corrected else smoothed if has_smoothed else raw_signal
+    dominant_signal = corrected if show_corrected_trace else smoothed if show_intermediate_smoothed else raw_signal if show_raw_trace else []
     legend_query = translate_ui(loc, "dash.analysis.figure.legend_query_spectrum")
     legend_smooth = translate_ui(loc, "dash.analysis.figure.legend_smoothed_spectrum")
     legend_imported = translate_ui(loc, "dash.analysis.figure.legend_imported_spectrum")
@@ -2318,7 +2518,9 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
         legend_query += suffix
         legend_normalized += suffix
 
-    y_series_for_range = [dominant_signal, raw_signal]
+    y_series_for_range = [dominant_signal]
+    if show_raw_trace:
+        y_series_for_range.append(raw_signal)
     if show_baseline_trace:
         y_series_for_range.append(baseline)
     if show_intermediate_smoothed:
@@ -2326,8 +2528,12 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
     if show_normalized_trace:
         y_series_for_range.append(normalized)
     y_range = _y_axis_range(*y_series_for_range)
+    if settings["y_range_enabled"] and settings["y_min"] is not None and settings["y_max"] is not None:
+        y_range = [settings["y_min"], settings["y_max"]]
 
     fig = go.Figure()
+    line_scale = float(settings["line_width_scale"])
+    marker_scale = float(settings["marker_size_scale"])
 
     if show_baseline_trace:
         fig.add_trace(
@@ -2336,19 +2542,19 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
                 y=baseline,
                 mode="lines",
                 name=legend_baseline,
-                line=dict(color=_RAMAN_FIGURE_COLORS["baseline"], width=1.3, dash="dash"),
+                line=dict(color=_RAMAN_FIGURE_COLORS["baseline"], width=1.3 * line_scale, dash="dash"),
                 opacity=0.65,
             )
         )
 
-    if raw_signal and len(raw_signal) == len(wavenumber):
+    if show_raw_trace:
         fig.add_trace(
             go.Scatter(
                 x=wavenumber,
                 y=raw_signal,
                 mode="lines",
                 name=legend_imported,
-                line=dict(color=_RAMAN_FIGURE_COLORS["raw"], width=1.6),
+                line=dict(color=_RAMAN_FIGURE_COLORS["raw"], width=1.6 * line_scale),
                 opacity=0.45 if has_overlay else 0.95,
             )
         )
@@ -2360,19 +2566,19 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
                 y=smoothed,
                 mode="lines",
                 name=legend_smooth,
-                line=dict(color=_RAMAN_FIGURE_COLORS["smoothed"], width=2.0),
+                line=dict(color=_RAMAN_FIGURE_COLORS["smoothed"], width=2.0 * line_scale),
                 opacity=0.95,
             )
         )
 
-    if has_corrected:
+    if show_corrected_trace:
         fig.add_trace(
             go.Scatter(
                 x=wavenumber,
                 y=corrected,
                 mode="lines",
                 name=legend_query,
-                line=dict(color=_RAMAN_FIGURE_COLORS["query"], width=3.2),
+                line=dict(color=_RAMAN_FIGURE_COLORS["query"], width=3.2 * line_scale),
                 opacity=0.95 if show_normalized_trace else 1.0,
             )
         )
@@ -2384,7 +2590,7 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
                 y=normalized,
                 mode="lines",
                 name=legend_normalized,
-                line=dict(color=_RAMAN_FIGURE_COLORS["normalized"], width=2.4),
+                line=dict(color=_RAMAN_FIGURE_COLORS["normalized"], width=2.4 * line_scale),
             )
         )
 
@@ -2401,7 +2607,7 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
     _ANNOTATION_MIN_SEP = 20.0
     annotated_positions: list[float] = []
     peak_count = len(peaks)
-    for i, peak in enumerate(peaks[:_RAMAN_MAX_PEAK_CARDS]):
+    for i, peak in enumerate(peaks[:_RAMAN_MAX_PEAK_CARDS] if settings["show_peaks"] else []):
         pos = peak.get("position")
         intensity = peak.get("intensity")
         if pos is None or not wavenumber:
@@ -2417,7 +2623,7 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
                 x=[wavenumber[idx]],
                 y=[y_at],
                 mode="markers+text",
-                marker=dict(size=7, color="#DC2626", symbol="diamond", line=dict(color="white", width=1)),
+                marker=dict(size=7 * marker_scale, color="#DC2626", symbol="diamond", line=dict(color="white", width=1)),
                 text=[label],
                 textposition="top center",
                 textfont=dict(size=8, color="#DC2626"),
@@ -2429,6 +2635,33 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
             annotated_positions.append(pos)
 
     title_main = translate_ui(loc, "dash.analysis.figure.title_raman_main")
+    show_legend, legend_layout = spectral_legend_layout(len(fig.data), settings, theme=pt, legend_bg=legend_bg)
+    x_axis: dict[str, Any] = {
+        "showgrid": settings["show_grid"],
+        "showspikes": settings["show_spikes"],
+        "gridcolor": pt["grid"],
+        "linecolor": pt["grid"],
+        "tickfont": dict(size=12, color=pt["text"]),
+        "title_font": dict(size=13, color=pt["text"]),
+        "zeroline": False,
+    }
+    if settings["x_range_enabled"] and settings["x_min"] is not None and settings["x_max"] is not None:
+        x_range = [settings["x_min"], settings["x_max"]]
+        if settings["reverse_x_axis"]:
+            x_range = list(reversed(x_range))
+        x_axis["range"] = x_range
+    elif settings["reverse_x_axis"]:
+        x_axis["autorange"] = "reversed"
+    y_axis = {
+        "range": y_range,
+        "showgrid": settings["show_grid"],
+        "showspikes": settings["show_spikes"],
+        "gridcolor": pt["grid"],
+        "linecolor": pt["grid"],
+        "tickfont": dict(size=12, color=pt["text"]),
+        "title_font": dict(size=13, color=pt["text"]),
+        "zeroline": False,
+    }
     fig.update_layout(
         title=(f"{title_main}<br><span style='font-size:0.82em;color:{muted}'>{sample_name}</span>"),
         paper_bgcolor=pt["paper_bg"],
@@ -2436,40 +2669,17 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
         hovermode="x unified",
         xaxis_title=translate_ui(loc, "dash.analysis.figure.axis_raman_shift"),
         yaxis_title=translate_ui(loc, "dash.analysis.figure.axis_intensity_au"),
-        xaxis=dict(
-            showgrid=True,
-            gridcolor=pt["grid"],
-            linecolor=pt["grid"],
-            tickfont=dict(size=12, color=pt["text"]),
-            title_font=dict(size=13, color=pt["text"]),
-            zeroline=False,
-        ),
-        yaxis=dict(
-            range=y_range,
-            showgrid=True,
-            gridcolor=pt["grid"],
-            linecolor=pt["grid"],
-            tickfont=dict(size=12, color=pt["text"]),
-            title_font=dict(size=13, color=pt["text"]),
-            zeroline=False,
-        ),
-        margin=dict(l=64, r=28, t=82, b=56),
-        height=520,
+        xaxis=x_axis,
+        yaxis=y_axis,
+        margin=dict(l=64, r=112 if show_legend and legend_layout.get("x") == 1.02 else 28, t=82, b=56),
+        height=460 if settings["compact"] else 520,
         title_font=dict(size=20, color=pt["text"]),
         title_x=0.01,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="left",
-            x=0,
-            bgcolor=legend_bg,
-            bordercolor=pt["grid"],
-            borderwidth=1,
-            font=dict(size=12, color=pt["text"]),
-        ),
+        showlegend=show_legend,
+        legend=legend_layout,
         hoverlabel=dict(bgcolor=hover_bg, font=dict(color=hover_fg)),
     )
+    fig.update_layout(meta={"plot_display_settings": settings})
     fig.update_layout(template=pt["template"])
 
     peak_count_disp = summary.get("peak_count", peak_count)
@@ -2506,7 +2716,7 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, ui_theme: st
         [
             html.H5(translate_ui(loc, "dash.analysis.raman.figure.section_title"), className="mb-2"),
             html.P(run_caption, className="small text-muted mb-2"),
-            dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True}, className="ta-plot"),
+            dcc.Graph(figure=fig, config=build_spectral_plotly_config(settings, filename="materialscope_raman_spectrum"), className="ta-plot"),
             *diag_children,
         ]
     )

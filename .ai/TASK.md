@@ -28,6 +28,10 @@
 
 **Done (2026-04-23).** DSC, DTA, TGA, FTIR, and Raman now expose XRD-style manual **Snapshot** and **Report figure** controls while preserving existing `<modality>-result-figure` display/capture contracts and automatic capture callbacks. XRD was refactored onto shared pure artifact helpers without changing its toolbar IDs or overlay slot. Artifact panels refresh on latest-result changes and successful explicit figure actions only. Focused verification passed: `python -m pytest -p no:cacheprovider tests/test_analysis_page_components.py tests/test_xrd_dash_page.py tests/test_dsc_dash_page.py tests/test_dta_dash_page.py tests/test_tga_dash_page.py tests/test_ftir_dash_page.py tests/test_raman_dash_page.py -q` → 303 passed.
 
+### Completed: P2 — Polish and remaining consistency
+
+**Done (2026-04-24).** FTIR/Raman Dash pages now include setup-tab raw data quality panels and full UI-only spectral plot settings for legend, compact view, grid/crosshair, line/marker/export scale, trace visibility, reversed X axis, and locked X/Y ranges. TGA gained direct literature compare callback regression coverage. DSC gained loaded-preset dirty tracking and tests. Focused verification passed: `python -m pytest -p no:cacheprovider tests/test_analysis_page_components.py tests/test_ftir_dash_page.py tests/test_raman_dash_page.py tests/test_tga_dash_page.py tests/test_dsc_dash_page.py -q` → 189 passed.
+
 ---
 
 ### Remaining prioritized remediation backlog
@@ -53,10 +57,10 @@ Ordered by priority per the repo-wide parity audit:
 
 | # | Issue | Modalities | Effort |
 |---|---|---|---|
-| P2-3 | Spectral modalities lack raw quality panel (intentional but inconsistent) | FTIR, Raman | M |
-| P2-4 | TGA missing literature compare callback test | TGA | S |
-| P2-5 | DSC missing preset dirty-flag test | DSC | S |
-| P2-6 | Streamlit spectral_page has 12+ plot setting toggles; Dash spectral pages have fewer | FTIR, Raman | M |
+| P2-3 | Spectral modalities lack raw quality panel (intentional but inconsistent) | FTIR, Raman | Done |
+| P2-4 | TGA missing literature compare callback test | TGA | Done |
+| P2-5 | DSC missing preset dirty-flag test | DSC | Done |
+| P2-6 | Streamlit spectral_page has 12+ plot setting toggles; Dash spectral pages have fewer | FTIR, Raman | Done |
 
 ### Recommended execution order
 
@@ -65,7 +69,7 @@ Ordered by priority per the repo-wide parity audit:
 3. ~~P0-5 — DSC mass normalization (done)~~
 4. ~~P1-2 — Figure capture toolbar standardization (done)~~
 5. ~~P1-3 + P1-4 — Shared boilerplate extraction UI/helper pass (done 2026-04-24)~~
-6. P2 items — polish and consistency
+6. ~~P2 items — polish and consistency (done 2026-04-24)~~
 
 ---
 

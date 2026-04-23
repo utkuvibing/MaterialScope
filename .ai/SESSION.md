@@ -39,17 +39,24 @@
   - Refactored DSC/DTA/TGA/FTIR/Raman/XRD page card builders to use shared helpers while preserving component IDs, callback declarations, result ordering, i18n keys, and backend payload behavior.
   - Kept callback orchestration, dirty-state logic, preset lifecycle callbacks, run callbacks, and modality-specific quality/raw metadata variants page-local.
 
+- **P2 — Polish and remaining consistency (completed 2026-04-24):**
+  - Added shared spectral raw-quality helpers and wired setup-tab raw-quality panels into FTIR and Raman.
+  - Added shared UI-only spectral plot settings and wired FTIR/Raman figures to respect legend, compact view, grid/crosshair, line/marker/export scale, trace visibility, reversed X axis, and locked ranges without changing processing drafts, run payloads, or figure artifact slots.
+  - Added DSC loaded-preset dirty tracking with saved/applied preset snapshots.
+  - Added focused regression coverage for spectral raw-quality/settings, TGA literature compare callback paths, and DSC dirty-flag states.
+
 ## What was verified
 
 - `python -m pytest tests/test_ftir_dash_page.py tests/test_raman_dash_page.py tests/test_batch_runner.py -q` — 116 passed, 4 deprecation warnings from Dash `dash_table.DataTable`.
 - `python -m pytest -p no:cacheprovider tests/test_dsc_dash_page.py tests/test_batch_runner.py -q` — 67 passed, 2 deprecation warnings from Dash `dash_table.DataTable`.
 - `python -m pytest -p no:cacheprovider tests/test_analysis_page_components.py tests/test_xrd_dash_page.py tests/test_dsc_dash_page.py tests/test_dta_dash_page.py tests/test_tga_dash_page.py tests/test_ftir_dash_page.py tests/test_raman_dash_page.py -q` — 303 passed, 16 deprecation warnings from Plotly/Kaleido and Dash `dash_table.DataTable`.
 - `python -m pytest -p no:cacheprovider tests/test_analysis_page_components.py tests/test_dsc_dash_page.py tests/test_dta_dash_page.py tests/test_tga_dash_page.py tests/test_ftir_dash_page.py tests/test_raman_dash_page.py tests/test_xrd_dash_page.py -q` — 309 passed, 16 deprecation warnings from Plotly/Kaleido and Dash `dash_table.DataTable`.
+- `python -m pytest -p no:cacheprovider tests/test_analysis_page_components.py tests/test_ftir_dash_page.py tests/test_raman_dash_page.py tests/test_tga_dash_page.py tests/test_dsc_dash_page.py -q` — 189 passed, 6 deprecation warnings from Dash `dash_table.DataTable`.
 - Protected-ID render check for preset controls, history controls, result quality panels, and raw metadata panels across DSC/DTA/TGA/FTIR/Raman/XRD — passed.
 - Temporary Dash app import check for all six touched page modules — passed.
 
 ## Next step
 
-- Continue with deferred shared-boilerplate follow-ups only where patterns are genuinely compatible: callback orchestration/preset lifecycle helpers remain intentionally out of scope for the completed UI/helper pass.
+- P2 parity-remediation backlog is complete for the current audit set. Next work should be a new slice, not further expansion of this polish pass.
 
 **Process defaults:** **`00-workflow.mdc`**.

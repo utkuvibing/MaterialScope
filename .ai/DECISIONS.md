@@ -4,6 +4,21 @@
  
 ---
 
+## 2026-04-24 — P2 completed: spectral display polish stays UI-only
+
+**Decision:**
+
+1. FTIR/Raman raw-quality panels use shared spectral exploration helpers, but retain modality-owned i18n prefixes and Setup-tab placement.
+2. FTIR/Raman plot settings are **UI-only** display state. They do not enter processing drafts, presets, `/analysis/run` payloads, saved result processing, or backend schemas.
+3. The existing `<modality>-result-figure` slot remains the stable figure display/capture contract; plot settings only alter the Plotly figure rendered inside that slot.
+4. DSC preset dirty tracking is implemented as loaded-preset UI snapshots for the existing apply/save flow, not as a preset API/schema change.
+
+**Reason:** The remaining P2 gaps were consistency and regression-coverage issues, not backend behavior gaps. Keeping spectral display settings client-side closes Streamlit/Dash UX parity without polluting scientific processing provenance.
+
+**Consequence / future:** Future display-only chart controls should remain separate from processing drafts unless they change analysis output. If plot settings later need persistence, add an explicit UI preference surface rather than reusing analysis presets.
+
+---
+
 ## 2026-04-23 — P1-2 completed: figure artifact toolbar is shared UI while result slots remain stable
 
 **Decision:**

@@ -76,13 +76,21 @@ def build_apply_preset_card(
     id_prefix: str,
     card_class_name: str = "mb-3",
     body_class_name: str | None = None,
+    include_dirty_state: bool = False,
 ) -> dbc.Card:
+    dirty_children: list[Any] = []
+    if include_dirty_state:
+        dirty_children = [
+            html.Div(id=f"{id_prefix}-preset-loaded-line", className="small mb-1"),
+            html.Div(id=f"{id_prefix}-preset-dirty-flag", className="small mb-2"),
+        ]
     return dbc.Card(
         dbc.CardBody(
             [
                 html.H5(id=f"{id_prefix}-preset-card-title", className="card-title mb-1"),
                 html.Small(id=f"{id_prefix}-preset-help", className="form-text text-muted d-block mb-2"),
                 html.Div(id=f"{id_prefix}-preset-caption", className="small text-muted mb-2"),
+                *dirty_children,
                 dbc.Row(
                     [
                         dbc.Col(

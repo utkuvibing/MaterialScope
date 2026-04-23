@@ -339,6 +339,68 @@ def _dsc_draft_from_loaded_processing(processing: dict | None) -> dict:
     )
 
 
+def _dsc_ui_snapshot_dict(template_id: str | None, draft: dict | None) -> dict[str, Any]:
+    tid = template_id if template_id in _DSC_TEMPLATE_IDS else "dsc.general"
+    norm = _normalize_dsc_processing_draft(draft)
+    return {
+        "workflow_template_id": tid,
+        "smoothing": norm["smoothing"],
+        "baseline": norm["baseline"],
+        "normalization": norm["normalization"],
+        "peak_detection": norm["peak_detection"],
+        "glass_transition": norm["glass_transition"],
+    }
+
+
+def _dsc_snapshots_equal(a: dict | None, b: dict | None) -> bool:
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return False
+    return json.dumps(a, sort_keys=True, default=str) == json.dumps(b, sort_keys=True, default=str)
+
+
+def _dsc_draft_from_control_values(
+    normalization_enabled,
+    sm_m,
+    sm_w,
+    sm_p,
+    sm_s,
+    bl_m,
+    bl_lam,
+    bl_p,
+    bl_poly_order,
+    bl_max_half_window,
+    bl_n_anchors,
+    bl_region_enabled,
+    bl_region_min,
+    bl_region_max,
+    peak_direction,
+    peak_prominence,
+    peak_distance,
+    tg_enabled,
+    tg_min,
+    tg_max,
+) -> dict[str, Any]:
+    return _normalize_dsc_processing_draft(
+        {
+            "normalization": _normalize_normalization_values(normalization_enabled),
+            "smoothing": _normalize_smoothing_values(sm_m, sm_w, sm_p, sm_s),
+            "baseline": _normalize_baseline_values(
+                bl_m,
+                bl_lam,
+                bl_p,
+                bl_poly_order,
+                bl_max_half_window,
+                bl_n_anchors,
+                bl_region_enabled,
+                bl_region_min,
+                bl_region_max,
+            ),
+            "peak_detection": _normalize_peak_detection_values(peak_direction, peak_prominence, peak_distance),
+            "glass_transition": _normalize_glass_transition_values(tg_enabled, tg_min, tg_max),
+        }
+    )
+
+
 def _apply_draft_section(draft: dict | None, section: str, values: dict) -> dict:
     next_draft = _normalize_dsc_processing_draft(draft)
     next_draft[section] = copy.deepcopy(values)
@@ -406,6 +468,8 @@ def _processing_draft_stores() -> list:
         dcc.Store(id="dsc-figure-captured", data={}),
         dcc.Store(id="dsc-figure-artifact-refresh", data=0),
         dcc.Store(id="dsc-preset-refresh", data=0),
+        dcc.Store(id="dsc-preset-loaded-name", data=""),
+        dcc.Store(id="dsc-preset-snapshot", data=None),
     ]
 
 
@@ -425,7 +489,7 @@ def _dsc_processing_history_card() -> dbc.Card:
 
 
 def _preset_controls_card() -> dbc.Card:
-    return build_apply_preset_card(id_prefix="dsc")
+    return build_apply_preset_card(id_prefix="dsc", include_dirty_state=True)
 
 
 def _normalization_setup_card() -> dbc.Card:
@@ -1302,6 +1366,8 @@ def toggle_dsc_preset_action_buttons(selected_name):
     Output("dsc-template-select", "value", allow_duplicate=True),
     Output("dsc-preset-status", "children", allow_duplicate=True),
     Output("dsc-left-tabs", "active_tab", allow_duplicate=True),
+    Output("dsc-preset-loaded-name", "data", allow_duplicate=True),
+    Output("dsc-preset-snapshot", "data", allow_duplicate=True),
     Input("dsc-preset-apply-btn", "n_clicks"),
     State("dsc-preset-select", "value"),
     State("dsc-processing-draft", "data"),
@@ -1324,6 +1390,8 @@ def apply_dsc_preset(n_clicks, selected_name, draft, undo, locale_data):
             dash.no_update,
             translate_ui(loc, "dash.analysis.dsc.presets.select_required"),
             dash.no_update,
+            dash.no_update,
+            dash.no_update,
         )
     try:
         payload = api_client.load_analysis_preset(_DSC_PRESET_ANALYSIS_TYPE, name)
@@ -1335,6 +1403,8 @@ def apply_dsc_preset(n_clicks, selected_name, draft, undo, locale_data):
             dash.no_update,
             translate_ui(loc, "dash.analysis.dsc.presets.apply_failed").format(error=str(exc)),
             dash.no_update,
+            dash.no_update,
+            dash.no_update,
         )
 
     processing = dict(payload.get("processing") or {})
@@ -1342,9 +1412,11 @@ def apply_dsc_preset(n_clicks, selected_name, draft, undo, locale_data):
 
     template_id_raw = str(payload.get("workflow_template_id") or "").strip()
     template_output = template_id_raw if template_id_raw in _DSC_TEMPLATE_IDS else dash.no_update
+    resolved_tid = template_id_raw if template_id_raw in _DSC_TEMPLATE_IDS else "dsc.general"
+    snap = _dsc_ui_snapshot_dict(resolved_tid, next_draft)
     next_undo = _push_undo(undo, draft)
     status = translate_ui(loc, "dash.analysis.dsc.presets.applied").format(preset=name)
-    return next_draft, next_undo, [], template_output, status, "dsc-tab-run"
+    return next_draft, next_undo, [], template_output, status, "dsc-tab-run", name, snap
 
 
 @callback(
@@ -1352,6 +1424,8 @@ def apply_dsc_preset(n_clicks, selected_name, draft, undo, locale_data):
     Output("dsc-preset-save-name", "value", allow_duplicate=True),
     Output("dsc-preset-status", "children", allow_duplicate=True),
     Output("dsc-left-tabs", "active_tab", allow_duplicate=True),
+    Output("dsc-preset-loaded-name", "data", allow_duplicate=True),
+    Output("dsc-preset-snapshot", "data", allow_duplicate=True),
     Input("dsc-preset-save-btn", "n_clicks"),
     State("dsc-preset-save-name", "value"),
     State("dsc-processing-draft", "data"),
@@ -1373,6 +1447,8 @@ def save_dsc_preset(n_clicks, save_name, draft, template_id, refresh_token, loca
             dash.no_update,
             translate_ui(loc, "dash.analysis.dsc.presets.save_name_required"),
             dash.no_update,
+            dash.no_update,
+            dash.no_update,
         )
     try:
         response = api_client.save_analysis_preset(
@@ -1387,16 +1463,21 @@ def save_dsc_preset(n_clicks, save_name, draft, template_id, refresh_token, loca
             dash.no_update,
             translate_ui(loc, "dash.analysis.dsc.presets.save_failed").format(error=str(exc)),
             dash.no_update,
+            dash.no_update,
+            dash.no_update,
         )
     resolved_template = str(response.get("workflow_template_id") or template_id or "")
     status = translate_ui(loc, "dash.analysis.dsc.presets.saved").format(preset=name, template=resolved_template)
-    return int(refresh_token or 0) + 1, "", status, "dsc-tab-run"
+    snap = _dsc_ui_snapshot_dict(resolved_template, draft)
+    return int(refresh_token or 0) + 1, "", status, "dsc-tab-run", name, snap
 
 
 @callback(
     Output("dsc-preset-refresh", "data", allow_duplicate=True),
     Output("dsc-preset-select", "value", allow_duplicate=True),
     Output("dsc-preset-status", "children", allow_duplicate=True),
+    Output("dsc-preset-loaded-name", "data", allow_duplicate=True),
+    Output("dsc-preset-snapshot", "data", allow_duplicate=True),
     Input("dsc-preset-delete-btn", "n_clicks"),
     State("dsc-preset-select", "value"),
     State("dsc-preset-refresh", "data"),
@@ -1411,7 +1492,7 @@ def delete_dsc_preset(n_clicks, selected_name, refresh_token, locale_data):
         raise dash.exceptions.PreventUpdate
     name = str(selected_name or "").strip()
     if not name:
-        return dash.no_update, dash.no_update, translate_ui(loc, "dash.analysis.dsc.presets.select_required")
+        return dash.no_update, dash.no_update, translate_ui(loc, "dash.analysis.dsc.presets.select_required"), dash.no_update, dash.no_update
     try:
         api_client.delete_analysis_preset(_DSC_PRESET_ANALYSIS_TYPE, name)
     except Exception as exc:
@@ -1419,9 +1500,108 @@ def delete_dsc_preset(n_clicks, selected_name, refresh_token, locale_data):
             dash.no_update,
             dash.no_update,
             translate_ui(loc, "dash.analysis.dsc.presets.delete_failed").format(error=str(exc)),
+            dash.no_update,
+            dash.no_update,
         )
     status = translate_ui(loc, "dash.analysis.dsc.presets.deleted").format(preset=name)
-    return int(refresh_token or 0) + 1, None, status
+    return int(refresh_token or 0) + 1, None, status, "", None
+
+
+@callback(
+    Output("dsc-preset-loaded-line", "children"),
+    Input("dsc-preset-loaded-name", "data"),
+    Input("ui-locale", "data"),
+)
+def render_dsc_preset_loaded_line(name, locale_data):
+    loc = _loc(locale_data)
+    preset_name = str(name or "").strip()
+    if not preset_name:
+        return ""
+    return translate_ui(loc, "dash.analysis.dsc.presets.loaded_line").format(preset=preset_name)
+
+
+@callback(
+    Output("dsc-preset-dirty-flag", "children"),
+    Input("ui-locale", "data"),
+    Input("dsc-template-select", "value"),
+    Input("dsc-normalization-enabled", "value"),
+    Input("dsc-smooth-method", "value"),
+    Input("dsc-smooth-window", "value"),
+    Input("dsc-smooth-polyorder", "value"),
+    Input("dsc-smooth-sigma", "value"),
+    Input("dsc-baseline-method", "value"),
+    Input("dsc-baseline-lam", "value"),
+    Input("dsc-baseline-p", "value"),
+    Input("dsc-baseline-poly-order", "value"),
+    Input("dsc-baseline-max-half-window", "value"),
+    Input("dsc-baseline-n-anchors", "value"),
+    Input("dsc-baseline-region-enabled", "value"),
+    Input("dsc-baseline-region-min", "value"),
+    Input("dsc-baseline-region-max", "value"),
+    Input("dsc-peak-direction", "value"),
+    Input("dsc-peak-prominence", "value"),
+    Input("dsc-peak-distance", "value"),
+    Input("dsc-tg-region-enabled", "value"),
+    Input("dsc-tg-region-min", "value"),
+    Input("dsc-tg-region-max", "value"),
+    State("dsc-preset-snapshot", "data"),
+)
+def render_dsc_preset_dirty_flag(
+    locale_data,
+    template_id,
+    normalization_enabled,
+    sm_m,
+    sm_w,
+    sm_p,
+    sm_s,
+    bl_m,
+    bl_lam,
+    bl_p,
+    bl_poly_order,
+    bl_max_half_window,
+    bl_n_anchors,
+    bl_region_enabled,
+    bl_region_min,
+    bl_region_max,
+    peak_direction,
+    peak_prominence,
+    peak_distance,
+    tg_enabled,
+    tg_min,
+    tg_max,
+    snapshot,
+):
+    loc = _loc(locale_data)
+    if not isinstance(snapshot, dict):
+        return html.Span(translate_ui(loc, "dash.analysis.dsc.presets.dirty_no_baseline"), className="text-muted")
+    current = _dsc_ui_snapshot_dict(
+        template_id,
+        _dsc_draft_from_control_values(
+            normalization_enabled,
+            sm_m,
+            sm_w,
+            sm_p,
+            sm_s,
+            bl_m,
+            bl_lam,
+            bl_p,
+            bl_poly_order,
+            bl_max_half_window,
+            bl_n_anchors,
+            bl_region_enabled,
+            bl_region_min,
+            bl_region_max,
+            peak_direction,
+            peak_prominence,
+            peak_distance,
+            tg_enabled,
+            tg_min,
+            tg_max,
+        ),
+    )
+    if _dsc_snapshots_equal(snapshot, current):
+        return html.Span(translate_ui(loc, "dash.analysis.dsc.presets.clean"), className="text-success")
+    return html.Span(translate_ui(loc, "dash.analysis.dsc.presets.dirty"), className="text-warning")
 
 
 @callback(

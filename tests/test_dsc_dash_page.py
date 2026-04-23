@@ -63,6 +63,9 @@ def test_layout_contains_parity_ids_and_stores():
         "dsc-processing-undo",
         "dsc-processing-redo",
         "dsc-preset-refresh",
+        "dsc-preset-loaded-name",
+        "dsc-preset-snapshot",
+        "dsc-preset-dirty-flag",
         "dsc-preset-select",
         "dsc-preset-save-btn",
         "dsc-smooth-apply-btn",
@@ -277,7 +280,7 @@ def test_apply_dsc_preset_loads_normalization_from_processing(monkeypatch):
     )
 
     defaults = mod._default_processing_draft()
-    next_draft, undo, redo, template_value, status, active_tab = mod.apply_dsc_preset(
+    next_draft, undo, redo, template_value, status, active_tab, loaded_name, snapshot = mod.apply_dsc_preset(
         1,
         "preset-a",
         defaults,
@@ -291,7 +294,103 @@ def test_apply_dsc_preset_loads_normalization_from_processing(monkeypatch):
     assert redo == []
     assert template_value == "dsc.general"
     assert active_tab == "dsc-tab-run"
+    assert loaded_name == "preset-a"
+    assert snapshot == mod._dsc_ui_snapshot_dict("dsc.general", next_draft)
     assert "preset-a" in status
+
+
+def test_dsc_preset_dirty_flag_renders_clean_when_snapshot_matches():
+    mod = _import_dsc_page()
+    draft = mod._default_processing_draft()
+    snap = mod._dsc_ui_snapshot_dict("dsc.general", draft)
+    flag = mod.render_dsc_preset_dirty_flag(
+        "en",
+        "dsc.general",
+        True,
+        "savgol",
+        11,
+        3,
+        2.0,
+        "asls",
+        1e6,
+        0.01,
+        6,
+        40,
+        6,
+        False,
+        None,
+        None,
+        "both",
+        0.0,
+        1,
+        False,
+        None,
+        None,
+        snap,
+    )
+    assert "text-success" in str(flag)
+
+
+def test_dsc_preset_dirty_flag_renders_dirty_when_controls_differ():
+    mod = _import_dsc_page()
+    draft = mod._default_processing_draft()
+    snap = mod._dsc_ui_snapshot_dict("dsc.general", draft)
+    flag = mod.render_dsc_preset_dirty_flag(
+        "en",
+        "dsc.general",
+        True,
+        "gaussian",
+        11,
+        3,
+        2.0,
+        "asls",
+        1e6,
+        0.01,
+        6,
+        40,
+        6,
+        False,
+        None,
+        None,
+        "both",
+        0.0,
+        1,
+        False,
+        None,
+        None,
+        snap,
+    )
+    assert "text-warning" in str(flag)
+
+
+def test_dsc_preset_dirty_flag_renders_no_baseline_without_snapshot():
+    mod = _import_dsc_page()
+    flag = mod.render_dsc_preset_dirty_flag(
+        "en",
+        "dsc.general",
+        True,
+        "savgol",
+        11,
+        3,
+        2.0,
+        "asls",
+        1e6,
+        0.01,
+        6,
+        40,
+        6,
+        False,
+        None,
+        None,
+        "both",
+        0.0,
+        1,
+        False,
+        None,
+        None,
+        None,
+    )
+    assert "text-muted" in str(flag)
 
 
 def test_build_event_cards_compacts_secondary_events():

@@ -67,7 +67,10 @@ def test_layout_contains_section_ids_in_order():
         "raman-preset-hydrate",
         "raman-preset-loaded-name",
         "raman-preset-snapshot",
+        "raman-plot-settings",
         "raman-workflow-guide-title",
+        "raman-raw-quality-card-title",
+        "raman-raw-quality-panel",
         "raman-processing-undo-btn",
         "raman-processing-redo-btn",
         "raman-processing-reset-btn",
@@ -91,6 +94,15 @@ def test_layout_contains_section_ids_in_order():
         "raman-sim-metric",
         "raman-sim-top-n",
         "raman-sim-minimum-score",
+        "raman-plot-card-title",
+        "raman-plot-legend-mode",
+        "raman-plot-show-raw",
+        "raman-plot-show-smoothed",
+        "raman-plot-show-corrected",
+        "raman-plot-show-normalized",
+        "raman-plot-show-peaks",
+        "raman-plot-x-range-enabled",
+        "raman-plot-y-range-enabled",
         "raman-result-analysis-summary",
         "raman-result-metrics",
         "raman-result-quality",
@@ -496,11 +508,11 @@ def test_build_figure_no_data_when_empty_curves(monkeypatch):
     assert isinstance(fig, html.P)
 
 
-def test_raman_layout_excludes_raw_quality_section():
+def test_raman_layout_includes_raw_quality_section():
     mod = _import_raman_page()
     layout_str = str(mod.layout)
-    assert "raman-raw-quality-panel" not in layout_str
-    assert "raman-raw-quality-card-title" not in layout_str
+    assert "raman-raw-quality-panel" in layout_str
+    assert "raman-raw-quality-card-title" in layout_str
 
 
 def test_render_raman_literature_uses_raman_prefix():
@@ -620,7 +632,7 @@ def test_display_result_returns_nine_outputs(monkeypatch):
         },
     )
 
-    outputs = mod.display_result("raman_sample_a", 1, "light", "en", "proj-1")
+    outputs = mod.display_result("raman_sample_a", 1, "light", "en", None, "proj-1")
     assert len(outputs) == 9
     for item in outputs:
         assert item is not None
@@ -762,6 +774,51 @@ def test_build_figure_omits_normalized_when_backend_flags_shared_axis_unhelpful(
     graph = next(c for c in fig_div.children if isinstance(c, dcc.Graph))
     names = [tr.name for tr in graph.figure.data]
     assert legend_norm not in names
+
+
+def test_build_figure_honors_plot_settings_for_traces_and_ranges(monkeypatch):
+    mod = _import_raman_page()
+    import dash_app.api_client as api_client
+
+    monkeypatch.setattr(
+        api_client,
+        "analysis_state_curves",
+        lambda *_: {
+            "temperature": [1000.0, 2000.0, 3000.0, 4000.0],
+            "raw_signal": [0.1, 0.5, 0.3, 0.2],
+            "smoothed": [0.12, 0.48, 0.32, 0.18],
+            "baseline": [0.05, 0.05, 0.05, 0.05],
+            "corrected": [0.07, 0.43, 0.27, 0.13],
+            "normalized": [0.1, 0.6, 0.4, 0.2],
+            "peaks": [{"position": 2920.0, "intensity": 0.6}],
+            "diagnostics": {"plot_normalized_primary_axis": True},
+        },
+    )
+    settings = mod.normalize_spectral_plot_settings(
+        {
+            "show_raw": False,
+            "show_corrected": False,
+            "show_normalized": False,
+            "show_peaks": False,
+            "show_smoothed": True,
+            "reverse_x_axis": False,
+            "x_range_enabled": True,
+            "x_min": 1000,
+            "x_max": 4000,
+            "y_range_enabled": True,
+            "y_min": -1,
+            "y_max": 1,
+        }
+    )
+    fig_div = mod._build_figure("proj", "ds", {}, "light", "en", plot_settings=settings)
+    graph = next(c for c in fig_div.children if isinstance(c, dcc.Graph))
+    names = [tr.name for tr in graph.figure.data]
+    assert any("Smoothed" in str(name) for name in names)
+    assert not any("Imported" in str(name) for name in names)
+    assert not any("Normalized" in str(name) for name in names)
+    assert not any(str(name).startswith("Peak") for name in names)
+    assert list(graph.figure.layout.xaxis.range) == [1000.0, 4000.0]
+    assert list(graph.figure.layout.yaxis.range) == [-1.0, 1.0]
 
 
 def test_build_match_table_library_unavailable_is_hidden():

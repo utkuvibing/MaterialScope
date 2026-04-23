@@ -277,6 +277,51 @@ def test_render_tga_literature_compacts_generated_claims():
     assert "Claim line 4" in text
 
 
+def test_compare_tga_literature_forwards_options_and_renders_status(monkeypatch):
+    mod = _import_tga_page()
+    captured: dict = {}
+
+    def fake_compare(project_id, result_id, **kwargs):
+        captured.update({"project_id": project_id, "result_id": result_id, **kwargs})
+        return {
+            "literature_claims": [],
+            "literature_comparisons": [],
+            "citations": [],
+            "literature_context": {},
+        }
+
+    monkeypatch.setattr("dash_app.api_client.literature_compare", fake_compare)
+    output, status = mod.compare_tga_literature(1, "proj-1", "tga-r1", "5", ["persist"], "en")
+
+    assert output is not None
+    assert status is not None
+    assert captured == {
+        "project_id": "proj-1",
+        "result_id": "tga-r1",
+        "max_claims": 5,
+        "persist": True,
+    }
+
+
+def test_compare_tga_literature_missing_result_warns():
+    mod = _import_tga_page()
+    output, status = mod.compare_tga_literature(1, "proj-1", "", 3, [], "en")
+    assert output is dash.no_update
+    assert "Run a TGA analysis first" in str(status)
+
+
+def test_compare_tga_literature_failure_keeps_previous_output(monkeypatch):
+    mod = _import_tga_page()
+
+    def fake_compare(*_args, **_kwargs):
+        raise RuntimeError("offline")
+
+    monkeypatch.setattr("dash_app.api_client.literature_compare", fake_compare)
+    output, status = mod.compare_tga_literature(1, "proj-1", "tga-r1", 3, [], "en")
+    assert output is dash.no_update
+    assert "offline" in str(status)
+
+
 def test_tga_validation_metric_value_formats_status():
     mod = _import_tga_page()
     detail_ok = {"validation": {"status": "ok", "warnings": [], "issues": [], "warning_count": 0, "issue_count": 0}}
