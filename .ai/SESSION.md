@@ -9,6 +9,13 @@
 
 ## What was done this session
 
+- **Post-parity stabilization — runtime/library test isolation (completed 2026-04-24):**
+  - Traced the remaining 6 full-suite failures to test-only runtime/library env leakage plus one under-provisioned FTIR fallback case, not to production runtime behavior or scientific-analysis drift.
+  - Added small local isolation fixtures in `tests/test_backend_api.py`, `tests/test_reference_library.py`, and `tests/test_backend_batch.py` that clear both primary and legacy library/runtime env vars and use tmp-path scoped `MATERIALSCOPE_HOME`.
+  - Reset the managed cloud client singleton in tests that rely on env re-reads so library cloud configuration changes are honored deterministically.
+  - Made `test_batch_run_ftir_similarity_path_returns_no_match_as_saved` explicitly sync fallback library state from `sample_data/reference_library_mirror` before asserting `no_match` / `spectral_no_match`, and replaced its synthetic signal with a deterministic low-similarity FTIR shape.
+  - Updated `.ai/TASK.md`, `.ai/SESSION.md`, and `.ai/DECISIONS.md` to record parity completion plus the test-only stabilization policy.
+
 - **P0-4 — Similarity metric selector for FTIR/Raman (completed 2026-04-22):**
   - Added `cosine` / `pearson` similarity metric selectors to `dash_app/pages/ftir.py` and `dash_app/pages/raman.py`.
   - Made metric defaults template-first with `cosine` fallback; Raman polymorph-oriented template defaults remain able to prefer `pearson`.
@@ -47,6 +54,8 @@
 
 ## What was verified
 
+- `python -m pytest -p no:cacheprovider tests/test_backend_api.py::test_library_status_stays_limited_when_hosted_catalog_is_empty tests/test_backend_api.py::test_runtime_cloud_client_stays_strict_without_dev_override tests/test_backend_api.py::test_runtime_cloud_client_production_error_remains_strict_without_dev_hint tests/test_backend_batch.py::test_batch_run_ftir_similarity_path_returns_no_match_as_saved tests/test_reference_library.py::test_reference_library_manager_reports_not_configured_without_feed_source tests/test_reference_library.py::test_reference_library_manager_requires_explicit_feed_configuration -q` — 6 passed.
+- `python -m pytest -p no:cacheprovider` — 1116 passed, 9 skipped, warnings only.
 - `python -m pytest tests/test_ftir_dash_page.py tests/test_raman_dash_page.py tests/test_batch_runner.py -q` — 116 passed, 4 deprecation warnings from Dash `dash_table.DataTable`.
 - `python -m pytest -p no:cacheprovider tests/test_dsc_dash_page.py tests/test_batch_runner.py -q` — 67 passed, 2 deprecation warnings from Dash `dash_table.DataTable`.
 - `python -m pytest -p no:cacheprovider tests/test_analysis_page_components.py tests/test_xrd_dash_page.py tests/test_dsc_dash_page.py tests/test_dta_dash_page.py tests/test_tga_dash_page.py tests/test_ftir_dash_page.py tests/test_raman_dash_page.py -q` — 303 passed, 16 deprecation warnings from Plotly/Kaleido and Dash `dash_table.DataTable`.
@@ -57,6 +66,15 @@
 
 ## Next step
 
-- P2 parity-remediation backlog is complete for the current audit set. Next work should be a new slice, not further expansion of this polish pass.
+- Dash parity remediation and the follow-on runtime/library stabilization slice are complete. The next task should be a new scoped product or platform slice, not more parity cleanup.
+
+## Touched files
+
+- `tests/test_backend_api.py`
+- `tests/test_backend_batch.py`
+- `tests/test_reference_library.py`
+- `.ai/TASK.md`
+- `.ai/SESSION.md`
+- `.ai/DECISIONS.md`
 
 **Process defaults:** **`00-workflow.mdc`**.

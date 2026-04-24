@@ -2,7 +2,7 @@
 
 **Purpose:** One active migration slice — scope, goal, and acceptance only.
 
-## Status: active — Dash parity audit remediation backlog (2026-04-22)
+## Status: completed — Dash parity remediation + runtime/library stabilization (2026-04-24)
 
 ### Completed: P0-1 — Baseline method gap for DSC/DTA
 
@@ -32,6 +32,10 @@
 
 **Done (2026-04-24).** FTIR/Raman Dash pages now include setup-tab raw data quality panels and full UI-only spectral plot settings for legend, compact view, grid/crosshair, line/marker/export scale, trace visibility, reversed X axis, and locked X/Y ranges. TGA gained direct literature compare callback regression coverage. DSC gained loaded-preset dirty tracking and tests. Focused verification passed: `python -m pytest -p no:cacheprovider tests/test_analysis_page_components.py tests/test_ftir_dash_page.py tests/test_raman_dash_page.py tests/test_tga_dash_page.py tests/test_dsc_dash_page.py -q` → 189 passed.
 
+### Completed: Post-parity stabilization — runtime/library test isolation
+
+**Done (2026-04-24).** The remaining 6 full-suite failures after Dash parity closeout were traced to test-only runtime/library configuration leakage plus one under-provisioned FTIR fallback case, not to production behavior regressions. `tests/test_backend_api.py`, `tests/test_reference_library.py`, and `tests/test_backend_batch.py` now clear both primary and legacy library/runtime env vars, use tmp-path scoped `MATERIALSCOPE_HOME`, and reset the cloud client singleton where env changes must be re-read. The FTIR batch `no_match` regression now explicitly syncs fallback library state before asserting `spectral_no_match`. Verification passed: targeted 6-test slice green; `python -m pytest -p no:cacheprovider` → 1116 passed, 9 skipped.
+
 ---
 
 ### Remaining prioritized remediation backlog
@@ -49,9 +53,9 @@ Ordered by priority per the repo-wide parity audit:
 
 | # | Issue | Modalities | Effort | Key files |
 |---|---|---|---|---|
-| P1-3 | Shared boilerplate extraction UI/helper pass: history cards, preset cards, collapsible details, compatible quality/metadata helpers extracted; callback orchestration and incompatible modality-specific panels intentionally deferred | All | L | `dash_app/components/analysis_boilerplate.py` |
-| P1-4 | Exact duplicated coercion helpers extracted; DTA's non-negative helper variant with a `minimum` argument remains local because it is not an exact duplicate | All | S | `dash_app/components/processing_inputs.py` |
-| P1-7 | Regression tests for i18n leakage (done as part of P0-2+P0-3) | All | S | Done |
+| P1-3 | Shared boilerplate extraction UI/helper pass: history cards, preset cards, collapsible details, compatible quality/metadata helpers extracted; callback orchestration and incompatible modality-specific panels intentionally deferred | All | Done | `dash_app/components/analysis_boilerplate.py` |
+| P1-4 | Exact duplicated coercion helpers extracted; DTA's non-negative helper variant with a `minimum` argument remains local because it is not an exact duplicate | All | Done | `dash_app/components/processing_inputs.py` |
+| P1-7 | Regression tests for i18n leakage (done as part of P0-2+P0-3) | All | Done |  |
 
 #### P2 — cleanup, naming, polish
 

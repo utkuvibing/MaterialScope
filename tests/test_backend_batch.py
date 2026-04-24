@@ -1,12 +1,47 @@
 from __future__ import annotations
 
 import base64
+from pathlib import Path
 
 import numpy as np
+import pytest
 
 from fastapi.testclient import TestClient
 
 from backend.app import create_app
+from core.library_cloud_client import reset_library_cloud_client
+
+
+_LIBRARY_RUNTIME_ENV_KEYS = (
+    "MATERIALSCOPE_LIBRARY_FEED_URL",
+    "THERMOANALYZER_LIBRARY_FEED_URL",
+    "MATERIALSCOPE_LIBRARY_MIRROR_ROOT",
+    "THERMOANALYZER_LIBRARY_MIRROR_ROOT",
+    "MATERIALSCOPE_LIBRARY_CLOUD_URL",
+    "THERMOANALYZER_LIBRARY_CLOUD_URL",
+    "MATERIALSCOPE_LIBRARY_CLOUD_ENABLED",
+    "THERMOANALYZER_LIBRARY_CLOUD_ENABLED",
+    "MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH",
+    "THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH",
+    "MATERIALSCOPE_LIBRARY_HOSTED_ROOT",
+    "THERMOANALYZER_LIBRARY_HOSTED_ROOT",
+    "MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC",
+    "THERMOANALYZER_LIBRARY_ALLOW_FULL_PROVIDER_SYNC",
+    "MATERIALSCOPE_HOME",
+    "THERMOANALYZER_HOME",
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_library_runtime_env(monkeypatch, tmp_path):
+    for key in _LIBRARY_RUNTIME_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    home_root = tmp_path / "home"
+    home_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    reset_library_cloud_client()
+    yield
+    reset_library_cloud_client()
 
 
 def _headers() -> dict[str, str]:
@@ -155,14 +190,27 @@ def test_batch_summary_persists_in_project_roundtrip(thermal_dataset):
     assert len(compare_payload["batch_result_ids"]) == 2
 
 
-def test_batch_run_ftir_similarity_path_returns_no_match_as_saved(thermal_dataset):
+def test_batch_run_ftir_similarity_path_returns_no_match_as_saved(thermal_dataset, monkeypatch):
+    mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
     app = create_app(api_token="batch-token")
     client = TestClient(app)
+    sync_response = client.post(
+        "/library/sync",
+        headers=_headers(),
+        json={"force": True},
+    )
+    assert sync_response.status_code == 200
+    assert sync_response.json()["status"]["fallback_package_count"] >= 1
     project_id = client.post("/workspace/new", headers=_headers()).json()["project_id"]
 
     spectral_dataset = thermal_dataset.copy()
-    spectral_dataset.data["temperature"] = spectral_dataset.data["temperature"] * 5.0 + 400.0
-    spectral_dataset.data["signal"] = spectral_dataset.data["signal"].abs() + 0.02
+    axis = np.linspace(400.0, 2900.0, len(spectral_dataset.data))
+    spectral_dataset.data["temperature"] = axis
+    spectral_dataset.data["signal"] = -(
+        np.exp(-0.5 * ((axis - 1200.0) / 120.0) ** 2)
+        + 0.6 * np.exp(-0.5 * ((axis - 2000.0) / 150.0) ** 2)
+    )
 
     ftir_key = _import_dataset(client, project_id, spectral_dataset, "batch_ftir.csv", "FTIR")
     compare_set = client.post(

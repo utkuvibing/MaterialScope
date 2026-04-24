@@ -18,12 +18,44 @@ from fastapi.testclient import TestClient
 
 from backend.app import create_app
 from core.hosted_library import build_hosted_manifest, write_hosted_dataset
-from core.library_cloud_client import ManagedLibraryCloudClient
+from core.library_cloud_client import ManagedLibraryCloudClient, reset_library_cloud_client
 from core.project_io import PROJECT_EXTENSION, load_project_archive, save_project_archive
 from core.reference_library import get_reference_library_manager
 from tools.library_ingest.common import write_normalized_package
 from tools.library_ingest.schema import PackageSpec, normalized_spectral_entry, normalized_xrd_entry
 from utils.license_manager import APP_VERSION, create_signed_license, encode_license_key
+
+
+_LIBRARY_RUNTIME_ENV_KEYS = (
+    "MATERIALSCOPE_LIBRARY_FEED_URL",
+    "THERMOANALYZER_LIBRARY_FEED_URL",
+    "MATERIALSCOPE_LIBRARY_MIRROR_ROOT",
+    "THERMOANALYZER_LIBRARY_MIRROR_ROOT",
+    "MATERIALSCOPE_LIBRARY_CLOUD_URL",
+    "THERMOANALYZER_LIBRARY_CLOUD_URL",
+    "MATERIALSCOPE_LIBRARY_CLOUD_ENABLED",
+    "THERMOANALYZER_LIBRARY_CLOUD_ENABLED",
+    "MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH",
+    "THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH",
+    "MATERIALSCOPE_LIBRARY_HOSTED_ROOT",
+    "THERMOANALYZER_LIBRARY_HOSTED_ROOT",
+    "MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC",
+    "THERMOANALYZER_LIBRARY_ALLOW_FULL_PROVIDER_SYNC",
+    "MATERIALSCOPE_HOME",
+    "THERMOANALYZER_HOME",
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_library_runtime_env(monkeypatch, tmp_path):
+    for key in _LIBRARY_RUNTIME_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    home_root = tmp_path / "home"
+    home_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    reset_library_cloud_client()
+    yield
+    reset_library_cloud_client()
 
 
 def _auth_headers() -> dict[str, str]:

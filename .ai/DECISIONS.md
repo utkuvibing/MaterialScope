@@ -4,6 +4,22 @@
  
 ---
 
+## 2026-04-24 — Post-parity runtime/library stabilization stays test-local; production strictness is preserved
+
+**Decision:**
+
+1. The remaining post-parity failures in backend API, batch, and reference-library tests are treated as **test isolation problems first**, not as evidence that production runtime/library behavior should be relaxed.
+2. Test modules that exercise library/runtime configuration must clear **both** MaterialScope and legacy ThermoAnalyzer env vars and use tmp-path scoped homes so ambient `.env` or developer-machine state cannot change expectations.
+3. Where tests depend on env re-reads, they must reset the managed cloud client singleton instead of relying on stale process-global state.
+4. Tests that expect fallback-library semantics (for example FTIR `no_match`) must explicitly provision the fallback library state they depend on; they must not rely on whatever library availability the local machine happens to expose.
+5. Production strict cloud behavior remains unchanged: no broadening of dev override behavior, no weakening of cloud auth requirements, and no scientific matching threshold changes were made in this stabilization slice.
+
+**Reason:** The last 6 failures after Dash parity closeout were caused by test environment leakage and an under-specified fallback-library test case. Changing runtime behavior would have risked weakening strict production/cloud semantics to compensate for non-deterministic tests.
+
+**Consequence / future:** Future runtime/library tests should treat environment, local storage roots, and singleton reset behavior as part of the test fixture contract. If a real production runtime bug appears later, it should be fixed directly with a narrowly scoped repro rather than folded into general-purpose test bootstrapping.
+
+---
+
 ## 2026-04-24 — P2 completed: spectral display polish stays UI-only
 
 **Decision:**
