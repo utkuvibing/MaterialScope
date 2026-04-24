@@ -5,9 +5,17 @@
 ## Carryover
 
 - **Project:** MaterialScope
-- **Branch:** `web-dash-plotly-migration`
+- **Branch:** `main`
 
 ## What was done this session
+
+- **Dash-first Docker/Coolify runtime deployment update (completed 2026-04-24):**
+  - Updated `Dockerfile` from the legacy Streamlit container contract to the combined FastAPI + Dash runtime contract.
+  - Kept `python:3.12-slim`, Chromium, curl, and font dependencies for Plotly/Kaleido/report figure export compatibility.
+  - Set `MATERIALSCOPE_HOME=/data/materialscope`, created `/data/materialscope`, exposed port `8050`, and changed the container healthcheck to `/health` on `${PORT:-8050}`.
+  - Replaced the old two-process `backend.main` + `streamlit run app.py` startup script with a single `exec python -m dash_app.server --host 0.0.0.0 --port "${PORT:-8050}"`.
+  - Updated README Docker/Coolify instructions to document port `8050` / `PORT` and optional persistent volume `/data/materialscope`.
+  - Updated deployment contract tests so they guard against reintroducing Streamlit, backend sidecar startup, or the old `/_stcore/health` healthcheck.
 
 - **Post-parity stabilization — runtime/library test isolation (completed 2026-04-24):**
   - Traced the remaining 6 full-suite failures to test-only runtime/library env leakage plus one under-provisioned FTIR fallback case, not to production runtime behavior or scientific-analysis drift.
@@ -54,6 +62,8 @@
 
 ## What was verified
 
+- `python -m pytest -p no:cacheprovider tests/test_dash_server.py tests/test_deployment_contract.py tests/test_library_combined_bootstrap.py -q` — 9 passed, 1 skipped.
+- Docker local build/run verification was not executed because `docker` is not installed on this machine.
 - `python -m pytest -p no:cacheprovider tests/test_backend_api.py::test_library_status_stays_limited_when_hosted_catalog_is_empty tests/test_backend_api.py::test_runtime_cloud_client_stays_strict_without_dev_override tests/test_backend_api.py::test_runtime_cloud_client_production_error_remains_strict_without_dev_hint tests/test_backend_batch.py::test_batch_run_ftir_similarity_path_returns_no_match_as_saved tests/test_reference_library.py::test_reference_library_manager_reports_not_configured_without_feed_source tests/test_reference_library.py::test_reference_library_manager_requires_explicit_feed_configuration -q` — 6 passed.
 - `python -m pytest -p no:cacheprovider` — 1116 passed, 9 skipped, warnings only.
 - `python -m pytest tests/test_ftir_dash_page.py tests/test_raman_dash_page.py tests/test_batch_runner.py -q` — 116 passed, 4 deprecation warnings from Dash `dash_table.DataTable`.
@@ -66,13 +76,17 @@
 
 ## Next step
 
-- Dash parity remediation and the follow-on runtime/library stabilization slice are complete. The next task should be a new scoped product or platform slice, not more parity cleanup.
+- Dash parity remediation, runtime/library stabilization, and Dash-first Docker deployment update are complete. Next platform work should be a new scoped slice.
 
 ## Touched files
 
 - `tests/test_backend_api.py`
 - `tests/test_backend_batch.py`
 - `tests/test_reference_library.py`
+- `Dockerfile`
+- `docker/start.sh`
+- `README.md`
+- `tests/test_deployment_contract.py`
 - `.ai/TASK.md`
 - `.ai/SESSION.md`
 - `.ai/DECISIONS.md`

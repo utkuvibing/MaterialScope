@@ -5,8 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     BROWSER_PATH=/usr/bin/chromium \
     CHROME_BIN=/usr/bin/chromium \
-    STREAMLIT_SERVER_HEADLESS=true \
-    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+    MATERIALSCOPE_HOME=/data/materialscope
 
 WORKDIR /app
 
@@ -23,11 +22,12 @@ RUN pip install --upgrade pip \
 
 COPY . .
 
-RUN chmod +x /app/docker/start.sh
+RUN mkdir -p /data/materialscope \
+    && chmod +x /app/docker/start.sh
 
-EXPOSE 8501
+EXPOSE 8050
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD curl --fail http://127.0.0.1:8501/_stcore/health || exit 1
+    CMD curl --fail "http://127.0.0.1:${PORT:-8050}/health" || exit 1
 
 CMD ["/app/docker/start.sh"]

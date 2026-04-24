@@ -4,6 +4,22 @@
  
 ---
 
+## 2026-04-24 — Docker/Coolify runtime is Dash-first single-process
+
+**Decision:** The production Docker entrypoint now runs only the combined FastAPI + Dash server:
+
+```bash
+python -m dash_app.server --host 0.0.0.0 --port "${PORT:-8050}"
+```
+
+The container exposes `8050`, healthchecks `/health` on `${PORT:-8050}`, and uses `/data/materialscope` as the default persistent runtime state root via `MATERIALSCOPE_HOME`.
+
+**Reason:** The Dash/Plotly migration has made `dash_app.server` the primary runtime. Keeping Docker on the old two-process `backend.main` + Streamlit flow would create deployment drift, stale healthchecks, incorrect Coolify port configuration, and weaker signal handling.
+
+**Consequence / future:** Coolify should expose container port `8050` unless `PORT` is explicitly set, in which case Coolify must expose the same port. Do not reintroduce Streamlit or a backend sidecar as the Docker default; standalone backend and Streamlit remain legacy/development paths only.
+
+---
+
 ## 2026-04-24 — Post-parity runtime/library stabilization stays test-local; production strictness is preserved
 
 **Decision:**

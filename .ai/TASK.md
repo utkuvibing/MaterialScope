@@ -2,7 +2,7 @@
 
 **Purpose:** One active migration slice — scope, goal, and acceptance only.
 
-## Status: completed — Dash parity remediation + runtime/library stabilization (2026-04-24)
+## Status: completed — Dash parity remediation + runtime/library stabilization + Dash-first Docker deployment (2026-04-24)
 
 ### Completed: P0-1 — Baseline method gap for DSC/DTA
 
@@ -35,6 +35,10 @@
 ### Completed: Post-parity stabilization — runtime/library test isolation
 
 **Done (2026-04-24).** The remaining 6 full-suite failures after Dash parity closeout were traced to test-only runtime/library configuration leakage plus one under-provisioned FTIR fallback case, not to production behavior regressions. `tests/test_backend_api.py`, `tests/test_reference_library.py`, and `tests/test_backend_batch.py` now clear both primary and legacy library/runtime env vars, use tmp-path scoped `MATERIALSCOPE_HOME`, and reset the cloud client singleton where env changes must be re-read. The FTIR batch `no_match` regression now explicitly syncs fallback library state before asserting `spectral_no_match`. Verification passed: targeted 6-test slice green; `python -m pytest -p no:cacheprovider` → 1116 passed, 9 skipped.
+
+### Completed: Dash-first Docker / Coolify deployment
+
+**Done (2026-04-24).** Docker now starts the combined FastAPI + Dash runtime as a single process with `python -m dash_app.server --host 0.0.0.0 --port "${PORT:-8050}"`. The image exposes `8050`, healthchecks `/health` on `${PORT:-8050}`, keeps Chromium/curl/font dependencies, sets `MATERIALSCOPE_HOME=/data/materialscope`, and creates `/data/materialscope` for optional persistent runtime state. The old Docker default no longer starts `backend.main` separately, no longer runs Streamlit, and no longer probes `/_stcore/health`. README Coolify guidance now documents exposing `8050` or the configured `PORT`, plus optional `/data/materialscope` volume mounting. Verification passed: `python -m pytest -p no:cacheprovider tests/test_dash_server.py tests/test_deployment_contract.py tests/test_library_combined_bootstrap.py -q` → 9 passed, 1 skipped. Docker CLI was unavailable locally, so image build/run verification was not executed.
 
 ---
 

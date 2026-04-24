@@ -208,24 +208,23 @@ For local development, start the backend before using Streamlit workflows that r
 
 This repo includes a production `Dockerfile` for Coolify-style deployments.
 
-The current container profile starts:
+The container starts the combined Dash + FastAPI runtime as a single process:
 
-- the FastAPI backend on `127.0.0.1:8000`
-- the Streamlit UI (legacy path) on `0.0.0.0:8501`
-- Streamlit waits for backend health before the UI process starts
-
-Dash-first container startup remains a follow-up even though the combined local Dash server now covers all six analysis pages.
+```bash
+python -m dash_app.server --host 0.0.0.0 --port "${PORT:-8050}"
+```
 
 For web deployment:
 
 - deploy with `Dockerfile`
-- expose port `8501`
+- expose port `8050`, or set `PORT` and expose that same container port
 - set runtime secrets in Coolify instead of committing `.env`
+- optionally mount a persistent volume at `/data/materialscope` for runtime state; the image sets
+  `MATERIALSCOPE_HOME=/data/materialscope`
 
 Recommended runtime environment variables:
 
 ```dotenv
-MATERIALSCOPE_LIBRARY_CLOUD_URL=http://127.0.0.1:8000
 MATERIALSCOPE_LIBRARY_CLOUD_ENABLED=true
 MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC=false
 MATERIALSCOPE_ENABLE_PREVIEW_MODULES=false
@@ -238,12 +237,6 @@ MATERIALSCOPE_OPENALEX_API_KEY=
 Live literature compare (DSC, DTA, TGA, FTIR, XRD) uses the OpenAlex-backed provider by default. Set at least `MATERIALSCOPE_OPENALEX_EMAIL` (OpenAlex polite-pool `mailto`) or `MATERIALSCOPE_OPENALEX_API_KEY` so the backend can run real metadata queries. Without that, the API reports `provider_query_status=not_configured` unless `MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK=1` is enabled to merge the local fixture catalog.
 
 Set `MATERIALSCOPE_ENABLE_PREVIEW_MODULES=true` only in builds where kinetics and deconvolution should be exposed.
-
-Optional runtime tuning:
-
-```dotenv
-BACKEND_STARTUP_TIMEOUT_SECONDS=30
-```
 
 ---
 
@@ -265,7 +258,7 @@ MATERIALSCOPE_LIBRARY_HOSTED_ROOT=/home/you/materialscope/build/reference_librar
 MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC=false
 ```
 
-**Docker / split processes (backend on 8000, UI elsewhere):** keep the cloud URL on **8000**.
+**Split-process legacy development (backend on 8000, UI elsewhere):** keep the cloud URL on **8000**.
 
 ```dotenv
 MATERIALSCOPE_LIBRARY_CLOUD_URL=http://127.0.0.1:8000
