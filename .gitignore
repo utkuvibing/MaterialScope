@@ -19,6 +19,8 @@ env/
 .tmp_*/
 .tmp_demo_review/
 .pytest-temp/
+.pytest_temp/
+pytest_temp/
 .ptmp/
 .ptmp_full_*/
 .artifacts/
@@ -33,3 +35,4 @@ release/
 packaging/windows/build/
 packaging/windows/dist/
 desktop/electron/node_modules/
+python3
