@@ -1,4 +1,4 @@
-"""Project archive save/load helpers for ThermoAnalyzer."""
+"""Project archive save/load helpers for MaterialScope."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ from core.result_serialization import (
 from core.tga_processor import TGAResult
 
 
-PROJECT_EXTENSION = ".thermozip"
+PROJECT_EXTENSION = ".scopezip"
 APP_VERSION = "2.0"
 
 
@@ -169,7 +169,7 @@ def deserialize_project(
 
 
 def save_project_archive(session_state: Mapping[str, Any], app_version: str = APP_VERSION) -> bytes:
-    """Create a .thermozip archive from session state."""
+    """Create a .scopezip archive from session state."""
     payload = serialize_project(session_state, app_version=app_version)
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
@@ -186,7 +186,7 @@ def save_project_archive(session_state: Mapping[str, Any], app_version: str = AP
 
 
 def load_project_archive(source: Any) -> dict[str, Any]:
-    """Load a .thermozip archive and return session-state compatible data."""
+    """Load a project archive and return session-state compatible data."""
     archive_bytes = _read_bytes(source)
     archive_members: dict[str, bytes] = {}
     with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as archive:

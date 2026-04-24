@@ -1,4 +1,4 @@
-"""Report generation for normalized ThermoAnalyzer result records."""
+"""Report generation for normalized MaterialScope result records."""
 
 from __future__ import annotations
 
@@ -1980,8 +1980,8 @@ def _citation_lookup(record: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
 
 def _literature_demo_enabled() -> bool:
     token = (
-        os.getenv("THERMOANALYZER_INCLUDE_DEMO_LITERATURE")
-        or os.getenv("MATERIALSCOPE_INCLUDE_DEMO_LITERATURE")
+        os.getenv("MATERIALSCOPE_INCLUDE_DEMO_LITERATURE")
+        or os.getenv("THERMOANALYZER_INCLUDE_DEMO_LITERATURE")
         or ""
     )
     return token.strip().lower() in {"1", "true", "yes", "on"}
@@ -2954,7 +2954,17 @@ def _render_main_record_docx(
         used_figures = set()
     doc.add_paragraph(_record_title(record), style="Heading 2")
 
+    primary_key = _record_primary_figure_key(record)
     matched_figures = select_record_figures(record, figures, used_figures)
+    if not matched_figures and primary_key and figures is not None and primary_key not in figures:
+        doc.add_paragraph(
+            normalize_report_text(
+                f"Report figure unavailable: expected image for '{primary_key}' was not found in the export figure bundle."
+            ),
+            style="Intense Quote",
+        )
+        doc.add_paragraph()
+
     for index, (caption, png_bytes) in enumerate(matched_figures, start=1):
         doc.add_paragraph(normalize_report_text(f"Figure {index}: {caption}"), style="Heading 3")
         try:
@@ -3124,6 +3134,7 @@ def generate_docx_report(
     branding: Optional[dict] = None,
     comparison_workspace: Optional[dict] = None,
     license_state: Optional[dict] = None,
+    figure_export_warnings: Optional[list[str]] = None,
 ) -> bytes:
     """Generate a DOCX report from normalized stable/experimental records."""
     valid_results, issues = split_valid_results(results)
@@ -3197,6 +3208,19 @@ def generate_docx_report(
                 except Exception:
                     doc.add_paragraph("Figure could not be embedded and was skipped.")
                 doc.add_paragraph()
+
+    export_warn = [str(item) for item in (figure_export_warnings or []) if str(item).strip()]
+    if export_warn:
+        _add_heading(doc, "Figure Export Notes", level=1)
+        doc.add_paragraph(
+            normalize_report_text(
+                "The following issues were detected while assembling figures for this export. "
+                "Narrative sections may still be complete without embedded plots."
+            )
+        )
+        for line in export_warn:
+            doc.add_paragraph(normalize_report_text(line), style="List Bullet")
+        doc.add_paragraph()
 
     _add_heading(doc, "Stable Analyses", level=1)
     if not stable_results:
@@ -3524,6 +3548,7 @@ def generate_pdf_report(
     branding: Optional[dict] = None,
     comparison_workspace: Optional[dict] = None,
     license_state: Optional[dict] = None,
+    figure_export_warnings: Optional[list[str]] = None,
 ) -> bytes:
     """Generate a scientific-paper-style PDF report with hardened table layout."""
     try:  # pragma: no cover - optional dependency
@@ -3658,7 +3683,18 @@ def generate_pdf_report(
     def append_record_discussion(record: dict) -> None:
         add_heading(_paper_record_heading(record, datasets), level=2)
 
+        primary_key = _record_primary_figure_key(record)
         matched_figures = select_record_figures(record, figures, used_figures)
+        if not matched_figures and primary_key and figures is not None and primary_key not in figures:
+            story.append(
+                Paragraph(
+                    normalize_report_text(
+                        f"Report figure unavailable: expected image for '{primary_key}' was not found in the export figure bundle."
+                    ),
+                    body_style,
+                )
+            )
+            story.append(Spacer(1, 3))
         for index, (caption, png_bytes) in enumerate(matched_figures, start=1):
             try:
                 img_reader = ImageReader(io.BytesIO(png_bytes))
@@ -3779,6 +3815,21 @@ def generate_pdf_report(
             story.append(Paragraph(normalize_report_text(comparison_payload['excluded_note']), body_style))
         if comparison_payload.get('interpretation'):
             story.append(Paragraph(normalize_report_text(comparison_payload['interpretation']), body_style))
+        story.append(Spacer(1, 6))
+
+    export_warn = [str(item) for item in (figure_export_warnings or []) if str(item).strip()]
+    if export_warn:
+        add_heading('Figure export notes', level=2)
+        story.append(
+            Paragraph(
+                normalize_report_text(
+                    'Figure embedding issues were detected; narrative text may still be complete without plots.'
+                ),
+                body_style,
+            )
+        )
+        for line in export_warn:
+            story.append(Paragraph(normalize_report_text(f"• {line}"), body_style))
         story.append(Spacer(1, 6))
 
     if stable_results:

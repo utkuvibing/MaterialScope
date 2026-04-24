@@ -25,7 +25,7 @@ def _payload(analysis_type: str, workflow_template_id: str) -> dict:
 
 
 def test_preset_store_crud_roundtrip(tmp_path, monkeypatch):
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(tmp_path))
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(tmp_path))
 
     save_preset("XRD", "xrd-default", _payload("XRD", "xrd.general"))
     save_preset("XRD", "xrd-screening", _payload("XRD", "xrd.phase_screening"))
@@ -46,7 +46,7 @@ def test_preset_store_crud_roundtrip(tmp_path, monkeypatch):
 
 
 def test_preset_store_enforces_per_analysis_limit(tmp_path, monkeypatch):
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(tmp_path))
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(tmp_path))
 
     for index in range(MAX_PRESETS_PER_ANALYSIS):
         save_preset("DSC", f"preset-{index}", _payload("DSC", "dsc.general"))
@@ -57,7 +57,7 @@ def test_preset_store_enforces_per_analysis_limit(tmp_path, monkeypatch):
 
 
 def test_preset_store_same_name_updates_without_increasing_count(tmp_path, monkeypatch):
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(tmp_path))
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(tmp_path))
 
     for index in range(MAX_PRESETS_PER_ANALYSIS):
         save_preset("TGA", f"preset-{index}", _payload("TGA", "tga.general"))
@@ -72,7 +72,7 @@ def test_preset_store_same_name_updates_without_increasing_count(tmp_path, monke
 
 
 def test_preset_store_rejects_invalid_payload(tmp_path, monkeypatch):
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(tmp_path))
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(tmp_path))
 
     with pytest.raises(PresetStoreError):
         save_preset("FTIR", "bad", None)  # type: ignore[arg-type]

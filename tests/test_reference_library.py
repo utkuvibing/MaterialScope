@@ -5,12 +5,43 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.app import create_app
 from backend.library_feed import create_library_feed_app
 from core.reference_library import ReferenceLibraryManager, build_reference_library_package
 from utils.license_manager import APP_VERSION, create_signed_license, encode_license_key
+
+
+_LIBRARY_RUNTIME_ENV_KEYS = (
+    "MATERIALSCOPE_LIBRARY_FEED_URL",
+    "THERMOANALYZER_LIBRARY_FEED_URL",
+    "MATERIALSCOPE_LIBRARY_MIRROR_ROOT",
+    "THERMOANALYZER_LIBRARY_MIRROR_ROOT",
+    "MATERIALSCOPE_LIBRARY_CLOUD_URL",
+    "THERMOANALYZER_LIBRARY_CLOUD_URL",
+    "MATERIALSCOPE_LIBRARY_CLOUD_ENABLED",
+    "THERMOANALYZER_LIBRARY_CLOUD_ENABLED",
+    "MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH",
+    "THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH",
+    "MATERIALSCOPE_LIBRARY_HOSTED_ROOT",
+    "THERMOANALYZER_LIBRARY_HOSTED_ROOT",
+    "MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC",
+    "THERMOANALYZER_LIBRARY_ALLOW_FULL_PROVIDER_SYNC",
+    "MATERIALSCOPE_HOME",
+    "THERMOANALYZER_HOME",
+)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_library_runtime_env(monkeypatch, tmp_path):
+    for key in _LIBRARY_RUNTIME_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    home_root = tmp_path / "home"
+    home_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    yield
 
 
 def _manifest_etag(payload: dict) -> str:
@@ -180,7 +211,7 @@ def _write_xrd_mirror(root: Path) -> dict:
 
 
 def _auth_headers() -> dict[str, str]:
-    return {"X-TA-Token": "test-token"}
+    return {"X-MaterialScope-Token": "test-token"}
 
 
 def _license_header(*, sku: str, expires_at: datetime) -> str:
@@ -201,7 +232,7 @@ def test_reference_library_manager_syncs_catalog_from_file_mirror(tmp_path, monk
     home_root = tmp_path / "home"
     mirror_root = tmp_path / "mirror"
     _write_mirror(mirror_root)
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
 
     manager = ReferenceLibraryManager(feed_source=mirror_root.as_uri())
 
@@ -231,8 +262,8 @@ def test_reference_library_manager_syncs_catalog_from_file_mirror(tmp_path, monk
 
 
 def test_reference_library_manager_reports_not_configured_without_feed_source(monkeypatch):
-    monkeypatch.delenv("THERMOANALYZER_LIBRARY_FEED_URL", raising=False)
-    monkeypatch.delenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", raising=False)
+    monkeypatch.delenv("MATERIALSCOPE_LIBRARY_FEED_URL", raising=False)
+    monkeypatch.delenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", raising=False)
 
     manager = ReferenceLibraryManager()
 
@@ -246,7 +277,7 @@ def test_reference_library_manager_preserves_additive_xrd_metadata_and_d_spacing
     home_root = tmp_path / "home"
     mirror_root = tmp_path / "mirror"
     _write_xrd_mirror(mirror_root)
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
 
     manager = ReferenceLibraryManager(feed_source=mirror_root.as_uri())
     manager.sync(force=True)
@@ -267,9 +298,9 @@ def test_reference_library_manager_preserves_additive_xrd_metadata_and_d_spacing
 
 def test_reference_library_manager_requires_explicit_feed_configuration(tmp_path, monkeypatch):
     home_root = tmp_path / "home"
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
-    monkeypatch.delenv("THERMOANALYZER_LIBRARY_FEED_URL", raising=False)
-    monkeypatch.delenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", raising=False)
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    monkeypatch.delenv("MATERIALSCOPE_LIBRARY_FEED_URL", raising=False)
+    monkeypatch.delenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", raising=False)
 
     manager = ReferenceLibraryManager(root=home_root / "libraries")
     status = manager.status()
@@ -284,7 +315,7 @@ def test_reference_library_manager_falls_back_to_cached_read_only_when_feed_disa
     home_root = tmp_path / "home"
     mirror_root = tmp_path / "mirror"
     _write_mirror(mirror_root)
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
 
     online_manager = ReferenceLibraryManager(root=home_root / "libraries", feed_source=mirror_root.as_uri())
     online_manager.sync(force=True)
@@ -306,7 +337,7 @@ def test_reference_library_manager_rejects_sha256_mismatch(tmp_path, monkeypatch
     home_root = tmp_path / "home"
     mirror_root = tmp_path / "mirror"
     _write_mirror(mirror_root, bad_hash=True)
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
 
     manager = ReferenceLibraryManager(feed_source=mirror_root.as_uri())
 
@@ -322,8 +353,8 @@ def test_reference_library_manager_blocks_full_provider_packages_by_default(tmp_
     home_root = tmp_path / "home"
     mirror_root = tmp_path / "mirror"
     _write_mirror(mirror_root, delivery_tier="full_provider")
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
-    monkeypatch.delenv("THERMOANALYZER_LIBRARY_ALLOW_FULL_PROVIDER_SYNC", raising=False)
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    monkeypatch.delenv("MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC", raising=False)
 
     manager = ReferenceLibraryManager(feed_source=mirror_root.as_uri())
     status = manager.sync(force=True)
@@ -338,8 +369,8 @@ def test_reference_library_manager_allows_full_provider_packages_with_dev_overri
     home_root = tmp_path / "home"
     mirror_root = tmp_path / "mirror"
     _write_mirror(mirror_root, delivery_tier="full_provider")
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_ALLOW_FULL_PROVIDER_SYNC", "1")
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC", "1")
 
     manager = ReferenceLibraryManager(feed_source=mirror_root.as_uri())
     status = manager.sync(force=True)
@@ -352,9 +383,9 @@ def test_reference_library_manager_degrades_to_limited_fallback_after_cloud_fail
     home_root = tmp_path / "home"
     mirror_root = tmp_path / "mirror"
     _write_mirror(mirror_root)
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_ENABLED", "true")
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_ENABLED", "true")
 
     manager = ReferenceLibraryManager(feed_source=mirror_root.as_uri())
     manager.sync(force=True)
@@ -373,9 +404,9 @@ def test_reference_library_manager_zero_provider_lookup_never_enables_cloud_full
     home_root = tmp_path / "home"
     mirror_root = tmp_path / "mirror"
     _write_mirror(mirror_root)
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_CLOUD_ENABLED", "true")
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_ENABLED", "true")
 
     manager = ReferenceLibraryManager(feed_source=mirror_root.as_uri())
     manager.sync(force=True)
@@ -395,9 +426,9 @@ def test_library_feed_enforces_license_statuses(tmp_path):
     client = TestClient(app)
 
     now = datetime.now(UTC)
-    trial_header = {"X-TA-License": _license_header(sku="TRIAL", expires_at=now + timedelta(days=7))}
-    activated_header = {"X-TA-License": _license_header(sku="PRO", expires_at=now + timedelta(days=60))}
-    expired_header = {"X-TA-License": _license_header(sku="PRO", expires_at=now - timedelta(days=7))}
+    trial_header = {"X-MaterialScope-License": _license_header(sku="TRIAL", expires_at=now + timedelta(days=7))}
+    activated_header = {"X-MaterialScope-License": _license_header(sku="PRO", expires_at=now + timedelta(days=60))}
+    expired_header = {"X-MaterialScope-License": _license_header(sku="PRO", expires_at=now - timedelta(days=7))}
 
     manifest_response = client.get("/v1/library/manifest", headers=trial_header)
     assert manifest_response.status_code == 200
@@ -418,8 +449,8 @@ def test_backend_library_routes_surface_status_catalog_and_sync(tmp_path, monkey
     home_root = tmp_path / "home"
     mirror_root = tmp_path / "mirror"
     _write_mirror(mirror_root)
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
 
     app = create_app(api_token="test-token")
     client = TestClient(app)
@@ -448,8 +479,8 @@ def test_backend_library_routes_require_auth_token(tmp_path, monkeypatch):
     home_root = tmp_path / "home"
     mirror_root = tmp_path / "mirror"
     _write_mirror(mirror_root)
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(home_root))
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
 
     client = TestClient(create_app(api_token="test-token"))
     response = client.get("/library/status")

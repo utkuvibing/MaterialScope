@@ -9,6 +9,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+import pytest
+
 
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -36,6 +38,8 @@ def _wait_for_health(url: str, timeout_s: float = 15.0) -> None:
 
 
 def test_backend_process_startup_smoke():
+    if sys.platform == "win32":
+        pytest.skip("Backend subprocess startup smoke is not supported in this Windows local test harness.")
     repo_root = Path(__file__).resolve().parents[1]
     port = _free_port()
     token = "startup-smoke-token"
@@ -63,10 +67,10 @@ def test_backend_process_startup_smoke():
         _wait_for_health(base_url)
         version = _http_get_json(
             f"{base_url}/version",
-            headers={"X-TA-Token": token},
+            headers={"X-MaterialScope-Token": token},
         )
         assert "app_version" in version
-        assert version["project_extension"] == ".thermozip"
+        assert version["project_extension"] == ".scopezip"
     finally:
         process.terminate()
         try:

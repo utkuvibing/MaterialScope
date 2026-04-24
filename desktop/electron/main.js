@@ -7,7 +7,8 @@ const crypto = require("crypto");
 const { resolveBackendLaunch } = require("./backend_locator");
 const { createStartupDiagnostics } = require("./startup_diagnostics");
 
-const APP_DISPLAY_NAME = "ThermoAnalyzer Desktop";
+const APP_DISPLAY_NAME = "MaterialScope Desktop";
+const PROJECT_ARCHIVE_EXTENSIONS = ["scopezip", "thermozip"];
 
 let backendProcess = null;
 let backendPort = null;
@@ -132,7 +133,7 @@ function stopBackend() {
 }
 
 function createWindow() {
-  const iconFile = process.platform === "win32" ? "thermoanalyzer.ico" : "thermoanalyzer.png";
+  const iconFile = process.platform === "win32" ? "materialscope.ico" : "materialscope.png";
   const iconPath = path.join(__dirname, "assets", iconFile);
   const window = new BrowserWindow({
     title: APP_DISPLAY_NAME,
@@ -154,9 +155,9 @@ function createWindow() {
 
 ipcMain.handle("ta:pick-project-archive", async () => {
   const result = await dialog.showOpenDialog({
-    title: "Open ThermoAnalyzer Project",
+    title: "Open MaterialScope Project",
     properties: ["openFile"],
-    filters: [{ name: "ThermoAnalyzer Project", extensions: ["thermozip"] }],
+    filters: [{ name: "MaterialScope Project", extensions: PROJECT_ARCHIVE_EXTENSIONS }],
   });
 
   if (result.canceled || result.filePaths.length === 0) {
@@ -173,16 +174,16 @@ ipcMain.handle("ta:pick-project-archive", async () => {
 });
 
 ipcMain.handle("ta:save-project-archive", async (_event, payload) => {
-  const defaultName = (payload && payload.defaultName) || "thermoanalyzer_project.thermozip";
+  const defaultName = (payload && payload.defaultName) || "materialscope_project.scopezip";
   const archiveBase64 = payload && payload.archiveBase64;
   if (!archiveBase64) {
     throw new Error("Missing archiveBase64 payload.");
   }
 
   const result = await dialog.showSaveDialog({
-    title: "Save ThermoAnalyzer Project",
+    title: "Save MaterialScope Project",
     defaultPath: defaultName,
-    filters: [{ name: "ThermoAnalyzer Project", extensions: ["thermozip"] }],
+    filters: [{ name: "MaterialScope Project", extensions: PROJECT_ARCHIVE_EXTENSIONS }],
   });
   if (result.canceled || !result.filePath) {
     return { canceled: true };
@@ -194,7 +195,7 @@ ipcMain.handle("ta:save-project-archive", async (_event, payload) => {
 });
 
 ipcMain.handle("ta:save-generated-file", async (_event, payload) => {
-  const defaultName = (payload && payload.defaultName) || "thermoanalyzer_export.bin";
+  const defaultName = (payload && payload.defaultName) || "materialscope_export.bin";
   const artifactBase64 = payload && payload.artifactBase64;
   if (!artifactBase64) {
     throw new Error("Missing artifactBase64 payload.");
@@ -268,7 +269,7 @@ app.whenReady().then(async () => {
     dialog.showErrorBox(
       APP_DISPLAY_NAME,
       [
-        "ThermoAnalyzer Desktop could not start the local analysis backend.",
+        "MaterialScope Desktop could not start the local analysis backend.",
         "",
         `Reason: ${failure.reason}`,
         "",

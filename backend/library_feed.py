@@ -26,7 +26,7 @@ def _load_manifest(root: Path) -> dict:
 
 def _require_feed_license(x_ta_license: str | None) -> dict:
     if not x_ta_license:
-        raise HTTPException(status_code=401, detail="Missing X-TA-License header.")
+        raise HTTPException(status_code=401, detail="Missing X-MaterialScope-License (or legacy X-TA-License) header.")
     try:
         state = validate_encoded_license_key(
             x_ta_license,
@@ -43,18 +43,19 @@ def _require_feed_license(x_ta_license: str | None) -> dict:
 
 def create_library_feed_app(*, mirror_root: str | Path | None = None) -> FastAPI:
     root = _mirror_root(mirror_root)
-    app = FastAPI(title="ThermoAnalyzer Reference Library Feed", version="1")
+    app = FastAPI(title="MaterialScope Reference Library Feed", version="1")
 
     @app.get("/health")
     def health() -> dict[str, str]:
-        return {"status": "ok", "service": "thermoanalyzer-library-feed"}
+        return {"status": "ok", "service": "materialscope-library-feed"}
 
     @app.get("/v1/library/manifest")
     def manifest(
         if_none_match: str | None = Header(default=None, alias="If-None-Match"),
         x_ta_license: str | None = Header(default=None, alias="X-TA-License"),
+        x_materialscope_license: str | None = Header(default=None, alias="X-MaterialScope-License"),
     ) -> Response:
-        _require_feed_license(x_ta_license)
+        _require_feed_license(x_materialscope_license or x_ta_license)
         payload = _load_manifest(root)
         body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
         etag = str(payload.get("etag") or "")
@@ -66,8 +67,9 @@ def create_library_feed_app(*, mirror_root: str | Path | None = None) -> FastAPI
     def package_download(
         package_id: str,
         x_ta_license: str | None = Header(default=None, alias="X-TA-License"),
+        x_materialscope_license: str | None = Header(default=None, alias="X-MaterialScope-License"),
     ) -> Response:
-        _require_feed_license(x_ta_license)
+        _require_feed_license(x_materialscope_license or x_ta_license)
         manifest = _load_manifest(root)
         packages = manifest.get("packages") or []
         package = next((item for item in packages if str(item.get("package_id")) == str(package_id)), None)

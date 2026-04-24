@@ -29,7 +29,8 @@ def test_container_entrypoint_waits_for_backend_before_ui():
 
     assert 'timeout_seconds="${BACKEND_STARTUP_TIMEOUT_SECONDS:-30}"' in start_script
     assert 'curl --silent --fail http://127.0.0.1:8000/health' in start_script
-    assert ': "${THERMOANALYZER_LIBRARY_CLOUD_URL:=http://127.0.0.1:8000}"' in start_script
+    assert ': "${MATERIALSCOPE_LIBRARY_CLOUD_URL:=${THERMOANALYZER_LIBRARY_CLOUD_URL:-http://127.0.0.1:8000}}"' in start_script
+    assert 'export THERMOANALYZER_LIBRARY_CLOUD_URL="${THERMOANALYZER_LIBRARY_CLOUD_URL:-$MATERIALSCOPE_LIBRARY_CLOUD_URL}"' in start_script
     assert "python -m backend.main --host 127.0.0.1 --port 8000 &" in start_script
     assert "wait_for_backend" in start_script
     assert "streamlit run app.py --server.address=0.0.0.0 --server.port=8501 &" in start_script
@@ -38,9 +39,18 @@ def test_container_entrypoint_waits_for_backend_before_ui():
 def test_env_example_documents_runtime_surface_flags():
     env_example = _repo_text(".env.example")
 
-    assert "THERMOANALYZER_LIBRARY_CLOUD_URL=http://127.0.0.1:8000" in env_example
-    assert "THERMOANALYZER_LIBRARY_CLOUD_ENABLED=true" in env_example
-    assert "THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH=true" in env_example
+    assert (
+        "MATERIALSCOPE_LIBRARY_CLOUD_URL=http://127.0.0.1:8000" in env_example
+        or "THERMOANALYZER_LIBRARY_CLOUD_URL=http://127.0.0.1:8000" in env_example
+    )
+    assert (
+        "MATERIALSCOPE_LIBRARY_CLOUD_ENABLED=true" in env_example
+        or "THERMOANALYZER_LIBRARY_CLOUD_ENABLED=true" in env_example
+    )
+    assert (
+        "MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH=true" in env_example
+        or "THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH=true" in env_example
+    )
     assert "MATERIALSCOPE_ENABLE_PREVIEW_MODULES=false" in env_example
 
 

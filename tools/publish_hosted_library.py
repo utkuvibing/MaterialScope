@@ -50,7 +50,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--output-root",
         default=None,
-        help="Hosted output root. Defaults to THERMOANALYZER_LIBRARY_HOSTED_ROOT or build/reference_library_hosted.",
+        help="Hosted output root. Defaults to MATERIALSCOPE_LIBRARY_HOSTED_ROOT (legacy THERMOANALYZER_LIBRARY_HOSTED_ROOT) or build/reference_library_hosted.",
     )
     parser.add_argument(
         "--job-state-root",

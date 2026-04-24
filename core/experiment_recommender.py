@@ -154,6 +154,14 @@ def recommend_next_experiments(
                 "Validate component assignments against orthogonal measurements or known reference transitions.",
             ]
         )
+    elif analysis == "FTIR":
+        recommendations.extend(
+            [
+                "Expand or enable reference-library coverage (or add curated user references) before treating similarity scores as identification.",
+                "Revisit peak picking, baseline correction, and normalization settings, then rerun to confirm peak lists are stable.",
+                "Pair FTIR with orthogonal characterization when chemistry must be confirmed beyond spectral similarity.",
+            ]
+        )
 
     if mechanism_hint in {"conversion_dependent", "residue_forming"} and material_class not in {"hydrate_salt", "carbonate_inorganic", "hydroxide_to_oxide", "oxalate_multistage_inorganic"}:
         recommendations.append(

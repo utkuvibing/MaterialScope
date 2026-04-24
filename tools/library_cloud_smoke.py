@@ -1,7 +1,11 @@
 """Local dev smoke helper for M005 cloud-library endpoints.
 
-Usage:
+Usage (standalone FastAPI on 8000, e.g. Docker / ``python -m backend.main``):
+
     python tools/library_cloud_smoke.py --base-url http://127.0.0.1:8000
+
+Combined Dash + FastAPI (``python -m dash_app.server``, default port 8050) normally uses
+``http://127.0.0.1:8050`` (or set ``MATERIALSCOPE_LIBRARY_CLOUD_URL`` accordingly).
 """
 
 from __future__ import annotations
@@ -26,8 +30,16 @@ def _build_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run local dev smoke checks for M005 cloud-library endpoints.")
     parser.add_argument(
         "--base-url",
-        default=str(os.getenv("THERMOANALYZER_LIBRARY_CLOUD_URL") or "http://127.0.0.1:8000").strip(),
-        help="Backend base URL (default: THERMOANALYZER_LIBRARY_CLOUD_URL or http://127.0.0.1:8000).",
+        default=str(
+            os.getenv("MATERIALSCOPE_LIBRARY_CLOUD_URL")
+            or os.getenv("THERMOANALYZER_LIBRARY_CLOUD_URL")
+            or "http://127.0.0.1:8000"
+        ).strip(),
+        help=(
+            "Backend base URL (default: MATERIALSCOPE_LIBRARY_CLOUD_URL, "
+            "legacy THERMOANALYZER_LIBRARY_CLOUD_URL, or http://127.0.0.1:8000). "
+            "Use the same host/port as the process serving /v1/library/* (8050 for combined Dash dev)."
+        ),
     )
     parser.add_argument(
         "--timeout",
@@ -38,7 +50,10 @@ def _build_args() -> argparse.Namespace:
     parser.add_argument(
         "--license-key",
         default="",
-        help="Optional encoded X-TA-License value. If omitted, a local trial key is generated.",
+        help=(
+            "Optional encoded X-MaterialScope-License value "
+            "(legacy X-TA-License also accepted). If omitted, a local trial key is generated."
+        ),
     )
     return parser.parse_args()
 
@@ -54,7 +69,7 @@ def _generated_license_key() -> str:
     now = datetime.now(UTC)
     payload = create_signed_license(
         customer_name="Local Smoke User",
-        company_name="ThermoAnalyzer Dev",
+        company_name="MaterialScope Dev",
         sku="TRIAL",
         seat_count=1,
         issued_at=now,
@@ -103,7 +118,10 @@ def main() -> None:
             client,
             method="POST",
             path="/v1/library/auth/token",
-            headers={"X-TA-License": encoded_license},
+            headers={
+                "X-MaterialScope-License": encoded_license,
+                "X-TA-License": encoded_license,
+            },
         )
         access_token = str(auth_payload.get("access_token") or "").strip()
         if not access_token:

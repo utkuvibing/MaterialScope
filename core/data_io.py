@@ -427,6 +427,32 @@ def _xrd_source_hint_score(source_name: str | None) -> int:
     return score
 
 
+_SPECTRAL_SOURCE_HINTS = (
+    "ftir",
+    "ir_",
+    "infrared",
+    "raman",
+    "cnt",
+    "nanotube",
+    "graphene",
+)
+
+
+def _spectral_source_hint_score(source_name: str | None) -> tuple[int, str | None]:
+    """Return (bonus, suggested_type) based on source file name for spectral modalities."""
+    token = str(source_name or "").strip().lower()
+    if not token:
+        return 0, None
+    if "ftir" in token or "ir_" in token or "infrared" in token:
+        return 10, "FTIR"
+    if "raman" in token:
+        return 10, "RAMAN"
+    for hint in _SPECTRAL_SOURCE_HINTS:
+        if hint in token:
+            return 4, None
+    return 0, None
+
+
 def _looks_like_jcamp(source_name: str, text: str) -> bool:
     source_lower = str(source_name or "").lower()
     if source_lower.endswith(_JCAMP_EXTENSIONS):
@@ -751,6 +777,7 @@ def _find_header_and_data_rows(
         except ValueError:
             return False
 
+    first_data_row_index = None
     for i, line in enumerate(lines):
         if not line.strip():
             continue
@@ -766,15 +793,21 @@ def _find_header_and_data_rows(
             header_row = i
         else:
             # First predominantly numeric row is where data starts
+            first_data_row_index = i
             data_start_row = i
             break
     else:
         # All lines appear non-numeric — keep defaults
         pass
 
-    # Ensure data_start_row > header_row
-    if data_start_row <= header_row:
-        data_start_row = header_row + 1
+    # If the very first line is all-numeric, there is no header row
+    if first_data_row_index is not None and first_data_row_index == 0:
+        header_row = None
+
+    # Ensure data_start_row > (header_row or 0)
+    effective_header = header_row if header_row is not None else -1
+    if data_start_row <= effective_header:
+        data_start_row = effective_header + 1
 
     return header_row, data_start_row
 
@@ -784,13 +817,19 @@ def _find_header_and_data_rows(
 # ---------------------------------------------------------------------------
 
 
-def guess_columns(df: pd.DataFrame, source_name: str | None = None) -> dict:
+def guess_columns(df: pd.DataFrame, source_name: str | None = None, modality: str | None = None) -> dict:
     """Guess the role of each column using regex pattern matching.
 
     Parameters
     ----------
     df : pd.DataFrame
         Raw DataFrame whose column names have been stripped of whitespace.
+    source_name : str or None
+        File name for source-name heuristics.
+    modality : str or None
+        When provided, restricts signal detection to this modality's patterns
+        and narrows unit validation.  One of 'DSC', 'TGA', 'DTA', 'FTIR',
+        'RAMAN', 'XRD'.
 
     Returns
     -------
@@ -802,25 +841,39 @@ def guess_columns(df: pd.DataFrame, source_name: str | None = None) -> dict:
     """
     cols = list(df.columns)
     numeric_cols = {col for col in cols if _is_mostly_numeric(df[col])}
+
+    # Resolve modality spec when available
+    _modality_upper = str(modality).upper() if modality else None
+    _modality_spec = None
+    if _modality_upper:
+        try:
+            from core.modality_specs import get_modality_spec
+            _modality_spec = get_modality_spec(_modality_upper)
+        except ImportError:
+            pass
+
     result: Dict[str, Optional[str] | dict | list] = {
         "temperature": None,
         "time": None,
         "signal": None,
-        "data_type": "unknown",
+        "data_type": _modality_upper or "unknown",
         "warnings": [],
         "confidence": {},
         "candidates": {},
         "inferred_signal_unit": "unknown",
-        "inferred_analysis_type": "unknown",
+        "inferred_analysis_type": _modality_upper or "unknown",
     }
     warnings_list: list[str] = []
     confidence: dict[str, str] = {}
 
-    def _rank_role(pattern_key: str, *, prefer_monotonic: bool = False) -> list[dict[str, object]]:
+    def _rank_role(pattern_key: str, *, prefer_monotonic: bool = False, aliases: tuple[str, ...] | None = None) -> list[dict[str, object]]:
         ranked: list[dict[str, object]] = []
+        patterns_to_use = list(_PATTERNS.get(pattern_key, []))
+        if aliases:
+            patterns_to_use = list(aliases)
         for col in cols:
             score = 0
-            pattern_hits = _count_pattern_hits(col, _PATTERNS[pattern_key])
+            pattern_hits = sum(1 for pat in patterns_to_use if re.search(pat, str(col)))
             if pattern_hits:
                 score += 10 + pattern_hits * 2
             header_lower = str(col).lower()
@@ -837,8 +890,11 @@ def guess_columns(df: pd.DataFrame, source_name: str | None = None) -> dict:
         return ranked
 
     xrd_source_bonus = _xrd_source_hint_score(source_name)
+    spectral_source_bonus, spectral_source_suggested_type = _spectral_source_hint_score(source_name)
 
-    temp_ranked = _rank_role("temperature", prefer_monotonic=True)
+    # Use modality-specific x_aliases for axis detection when available
+    _axis_aliases = _modality_spec["x_aliases"] if _modality_spec else None
+    temp_ranked = _rank_role("temperature", prefer_monotonic=True, aliases=_axis_aliases)
     time_ranked = _rank_role("time", prefer_monotonic=True)
     result["candidates"]["temperature"] = temp_ranked[:3]
     result["candidates"]["time"] = time_ranked[:3]
@@ -883,8 +939,11 @@ def guess_columns(df: pd.DataFrame, source_name: str | None = None) -> dict:
         confidence["time"] = "review" if any(int(item["score"]) > 0 for item in time_ranked) else "medium"
 
     assigned = {result["temperature"], result["time"]}
-    signal_candidates: dict[str, list[dict[str, object]]] = {analysis_type: [] for analysis_type in _ANALYSIS_TYPE_KEYS}
-    for analysis_type in _ANALYSIS_TYPE_KEYS:
+
+    # When modality is specified, only evaluate that modality's signal candidates.
+    _eval_types = [_modality_upper] if _modality_upper else list(_ANALYSIS_TYPE_KEYS)
+    signal_candidates: dict[str, list[dict[str, object]]] = {analysis_type: [] for analysis_type in _eval_types}
+    for analysis_type in _eval_types:
         pattern_key = _TYPE_PATTERN_KEYS[analysis_type]
         for col in cols:
             if col in assigned:
@@ -946,20 +1005,62 @@ def guess_columns(df: pd.DataFrame, source_name: str | None = None) -> dict:
         if ranked:
             top = ranked[0]
             score = int(top["score"])
-            if analysis_type == "XRD":
-                score += xrd_source_bonus
-                if _is_xrd_axis_hint(str(result.get("temperature") or "")):
-                    score += 12
+            # Skip source bonuses when modality is explicitly set -- the user already decided.
+            if not _modality_upper:
+                if analysis_type == "XRD":
+                    score += xrd_source_bonus
+                    if _is_xrd_axis_hint(str(result.get("temperature") or "")):
+                        score += 12
+                if analysis_type in {"FTIR", "RAMAN"} and spectral_source_bonus > 0:
+                    if spectral_source_suggested_type and analysis_type == spectral_source_suggested_type:
+                        score += spectral_source_bonus
+                    elif not spectral_source_suggested_type:
+                        score += spectral_source_bonus
             type_scores.append((analysis_type, score, str(top["column"]), str(top["signal_unit"])))
     type_scores.sort(key=lambda item: (item[1], item[0]), reverse=True)
 
-    if type_scores and type_scores[0][1] > 0:
+    # When modality is explicit, skip ambiguity detection across types.
+    if _modality_upper:
+        if type_scores and type_scores[0][1] > 0:
+            best_type, best_score, best_col, best_unit = type_scores[0]
+            result["signal"] = best_col
+            result["inferred_signal_unit"] = best_unit or "unknown"
+            confidence["signal"] = "high" if best_score >= 10 else "medium"
+            if best_score < 10:
+                warnings_list.append(
+                    f"{_modality_upper} signal column '{best_col}' had low pattern match score ({best_score}); "
+                    "verify the column mapping."
+                )
+        else:
+            # Fallback: pick best numeric column not yet assigned
+            fallback_signal = None
+            for col in cols:
+                if col not in assigned and col in numeric_cols:
+                    fallback_signal = col
+                    break
+            result["signal"] = fallback_signal
+            result["inferred_signal_unit"] = _extract_unit(fallback_signal, "signal") if fallback_signal else "unknown"
+            confidence["signal"] = "review"
+            if fallback_signal is not None:
+                warnings_list.append(
+                    f"{_modality_upper} signal column was inferred by numeric fallback as '{fallback_signal}'; verify the column mapping."
+                )
+            else:
+                warnings_list.append(
+                    f"No numeric column could be identified for {_modality_upper} signal; manual column mapping required."
+                )
+        result["inferred_analysis_type"] = _modality_upper
+        result["data_type"] = _modality_upper
+        confidence["data_type"] = "high"
+    elif type_scores and type_scores[0][1] > 0:
         best_type, best_score, best_col, best_unit = type_scores[0]
         ambiguous_type = False
         ambiguity_margin = 4
         if best_type == "XRD" and (
             _is_xrd_axis_hint(str(result.get("temperature") or "")) or xrd_source_bonus >= 8
         ):
+            ambiguity_margin = 1
+        if best_type in {"FTIR", "RAMAN"} and spectral_source_bonus >= 10:
             ambiguity_margin = 1
         if len(type_scores) > 1 and (type_scores[1][1] >= best_score - ambiguity_margin and type_scores[1][1] > 0):
             ambiguous_type = True
@@ -1268,7 +1369,7 @@ def read_thermal_data(
     import_confidence = "high"
     inferred_analysis_type = "unknown"
     if column_mapping is None:
-        guessed = guess_columns(raw_df, source_name=source_name)
+        guessed = guess_columns(raw_df, source_name=source_name, modality=data_type)
         col_map = {
             k: v
             for k, v in guessed.items()
@@ -1306,6 +1407,15 @@ def read_thermal_data(
     keep_cols["signal"] = col_map["signal"]
     if "time" in col_map:
         keep_cols["time"] = col_map["time"]
+
+    # Validate that mapped columns actually exist in the DataFrame
+    actual_columns = set(raw_df.columns)
+    missing = [v for v in keep_cols.values() if v not in actual_columns]
+    if missing:
+        raise ValueError(
+            f"Column mapping references column(s) {missing} that do not exist in the file. "
+            f"Available columns: {list(actual_columns)}."
+        )
 
     # Build output DataFrame preserving all original columns
     out_df = raw_df.copy()
@@ -1502,11 +1612,12 @@ def _load_text(
 
     # pandas read_csv from StringIO
     try:
-        # Try with detected header row
+        # When header_row is None the file has no header row
+        pd_header = header_row if header_row is not None else None
         df = pd.read_csv(
             string_buf,
             sep=delimiter,
-            header=header_row,
+            header=pd_header,
             decimal=decimal_sep,
             engine="python",
             skip_blank_lines=True,
@@ -1519,7 +1630,7 @@ def _load_text(
             df_alt = pd.read_csv(
                 string_buf,
                 sep=r"\s+",
-                header=header_row,
+                header=pd_header,
                 decimal=decimal_sep,
                 engine="python",
                 skip_blank_lines=True,
@@ -1530,6 +1641,11 @@ def _load_text(
 
     except Exception as exc:
         raise ValueError(f"Failed to parse text file: {exc}") from exc
+
+    # Rename integer column indices to human-readable "Column N" names,
+    # consistent with the import preview in the Dash UI.
+    if all(isinstance(col, int) for col in df.columns):
+        df.columns = [f"Column {index + 1}" for index in range(len(df.columns))]
 
     return df, source_name
 

@@ -808,7 +808,8 @@ def _backend_base_url(base_url: str | None = None) -> str:
     if explicit:
         return explicit.rstrip("/")
     env_value = (
-        os.getenv("THERMOANALYZER_BACKEND_URL")
+        os.getenv("MATERIALSCOPE_BACKEND_URL")
+        or os.getenv("THERMOANALYZER_BACKEND_URL")
         or os.getenv("TA_BACKEND_URL")
         or DEFAULT_BACKEND_URL
     )
@@ -820,7 +821,8 @@ def _backend_token(api_token: str | None = None) -> str:
     if explicit:
         return explicit
     return _clean_text(
-        os.getenv("THERMOANALYZER_BACKEND_TOKEN")
+        os.getenv("MATERIALSCOPE_BACKEND_TOKEN")
+        or os.getenv("THERMOANALYZER_BACKEND_TOKEN")
         or os.getenv("TA_BACKEND_TOKEN")
         or ""
     )
@@ -830,6 +832,7 @@ def _backend_headers(api_token: str | None = None) -> dict[str, str]:
     headers = {"Content-Type": "application/json"}
     token = _backend_token(api_token)
     if token:
+        headers["X-MaterialScope-Token"] = token
         headers["X-TA-Token"] = token
     return headers
 

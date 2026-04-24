@@ -2,7 +2,7 @@ const assert = require("assert");
 const { resolveBackendLaunch } = require("../backend_locator");
 
 function testDevelopmentDefaultPython() {
-  const repoRoot = "C:\\repo\\thermoanalyzer";
+  const repoRoot = "C:\\repo\\materialscope";
   const launch = resolveBackendLaunch({
     isPackaged: false,
     env: {},
@@ -21,24 +21,24 @@ function testDevelopmentOverridePython() {
     isPackaged: false,
     env: { TA_PYTHON: "C:\\Python312\\python.exe" },
     platform: "win32",
-    repoRoot: "C:\\repo\\thermoanalyzer",
+    repoRoot: "C:\\repo\\materialscope",
     resourcesPath: "C:\\resources",
   });
   assert.strictEqual(launch.command, "C:\\Python312\\python.exe");
 }
 
 function testPackagedResourcesPathResolution() {
-  const existing = new Set(["C:\\app\\resources\\backend\\thermoanalyzer_backend.exe"]);
+  const existing = new Set(["C:\\app\\resources\\backend\\materialscope_backend.exe"]);
   const launch = resolveBackendLaunch({
     isPackaged: true,
     env: {},
     platform: "win32",
-    repoRoot: "C:\\repo\\thermoanalyzer",
+    repoRoot: "C:\\repo\\materialscope",
     resourcesPath: "C:\\app\\resources",
     existsSync: (candidate) => existing.has(candidate),
   });
   assert.strictEqual(launch.mode, "packaged");
-  assert.strictEqual(launch.command, "C:\\app\\resources\\backend\\thermoanalyzer_backend.exe");
+  assert.strictEqual(launch.command, "C:\\app\\resources\\backend\\materialscope_backend.exe");
   assert.strictEqual(launch.args.length, 0);
 }
 
@@ -47,7 +47,7 @@ function testPackagedOverrideResolution() {
     isPackaged: true,
     env: { TA_BACKEND_EXE: "D:\\debug\\custom_backend.exe" },
     platform: "win32",
-    repoRoot: "C:\\repo\\thermoanalyzer",
+    repoRoot: "C:\\repo\\materialscope",
     resourcesPath: "C:\\app\\resources",
     existsSync: () => true,
   });
@@ -61,7 +61,7 @@ function testPackagedMissingExecutableThrows() {
       isPackaged: true,
       env: {},
       platform: "win32",
-      repoRoot: "C:\\repo\\thermoanalyzer",
+      repoRoot: "C:\\repo\\materialscope",
       resourcesPath: "C:\\app\\resources",
       existsSync: () => false,
     });

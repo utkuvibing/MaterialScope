@@ -18,10 +18,14 @@ from utils.license_manager import (
 )
 
 
-CLOUD_URL_ENV = "THERMOANALYZER_LIBRARY_CLOUD_URL"
-CLOUD_ENABLED_ENV = "THERMOANALYZER_LIBRARY_CLOUD_ENABLED"
-DEV_CLOUD_AUTH_ENV = "THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH"
-LIBRARY_LICENSE_HEADER = "X-TA-License"
+CLOUD_URL_ENV = "MATERIALSCOPE_LIBRARY_CLOUD_URL"
+CLOUD_URL_ENV_LEGACY = "THERMOANALYZER_LIBRARY_CLOUD_URL"
+CLOUD_ENABLED_ENV = "MATERIALSCOPE_LIBRARY_CLOUD_ENABLED"
+CLOUD_ENABLED_ENV_LEGACY = "THERMOANALYZER_LIBRARY_CLOUD_ENABLED"
+DEV_CLOUD_AUTH_ENV = "MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH"
+DEV_CLOUD_AUTH_ENV_LEGACY = "THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH"
+LIBRARY_LICENSE_HEADER = "X-MaterialScope-License"
+LIBRARY_LICENSE_HEADER_LEGACY = "X-TA-License"
 AUTHORIZATION_HEADER = "Authorization"
 HEALTH_PATH = "/health"
 TOKEN_SKEW_SECONDS = 20
@@ -45,11 +49,15 @@ def _parse_expiry_epoch(value: Any) -> float:
     return float(parsed.timestamp())
 
 
+def _env_value(primary: str, legacy: str, default: str = "") -> str:
+    return str(os.getenv(primary, "") or os.getenv(legacy, "") or default)
+
+
 class ManagedLibraryCloudClient:
-    """HTTP client for ThermoAnalyzer-owned managed library endpoints."""
+    """HTTP client for MaterialScope-managed library endpoints."""
 
     def __init__(self, *, base_url: str | None = None, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS) -> None:
-        self.base_url = str(base_url or os.getenv(CLOUD_URL_ENV, "")).strip().rstrip("/")
+        self.base_url = str(base_url or _env_value(CLOUD_URL_ENV, CLOUD_URL_ENV_LEGACY)).strip().rstrip("/")
         self.timeout_seconds = float(timeout_seconds)
         self._token_value = ""
         self._token_expires_epoch = 0.0
@@ -62,7 +70,7 @@ class ManagedLibraryCloudClient:
     def configured(self) -> bool:
         if not self.base_url:
             return False
-        enabled_override = os.getenv(CLOUD_ENABLED_ENV, "").strip()
+        enabled_override = _env_value(CLOUD_ENABLED_ENV, CLOUD_ENABLED_ENV_LEGACY).strip()
         if not enabled_override:
             return True
         return _truthy(enabled_override)
@@ -84,11 +92,11 @@ class ManagedLibraryCloudClient:
         return self._last_auth_mode
 
     def _dev_auth_override_enabled(self) -> bool:
-        return _truthy(os.getenv(DEV_CLOUD_AUTH_ENV, ""))
+        return _truthy(_env_value(DEV_CLOUD_AUTH_ENV, DEV_CLOUD_AUTH_ENV_LEGACY))
 
     @property
     def enabled_by_env(self) -> bool:
-        enabled_override = os.getenv(CLOUD_ENABLED_ENV, "").strip()
+        enabled_override = _env_value(CLOUD_ENABLED_ENV, CLOUD_ENABLED_ENV_LEGACY).strip()
         if not enabled_override:
             return True
         return _truthy(enabled_override)
@@ -219,7 +227,7 @@ class ManagedLibraryCloudClient:
         if not self.configured:
             kind = "cloud_disabled" if self.base_url and not self.enabled_by_env else "cloud_not_configured"
             message = (
-                "Cloud library access is disabled by THERMOANALYZER_LIBRARY_CLOUD_ENABLED."
+                "Cloud library access is disabled by MATERIALSCOPE_LIBRARY_CLOUD_ENABLED."
                 if kind == "cloud_disabled"
                 else "Cloud library URL is not configured."
             )
@@ -235,7 +243,10 @@ class ManagedLibraryCloudClient:
         try:
             response = httpx.post(
                 f"{self.base_url}/v1/library/auth/token",
-                headers={LIBRARY_LICENSE_HEADER: encoded},
+                headers={
+                    LIBRARY_LICENSE_HEADER: encoded,
+                    LIBRARY_LICENSE_HEADER_LEGACY: encoded,
+                },
                 timeout=self.timeout_seconds,
             )
             response.raise_for_status()
@@ -270,7 +281,7 @@ class ManagedLibraryCloudClient:
         if not self.configured:
             kind = "cloud_disabled" if self.base_url and not self.enabled_by_env else "cloud_not_configured"
             message = (
-                "Cloud library access is disabled by THERMOANALYZER_LIBRARY_CLOUD_ENABLED."
+                "Cloud library access is disabled by MATERIALSCOPE_LIBRARY_CLOUD_ENABLED."
                 if kind == "cloud_disabled"
                 else "Cloud library URL is not configured."
             )
@@ -314,7 +325,7 @@ class ManagedLibraryCloudClient:
             return {
                 "url": self.base_url,
                 "state": "disabled",
-                "message": "Cloud library access is disabled by THERMOANALYZER_LIBRARY_CLOUD_ENABLED.",
+                "message": "Cloud library access is disabled by MATERIALSCOPE_LIBRARY_CLOUD_ENABLED.",
             }
         try:
             response = httpx.get(f"{self.base_url}{HEALTH_PATH}", timeout=self.timeout_seconds)
@@ -372,9 +383,9 @@ _CLIENT_INSTANCE: ManagedLibraryCloudClient | None = None
 
 def _client_env_signature() -> tuple[str, str, str]:
     return (
-        str(os.getenv(CLOUD_URL_ENV, "")).strip().rstrip("/"),
-        str(os.getenv(CLOUD_ENABLED_ENV, "")).strip(),
-        str(os.getenv(DEV_CLOUD_AUTH_ENV, "")).strip(),
+        _env_value(CLOUD_URL_ENV, CLOUD_URL_ENV_LEGACY).strip().rstrip("/"),
+        _env_value(CLOUD_ENABLED_ENV, CLOUD_ENABLED_ENV_LEGACY).strip(),
+        _env_value(DEV_CLOUD_AUTH_ENV, DEV_CLOUD_AUTH_ENV_LEGACY).strip(),
     )
 
 
@@ -383,3 +394,9 @@ def get_library_cloud_client() -> ManagedLibraryCloudClient:
     if _CLIENT_INSTANCE is None or getattr(_CLIENT_INSTANCE, "_env_signature", ()) != _client_env_signature():
         _CLIENT_INSTANCE = ManagedLibraryCloudClient()
     return _CLIENT_INSTANCE
+
+
+def reset_library_cloud_client() -> None:
+    """Drop the process-wide client singleton (used after mutating cloud URL env vars)."""
+    global _CLIENT_INSTANCE
+    _CLIENT_INSTANCE = None

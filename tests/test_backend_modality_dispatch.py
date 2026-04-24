@@ -9,7 +9,7 @@ from core.modalities import stable_analysis_types
 
 
 def _headers() -> dict[str, str]:
-    return {"X-TA-Token": "dispatch-token"}
+    return {"X-MaterialScope-Token": "dispatch-token"}
 
 
 def _as_b64(raw: bytes) -> str:

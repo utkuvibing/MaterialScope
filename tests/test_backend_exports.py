@@ -8,14 +8,20 @@ import pandas as pd
 from fastapi.testclient import TestClient
 
 from backend.app import create_app
-from backend.exports import build_export_preparation, generate_report_docx_artifact, generate_results_csv_artifact
+from backend.exports import (
+    build_export_preparation,
+    collect_figure_export_warnings,
+    generate_report_docx_artifact,
+    generate_report_pdf_artifact,
+    generate_results_csv_artifact,
+)
 from core.data_io import ThermalDataset
 from core.processing_schema import ensure_processing_payload, update_method_context, update_processing_step
 from core.result_serialization import serialize_spectral_result, serialize_xrd_result
 
 
 def _headers() -> dict[str, str]:
-    return {"X-TA-Token": "exports-token"}
+    return {"X-MaterialScope-Token": "exports-token"}
 
 
 def _as_b64(raw: bytes) -> str:
@@ -107,9 +113,130 @@ def test_export_docx_generation_returns_docx_bytes(thermal_dataset):
     payload = docx_export.json()
     assert payload["output_type"] == "report_docx"
     assert payload["included_result_ids"] == [result_id]
+    assert isinstance(payload.get("export_warnings"), list)
     assert payload["file_name"].endswith(".docx")
     docx_bytes = base64.b64decode(payload["artifact_base64"].encode("ascii"))
     assert docx_bytes[:4] == b"PK\x03\x04"
+
+
+def test_export_results_xlsx_generation_returns_workbook(thermal_dataset):
+    app = create_app(api_token="exports-token")
+    client = TestClient(app)
+    project_id, result_id = _seed_workspace_with_result(client, thermal_dataset)
+
+    xlsx_export = client.post(
+        f"/workspace/{project_id}/exports/results-xlsx",
+        headers=_headers(),
+        json={"selected_result_ids": [result_id]},
+    )
+    assert xlsx_export.status_code == 200
+    payload = xlsx_export.json()
+    assert payload["output_type"] == "results_xlsx"
+    assert payload["included_result_ids"] == [result_id]
+    workbook_bytes = base64.b64decode(payload["artifact_base64"].encode("ascii"))
+
+    workbook = pd.ExcelFile(io.BytesIO(workbook_bytes))
+    assert "Results" in workbook.sheet_names
+    results_sheet = pd.read_excel(io.BytesIO(workbook_bytes), sheet_name="Results")
+    assert result_id in results_sheet["result_id"].astype(str).tolist()
+
+
+def test_export_report_pdf_generation_returns_pdf_bytes(thermal_dataset):
+    app = create_app(api_token="exports-token")
+    client = TestClient(app)
+    project_id, result_id = _seed_workspace_with_result(client, thermal_dataset)
+
+    pdf_export = client.post(
+        f"/workspace/{project_id}/exports/report-pdf",
+        headers=_headers(),
+        json={"selected_result_ids": [result_id], "include_figures": True},
+    )
+    assert pdf_export.status_code == 200
+    payload = pdf_export.json()
+    assert payload["output_type"] == "report_pdf"
+    assert payload["included_result_ids"] == [result_id]
+    pdf_bytes = base64.b64decode(payload["artifact_base64"].encode("ascii"))
+    assert pdf_bytes[:4] == b"%PDF"
+
+
+def test_collect_figure_export_warnings_surface_failed_capture_and_missing_bytes():
+    for analysis_type in ("DSC", "TGA"):
+        rid = f"{analysis_type.lower()}_res_1"
+        label = f"{analysis_type} Analysis - seed_ds"
+        state: dict = {"figures": {}}
+        selected = {
+            rid: {
+                "id": rid,
+                "analysis_type": analysis_type,
+                "artifacts": {
+                    "report_figure_key": label,
+                    "report_figure_status": "failed",
+                    "report_figure_error": "png_render_failed:kaleido_missing",
+                },
+            }
+        }
+        warnings = collect_figure_export_warnings(
+            state,
+            selected,
+            include_figures=True,
+            figures_bundle={},
+        )
+        assert any("png_render_failed:kaleido_missing" in w for w in warnings)
+        assert any(label in w for w in warnings)
+        assert any(analysis_type in w for w in warnings)
+
+
+def test_collect_figure_export_warnings_tga_missing_png_bytes_in_workspace():
+    rid = "tga_res_missing_png"
+    label = "TGA Analysis - seed_tga_ds"
+    state: dict = {"figures": {}}
+    selected = {
+        rid: {
+            "id": rid,
+            "analysis_type": "TGA",
+            "artifacts": {"report_figure_key": label, "report_figure_status": "captured"},
+        }
+    }
+    warnings = collect_figure_export_warnings(
+        state,
+        selected,
+        include_figures=True,
+        figures_bundle={},
+    )
+    assert warnings
+    assert any("TGA" in w for w in warnings)
+    assert any(label in w for w in warnings)
+
+
+def test_report_exports_include_saved_figure_payloads(monkeypatch):
+    import backend.exports as exports_module
+
+    state, result_id = _build_spectral_export_state()
+    figure_key = "FTIR Analysis - ftir_export_seed"
+    figure_bytes = b"\x89PNG\r\n\x1a\nSAVED"
+    state["results"][result_id]["artifacts"] = {"figure_keys": [figure_key]}
+    state["figures"] = {figure_key: figure_bytes}
+
+    observed: dict[str, dict[str, bytes] | None] = {}
+
+    def _fake_docx_report(**kwargs):
+        observed["docx"] = kwargs.get("figures")
+        return b"DOCX-BYTES"
+
+    def _fake_pdf_report(**kwargs):
+        observed["pdf"] = kwargs.get("figures")
+        return b"%PDF-1.4\nFAKE"
+
+    monkeypatch.setattr(exports_module, "generate_docx_report", _fake_docx_report)
+    monkeypatch.setattr(exports_module, "generate_pdf_report", _fake_pdf_report)
+
+    docx_artifact = generate_report_docx_artifact(state, selected_result_ids=[result_id], include_figures=True)
+    pdf_artifact = generate_report_pdf_artifact(state, selected_result_ids=[result_id], include_figures=True)
+
+    assert observed["docx"] == {figure_key: figure_bytes}
+    assert observed["pdf"] == {figure_key: figure_bytes}
+    assert base64.b64decode(docx_artifact["artifact_base64"].encode("ascii")) == b"DOCX-BYTES"
+    assert base64.b64decode(pdf_artifact["artifact_base64"].encode("ascii")) == b"%PDF-1.4\nFAKE"
 
 
 def test_export_docx_generation_keeps_dta_in_stable_partition(thermal_dataset):

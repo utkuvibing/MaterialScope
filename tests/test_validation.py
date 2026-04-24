@@ -382,6 +382,74 @@ def test_validate_ftir_allows_descending_wavenumber_axis_outside_thermal_bounds(
     assert not any("thermal-analysis bounds" in issue.lower() for issue in summary["issues"])
 
 
+def test_validate_ftir_allows_duplicate_wavenumbers_when_axis_is_otherwise_monotonic():
+    dataset = _make_spectral_dataset(
+        analysis_type="FTIR",
+        axis_values=[3999.8, 3200.0, 1800.0, 1800.0, 900.0, 500.0],
+        signal_values=[0.02, 0.08, 0.31, 0.3, 0.22, 0.12],
+    )
+    processing = ensure_processing_payload(
+        analysis_type="FTIR",
+        workflow_template="ftir.general",
+        workflow_template_label="General FTIR",
+    )
+    processing = update_processing_step(processing, "normalization", {"method": "vector"}, analysis_type="FTIR")
+    processing = update_processing_step(
+        processing,
+        "peak_detection",
+        {"prominence": 0.05, "min_distance": 6, "max_peaks": 12},
+        analysis_type="FTIR",
+    )
+    processing = update_processing_step(
+        processing,
+        "similarity_matching",
+        {"metric": "cosine", "top_n": 3, "minimum_score": 0.45},
+        analysis_type="FTIR",
+    )
+
+    summary = validate_thermal_dataset(dataset, analysis_type="FTIR", processing=processing)
+
+    assert summary["status"] == "warn"
+    assert not any("strictly monotonic" in issue.lower() for issue in summary["issues"])
+    assert summary["checks"]["axis_direction"] == "decreasing"
+    assert summary["checks"]["axis_duplicate_points"] == 1
+    assert summary["checks"]["axis_unique_points"] == 5
+    assert any("duplicate positions" in warning.lower() for warning in summary["warnings"])
+
+
+def test_validate_ftir_allows_mixed_axis_when_sortable_for_analysis():
+    dataset = _make_spectral_dataset(
+        analysis_type="FTIR",
+        axis_values=[4000.0, 3200.0, 3400.0, 1800.0, 900.0, 500.0],
+        signal_values=[0.02, 0.08, 0.31, 0.3, 0.22, 0.12],
+    )
+    processing = ensure_processing_payload(
+        analysis_type="FTIR",
+        workflow_template="ftir.general",
+        workflow_template_label="General FTIR",
+    )
+    processing = update_processing_step(processing, "normalization", {"method": "vector"}, analysis_type="FTIR")
+    processing = update_processing_step(
+        processing,
+        "peak_detection",
+        {"prominence": 0.05, "min_distance": 6, "max_peaks": 12},
+        analysis_type="FTIR",
+    )
+    processing = update_processing_step(
+        processing,
+        "similarity_matching",
+        {"metric": "cosine", "top_n": 3, "minimum_score": 0.45},
+        analysis_type="FTIR",
+    )
+
+    summary = validate_thermal_dataset(dataset, analysis_type="FTIR", processing=processing)
+
+    assert summary["status"] == "warn"
+    assert not any("strictly monotonic" in issue.lower() for issue in summary["issues"])
+    assert summary["checks"]["axis_direction"] == "mixed"
+    assert any("sorted by axis position" in warning.lower() for warning in summary["warnings"])
+
+
 def test_validate_raman_allows_wide_monotonic_shift_axis_outside_thermal_bounds():
     dataset = _make_spectral_dataset(
         analysis_type="RAMAN",
@@ -646,6 +714,28 @@ def test_legacy_validator_surfaces_structured_failures(thermal_dataset):
 
     assert is_valid is False
     assert "strictly increasing" in message
+
+
+def test_enrich_ftir_result_validation_adds_library_unavailable_semantics():
+    validation = {"status": "pass", "issues": [], "warnings": [], "checks": {}}
+    summary = {
+        "match_status": "library_unavailable",
+        "candidate_count": 0,
+        "top_match_score": 0.0,
+        "confidence_band": "no_match",
+        "caution_code": "spectral_library_unavailable",
+    }
+
+    enriched = enrich_spectral_result_validation(
+        validation,
+        analysis_type="FTIR",
+        summary=summary,
+        rows=[],
+    )
+
+    assert enriched["checks"]["match_status"] == "library_unavailable"
+    assert enriched["checks"]["caution_state_output"] == "library_unavailable"
+    assert any("unavailable or not configured" in item.lower() for item in enriched["warnings"])
 
 
 def test_enrich_ftir_result_validation_adds_no_match_caution_semantics():

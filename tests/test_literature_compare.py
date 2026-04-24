@@ -10,6 +10,8 @@ import pytest
 
 from core.data_io import ThermalDataset
 from core.literature_claims import extract_literature_claims
+from core.ftir_literature_query_builder import build_ftir_literature_query
+from core.raman_literature_query_builder import build_raman_literature_query
 from core.literature_compare import _thermal_search_queries, attach_literature_package, compare_result_to_literature
 from core.literature_provider import (
     FixtureLiteratureProvider,
@@ -18,11 +20,14 @@ from core.literature_provider import (
     OpenAlexLikeLiteratureProvider,
     build_openalex_like_client_from_env,
     default_literature_provider_registry,
+    literature_fixture_fallback_enabled,
+    openalex_literature_env_configured,
     resolve_literature_provider,
     resolve_literature_providers,
 )
 from core.report_generator import generate_docx_report, generate_pdf_report
 from core.result_serialization import flatten_result_records, make_result_record, split_valid_results
+from core.scientific_reasoning import build_scientific_reasoning
 from core.thermal_literature_query_builder import build_dsc_literature_query, build_dta_literature_query, build_tga_literature_query
 
 
@@ -217,6 +222,176 @@ def _thermal_record(analysis_type: str) -> dict:
     )
 
 
+def _ftir_record(*, library_unavailable: bool = False, no_match: bool = False) -> dict:
+    if library_unavailable:
+        match_status = "library_unavailable"
+        confidence = "no_match"
+        top_name = None
+        top_score = 0.0
+        rows: list[dict[str, object]] = []
+    elif no_match:
+        match_status = "no_match"
+        confidence = "no_match"
+        top_name = None
+        top_score = 0.31
+        rows = [
+            {
+                "rank": 1,
+                "candidate_id": "weak",
+                "candidate_name": "Weak ref",
+                "normalized_score": 0.31,
+                "confidence_band": "no_match",
+                "evidence": {"shared_peak_count": 0, "matched_peak_pairs": []},
+            }
+        ]
+    else:
+        match_status = "matched"
+        confidence = "medium"
+        top_name = "Polystyrene film reference"
+        top_score = 0.74
+        rows = [
+            {
+                "rank": 1,
+                "candidate_id": "ref_ps",
+                "candidate_name": top_name,
+                "normalized_score": top_score,
+                "confidence_band": confidence,
+                "library_provider": "Fixture",
+                "evidence": {
+                    "shared_peak_count": 3,
+                    "coverage_ratio": 0.62,
+                    "matched_peak_pairs": [
+                        {"observed_position": 2924.0, "reference_position": 2920.0},
+                        {"observed_position": 1602.0, "reference_position": 1605.0},
+                    ],
+                },
+            }
+        ]
+    summary = {
+        "peak_count": 4,
+        "match_status": match_status,
+        "confidence_band": confidence,
+        "candidate_count": len(rows),
+        "top_match_id": (rows[0]["candidate_id"] if rows else None),
+        "top_match_name": top_name,
+        "top_match_score": top_score,
+        "library_result_source": "not_configured" if library_unavailable else "cloud_search",
+        "library_request_id": "req_ftir_1",
+        "sample_name": "Polymer film",
+    }
+    if library_unavailable:
+        summary["caution_message"] = "Reference spectral library matching was unavailable for this run."
+    scientific_context = build_scientific_reasoning(
+        analysis_type="FTIR",
+        summary=summary,
+        rows=rows,
+        metadata={"sample_name": "Polymer film", "display_name": "Polymer film FTIR"},
+        fit_quality={"confidence_band": confidence, "top_match_score": top_score},
+        validation={"status": "pass", "warnings": [], "issues": []},
+    )
+    processing = {
+        "workflow_template_label": "ftir.general",
+        "method_context": {"ftir_signal_role": "absorbance"},
+    }
+    return make_result_record(
+        result_id="ftir_demo",
+        analysis_type="FTIR",
+        status="stable",
+        dataset_key="ftir_demo",
+        metadata={"sample_name": "Polymer film", "display_name": "Polymer film FTIR"},
+        summary=summary,
+        rows=rows,
+        processing=processing,
+        scientific_context=scientific_context,
+        validation={"status": "pass", "warnings": [], "issues": []},
+    )
+
+
+def _raman_record(*, library_unavailable: bool = False, no_match: bool = False) -> dict:
+    if library_unavailable:
+        match_status = "library_unavailable"
+        confidence = "no_match"
+        top_name = None
+        top_score = 0.0
+        rows: list[dict[str, object]] = []
+    elif no_match:
+        match_status = "no_match"
+        confidence = "no_match"
+        top_name = None
+        top_score = 0.31
+        rows = [
+            {
+                "rank": 1,
+                "candidate_id": "weak",
+                "candidate_name": "Weak ref",
+                "normalized_score": 0.31,
+                "confidence_band": "no_match",
+                "evidence": {"shared_peak_count": 0, "matched_peak_pairs": []},
+            }
+        ]
+    else:
+        match_status = "matched"
+        confidence = "medium"
+        top_name = "Graphitic carbon reference"
+        top_score = 0.76
+        rows = [
+            {
+                "rank": 1,
+                "candidate_id": "ref_graphite",
+                "candidate_name": top_name,
+                "normalized_score": top_score,
+                "confidence_band": confidence,
+                "library_provider": "Fixture",
+                "evidence": {
+                    "shared_peak_count": 3,
+                    "coverage_ratio": 0.65,
+                    "matched_peak_pairs": [
+                        {"observed_position": 1582.0, "reference_position": 1580.0},
+                        {"observed_position": 1352.0, "reference_position": 1350.0},
+                    ],
+                },
+            }
+        ]
+    summary = {
+        "peak_count": 4,
+        "match_status": match_status,
+        "confidence_band": confidence,
+        "candidate_count": len(rows),
+        "top_match_id": (rows[0]["candidate_id"] if rows else None),
+        "top_match_name": top_name,
+        "top_match_score": top_score,
+        "library_result_source": "not_configured" if library_unavailable else "cloud_search",
+        "library_request_id": "req_raman_1",
+        "sample_name": "CNT film",
+    }
+    if library_unavailable:
+        summary["caution_message"] = "Reference spectral library matching was unavailable for this run."
+    scientific_context = build_scientific_reasoning(
+        analysis_type="RAMAN",
+        summary=summary,
+        rows=rows,
+        metadata={"sample_name": "CNT film", "display_name": "CNT film RAMAN"},
+        fit_quality={"confidence_band": confidence, "top_match_score": top_score},
+        validation={"status": "pass", "warnings": [], "issues": []},
+    )
+    processing = {
+        "workflow_template_label": "raman.general",
+        "method_context": {"raman_signal_role": "counts"},
+    }
+    return make_result_record(
+        result_id="raman_demo",
+        analysis_type="RAMAN",
+        status="stable",
+        dataset_key="raman_demo",
+        metadata={"sample_name": "CNT film", "display_name": "CNT film RAMAN"},
+        summary=summary,
+        rows=rows,
+        processing=processing,
+        scientific_context=scientific_context,
+        validation={"status": "pass", "warnings": [], "issues": []},
+    )
+
+
 def _multi_claim_record() -> dict:
     record = _base_record()
     record["scientific_context"] = {
@@ -304,7 +479,7 @@ def test_fixture_provider_search_returns_ranked_candidates():
 
 def test_compare_result_to_literature_limits_max_claims():
     record = _multi_claim_record()
-    record["analysis_type"] = "FTIR"
+    record["analysis_type"] = "KINETICS"
     package = compare_result_to_literature(
         record,
         provider=StubProvider(
@@ -381,6 +556,125 @@ def test_tga_compare_no_results_persists_traceability():
     assert context["real_literature_available"] is False
 
 
+def test_ftir_scientific_reasoning_excludes_generic_placeholder():
+    record = _ftir_record()
+    text = " ".join(c.get("claim", "") for c in record["scientific_context"].get("scientific_claims") or [])
+    assert "not specialized for this analysis type yet" not in text.lower()
+    assert "ftir" in text.lower()
+
+
+def test_ftir_literature_query_includes_modality_when_library_unavailable():
+    record = _ftir_record(library_unavailable=True)
+    payload = build_ftir_literature_query(record)
+    assert "ftir" in payload["query_text"].lower()
+    assert "fourier transform infrared" in payload["query_text"].lower() or "infrared" in payload["query_text"].lower()
+    assert payload["evidence_snapshot"]["match_status"] == "library_unavailable"
+
+
+def test_ftir_compare_openalex_traceability_and_executed_queries():
+    record = _ftir_record()
+    provider = OpenAlexLikeLiteratureProvider(
+        search_client=lambda query, filters: {
+            "request_id": "openalex_req_ftir",
+            "result_source": "openalex_api",
+            "query_status": "success",
+            "results": [
+                {
+                    "id": "https://openalex.org/W_ftir",
+                    "display_name": "FTIR and infrared spectroscopy of polystyrene films",
+                    "publication_year": 2023,
+                    "doi": "https://doi.org/10.1000/ftir-study",
+                    "authorships": [{"author": {"display_name": "B. Chemist"}}],
+                    "primary_location": {"source": {"display_name": "Vibrational Spectroscopy"}},
+                }
+            ],
+        }
+    )
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["openalex_like_provider"], max_claims=2)
+    context = package["literature_context"]
+    assert context["analysis_type"] == "FTIR"
+    assert context["provider_request_ids"] == ["openalex_req_ftir"]
+    assert context["query_display_title"]
+    assert context["executed_queries"]
+    joined_claims = " ".join(c.get("claim_text", "") for c in package["literature_claims"])
+    assert "not specialized for this analysis type yet" not in joined_claims.lower()
+
+
+def test_ftir_compare_not_configured_is_distinct_from_empty_evidence():
+    record = _ftir_record()
+    provider = OpenAlexLikeLiteratureProvider(
+        search_client=lambda query, filters: {
+            "request_id": "openalex_req_ftir_nc",
+            "result_source": "openalex_api",
+            "query_status": "not_configured",
+            "results": [],
+        }
+    )
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["openalex_like_provider"])
+    assert package["literature_context"]["provider_query_status"] == "not_configured"
+    assert package["literature_context"]["no_results_reason"] == "not_configured"
+
+
+def test_ftir_compare_no_real_results_when_search_succeeds_but_empty():
+    record = _ftir_record()
+    provider = OpenAlexLikeLiteratureProvider(
+        search_client=lambda query, filters: {
+            "request_id": "openalex_req_ftir_empty",
+            "result_source": "openalex_api",
+            "query_status": "success",
+            "results": [],
+        }
+    )
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["openalex_like_provider"])
+    status = package["literature_context"]["provider_query_status"]
+    assert status in {"success", "no_results"}
+    assert package["literature_context"]["no_results_reason"] == "no_real_results"
+
+
+def test_raman_scientific_reasoning_excludes_generic_placeholder():
+    record = _raman_record()
+    text = " ".join(c.get("claim", "") for c in record["scientific_context"].get("scientific_claims") or [])
+    assert "not specialized for this analysis type yet" not in text.lower()
+    assert "raman" in text.lower()
+
+
+def test_raman_literature_query_includes_modality_when_library_unavailable():
+    record = _raman_record(library_unavailable=True)
+    payload = build_raman_literature_query(record)
+    assert "raman" in payload["query_text"].lower()
+    assert "raman spectroscopy" in payload["query_text"].lower() or "vibrational spectroscopy" in payload["query_text"].lower()
+    assert payload["evidence_snapshot"]["match_status"] == "library_unavailable"
+
+
+def test_raman_compare_openalex_traceability_and_executed_queries():
+    record = _raman_record()
+    provider = OpenAlexLikeLiteratureProvider(
+        search_client=lambda query, filters: {
+            "request_id": "openalex_req_raman",
+            "result_source": "openalex_api",
+            "query_status": "success",
+            "results": [
+                {
+                    "id": "https://openalex.org/W_raman",
+                    "display_name": "Raman spectroscopy screening of graphitic films",
+                    "publication_year": 2024,
+                    "doi": "https://doi.org/10.1000/raman-study",
+                    "authorships": [{"author": {"display_name": "C. Spectroscopist"}}],
+                    "primary_location": {"source": {"display_name": "Vibrational Spectroscopy"}},
+                }
+            ],
+        }
+    )
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["openalex_like_provider"], max_claims=2)
+    context = package["literature_context"]
+    assert context["analysis_type"] == "RAMAN"
+    assert context["provider_request_ids"] == ["openalex_req_raman"]
+    assert context["query_display_title"]
+    assert context["executed_queries"]
+    joined_claims = " ".join(c.get("claim_text", "") for c in package["literature_claims"])
+    assert "not specialized for this analysis type yet" not in joined_claims.lower()
+
+
 def test_tga_query_builder_strips_filename_artifacts_and_adds_scientific_fallbacks():
     record = _thermal_record("TGA")
     record["metadata"]["display_name"] = "tga_CaCO3_decomposition.csv"
@@ -433,7 +727,7 @@ def test_thermal_search_queries_keeps_broader_prioritized_fallbacks():
     assert len(set(queries)) == len(queries)
 
 
-def test_tga_query_builder_generates_precision_first_query_plan_for_caco3():
+def test_tga_query_builder_uses_behavior_first_primary_query_plan_for_low_trust_subject():
     record = _thermal_record("TGA")
     record["metadata"]["display_name"] = "tga_CaCO3_decomposition.csv"
     record["metadata"]["sample_name"] = ""
@@ -444,11 +738,42 @@ def test_tga_query_builder_generates_precision_first_query_plan_for_caco3():
     payload = build_tga_literature_query(record)
     queries = _thermal_search_queries(payload)
 
+    assert payload["search_mode"] == "behavior_first"
+    assert payload["subject_trust"] == "low_trust"
     assert len(queries) >= 4
-    assert "calcium carbonate thermogravimetric analysis decarbonation" in queries[0].lower()
-    assert any("caco3 calcination tga" in query.lower() for query in queries)
-    assert any("calcite decomposition thermogravimetric analysis" in query.lower() for query in queries)
+    assert "thermogravimetric analysis decomposition mass loss residue 718 c" in queries[0].lower()
+    assert any("decarbonation" in query.lower() or "calcination" in query.lower() for query in queries)
+    assert any("caco3 decomposition thermogravimetric analysis" in query.lower() for query in queries)
+    assert any("calcite decomposition thermogravimetric analysis" in query.lower() for query in payload["fallback_queries"])
     assert any("700 800 c" in query.lower() for query in queries)
+
+
+def test_tga_query_builder_uses_known_material_when_sample_name_is_trusted():
+    record = _thermal_record("TGA")
+    record["summary"]["sample_name"] = "Calcium carbonate"
+    record["metadata"]["sample_name"] = "Calcium carbonate"
+    record["metadata"]["display_name"] = "tga_run_001.csv"
+    record["summary"]["total_mass_loss_percent"] = 43.9
+    record["rows"][0]["midpoint_temperature"] = 718.0
+
+    payload = build_tga_literature_query(record)
+
+    assert payload["search_mode"] == "known_material"
+    assert payload["subject_trust"] == "trusted"
+    assert "calcium carbonate" in payload["query_text"].lower()
+
+
+def test_dta_query_builder_sets_behavior_first_for_display_name_only_subject():
+    record = _thermal_record("DTA")
+    record["summary"]["sample_name"] = ""
+    record["metadata"]["sample_name"] = ""
+    record["metadata"]["display_name"] = "dta_ore_b_run.csv"
+
+    payload = build_dta_literature_query(record)
+
+    assert payload["search_mode"] == "behavior_first"
+    assert payload["subject_trust"] == "low_trust"
+    assert "ore b" not in payload["query_text"].lower()
 
 
 def test_dsc_and_dta_query_builders_keep_existing_semantics_without_filename_noise():
@@ -459,6 +784,146 @@ def test_dsc_and_dta_query_builders_keep_existing_semantics_without_filename_noi
     assert "glass transition" in dsc_payload["query_text"].lower() or "thermal event" in dsc_payload["query_text"].lower()
     assert dta_payload["query_display_mode"] == "DTA / thermal events"
     assert "differential thermal analysis" in dta_payload["query_text"].lower()
+
+
+def test_dta_query_builder_excludes_unknown_placeholder_subject():
+    record = _thermal_record("DTA")
+    record["summary"]["sample_name"] = "Unknown"
+    record["metadata"]["sample_name"] = "Unknown"
+    record["metadata"]["display_name"] = "Unknown"
+    payload = build_dta_literature_query(record)
+
+    assert '"Unknown"' not in payload["query_text"]
+    assert "unknown dta thermal event" not in " ".join(payload["fallback_queries"]).lower()
+    assert payload["query_display_title"] == "DTA thermal event"
+
+
+def test_dta_third_fallback_query_uses_dta_not_generic_thermal_analysis():
+    payload = build_dta_literature_query(_thermal_record("DTA"))
+    assert len(payload["fallback_queries"]) >= 3
+    third = payload["fallback_queries"][2].lower()
+    assert "thermal analysis" not in third
+
+
+def test_dta_compare_modality_only_abstract_is_contextual_not_related_support():
+    record = _thermal_record("DTA")
+    provider = StubProvider(
+        [
+            {
+                **_source(
+                    source_id="generic_modality",
+                    access_class="abstract_only",
+                    text=(
+                        "Kinetic analysis of pyrolysis and thermal oxidation uses differential thermal analysis "
+                        "endothermic exothermic signatures in bitumen with decomposition kinetics."
+                    ),
+                    hint="related",
+                ),
+                "title": "Pyrolysis kinetics via differential thermal analysis",
+            }
+        ]
+    )
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["stub_provider"])
+    comp = package["literature_comparisons"][0]
+    assert comp["validation_posture"] == "contextual_only"
+    assert comp["support_label"] == "related_but_inconclusive"
+
+
+def test_dsc_behavior_first_fallback_queries_have_broad_vocabulary():
+    record = _thermal_record("DSC")
+    record["summary"]["sample_name"] = ""
+    record["metadata"]["sample_name"] = ""
+    record["metadata"]["display_name"] = ""
+    record["summary"]["tg_midpoint"] = None
+    record["summary"]["glass_transition_count"] = 0
+
+    payload = build_dsc_literature_query(record)
+
+    all_queries = [payload["query_text"]] + payload["fallback_queries"]
+    combined = " ".join(all_queries).lower()
+
+    assert "calorimetry" in combined
+    assert "thermal" in combined
+    assert len(payload["fallback_queries"]) >= 3
+
+
+def test_dsc_behavior_first_tg_branch_includes_differential_scanning_variant():
+    record = _thermal_record("DSC")
+    record["summary"]["sample_name"] = ""
+    record["metadata"]["sample_name"] = ""
+    record["metadata"]["display_name"] = ""
+
+    payload = build_dsc_literature_query(record)
+
+    all_queries = [payload["query_text"]] + payload["fallback_queries"]
+    combined = " ".join(all_queries).lower()
+    assert "differential scanning calorimetry" in combined or "glass transition" in combined
+
+
+def test_dta_compare_prefers_entity_and_temperature_anchored_paper_over_modality_only():
+    record = _thermal_record("DTA")
+    provider = StubProvider(
+        [
+            {
+                **_source(
+                    source_id="generic_first",
+                    access_class="abstract_only",
+                    text=(
+                        "Kinetic analysis of pyrolysis and thermal oxidation uses differential thermal analysis "
+                        "endothermic exothermic signatures in bitumen with decomposition kinetics."
+                    ),
+                    hint="related",
+                ),
+                "title": "Pyrolysis DTA kinetic paper A",
+            },
+            {
+                **_source(
+                    source_id="anchored_second",
+                    access_class="abstract_only",
+                    text=(
+                        "Ore B mineral differential thermal analysis at 643 C shows exothermic peak "
+                        "consistent with ore specimen."
+                    ),
+                    hint="related",
+                ),
+                "title": "Ore B high-temperature DTA study",
+            },
+        ]
+    )
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["stub_provider"])
+    comps = package["literature_comparisons"]
+    assert comps[0]["paper_title"] == "Ore B high-temperature DTA study"
+    assert comps[0]["validation_posture"] == "related_support"
+    assert comps[0]["support_label"] == "partially_supports"
+
+
+def test_thermal_compare_context_exposes_search_mode_subject_trust_and_evidence_scope():
+    record = _thermal_record("DTA")
+    provider = StubProvider(
+        [
+            {
+                **_source(
+                    source_id="ore_b_direct_dta",
+                    access_class="abstract_only",
+                    text=(
+                        "Ore B mineral differential thermal analysis at 643 C shows an exothermic event "
+                        "with thermal-event behavior relevant to DTA interpretation."
+                    ),
+                    hint="related",
+                ),
+                "title": "Ore B high-temperature DTA study",
+            }
+        ]
+    )
+
+    package = compare_result_to_literature(record, provider=provider, provider_scope=["stub_provider"])
+
+    context = package["literature_context"]
+    comparison = package["literature_comparisons"][0]
+    assert context["search_mode"] == "known_material"
+    assert context["subject_trust"] == "trusted"
+    assert context["evidence_scope_summary"] in {"material_specific", "behavior_level", "generic_context"}
+    assert comparison["evidence_scope"] in {"material_specific", "behavior_level", "generic_context"}
 
 
 def test_thermal_compare_executes_multiple_prioritized_queries_when_available():
@@ -736,7 +1201,7 @@ def test_weak_metadata_only_neighbors_are_filtered_from_surfaced_thermal_compari
 )
 def test_comparison_engine_assigns_expected_labels(hint: str, access_class: str, expected_label: str):
     record = _base_record()
-    record["analysis_type"] = "FTIR"
+    record["analysis_type"] = "KINETICS"
     package = compare_result_to_literature(
         record,
         provider=StubProvider(
@@ -763,7 +1228,7 @@ def test_comparison_engine_assigns_expected_labels(hint: str, access_class: str,
 
 def test_restricted_content_guardrail_excludes_closed_access_reasoning():
     record = _base_record()
-    record["analysis_type"] = "FTIR"
+    record["analysis_type"] = "KINETICS"
     package = compare_result_to_literature(
         record,
         provider=StubProvider(
@@ -788,7 +1253,7 @@ def test_restricted_content_guardrail_excludes_closed_access_reasoning():
 
 def test_user_provided_document_is_compared_and_cited():
     record = _base_record()
-    record["analysis_type"] = "FTIR"
+    record["analysis_type"] = "KINETICS"
     package = compare_result_to_literature(
         record,
         provider=StubProvider([]),
@@ -852,13 +1317,27 @@ def test_provider_registry_resolves_requested_provider_from_registry():
 
 def test_build_openalex_like_client_from_env_requires_explicit_config(monkeypatch):
     monkeypatch.delenv("MATERIALSCOPE_OPENALEX_EMAIL", raising=False)
-    monkeypatch.delenv("THERMOANALYZER_OPENALEX_EMAIL", raising=False)
     monkeypatch.delenv("MATERIALSCOPE_OPENALEX_API_KEY", raising=False)
-    monkeypatch.delenv("THERMOANALYZER_OPENALEX_API_KEY", raising=False)
     monkeypatch.delenv("MATERIALSCOPE_OPENALEX_BASE_URL", raising=False)
-    monkeypatch.delenv("THERMOANALYZER_OPENALEX_BASE_URL", raising=False)
 
     assert build_openalex_like_client_from_env() is None
+
+
+def test_openalex_literature_env_configured_tracks_client_builder(monkeypatch):
+    monkeypatch.delenv("MATERIALSCOPE_OPENALEX_EMAIL", raising=False)
+    monkeypatch.delenv("MATERIALSCOPE_OPENALEX_API_KEY", raising=False)
+    monkeypatch.delenv("MATERIALSCOPE_OPENALEX_BASE_URL", raising=False)
+    assert openalex_literature_env_configured() is False
+    monkeypatch.setenv("MATERIALSCOPE_OPENALEX_EMAIL", "research@example.test")
+    assert openalex_literature_env_configured() is True
+
+
+def test_literature_fixture_fallback_enabled_reads_flag(monkeypatch):
+    monkeypatch.delenv("MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK", raising=False)
+    monkeypatch.delenv("THERMOANALYZER_LITERATURE_FIXTURE_FALLBACK", raising=False)
+    assert literature_fixture_fallback_enabled() is False
+    monkeypatch.setenv("MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK", "1")
+    assert literature_fixture_fallback_enabled() is True
 
 
 def test_default_registry_builds_env_backed_openalex_provider(monkeypatch):

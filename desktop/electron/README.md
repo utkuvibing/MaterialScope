@@ -5,12 +5,12 @@ This directory contains the brownfield desktop workflow shell for migration tran
 What it does:
 - launches local backend in two modes:
   - development mode: Python source backend (`backend/main.py`)
-  - packaged mode: bundled backend executable (`resources/backend/thermoanalyzer_backend.exe`)
+  - packaged mode: bundled backend executable (`resources/backend/materialscope_backend.exe`)
 - waits for `/health`
 - opens an Electron window
 - shows backend status + version
 - supports a minimal workflow:
-  - create/load workspace (`.thermozip`)
+  - create/load workspace (`.scopezip`, legacy `.thermozip` import supported)
   - list datasets and results
   - inspect dataset details (metadata, units, validation, data preview)
   - inspect result details (summary, processing, validation, provenance, review)
@@ -24,7 +24,7 @@ What it does:
   - generate/download DOCX report for selected saved results
   - import a dataset file
   - run one DSC/TGA analysis on a selected dataset
-- save workspace to `.thermozip`
+- save workspace to `.scopezip`
 - writes startup diagnostics logs and shows a clear failure dialog path when backend launch fails
 - provides a desktop product shell with grouped navigation:
   - `Primary`: Home/Import, Compare, DSC, TGA, Export, Project
@@ -55,7 +55,7 @@ Optional environment variable:
 
 On startup failure, the app shows a dialog with a diagnostics log path. Logs are written to:
 
-- `%APPDATA%\\ThermoAnalyzer Desktop\\logs\\startup-*.log` (packaged Windows app)
+- `%APPDATA%\\MaterialScope Desktop\\logs\\startup-*.log` (packaged Windows app)
 - `desktop/electron` runtime user-data path when running from `npm start`
 
 Each log includes:
@@ -90,8 +90,8 @@ npm run build:win:nsis
 ```
 
 Expected outputs:
-- bundled backend: `desktop/backend_bundle/dist/thermoanalyzer_backend/thermoanalyzer_backend.exe`
-- installer: `release/electron/ThermoAnalyzer-Setup-0.1.0-x64.exe`
+- bundled backend: `desktop/backend_bundle/dist/materialscope_backend/materialscope_backend.exe`
+- installer: `release/electron/MaterialScope-Setup-0.1.0-x64.exe`
 
 Optional unpacked build output:
 

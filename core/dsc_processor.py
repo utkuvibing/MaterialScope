@@ -6,7 +6,7 @@ mass normalisation, baseline correction, peak detection, and glass-transition
 detection into a single, reproducible workflow.  The final state is exported
 as a DSCResult dataclass.
 
-Imports from sibling modules (run from the thermoanalyzer/ directory):
+Imports from sibling modules (run from the materialscope/ directory):
     core.preprocessing  - smooth_signal, compute_derivative, normalize_by_mass
     core.baseline       - correct_baseline
     core.peak_analysis  - find_thermal_peaks, characterize_peaks, ThermalPeak

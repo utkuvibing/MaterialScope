@@ -77,7 +77,7 @@ PLOTLY_CONFIG = dict(
     responsive=True,
     toImageButtonOptions=dict(
         format="png",
-        filename="thermoanalyzer_plot",
+        filename="materialscope_plot",
         width=_DEFAULT_EXPORT_WIDTH,
         height=_DEFAULT_EXPORT_HEIGHT,
         scale=2,
@@ -155,6 +155,9 @@ def _default_layout() -> dict:
             title_standoff=12,
         ),
     )
+
+
+DEFAULT_LAYOUT = _default_layout()
 
 
 def default_plot_display_settings(settings: dict | None = None, **overrides) -> dict:

@@ -1,4 +1,4 @@
-# ThermoAnalyzer Desktop - Release Handoff Checklist
+# MaterialScope Desktop - Release Handoff Checklist
 
 Run this checklist before sending a demo build to professors.
 
@@ -7,11 +7,11 @@ Run this checklist before sending a demo build to professors.
 1. Build bundled backend:
 - `cd desktop/electron`
 - `npm run build:backend`
-- Verify: `desktop/backend_bundle/dist/thermoanalyzer_backend/thermoanalyzer_backend.exe` exists.
+- Verify: `desktop/backend_bundle/dist/materialscope_backend/materialscope_backend.exe` exists.
 
 2. Build NSIS installer artifact:
 - `npm run build:win:nsis`
-- Verify: `release/electron/ThermoAnalyzer-Setup-<version>-x64.exe` exists.
+- Verify: `release/electron/MaterialScope-Setup-<version>-x64.exe` exists.
 
 3. Optional unpacked validation build:
 - `npm run build:win:dir`
@@ -47,4 +47,4 @@ Include in handoff message:
 - build date
 - known scope statement: stable DSC/TGA desktop workflow + batch/export/report prep
 - known non-goals: preview modules not included, no installer signing in this build
-- troubleshooting note: startup diagnostics logs are under `%APPDATA%\\ThermoAnalyzer Desktop\\logs`
+- troubleshooting note: startup diagnostics logs are under `%APPDATA%\\MaterialScope Desktop\\logs`

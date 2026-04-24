@@ -4,12 +4,15 @@ import io
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
 
+from backend.library_cloud_service import ManagedLibraryCloudService
 from core.batch_runner import (
     _match_xrd_reference_peaks,
+    _rank_spectral_matches,
     execute_batch_template,
     filter_batch_summary_rows,
     normalize_batch_summary_rows,
@@ -232,12 +235,49 @@ def test_execute_dsc_batch_template_saves_normalized_record(thermal_dataset):
     assert outcome["record"]["processing"]["workflow_template_id"] == "dsc.polymer_tg"
     assert outcome["record"]["processing"]["workflow_template_version"] == 1
     assert outcome["record"]["processing"]["method_context"]["batch_run_id"] == "batch_dsc_demo"
+    assert outcome["record"]["processing"]["signal_pipeline"]["normalization"] == {"enabled": True}
     assert outcome["record"]["provenance"]["batch_run_id"] == "batch_dsc_demo"
     assert outcome["record"]["review"]["batch_runner"] == "compare_workspace"
     assert outcome["validation"]["status"] in {"pass", "warn"}
     assert outcome["state"]["processing"]["workflow_template"] == "Polymer Tg"
     assert outcome["state"]["peaks"]
+    assert "dtg" in outcome["state"]
+    assert np.asarray(outcome["state"]["dtg"]).size > 0
     assert outcome["summary_row"]["execution_status"] == "saved"
+
+
+def test_execute_dsc_batch_template_honors_normalization_override(thermal_dataset):
+    dataset = thermal_dataset.copy()
+
+    normalized = execute_batch_template(
+        dataset_key="synthetic_dsc_norm_on",
+        dataset=dataset,
+        analysis_type="DSC",
+        workflow_template_id="dsc.general",
+        batch_run_id="batch_dsc_norm_on",
+    )
+    raw = execute_batch_template(
+        dataset_key="synthetic_dsc_norm_off",
+        dataset=dataset,
+        analysis_type="DSC",
+        workflow_template_id="dsc.general",
+        existing_processing={"signal_pipeline": {"normalization": {"enabled": False}}},
+        batch_run_id="batch_dsc_norm_off",
+    )
+
+    assert normalized["status"] == "saved"
+    assert raw["status"] == "saved"
+    assert normalized["record"]["processing"]["signal_pipeline"]["normalization"] == {"enabled": True}
+    assert raw["record"]["processing"]["signal_pipeline"]["normalization"] == {"enabled": False}
+
+    normalized_smoothed = np.asarray(normalized["state"]["smoothed"], dtype=float)
+    raw_smoothed = np.asarray(raw["state"]["smoothed"], dtype=float)
+    np.testing.assert_allclose(
+        normalized_smoothed,
+        raw_smoothed / float(dataset.metadata["sample_mass"]),
+        rtol=1e-6,
+        atol=1e-9,
+    )
 
 
 def test_execute_tga_batch_template_saves_normalized_record(temperature_range, tga_signal):
@@ -431,8 +471,56 @@ def test_execute_xrd_batch_template_returns_ranked_candidate_match_with_confiden
     assert rows[0]["evidence"]["matched_peak_pairs"][0]["reference_index"] >= 0
 
 
+def test_rank_spectral_matches_uses_selected_metric_for_scoring_and_ranking(monkeypatch):
+    axis = np.asarray([0.0, 1.0, 2.0], dtype=float)
+    references = [
+        {"candidate_id": "ref_a", "candidate_name": "Ref A", "axis": axis, "signal": np.asarray([1.0, 0.0, 0.0], dtype=float)},
+        {"candidate_id": "ref_b", "candidate_name": "Ref B", "axis": axis, "signal": np.asarray([2.0, 0.0, 0.0], dtype=float)},
+    ]
+
+    monkeypatch.setattr("core.batch_runner._apply_spectral_smoothing", lambda signal, config: np.asarray(signal, dtype=float))
+    monkeypatch.setattr("core.batch_runner._normalize_spectral_signal", lambda signal, config: (np.asarray(signal, dtype=float), True, ""))
+    monkeypatch.setattr(
+        "core.batch_runner._detect_spectral_peaks",
+        lambda axis, signal, config: ([{"position": float(axis[0]), "intensity": float(signal[0])}], False, ""),
+    )
+
+    def fake_similarity(query_signal, reference_signal, metric):
+        token = float(reference_signal[0])
+        if metric == "cosine":
+            return 0.9 if token == 1.0 else 0.2
+        if metric == "pearson":
+            return 0.1 if token == 1.0 else 0.95
+        raise AssertionError(metric)
+
+    monkeypatch.setattr("core.batch_runner._spectral_similarity", fake_similarity)
+
+    cosine_rows = _rank_spectral_matches(
+        axis=axis,
+        query_signal=np.asarray([1.0, 0.5, 0.0], dtype=float),
+        observed_peaks=[{"position": 0.0, "intensity": 1.0}],
+        references=references,
+        matching_config={"metric": "cosine", "top_n": 1, "minimum_score": 0.4},
+        peak_config={},
+    )
+    pearson_rows = _rank_spectral_matches(
+        axis=axis,
+        query_signal=np.asarray([1.0, 0.5, 0.0], dtype=float),
+        observed_peaks=[{"position": 0.0, "intensity": 1.0}],
+        references=references,
+        matching_config={"metric": "pearson", "top_n": 1, "minimum_score": 0.4},
+        peak_config={},
+    )
+
+    assert cosine_rows[0]["candidate_id"] == "ref_a"
+    assert cosine_rows[0]["evidence"]["metric"] == "cosine"
+    assert pearson_rows[0]["candidate_id"] == "ref_b"
+    assert pearson_rows[0]["evidence"]["metric"] == "pearson"
+
+
 def test_execute_ftir_batch_template_prefers_cloud_search_when_configured(monkeypatch):
     dataset = _make_spectral_dataset(analysis_type="FTIR")
+    captured: dict[str, object] = {}
 
     class _StubCloudClient:
         configured = True
@@ -440,6 +528,7 @@ def test_execute_ftir_batch_template_prefers_cloud_search_when_configured(monkey
 
         def search(self, *, analysis_type, payload):
             assert analysis_type == "FTIR"
+            captured["payload"] = payload
             return {
                 "request_id": "cloud_req_123",
                 "analysis_type": "FTIR",
@@ -485,6 +574,76 @@ def test_execute_ftir_batch_template_prefers_cloud_search_when_configured(monkey
     assert outcome["record"]["summary"]["library_request_id"] == "cloud_req_123"
     assert outcome["record"]["summary"]["top_match_id"] == "cloud_ref_ftir_1"
     assert outcome["record"]["rows"][0]["library_provider"] == "openspecy"
+    assert captured["payload"]["metric"] == "cosine"
+
+
+def test_managed_cloud_spectral_search_forwards_metric_to_ranker(monkeypatch, tmp_path):
+    class _HostedCatalog:
+        def live_provider_count(self, modality=None):
+            return 1
+
+        def __init__(self, root):
+            self.root = root
+
+        def load_entries(self, token):
+            assert token == "FTIR"
+            return [
+                {
+                    "candidate_id": "hosted_ref_1",
+                    "candidate_name": "Hosted Ref 1",
+                    "axis": [1.0, 2.0, 3.0],
+                    "signal": [0.1, 0.2, 0.3],
+                    "provider": "openspecy",
+                    "package_id": "openspecy_ftir_hosted",
+                    "package_version": "2026.03",
+                }
+            ]
+
+    service = ManagedLibraryCloudService(manager=SimpleNamespace(), hosted_catalog=_HostedCatalog(tmp_path))
+    service._authorize = lambda **kwargs: {"sub": "tester", "status": "trial"}
+    service._audit_search = lambda **kwargs: None
+
+    monkeypatch.setattr("core.batch_runner._sorted_axis_signal", lambda axis, signal: (axis, signal))
+    monkeypatch.setattr("core.batch_runner._apply_spectral_smoothing", lambda signal, config: signal)
+    monkeypatch.setattr("core.batch_runner._normalize_spectral_signal", lambda signal, config: (signal, True, ""))
+    monkeypatch.setattr(
+        "core.batch_runner._detect_spectral_peaks",
+        lambda axis, signal, config: ([{"position": float(axis[0]), "intensity": float(signal[0])}], False, ""),
+    )
+    captured: dict[str, object] = {}
+
+    def fake_rank(*, axis, query_signal, observed_peaks, references, matching_config, peak_config):
+        captured["matching_config"] = dict(matching_config)
+        return [
+            {
+                "rank": 1,
+                "candidate_id": "hosted_ref_1",
+                "candidate_name": "Hosted Ref 1",
+                "normalized_score": 0.91,
+                "confidence_band": "high",
+                "library_provider": "openspecy",
+                "library_package": "openspecy_ftir_hosted",
+                "library_version": "2026.03",
+                "evidence": {"metric": matching_config["metric"]},
+            }
+        ]
+
+    monkeypatch.setattr("core.batch_runner._rank_spectral_matches", fake_rank)
+
+    response = service.search_spectral(
+        analysis_type="FTIR",
+        request_payload={
+            "axis": [1.0, 2.0, 3.0],
+            "signal": [0.1, 0.2, 0.3],
+            "metric": "pearson",
+            "top_n": 1,
+            "minimum_score": 0.4,
+        },
+        authorization="Bearer ignored",
+    )
+
+    assert captured["matching_config"]["metric"] == "pearson"
+    assert response["rows"][0]["evidence"]["metric"] == "pearson"
 
 
 def test_execute_xrd_batch_template_uses_reference_d_spacing_for_non_cu_wavelength():
@@ -670,7 +829,7 @@ def test_execute_xrd_batch_template_blocks_stable_match_when_axis_mapping_requir
 
 def test_execute_batch_template_uses_installed_global_reference_libraries(monkeypatch):
     mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
-    monkeypatch.setenv("THERMOANALYZER_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
     manager = get_reference_library_manager()
     manager.sync(force=True, package_ids=["openspecy_ftir_core", "cod_xrd_core"])
 
@@ -785,6 +944,34 @@ def test_execute_dsc_batch_template_is_deterministic_for_same_input_and_template
     np.testing.assert_allclose(first["state"]["corrected"], second["state"]["corrected"])
 
 
+def test_execute_dsc_batch_normalizes_legacy_distance_one_to_none(thermal_dataset, monkeypatch):
+    """Legacy DSC payloads with distance=1 should auto-derive, not bypass."""
+    from core import dsc_processor
+
+    captured: dict = {}
+
+    original_find = dsc_processor.find_thermal_peaks
+
+    def _spy_find_peaks(temperature, signal, **kwargs):
+        captured["prominence"] = kwargs.get("prominence")
+        captured["distance"] = kwargs.get("distance")
+        return original_find(temperature, signal, **kwargs)
+
+    monkeypatch.setattr(dsc_processor, "find_thermal_peaks", _spy_find_peaks)
+
+    dataset = thermal_dataset.copy()
+    dataset.metadata.update({"vendor": "TestVendor", "display_name": "Legacy DSC"})
+
+    outcome = execute_batch_template(
+        dataset_key="legacy_dsc",
+        dataset=dataset,
+        analysis_type="DSC",
+        workflow_template_id="dsc.general",
+    )
+    assert outcome["status"] == "saved"
+    assert captured["distance"] is None, f"Expected distance=None (auto-derive), got {captured['distance']}"
+
+
 def test_execute_tga_batch_template_is_deterministic_for_same_input_and_template(temperature_range, tga_signal):
     dataset = _make_tga_dataset(temperature_range, tga_signal)
 
@@ -842,3 +1029,328 @@ def test_execute_tga_batch_template_preserves_explicit_absolute_mass_mode(temper
     assert method_context["tga_unit_mode_resolved"] == "absolute_mass"
     assert method_context["tga_unit_auto_inference_used"] is False
     assert method_context["tga_unit_reference_source"] == "initial_mass_mg"
+
+
+def _make_ftir_transmittance_dataset():
+    axis = np.linspace(450.0, 1800.0, 420)
+    absorbance = (
+        _gaussian(axis, 720.0, 22.0, 0.9)
+        + _gaussian(axis, 1115.0, 28.0, 1.3)
+        + _gaussian(axis, 1510.0, 24.0, 0.8)
+    )
+    signal = 100.0 - absorbance * 50.0
+    metadata = {
+        "sample_name": "SyntheticFTIRTransmittance",
+        "sample_mass": 1.0,
+        "heating_rate": 1.0,
+        "instrument": "SpecBench",
+        "vendor": "TestVendor",
+        "display_name": "Synthetic FTIR Transmittance",
+        "source_data_hash": "synthetic-ftir-transmittance-hash",
+    }
+    return ThermalDataset(
+        data=pd.DataFrame({"temperature": axis, "signal": signal}),
+        metadata=metadata,
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "transmittance"},
+        original_columns={"temperature": "wavenumber", "signal": "transmittance"},
+        file_path="",
+    )
+
+
+def test_ftir_transmittance_inversion_detects_troughs_as_peaks():
+    dataset = _make_ftir_transmittance_dataset()
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_t",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_t_demo",
+    )
+    assert outcome["status"] == "saved"
+    diagnostics = outcome["state"]["diagnostics"]
+    assert diagnostics["signal_role"] == "transmittance"
+    assert diagnostics["inverted_for_transmittance"] is True
+    assert len(outcome["state"]["peaks"]) >= 3
+    # Ensure corrected signal has positive peaks (inverted troughs)
+    corrected = np.asarray(outcome["state"]["corrected"])
+    assert np.max(corrected) > 0
+    # Baseline should not be suppressed for this clean synthetic data
+    assert not diagnostics.get("baseline_suppressed", False)
+    # No double inversion: raw signal max ~100, min lower
+    raw_signal = dataset.data["signal"].values
+    assert np.max(raw_signal) > 90
+    assert np.min(raw_signal) < 90
+
+
+def test_ftir_absorbance_no_inversion():
+    dataset = _make_spectral_dataset(analysis_type="FTIR")
+    dataset.units["signal"] = "absorbance"
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_a",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_a_demo",
+    )
+    assert outcome["status"] == "saved"
+    diagnostics = outcome["state"]["diagnostics"]
+    assert diagnostics["signal_role"] == "absorbance"
+    assert diagnostics["inverted_for_transmittance"] is False
+    assert len(outcome["state"]["peaks"]) >= 3
+
+
+def test_ftir_baseline_rejection_for_implausible_fit():
+    axis = np.linspace(450.0, 1800.0, 420)
+    signal = 0.5 + 0.001 * axis
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": axis, "signal": signal}),
+        metadata={"sample_name": "LinearFTIR"},
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "a.u."},
+        original_columns={"temperature": "wavenumber", "signal": "intensity"},
+        file_path="",
+    )
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_linear",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_linear_demo",
+    )
+    assert outcome["status"] == "saved"
+    diagnostics = outcome["state"]["diagnostics"]
+    assert diagnostics.get("baseline_suppressed") is True
+    assert "collapses" in diagnostics.get("baseline_suppression_reason", "").lower() or "implausible" in diagnostics.get("baseline_suppression_reason", "").lower()
+    assert outcome["state"]["baseline"] == []
+    assert outcome["state"]["corrected"] == []
+    warnings = outcome["validation"].get("warnings", [])
+    assert any("baseline estimation was suppressed" in w.lower() for w in warnings)
+
+
+def test_ftir_normalization_skip_for_flat_signal():
+    axis = np.linspace(450.0, 1800.0, 420)
+    signal = np.full_like(axis, 0.5)
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": axis, "signal": signal}),
+        metadata={"sample_name": "FlatFTIR"},
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "a.u."},
+        original_columns={"temperature": "wavenumber", "signal": "intensity"},
+        file_path="",
+    )
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_flat",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_flat_demo",
+    )
+    assert outcome["status"] == "saved"
+    diagnostics = outcome["state"]["diagnostics"]
+    assert diagnostics.get("normalization_skipped") is True
+    assert outcome["state"]["normalized"] == []
+    warnings = outcome["validation"].get("warnings", [])
+    assert any("normalization was skipped" in w.lower() for w in warnings)
+
+
+def test_ftir_peak_detection_fallback_and_zero_peaks_diagnostic():
+    axis = np.linspace(450.0, 1800.0, 420)
+    signal = (
+        _gaussian(axis, 720.0, 22.0, 0.9)
+        + _gaussian(axis, 1115.0, 28.0, 1.3)
+        + _gaussian(axis, 1510.0, 24.0, 0.8)
+    )
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": axis, "signal": signal}),
+        metadata={"sample_name": "LowAmpFTIR"},
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "a.u."},
+        original_columns={"temperature": "wavenumber", "signal": "intensity"},
+        file_path="",
+    )
+    existing_processing = {
+        "analysis_type": "FTIR",
+        "workflow_template_id": "ftir.general",
+        "analysis_steps": {
+            "peak_detection": {"prominence": 25.0, "distance": 6, "max_peaks": 12},
+        },
+    }
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_lowamp",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        existing_processing=existing_processing,
+        batch_run_id="batch_ftir_lowamp_demo",
+    )
+    assert outcome["status"] == "saved"
+    diagnostics = outcome["state"]["diagnostics"]
+    assert diagnostics.get("peak_detection_fallback") is True
+    assert "relaxed" in diagnostics.get("peak_detection_reason", "").lower()
+    assert len(outcome["state"]["peaks"]) >= 3
+    warnings = outcome["validation"].get("warnings", [])
+    assert any("peak detection used fallback logic" in w.lower() or "relaxed prominence" in w.lower() for w in warnings)
+
+
+def test_ftir_zero_peaks_surfaces_diagnostic_reason():
+    axis = np.linspace(450.0, 1800.0, 420)
+    signal = np.zeros_like(axis)
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": axis, "signal": signal}),
+        metadata={"sample_name": "ZeroFTIR"},
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "a.u."},
+        original_columns={"temperature": "wavenumber", "signal": "intensity"},
+        file_path="",
+    )
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_zero",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_zero_demo",
+    )
+    assert outcome["status"] == "saved"
+    diagnostics = outcome["state"]["diagnostics"]
+    assert diagnostics.get("peak_detection_no_peaks") is True
+    assert len(outcome["state"]["peaks"]) == 0
+    warnings = outcome["validation"].get("warnings", [])
+    assert any("peak detection returned no peaks" in w.lower() for w in warnings)
+
+
+def test_ftir_analysis_state_curves_carry_correct_outputs():
+    dataset = _make_spectral_dataset(analysis_type="FTIR")
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_curves_demo",
+    )
+    assert outcome["status"] == "saved"
+    state = outcome["state"]
+    assert "diagnostics" in state
+    assert state["diagnostics"]["signal_role"] == "unknown"
+    assert len(state["smoothed"]) == len(state["axis"])
+    assert len(state["baseline"]) == len(state["axis"])
+    assert len(state["corrected"]) == len(state["axis"])
+    assert len(state["normalized"]) == len(state["axis"])
+    assert len(state["peaks"]) >= 1
+
+
+def test_ftir_similarity_uses_corrected_when_normalization_skipped():
+    axis = np.linspace(450.0, 1800.0, 420)
+    signal = np.full_like(axis, 0.5)
+    metadata = {
+        "sample_name": "FlatFTIRWithRef",
+        "spectral_reference_library": [
+            {
+                "id": "flat_ref",
+                "name": "Flat Reference",
+                "axis": axis.tolist(),
+                "signal": (np.full_like(axis, 0.5) + 0.01).tolist(),
+            },
+        ],
+    }
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": axis, "signal": signal}),
+        metadata=metadata,
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "a.u."},
+        original_columns={"temperature": "wavenumber", "signal": "intensity"},
+        file_path="",
+    )
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_flat_ref",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_flat_ref_demo",
+    )
+    assert outcome["status"] == "saved"
+    assert outcome["state"]["diagnostics"].get("normalization_skipped") is True
+    assert outcome["state"]["normalized"] == []
+    # Matching should have run without crashing
+    assert outcome["record"]["summary"]["match_status"] in {"matched", "no_match", "library_unavailable"}
+    assert outcome["record"]["summary"]["candidate_count"] >= 0
+
+
+def test_execute_ftir_batch_without_candidates_reports_library_unavailable(monkeypatch):
+    dataset = _make_spectral_dataset(analysis_type="FTIR", include_reference_library=False)
+
+    class _OffCloud:
+        configured = False
+        last_error = ""
+
+        def search(self, **kwargs):
+            return None
+
+    class _StubMgr:
+        def library_context(self, analysis_type):
+            return {
+                "analysis_type": analysis_type,
+                "reference_package_count": 0,
+                "reference_candidate_count": 0,
+                "library_sync_mode": "off",
+                "library_cache_status": "unknown",
+                "library_mode": "not_configured",
+                "cloud_url": "",
+                "cloud_enabled_by_env": False,
+                "cloud_access_enabled": False,
+                "cloud_provider_count": 0,
+                "fallback_package_count": 0,
+                "fallback_entry_count": 0,
+                "last_cloud_lookup_at": None,
+                "last_cloud_error": "",
+            }
+
+        def count_installed_candidates(self, analysis_type):
+            return 0
+
+        def load_entries(self, analysis_type):
+            return []
+
+        def record_cloud_lookup(self, **kwargs):
+            return None
+
+    monkeypatch.setattr("core.batch_runner.get_library_cloud_client", lambda: _OffCloud())
+    monkeypatch.setattr("core.batch_runner.get_reference_library_manager", lambda: _StubMgr())
+
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_no_lib",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_no_lib",
+    )
+    assert outcome["status"] == "saved"
+    assert outcome["record"]["summary"]["match_status"] == "library_unavailable"
+    assert outcome["record"]["summary"]["caution_code"] == "spectral_library_unavailable"
+    assert not outcome["record"]["rows"]
+
+
+def test_ftir_retains_multiple_visible_peaks_wide_axis():
+    axis = np.linspace(550.0, 3850.0, 1600)
+    centers = (880.0, 1180.0, 1620.0, 1745.0, 2925.0, 3350.0)
+    signal = sum(_gaussian(axis, c, 32.0, 1.12) for c in centers) + 0.012 * np.sin(axis / 90.0)
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": axis, "signal": signal}),
+        metadata={"sample_name": "WideFTIR", "display_name": "Wide FTIR", "source_data_hash": "wide-ftir-hash"},
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "absorbance"},
+        original_columns={"temperature": "wavenumber", "signal": "intensity"},
+        file_path="",
+    )
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_wide_peaks",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_wide_peaks",
+    )
+    assert outcome["status"] == "saved"
+    assert len(outcome["state"]["peaks"]) >= 5
+    diag = outcome["state"]["diagnostics"]
+    assert "plot_normalized_primary_axis" in diag
+    assert "normalized_axis_ratio_vs_corrected" in diag

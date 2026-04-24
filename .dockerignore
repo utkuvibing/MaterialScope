@@ -32,6 +32,7 @@ pytest_temp
 support_logs
 *.log
 *.zip
+*.scopezip
 *.thermozip
 .DS_Store
 Thumbs.db

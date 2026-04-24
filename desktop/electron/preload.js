@@ -12,6 +12,7 @@ const backendToken = readArgValue("ta-backend-token");
 function authHeaders(customHeaders) {
   return {
     "Content-Type": "application/json",
+    "X-MaterialScope-Token": backendToken,
     "X-TA-Token": backendToken,
     ...(customHeaders || {}),
   };
@@ -174,6 +175,7 @@ contextBridge.exposeInMainWorld("taDesktop", {
   async requestLibraryCloudToken(licenseToken) {
     const headers = {};
     if (licenseToken) {
+      headers["X-MaterialScope-License"] = licenseToken;
       headers["X-TA-License"] = licenseToken;
     }
     return apiCall("/v1/library/auth/token", {

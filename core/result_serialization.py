@@ -1,4 +1,4 @@
-"""Serializable result helpers for ThermoAnalyzer analysis outputs."""
+"""Serializable result helpers for MaterialScope analysis outputs."""
 
 from __future__ import annotations
 
@@ -1051,21 +1051,33 @@ def serialize_dta_result(
 ) -> dict[str, Any]:
     """Serialize a DTA analysis record."""
     peaks = list(peaks)
-    rows = [
-        {
-            "peak_type": getattr(peak, "direction", peak.peak_type),
-            "peak_temperature": _clean_scalar(peak.peak_temperature),
-            "onset_temperature": _clean_scalar(peak.onset_temperature),
-            "endset_temperature": _clean_scalar(peak.endset_temperature),
-            "area": _clean_scalar(peak.area),
-            "fwhm": _clean_scalar(peak.fwhm),
-            "height": _clean_scalar(peak.height),
-        }
-        for peak in peaks
-    ]
+    rows = []
+    exotherm_count = 0
+    endotherm_count = 0
+    for peak in peaks:
+        direction = str(getattr(peak, "direction", "") or getattr(peak, "peak_type", "") or "").strip().lower()
+        if direction.startswith("exo"):
+            exotherm_count += 1
+        elif direction.startswith("endo"):
+            endotherm_count += 1
+        rows.append(
+            {
+                "direction": direction or None,
+                "peak_type": getattr(peak, "peak_type", None),
+                "peak_temperature": _clean_scalar(peak.peak_temperature),
+                "onset_temperature": _clean_scalar(peak.onset_temperature),
+                "endset_temperature": _clean_scalar(peak.endset_temperature),
+                "area": _clean_scalar(peak.area),
+                "fwhm": _clean_scalar(peak.fwhm),
+                "height": _clean_scalar(peak.height),
+            }
+        )
     summary = {
         "peak_count": len(peaks),
+        "exotherm_count": exotherm_count,
+        "endotherm_count": endotherm_count,
         "sample_name": dataset.metadata.get("sample_name"),
+        "display_name": dataset.metadata.get("display_name"),
         "sample_mass": dataset.metadata.get("sample_mass"),
         "heating_rate": dataset.metadata.get("heating_rate"),
     }
@@ -1191,7 +1203,19 @@ def serialize_spectral_result(
     match_status = str(normalized_summary.get("match_status") or "").lower()
     confidence_band = str(normalized_summary.get("confidence_band") or "").lower()
     caution_payload = {}
-    if match_status == "no_match":
+    if match_status == "library_unavailable":
+        caution_payload = {
+            "code": str(normalized_summary.get("caution_code") or "spectral_library_unavailable"),
+            "message": str(
+                normalized_summary.get("caution_message")
+                or (
+                    "Reference spectral library matching was unavailable or not configured; "
+                    "absence of ranked candidates is a tooling limitation, not a spectroscopic no-match."
+                )
+            ),
+            "top_match_score": _clean_scalar(normalized_summary.get("top_match_score")),
+        }
+    elif match_status == "no_match":
         caution_payload = {
             "code": str(normalized_summary.get("caution_code") or "spectral_no_match"),
             "message": str(

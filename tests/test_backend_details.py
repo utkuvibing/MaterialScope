@@ -215,7 +215,7 @@ def _seed_spectral_result_store(analysis_type: str) -> tuple[ProjectStore, str, 
 
 
 def _headers() -> dict[str, str]:
-    return {"X-TA-Token": "details-token"}
+    return {"X-MaterialScope-Token": "details-token"}
 
 
 def _as_b64(raw: bytes) -> str:
@@ -306,6 +306,73 @@ def test_compare_workspace_read_write(thermal_dataset):
     assert payload["analysis_type"] == "DSC"
     assert payload["selected_datasets"] == [dataset_key]
     assert payload["notes"] == "Desktop compare smoke"
+
+
+def test_dataset_data_endpoint_and_delete_cascade(thermal_dataset):
+    app = create_app(api_token="details-token")
+    client = TestClient(app)
+    project_id, dataset_key, _result_id = _seed_workspace_with_dsc_result(client, thermal_dataset)
+
+    data_response = client.get(
+        f"/workspace/{project_id}/datasets/{dataset_key}/data",
+        headers=_headers(),
+    )
+    assert data_response.status_code == 200
+    data_payload = data_response.json()
+    assert data_payload["dataset_key"] == dataset_key
+    assert data_payload["columns"] == ["temperature", "signal"]
+    assert len(data_payload["rows"]) == len(thermal_dataset.data)
+
+    delete_response = client.delete(
+        f"/workspace/{project_id}/datasets/{dataset_key}",
+        headers=_headers(),
+    )
+    assert delete_response.status_code == 200
+    summary = delete_response.json()["summary"]
+    assert summary["dataset_count"] == 0
+    assert summary["result_count"] == 0
+    assert summary["active_dataset"] is None
+
+    missing_detail = client.get(
+        f"/workspace/{project_id}/datasets/{dataset_key}",
+        headers=_headers(),
+    )
+    assert missing_detail.status_code == 404
+
+
+def test_workspace_branding_roundtrip():
+    app = create_app(api_token="details-token")
+    client = TestClient(app)
+    project_id = client.post("/workspace/new", headers=_headers()).json()["project_id"]
+
+    initial = client.get(f"/workspace/{project_id}/branding", headers=_headers())
+    assert initial.status_code == 200
+    assert initial.json()["branding"]["report_title"] == "MaterialScope Professional Report"
+
+    logo_bytes = b"fake-logo-bytes"
+    updated = client.put(
+        f"/workspace/{project_id}/branding",
+        headers=_headers(),
+        json={
+            "report_title": "Acme Thermal Report",
+            "company_name": "Acme Materials",
+            "lab_name": "Applications Lab",
+            "analyst_name": "Ada Lovelace",
+            "report_notes": "Internal release candidate.",
+            "logo_name": "acme_logo.png",
+            "logo_base64": _as_b64(logo_bytes),
+        },
+    )
+    assert updated.status_code == 200
+    branding = updated.json()["branding"]
+    assert branding["report_title"] == "Acme Thermal Report"
+    assert branding["company_name"] == "Acme Materials"
+    assert branding["logo_name"] == "acme_logo.png"
+    assert base64.b64decode(branding["logo_base64"].encode("ascii")) == logo_bytes
+
+    reloaded = client.get(f"/workspace/{project_id}/branding", headers=_headers())
+    assert reloaded.status_code == 200
+    assert reloaded.json()["branding"]["analyst_name"] == "Ada Lovelace"
 
 
 def test_compare_workspace_accepts_spectral_analysis_types():
@@ -424,11 +491,10 @@ def test_result_literature_compare_endpoint_persists_payload():
 def test_result_literature_compare_endpoint_persists_safe_context_when_no_real_results_exist(monkeypatch):
     for name in (
         "MATERIALSCOPE_OPENALEX_EMAIL",
-        "THERMOANALYZER_OPENALEX_EMAIL",
         "MATERIALSCOPE_OPENALEX_API_KEY",
-        "THERMOANALYZER_OPENALEX_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK", raising=False)
     store, project_id, result_id = _seed_xrd_result_store()
     client = TestClient(create_app(api_token="details-token", store=store))
 
@@ -446,6 +512,67 @@ def test_result_literature_compare_endpoint_persists_safe_context_when_no_real_r
     assert payload["literature_context"]["real_literature_available"] is False
     assert payload["literature_context"]["provider_query_status"] == "not_configured"
     assert payload["literature_context"]["no_results_reason"] == "not_configured"
+
+
+def test_result_literature_compare_fixture_fallback_when_openalex_unconfigured(monkeypatch):
+    for name in (
+        "MATERIALSCOPE_OPENALEX_EMAIL",
+        "MATERIALSCOPE_OPENALEX_API_KEY",
+        "MATERIALSCOPE_OPENALEX_BASE_URL",
+        "THERMOANALYZER_OPENALEX_EMAIL",
+        "THERMOANALYZER_OPENALEX_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK", "1")
+    store, project_id, result_id = _seed_xrd_result_store()
+    client = TestClient(create_app(api_token="details-token", store=store))
+
+    response = client.post(
+        f"/workspace/{project_id}/results/{result_id}/literature/compare",
+        headers=_headers(),
+        json={"persist": False},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["literature_context"]["provider_scope"] == ["openalex_like_provider", "fixture_provider"]
+    assert payload["literature_context"]["provider_query_status"] == "success"
+    assert payload["literature_context"]["fixture_fallback_allowed"] is True
+    assert payload["literature_context"]["fixture_fallback_used"] is True
+    assert payload["literature_comparisons"]
+
+
+def test_result_literature_compare_user_documents_when_openalex_unconfigured(monkeypatch):
+    for name in (
+        "MATERIALSCOPE_OPENALEX_EMAIL",
+        "MATERIALSCOPE_OPENALEX_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK", raising=False)
+    store, project_id, result_id = _seed_xrd_result_store()
+    client = TestClient(create_app(api_token="details-token", store=store))
+
+    response = client.post(
+        f"/workspace/{project_id}/results/{result_id}/literature/compare",
+        headers=_headers(),
+        json={
+            "persist": False,
+            "provider_ids": ["openalex_like_provider"],
+            "user_documents": [
+                {
+                    "document_id": "user_note_phase_alpha",
+                    "title": "Internal screening note",
+                    "text": "Qualitative agreement with Phase Alpha under the same measurement conditions.",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["literature_context"]["provider_query_status"] == "not_configured"
+    assert payload["literature_comparisons"]
+    assert payload["literature_context"]["source_count"] >= 1
 
 
 def test_result_literature_compare_endpoint_defaults_live_provider_for_thermal_results():
@@ -479,6 +606,23 @@ def test_result_literature_compare_endpoint_defaults_live_provider_for_ftir_resu
     payload = response.json()
     assert payload["literature_context"]["provider_scope"] == ["openalex_like_provider"]
     assert payload["literature_context"]["analysis_type"] == "FTIR"
+    assert payload["literature_context"]["query_text"]
+
+
+def test_result_literature_compare_endpoint_defaults_live_provider_for_raman_results():
+    store, project_id, result_id = _seed_spectral_result_store("RAMAN")
+    client = TestClient(create_app(api_token="details-token", store=store))
+
+    response = client.post(
+        f"/workspace/{project_id}/results/{result_id}/literature/compare",
+        headers=_headers(),
+        json={"persist": True},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["literature_context"]["provider_scope"] == ["openalex_like_provider"]
+    assert payload["literature_context"]["analysis_type"] == "RAMAN"
     assert payload["literature_context"]["query_text"]
 
 

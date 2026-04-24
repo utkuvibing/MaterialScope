@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -11,7 +12,10 @@ from typing import Any, Mapping
 
 import numpy as np
 
-LIBRARY_ENV_HOSTED_ROOT = "THERMOANALYZER_LIBRARY_HOSTED_ROOT"
+from core.path_env import library_filesystem_env_looks_like_windows_leak
+
+LIBRARY_ENV_HOSTED_ROOT = "MATERIALSCOPE_LIBRARY_HOSTED_ROOT"
+LIBRARY_ENV_HOSTED_ROOT_LEGACY = "THERMOANALYZER_LIBRARY_HOSTED_ROOT"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_HOSTED_ROOT = PROJECT_ROOT / "build" / "reference_library_hosted"
 HOSTED_MANIFEST_FILE = "manifest.json"
@@ -22,13 +26,28 @@ _LOCAL_NORMALIZED_ROOT_NAMES = ("reference_library_ingest_live", "reference_libr
 _SAMPLE_NORMALIZED_ROOT_NAMES = ("reference_library_ingest_cloud_dev",)
 _XRD_SEED_COVERAGE_THRESHOLD = 12
 
+logger = logging.getLogger(__name__)
+
 
 def utcnow_iso() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def resolve_hosted_root(root: str | Path | None = None) -> Path:
-    configured = str(root or os.getenv(LIBRARY_ENV_HOSTED_ROOT, "")).strip()
+    configured = str(
+        root
+        or os.getenv(LIBRARY_ENV_HOSTED_ROOT, "")
+        or os.getenv(LIBRARY_ENV_HOSTED_ROOT_LEGACY, "")
+    ).strip()
+    if configured and library_filesystem_env_looks_like_windows_leak(configured):
+        logger.warning(
+            "Ignoring %s / %s hosted root %r on this platform; using default %s.",
+            LIBRARY_ENV_HOSTED_ROOT,
+            LIBRARY_ENV_HOSTED_ROOT_LEGACY,
+            configured,
+            DEFAULT_HOSTED_ROOT,
+        )
+        configured = ""
     return Path(configured or DEFAULT_HOSTED_ROOT).resolve()
 
 

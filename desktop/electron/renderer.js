@@ -1,5 +1,5 @@
 let activeProjectId = null;
-let activeProjectDefaultName = "thermoanalyzer_project.thermozip";
+let activeProjectDefaultName = "materialscope_project.scopezip";
 let selectedDatasetKey = null;
 let selectedResultId = null;
 let currentDatasets = [];
@@ -259,7 +259,7 @@ function applyStaticLanguage() {
   );
   setText(
     "sidebarAboutTitle",
-    currentLanguage === "tr" ? "ThermoAnalyzer Hakkında" : "About ThermoAnalyzer"
+    currentLanguage === "tr" ? "MaterialScope Hakkında" : "About MaterialScope"
   );
   setText(
     "sidebarAboutCopy",
@@ -305,7 +305,7 @@ function applyStaticLanguage() {
       : "Open your project, import data, and confirm validation signals before analysis/compare."
   );
   setText("newWorkspaceBtn", currentLanguage === "tr" ? "Yeni Proje" : "New Project");
-  setText("openProjectBtn", currentLanguage === "tr" ? ".thermozip Aç" : "Open .thermozip");
+  setText("openProjectBtn", currentLanguage === "tr" ? "Proje Arşivi Aç (.scopezip/.thermozip)" : "Open Project Archive (.scopezip/.thermozip)");
   setText("saveProjectBtn", currentLanguage === "tr" ? "Projeyi Kaydet" : "Save Workspace");
   setText("refreshWorkspaceContextBtn", currentLanguage === "tr" ? "Bağlamı Yenile" : "Refresh Context");
   setText("homeWorkflowTitle", currentLanguage === "tr" ? "Program Rehberi ve İş Akışı" : "Program Guide and Workflow");
@@ -520,7 +520,7 @@ function switchView(name) {
   const nav = document.querySelector(`.nav-item[data-view="${name}"]`);
   if (nav) nav.classList.add("active");
   const titleKey = viewTitleKeys[name];
-  setText("pageTitle", titleKey ? t(titleKey) : "ThermoAnalyzer Desktop");
+  setText("pageTitle", titleKey ? t(titleKey) : "MaterialScope Desktop");
 }
 
 function updateStatusWorkspace() {
@@ -1580,7 +1580,7 @@ async function refreshStatus() {
     setText("statusVersion", t("status.version", { version: version.app_version }));
     setText("licenseVersionValue", valueOr(version.app_version, t("common.unknown")));
     setText("licenseProjectExtValue", valueOr(version.project_extension, t("common.unknown")));
-    setHtml("diagVersion", `${currentLanguage === "tr" ? "ThermoAnalyzer uygulama sürümü" : "ThermoAnalyzer app version"}: <strong>${escapeHtml(version.app_version)}</strong> | ${currentLanguage === "tr" ? "Proje uzantısı" : "Project extension"}: <code>${escapeHtml(version.project_extension)}</code>`);
+    setHtml("diagVersion", `${currentLanguage === "tr" ? "MaterialScope uygulama sürümü" : "MaterialScope app version"}: <strong>${escapeHtml(version.app_version)}</strong> | ${currentLanguage === "tr" ? "Proje uzantısı" : "Project extension"}: <code>${escapeHtml(version.project_extension)}</code>`);
   } catch (error) {
     setText("statusVersion", t("status.versionFailed"));
     setText("licenseVersionValue", t("common.unknown"));
@@ -1710,7 +1710,7 @@ async function onNewWorkspace() {
     activeProjectId = created.project_id;
     selectedDatasetKey = null;
     selectedResultId = null;
-    activeProjectDefaultName = "thermoanalyzer_project.thermozip";
+    activeProjectDefaultName = "materialscope_project.scopezip";
     await refreshWorkspaceViews();
     appendLog(currentLanguage === "tr" ? `Çalışma alanı oluşturuldu: ${activeProjectId}.` : `Created workspace ${activeProjectId}.`);
   } catch (error) {
@@ -1729,7 +1729,7 @@ async function onOpenProject() {
     activeProjectId = loaded.project_id;
     selectedDatasetKey = null;
     selectedResultId = null;
-    activeProjectDefaultName = `thermoanalyzer_project${loaded.project_extension}`;
+    activeProjectDefaultName = `materialscope_project${loaded.project_extension}`;
     await refreshWorkspaceViews();
     appendLog(currentLanguage === "tr" ? `Proje yüklendi: ${picked.filePath}.` : `Loaded project from ${picked.filePath}.`);
   } catch (error) {

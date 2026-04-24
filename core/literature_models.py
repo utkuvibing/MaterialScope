@@ -29,6 +29,9 @@ ALLOWED_VALIDATION_POSTURES = {
     "alternative_interpretation",
     "non_validating",
 }
+ALLOWED_THERMAL_SEARCH_MODES = {"known_material", "behavior_first"}
+ALLOWED_SUBJECT_TRUST = {"trusted", "low_trust", "absent"}
+ALLOWED_EVIDENCE_SCOPES = {"material_specific", "behavior_level", "generic_context"}
 
 
 def _clean_text(value: Any) -> str:
@@ -81,6 +84,27 @@ def _normalize_validation_posture(value: Any) -> str:
     token = _clean_text(value).lower() or "non_validating"
     if token not in ALLOWED_VALIDATION_POSTURES:
         return "non_validating"
+    return token
+
+
+def _normalize_thermal_search_mode(value: Any) -> str:
+    token = _clean_text(value).lower()
+    if token not in ALLOWED_THERMAL_SEARCH_MODES:
+        return ""
+    return token
+
+
+def _normalize_subject_trust(value: Any) -> str:
+    token = _clean_text(value).lower()
+    if token not in ALLOWED_SUBJECT_TRUST:
+        return ""
+    return token
+
+
+def _normalize_evidence_scope(value: Any) -> str:
+    token = _clean_text(value).lower()
+    if token not in ALLOWED_EVIDENCE_SCOPES:
+        return ""
     return token
 
 
@@ -168,6 +192,7 @@ class LiteratureComparison:
     citation_ids: list[str] = field(default_factory=list)
     confidence: str = "low"
     sources_considered: int = 0
+    evidence_scope: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -192,6 +217,7 @@ class LiteratureComparison:
         payload["evidence_used"] = _to_str_list(payload.get("evidence_used"))
         payload["citation_ids"] = _to_str_list(payload.get("citation_ids"))
         payload["confidence"] = _normalize_confidence(payload.get("confidence"), default="low")
+        payload["evidence_scope"] = _normalize_evidence_scope(payload.get("evidence_scope"))
         try:
             payload["paper_year"] = int(payload.get("paper_year")) if payload.get("paper_year") not in (None, "") else None
         except (TypeError, ValueError):
@@ -272,9 +298,13 @@ class LiteratureContext:
     query_display_title: str = ""
     query_display_mode: str = ""
     query_display_terms: list[str] = field(default_factory=list)
+    search_mode: str = ""
+    subject_trust: str = ""
+    evidence_scope_summary: str = ""
     low_specificity_retrieval: bool = False
     surfaced_comparison_count: int = 0
     evidence_specificity_summary: str = ""
+    executed_queries: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -329,12 +359,16 @@ class LiteratureContext:
         payload["query_display_title"] = _clean_text(payload.get("query_display_title"))
         payload["query_display_mode"] = _clean_text(payload.get("query_display_mode"))
         payload["query_display_terms"] = _to_str_list(payload.get("query_display_terms"))
+        payload["search_mode"] = _normalize_thermal_search_mode(payload.get("search_mode"))
+        payload["subject_trust"] = _normalize_subject_trust(payload.get("subject_trust"))
+        payload["evidence_scope_summary"] = _normalize_evidence_scope(payload.get("evidence_scope_summary"))
         payload["low_specificity_retrieval"] = bool(payload.get("low_specificity_retrieval"))
         try:
             payload["surfaced_comparison_count"] = int(payload.get("surfaced_comparison_count") or 0)
         except (TypeError, ValueError):
             payload["surfaced_comparison_count"] = 0
         payload["evidence_specificity_summary"] = _clean_text(payload.get("evidence_specificity_summary")).lower()
+        payload["executed_queries"] = _to_str_list(payload.get("executed_queries"))
         return payload
 
 
@@ -381,9 +415,13 @@ def normalize_literature_context(value: Any) -> dict[str, Any]:
         query_display_title=source.get("query_display_title", ""),
         query_display_mode=source.get("query_display_mode", ""),
         query_display_terms=source.get("query_display_terms", []),
+        search_mode=source.get("search_mode", ""),
+        subject_trust=source.get("subject_trust", ""),
+        evidence_scope_summary=source.get("evidence_scope_summary", ""),
         low_specificity_retrieval=source.get("low_specificity_retrieval", False),
         surfaced_comparison_count=source.get("surfaced_comparison_count", 0),
         evidence_specificity_summary=source.get("evidence_specificity_summary", ""),
+        executed_queries=source.get("executed_queries", []),
     ).to_dict()
 
 
@@ -461,6 +499,7 @@ def normalize_literature_comparisons(value: Any) -> list[dict[str, Any]]:
                 citation_ids=_to_str_list(source.get("citation_ids")),
                 confidence=source.get("confidence") or "low",
                 sources_considered=source.get("sources_considered") or 0,
+                evidence_scope=source.get("evidence_scope") or "",
             ).to_dict()
         )
     return output

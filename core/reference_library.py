@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -18,19 +19,28 @@ from typing import Any, Iterable, Mapping
 import httpx
 import numpy as np
 
+from core.path_env import library_filesystem_env_looks_like_windows_leak
 from utils.license_manager import encode_license_key, get_storage_dir
 
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_BACKGROUND_REFRESH_HOURS = 24
 DEFAULT_PRIORITY = 0
 MANIFEST_FILE = "manifest.json"
 SYNC_STATE_FILE = "sync_state.json"
-LIBRARY_ENV_FEED_URL = "THERMOANALYZER_LIBRARY_FEED_URL"
-LIBRARY_ENV_MIRROR_ROOT = "THERMOANALYZER_LIBRARY_MIRROR_ROOT"
-LIBRARY_ENV_CLOUD_URL = "THERMOANALYZER_LIBRARY_CLOUD_URL"
-LIBRARY_ENV_CLOUD_ENABLED = "THERMOANALYZER_LIBRARY_CLOUD_ENABLED"
-LIBRARY_ENV_ALLOW_FULL_PROVIDER_SYNC = "THERMOANALYZER_LIBRARY_ALLOW_FULL_PROVIDER_SYNC"
-LIBRARY_HEADER = "X-TA-License"
+LIBRARY_ENV_FEED_URL = "MATERIALSCOPE_LIBRARY_FEED_URL"
+LIBRARY_ENV_FEED_URL_LEGACY = "THERMOANALYZER_LIBRARY_FEED_URL"
+LIBRARY_ENV_MIRROR_ROOT = "MATERIALSCOPE_LIBRARY_MIRROR_ROOT"
+LIBRARY_ENV_MIRROR_ROOT_LEGACY = "THERMOANALYZER_LIBRARY_MIRROR_ROOT"
+LIBRARY_ENV_CLOUD_URL = "MATERIALSCOPE_LIBRARY_CLOUD_URL"
+LIBRARY_ENV_CLOUD_URL_LEGACY = "THERMOANALYZER_LIBRARY_CLOUD_URL"
+LIBRARY_ENV_CLOUD_ENABLED = "MATERIALSCOPE_LIBRARY_CLOUD_ENABLED"
+LIBRARY_ENV_CLOUD_ENABLED_LEGACY = "THERMOANALYZER_LIBRARY_CLOUD_ENABLED"
+LIBRARY_ENV_ALLOW_FULL_PROVIDER_SYNC = "MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC"
+LIBRARY_ENV_ALLOW_FULL_PROVIDER_SYNC_LEGACY = "THERMOANALYZER_LIBRARY_ALLOW_FULL_PROVIDER_SYNC"
+LIBRARY_HEADER = "X-MaterialScope-License"
+LIBRARY_HEADER_LEGACY = "X-TA-License"
 LIBRARY_API_PREFIX = "/v1/library"
 DELIVERY_TIER_LIMITED_FALLBACK = "limited_fallback"
 DELIVERY_TIER_FULL_PROVIDER = "full_provider"
@@ -125,16 +135,28 @@ def utcnow_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _env_value(primary: str, legacy: str, default: str = "") -> str:
+    return str(os.getenv(primary, "") or os.getenv(legacy, "") or default)
+
+
 def get_library_root() -> Path:
     return get_storage_dir() / "libraries"
 
 
 def configured_library_feed_source() -> str | None:
-    feed_url = os.getenv(LIBRARY_ENV_FEED_URL, "").strip()
+    feed_url = _env_value(LIBRARY_ENV_FEED_URL, LIBRARY_ENV_FEED_URL_LEGACY).strip()
     if feed_url:
         return feed_url.rstrip("/")
 
-    mirror_root = os.getenv(LIBRARY_ENV_MIRROR_ROOT, "").strip()
+    mirror_root = _env_value(LIBRARY_ENV_MIRROR_ROOT, LIBRARY_ENV_MIRROR_ROOT_LEGACY).strip()
+    if mirror_root and library_filesystem_env_looks_like_windows_leak(mirror_root):
+        logger.warning(
+            "Ignoring %s / %s mirror root %r on this platform (Windows-style path on POSIX).",
+            LIBRARY_ENV_MIRROR_ROOT,
+            LIBRARY_ENV_MIRROR_ROOT_LEGACY,
+            mirror_root,
+        )
+        mirror_root = ""
     if mirror_root:
         return Path(mirror_root).resolve().as_uri()
     return None
@@ -322,7 +344,10 @@ class MirrorClient:
         encoded = _license_header_value(license_state)
         if not encoded:
             return {}
-        return {LIBRARY_HEADER: encoded}
+        return {
+            LIBRARY_HEADER: encoded,
+            LIBRARY_HEADER_LEGACY: encoded,
+        }
 
     def _is_file_source(self) -> bool:
         return self.source.startswith("file://")
@@ -518,16 +543,18 @@ class ReferenceLibraryManager:
 
     def _cloud_access_enabled(self, state: LibrarySyncState | None = None) -> bool:
         state = state or self.load_sync_state()
-        cloud_root = str(os.getenv(LIBRARY_ENV_CLOUD_URL, "")).strip()
+        cloud_root = _env_value(LIBRARY_ENV_CLOUD_URL, LIBRARY_ENV_CLOUD_URL_LEGACY).strip()
         if not cloud_root:
             return False
-        enabled_override = os.getenv(LIBRARY_ENV_CLOUD_ENABLED, "")
+        enabled_override = _env_value(LIBRARY_ENV_CLOUD_ENABLED, LIBRARY_ENV_CLOUD_ENABLED_LEGACY)
         if enabled_override != "" and not _truthy(enabled_override):
             return False
         return bool(state.cloud_access_enabled) and max(0, int(state.cloud_provider_count or 0)) > 0
 
     def _allow_full_provider_sync(self) -> bool:
-        return _truthy(os.getenv(LIBRARY_ENV_ALLOW_FULL_PROVIDER_SYNC, ""))
+        return _truthy(
+            _env_value(LIBRARY_ENV_ALLOW_FULL_PROVIDER_SYNC, LIBRARY_ENV_ALLOW_FULL_PROVIDER_SYNC_LEGACY)
+        )
 
     def _installed_mapping(self) -> dict[str, InstalledLibrary]:
         state = self.load_sync_state()
@@ -623,9 +650,12 @@ class ReferenceLibraryManager:
             "last_error": state.last_error,
             "sync_due": self.needs_manifest_refresh() if self.client.configured else False,
             "library_mode": library_mode,
-            "cloud_url": str(os.getenv(LIBRARY_ENV_CLOUD_URL, "")).strip(),
-            "cloud_enabled_by_env": bool(str(os.getenv(LIBRARY_ENV_CLOUD_URL, "")).strip())
-            and (str(os.getenv(LIBRARY_ENV_CLOUD_ENABLED, "")).strip() == "" or _truthy(os.getenv(LIBRARY_ENV_CLOUD_ENABLED, ""))),
+            "cloud_url": _env_value(LIBRARY_ENV_CLOUD_URL, LIBRARY_ENV_CLOUD_URL_LEGACY).strip(),
+            "cloud_enabled_by_env": bool(_env_value(LIBRARY_ENV_CLOUD_URL, LIBRARY_ENV_CLOUD_URL_LEGACY).strip())
+            and (
+                _env_value(LIBRARY_ENV_CLOUD_ENABLED, LIBRARY_ENV_CLOUD_ENABLED_LEGACY).strip() == ""
+                or _truthy(_env_value(LIBRARY_ENV_CLOUD_ENABLED, LIBRARY_ENV_CLOUD_ENABLED_LEGACY))
+            ),
             "cloud_access_enabled": cloud_access_enabled,
             "cloud_provider_count": cloud_provider_count,
             "fallback_package_count": len(fallback_packages),
@@ -728,8 +758,8 @@ class ReferenceLibraryManager:
         error: str = "",
     ) -> None:
         state = self.load_sync_state()
-        cloud_root = str(os.getenv(LIBRARY_ENV_CLOUD_URL, "")).strip()
-        enabled_override = os.getenv(LIBRARY_ENV_CLOUD_ENABLED, "")
+        cloud_root = _env_value(LIBRARY_ENV_CLOUD_URL, LIBRARY_ENV_CLOUD_URL_LEGACY).strip()
+        enabled_override = _env_value(LIBRARY_ENV_CLOUD_ENABLED, LIBRARY_ENV_CLOUD_ENABLED_LEGACY)
         cloud_configured = bool(cloud_root) and (enabled_override == "" or _truthy(enabled_override))
         effective_provider_count = max(0, int(provider_count)) if provider_count is not None else None
         zero_provider_lookup = bool(success and effective_provider_count is not None and effective_provider_count <= 0)

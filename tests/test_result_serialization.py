@@ -115,8 +115,13 @@ def test_serialize_dta_result_stable_status_and_context_wording():
 
     assert record["status"] == "stable"
     assert record["summary"]["sample_name"] == "SyntheticDTA"
+    assert record["summary"]["display_name"] == "Synthetic DTA Run"
     assert record["summary"]["sample_mass"] == 5.0
     assert record["summary"]["heating_rate"] == 10.0
+    assert record["summary"]["exotherm_count"] == 1
+    assert record["summary"]["endotherm_count"] == 0
+    assert record["rows"][0]["direction"] == "exo"
+    assert record["rows"][0]["peak_type"] == "exo"
     assert record["scientific_context"]["methodology"]["workflow_template"] == "General DTA"
     limitations = " ".join(record["scientific_context"]["limitations"]).lower()
     assert "outside stable reporting guarantees" not in limitations
@@ -283,6 +288,8 @@ def test_serialize_ftir_result_persists_no_match_caution_and_evidence():
     assert record["review"]["caution"]["code"] == "spectral_no_match"
     assert record["rows"][0]["library_provider"] == "OpenSpecy"
     assert record["rows"][0]["evidence"]["shared_peak_count"] == 0
+    claim_blob = " ".join(item.get("claim", "") for item in record["scientific_context"].get("scientific_claims") or [])
+    assert "not specialized for this analysis type yet" not in claim_blob.lower()
     assert record["scientific_context"]["methodology"]["library_context"]["package"] == "openspecy_ftir_core"
     assert record["scientific_context"]["methodology"]["library_context"]["request_id"] == "libreq_ftir_001"
     assert record["scientific_context"]["fit_quality"]["confidence_band"] == "no_match"

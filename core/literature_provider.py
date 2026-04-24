@@ -398,6 +398,20 @@ def build_openalex_like_client_from_env() -> OpenAlexHTTPClient | None:
     )
 
 
+def openalex_literature_env_configured() -> bool:
+    """True when OpenAlex-backed literature search has explicit env configuration."""
+    return build_openalex_like_client_from_env() is not None
+
+
+def literature_fixture_fallback_enabled() -> bool:
+    """Opt-in dev/demo: combine bundled fixture literature when live OpenAlex is not configured."""
+    for name in ("MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK", "THERMOANALYZER_LITERATURE_FIXTURE_FALLBACK"):
+        raw = _clean_text(os.getenv(name)).lower()
+        if raw in {"1", "true", "yes", "on"}:
+            return True
+    return False
+
+
 class FixtureLiteratureProvider:
     """Synthetic provider used for MVP development and test coverage."""
 

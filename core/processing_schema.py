@@ -10,7 +10,7 @@ from typing import Any
 PROCESSING_SCHEMA_VERSION = 1
 
 _SIGNAL_PIPELINE_SECTIONS = {
-    "DSC": ("smoothing", "baseline"),
+    "DSC": ("smoothing", "baseline", "normalization"),
     "TGA": ("smoothing",),
     "DTA": ("smoothing", "baseline"),
     "FTIR": ("smoothing", "baseline", "normalization"),

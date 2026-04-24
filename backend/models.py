@@ -121,6 +121,7 @@ class SpectralLibrarySearchRequest(BaseModel):
     preprocessing_metadata: dict[str, Any] = Field(default_factory=dict)
     sample_metadata: dict[str, Any] = Field(default_factory=dict)
     import_metadata: dict[str, Any] = Field(default_factory=dict)
+    metric: str | None = None
     top_n: int | None = None
     minimum_score: float | None = None
 
@@ -264,6 +265,7 @@ class DatasetImportRequest(BaseModel):
     file_name: str = Field(..., min_length=1)
     file_base64: str = Field(..., min_length=1)
     data_type: str | None = None
+    column_mapping: dict[str, str] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -285,6 +287,13 @@ class AnalysisRunRequest(BaseModel):
     dataset_key: str = Field(..., min_length=1)
     analysis_type: str = Field(..., min_length=1)
     workflow_template_id: str | None = None
+    unit_mode: str | None = None
+    # Optional per-step parameter overrides keyed by section name
+    # (e.g. "smoothing", "baseline", "peak_detection", or "method_context").
+    # Merged into workspace analysis-state processing payload before the
+    # template defaults are applied, so user-tuned parameters win over
+    # template defaults inside core._build_processing_payload.
+    processing_overrides: dict[str, Any] | None = None
 
 
 class AnalysisRunResponse(BaseModel):
@@ -310,6 +319,13 @@ class DatasetDetailResponse(BaseModel):
     compare_selected: bool = False
 
 
+class DatasetDataResponse(BaseModel):
+    project_id: str
+    dataset_key: str
+    columns: list[str]
+    rows: list[dict[str, Any]]
+
+
 class ResultDetailResponse(BaseModel):
     project_id: str
     result: ResultSummary
@@ -322,8 +338,11 @@ class ResultDetailResponse(BaseModel):
     literature_claims: list[dict[str, Any]] = Field(default_factory=list)
     literature_comparisons: list[dict[str, Any]] = Field(default_factory=list)
     citations: list[dict[str, Any]] = Field(default_factory=list)
+    rows: list[dict[str, Any]] = Field(default_factory=list)
     rows_preview: list[dict[str, Any]]
     row_count: int
+    # PNG bytes live in workspace ``figures``; this is metadata only for UIs (exports, Dash gallery).
+    figure_artifacts: dict[str, Any] = Field(default_factory=dict)
 
 
 class LiteratureUserDocumentInput(BaseModel):
@@ -359,6 +378,60 @@ class LiteratureCompareResponse(BaseModel):
     literature_comparisons: list[dict[str, Any]] = Field(default_factory=list)
     citations: list[dict[str, Any]] = Field(default_factory=list)
     detail: ResultDetailResponse | None = None
+
+
+class ResultFigureRegisterRequest(BaseModel):
+    figure_png_base64: str
+    figure_label: str
+    replace: bool = False
+
+
+class ResultFigureRegisterResponse(BaseModel):
+    project_id: str
+    result_id: str
+    figure_key: str
+    figure_keys: list[str] = Field(default_factory=list)
+
+
+class PresetSummary(BaseModel):
+    analysis_type: str
+    preset_name: str
+    workflow_template_id: str = ""
+    created_at: str
+    updated_at: str
+
+
+class PresetListResponse(BaseModel):
+    analysis_type: str
+    count: int
+    max_count: int
+    presets: list[PresetSummary] = Field(default_factory=list)
+
+
+class PresetSaveRequest(BaseModel):
+    preset_name: str
+    workflow_template_id: str | None = None
+    processing: dict[str, Any] = Field(default_factory=dict)
+
+
+class PresetSaveResponse(BaseModel):
+    analysis_type: str
+    preset_name: str
+    workflow_template_id: str
+    updated_at: str
+
+
+class PresetLoadResponse(BaseModel):
+    analysis_type: str
+    preset_name: str
+    workflow_template_id: str
+    processing: dict[str, Any] = Field(default_factory=dict)
+
+
+class PresetDeleteResponse(BaseModel):
+    analysis_type: str
+    preset_name: str
+    deleted: bool
 
 
 class CompareWorkspacePayload(BaseModel):
@@ -399,6 +472,7 @@ class ExportPreparationResponse(BaseModel):
 
 class ExportGenerateRequest(BaseModel):
     selected_result_ids: list[str] | None = None
+    include_figures: bool = True
 
 
 class ExportArtifactResponse(BaseModel):
@@ -409,6 +483,7 @@ class ExportArtifactResponse(BaseModel):
     included_result_ids: list[str]
     skipped_record_issues: list[str]
     artifact_base64: str
+    export_warnings: list[str] = Field(default_factory=list)
 
 
 class WorkspaceContextResponse(BaseModel):
@@ -433,6 +508,23 @@ class ActiveDatasetResponse(BaseModel):
     active_dataset: DatasetSummary | None = None
 
 
+class WorkspaceBrandingUpdateRequest(BaseModel):
+    report_title: str | None = None
+    company_name: str | None = None
+    lab_name: str | None = None
+    analyst_name: str | None = None
+    report_notes: str | None = None
+    logo_name: str | None = None
+    logo_base64: str | None = None
+    clear_logo: bool = False
+
+
+class WorkspaceBrandingResponse(BaseModel):
+    project_id: str
+    summary: ProjectSummary
+    branding: dict[str, Any]
+
+
 class CompareSelectionUpdateRequest(BaseModel):
     operation: str = Field(..., min_length=1)
     dataset_keys: list[str] | None = None
@@ -449,6 +541,27 @@ class BatchRunRequest(BaseModel):
     analysis_type: str = Field(..., min_length=1)
     workflow_template_id: str | None = None
     dataset_keys: list[str] | None = None
+
+
+class AnalysisStateCurvesResponse(BaseModel):
+    project_id: str
+    dataset_key: str
+    analysis_type: str
+    temperature: list[float] = Field(default_factory=list)
+    raw_signal: list[float] = Field(default_factory=list)
+    smoothed: list[float] = Field(default_factory=list)
+    baseline: list[float] = Field(default_factory=list)
+    corrected: list[float] = Field(default_factory=list)
+    normalized: list[float] = Field(default_factory=list)
+    dtg: list[float] = Field(default_factory=list)
+    peaks: list[dict[str, Any]] = Field(default_factory=list)
+    has_smoothed: bool = False
+    has_baseline: bool = False
+    has_corrected: bool = False
+    has_normalized: bool = False
+    has_dtg: bool = False
+    has_peaks: bool = False
+    diagnostics: dict[str, Any] = Field(default_factory=dict)
 
 
 class BatchRunResponse(BaseModel):

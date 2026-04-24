@@ -24,6 +24,37 @@ TECHNICAL_EDGE_TOKENS = {
     "dta",
     "tg",
 }
+PLACEHOLDER_SUBJECT_VALUES = {
+    "unknown",
+    "n/a",
+    "na",
+    "none",
+    "null",
+    "not recorded",
+    "unnamed",
+    "sample",
+    "sample name",
+    "specimen",
+    "material",
+}
+PLACEHOLDER_SUBJECT_TOKENS = {
+    "unknown",
+    "unnamed",
+    "sample",
+    "specimen",
+    "material",
+    "dataset",
+    "file",
+    "record",
+    "result",
+    "name",
+    "not",
+    "recorded",
+    "na",
+    "none",
+    "null",
+}
+TRUSTED_SUBJECT_SOURCES = {"summary.sample_name", "metadata.sample_name"}
 CHEMICAL_ALIASES = {
     "caco3": ["calcium carbonate", "calcite"],
 }
@@ -136,12 +167,24 @@ def _dedupe(values: list[str]) -> list[str]:
     return output
 
 
+def _is_placeholder_subject(value: str) -> bool:
+    lowered = _clean_text(value).lower()
+    if lowered in PLACEHOLDER_SUBJECT_VALUES:
+        return True
+    tokens = _tokenize(lowered)
+    if not tokens:
+        return True
+    return all(token in PLACEHOLDER_SUBJECT_TOKENS for token in tokens)
+
+
 def _is_scientific_subject(value: str) -> bool:
     cleaned = _strip_filename_artifacts(value)
     if not cleaned:
         return False
     lowered = cleaned.lower()
     if lowered in {"tga", "dsc", "dta", "thermal", "decomposition", "thermal event"}:
+        return False
+    if _is_placeholder_subject(cleaned):
         return False
     tokens = _tokenize(cleaned)
     if not tokens:
@@ -163,6 +206,8 @@ def _normalized_subject_candidates(record: Mapping[str, Any]) -> list[dict[str, 
         raw = _clean_text(raw_value)
         cleaned = _strip_filename_artifacts(raw)
         if not cleaned:
+            continue
+        if _is_placeholder_subject(cleaned):
             continue
         filename_like = _looks_like_filename(raw)
         score = 100 - index * 10
@@ -208,6 +253,24 @@ def _best_subject(record: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _infer_subject_trust(subject: Mapping[str, Any]) -> str:
+    cleaned = _clean_text(subject.get("cleaned"))
+    if not cleaned:
+        return "absent"
+    source = _clean_text(subject.get("source"))
+    if source not in TRUSTED_SUBJECT_SOURCES:
+        return "low_trust"
+    if bool(subject.get("filename_like")):
+        return "low_trust"
+    if not _is_scientific_subject(cleaned):
+        return "low_trust"
+    return "trusted"
+
+
+def _infer_search_mode(subject_trust: str) -> str:
+    return "known_material" if _clean_text(subject_trust).lower() == "trusted" else "behavior_first"
+
+
 def _quoted_subject(subject: Mapping[str, Any]) -> str:
     cleaned = _clean_text(subject.get("cleaned"))
     if cleaned and subject.get("quote_safe"):
@@ -247,6 +310,8 @@ def _generic_subject_query(subject: Mapping[str, Any], *, analysis_type: str, fa
 def _build_payload(
     *,
     analysis_type: str,
+    search_mode: str,
+    subject_trust: str,
     query_text: str,
     fallback_queries: list[str],
     query_rationale: str,
@@ -257,6 +322,8 @@ def _build_payload(
 ) -> dict[str, Any]:
     return {
         "analysis_type": analysis_type,
+        "search_mode": _clean_text(search_mode).lower(),
+        "subject_trust": _clean_text(subject_trust).lower(),
         "query_text": _clean_text(query_text),
         "fallback_queries": _dedupe([_clean_text(item) for item in fallback_queries if _clean_text(item)]),
         "query_rationale": _clean_text(query_rationale),
@@ -271,6 +338,8 @@ def build_dsc_literature_query(record: Mapping[str, Any]) -> dict[str, Any]:
     summary = _summary(record)
     rows = _rows(record)
     subject = _best_subject(record)
+    subject_trust = _infer_subject_trust(subject)
+    search_mode = _infer_search_mode(subject_trust)
     subject_label = _clean_text(subject.get("cleaned"))
     quoted_subject = _quoted_subject(subject)
     tg_midpoint = _round_temperature(summary.get("tg_midpoint"))
@@ -281,35 +350,72 @@ def build_dsc_literature_query(record: Mapping[str, Any]) -> dict[str, Any]:
     glass_transition_count = _clean_int(summary.get("glass_transition_count")) or 0
 
     if tg_midpoint is not None:
-        query_text = " ".join(
-            part for part in [quoted_subject, "DSC glass transition thermal analysis", f"{tg_midpoint} C"] if part
-        )
-        fallback_queries = [
-            _generic_subject_query(subject, analysis_type="DSC", fallback_label="glass transition"),
-            "DSC glass transition calorimetry",
-            _generic_subject_query(subject, analysis_type="thermal analysis", fallback_label="glass transition polymer"),
-        ]
+        if search_mode == "known_material":
+            query_text = " ".join(
+                part for part in [quoted_subject, "DSC glass transition thermal analysis", f"{tg_midpoint} C"] if part
+            )
+            fallback_queries = [
+                _generic_subject_query(subject, analysis_type="DSC", fallback_label="glass transition"),
+                "DSC glass transition calorimetry",
+                _generic_subject_query(subject, analysis_type="thermal analysis", fallback_label="glass transition polymer"),
+            ]
+            rationale = f"The DSC literature search is centered on a glass-transition signal near {tg_midpoint} C."
+        else:
+            query_text = " ".join(part for part in ["DSC glass transition thermal analysis", f"{tg_midpoint} C"] if part)
+            fallback_queries = [
+                "DSC glass transition calorimetry",
+                "thermal analysis glass transition polymer",
+                "differential scanning calorimetry glass transition",
+            ]
+            if subject_label:
+                fallback_queries.append(_generic_subject_query(subject, analysis_type="DSC", fallback_label="glass transition"))
+            fallback_queries.append(f"DSC glass transition {tg_midpoint} C polymer")
+            rationale = f"The DSC literature search uses behavior-first semantics centered on a glass-transition signal near {tg_midpoint} C."
         display_title = subject_label or "DSC glass transition"
-        rationale = f"The DSC literature search is centered on a glass-transition signal near {tg_midpoint} C."
         display_terms = ["glass transition", "calorimetry", "thermal event"]
     else:
         event_label = peak_type or "thermal event"
-        query_text = " ".join(
-            part
-            for part in [quoted_subject, "DSC thermal event calorimetry", event_label, f"{peak_temp} C" if peak_temp is not None else ""]
-            if part
-        )
-        fallback_queries = [
-            _generic_subject_query(subject, analysis_type="DSC", fallback_label="thermal event"),
-            "DSC endothermic exothermic event calorimetry",
-            _generic_subject_query(subject, analysis_type="thermal analysis", fallback_label=event_label),
-        ]
+        if search_mode == "known_material":
+            query_text = " ".join(
+                part
+                for part in [quoted_subject, "DSC thermal event calorimetry", event_label, f"{peak_temp} C" if peak_temp is not None else ""]
+                if part
+            )
+            fallback_queries = [
+                _generic_subject_query(subject, analysis_type="DSC", fallback_label="thermal event"),
+                "DSC endothermic exothermic event calorimetry",
+                _generic_subject_query(subject, analysis_type="thermal analysis", fallback_label=event_label),
+            ]
+            rationale = f"The DSC literature search is centered on the leading {event_label} event" + (f" near {peak_temp} C." if peak_temp is not None else ".")
+        else:
+            query_text = " ".join(
+                part for part in ["DSC thermal event calorimetry", event_label, f"{peak_temp} C" if peak_temp is not None else ""] if part
+            )
+            fallback_queries = [
+                "DSC endothermic exothermic event calorimetry",
+                "differential scanning calorimetry thermal analysis",
+            ]
+            if peak_type in ("endo", "endotherm", "endothermic"):
+                fallback_queries.append("DSC endotherm endothermic peak calorimetry")
+            elif peak_type in ("exo", "exotherm", "exothermic"):
+                fallback_queries.append("DSC exotherm exothermic peak crystallization calorimetry")
+            else:
+                fallback_queries.append("DSC endothermic exothermic thermal event")
+            if subject_label:
+                fallback_queries.append(_generic_subject_query(subject, analysis_type="DSC", fallback_label=event_label))
+            fallback_queries.append(_generic_subject_query(subject, analysis_type="thermal analysis", fallback_label=event_label))
+            if peak_temp is not None:
+                fallback_queries.append(f"DSC thermal event {peak_temp} C")
+            rationale = f"The DSC literature search uses behavior-first semantics centered on the leading {event_label} event" + (
+                f" near {peak_temp} C." if peak_temp is not None else "."
+            )
         display_title = subject_label or "DSC thermal event"
-        rationale = f"The DSC literature search is centered on the leading {event_label} event" + (f" near {peak_temp} C." if peak_temp is not None else ".")
         display_terms = ["thermal event", "calorimetry", event_label]
 
     return _build_payload(
         analysis_type="DSC",
+        search_mode=search_mode,
+        subject_trust=subject_trust,
         query_text=query_text,
         fallback_queries=fallback_queries,
         query_rationale=rationale,
@@ -319,6 +425,9 @@ def build_dsc_literature_query(record: Mapping[str, Any]) -> dict[str, Any]:
         evidence_snapshot={
             "sample_name": subject_label,
             "raw_subject": _clean_text(subject.get("raw")),
+            "subject_source": _clean_text(subject.get("source")),
+            "subject_trust": subject_trust,
+            "search_mode": search_mode,
             "filename_like_subject": bool(subject.get("filename_like")),
             "workflow_template": _workflow_label(record),
             "peak_count": peak_count,
@@ -334,6 +443,8 @@ def build_dta_literature_query(record: Mapping[str, Any]) -> dict[str, Any]:
     summary = _summary(record)
     rows = _rows(record)
     subject = _best_subject(record)
+    subject_trust = _infer_subject_trust(subject)
+    search_mode = _infer_search_mode(subject_trust)
     subject_label = _clean_text(subject.get("cleaned"))
     quoted_subject = _quoted_subject(subject)
     first_peak = rows[0] if rows else {}
@@ -342,25 +453,43 @@ def build_dta_literature_query(record: Mapping[str, Any]) -> dict[str, Any]:
     processing = dict(record.get("processing") or {})
     method_context = dict(processing.get("method_context") or {})
 
-    query_text = " ".join(
-        part for part in [quoted_subject, "DTA differential thermal analysis", direction, f"{peak_temp} C" if peak_temp is not None else ""] if part
-    )
-    fallback_queries = [
-        _generic_subject_query(subject, analysis_type="DTA", fallback_label="thermal event"),
-        "DTA endothermic exothermic event differential thermal analysis",
-        _generic_subject_query(subject, analysis_type="thermal analysis", fallback_label=direction),
-    ]
+    if search_mode == "known_material":
+        query_text = " ".join(
+            part for part in [quoted_subject, "DTA differential thermal analysis", direction, f"{peak_temp} C" if peak_temp is not None else ""] if part
+        )
+        fallback_queries = [
+            _generic_subject_query(subject, analysis_type="DTA", fallback_label="thermal event"),
+            "DTA endothermic exothermic event differential thermal analysis",
+            _generic_subject_query(subject, analysis_type="DTA", fallback_label=direction),
+        ]
+        rationale = f"The DTA literature search is centered on the leading {direction} event" + (f" near {peak_temp} C." if peak_temp is not None else ".")
+    else:
+        query_text = " ".join(part for part in ["DTA differential thermal analysis", direction, f"{peak_temp} C" if peak_temp is not None else ""] if part)
+        fallback_queries = [
+            "DTA endothermic exothermic event differential thermal analysis",
+            _generic_subject_query(subject, analysis_type="DTA", fallback_label=direction),
+        ]
+        if subject_label:
+            fallback_queries.append(_generic_subject_query(subject, analysis_type="DTA", fallback_label="thermal event"))
+        rationale = f"The DTA literature search uses behavior-first semantics centered on the leading {direction} event" + (
+            f" near {peak_temp} C." if peak_temp is not None else "."
+        )
     return _build_payload(
         analysis_type="DTA",
+        search_mode=search_mode,
+        subject_trust=subject_trust,
         query_text=query_text,
         fallback_queries=fallback_queries,
-        query_rationale=f"The DTA literature search is centered on the leading {direction} event" + (f" near {peak_temp} C." if peak_temp is not None else "."),
+        query_rationale=rationale,
         query_display_title=subject_label or "DTA thermal event",
         query_display_mode="DTA / thermal events",
         query_display_terms=["thermal event", "differential thermal analysis", direction],
         evidence_snapshot={
             "sample_name": subject_label,
             "raw_subject": _clean_text(subject.get("raw")),
+            "subject_source": _clean_text(subject.get("source")),
+            "subject_trust": subject_trust,
+            "search_mode": search_mode,
             "filename_like_subject": bool(subject.get("filename_like")),
             "workflow_template": _workflow_label(record),
             "peak_count": _clean_int(summary.get("peak_count")) or len(rows),
@@ -375,6 +504,8 @@ def build_tga_literature_query(record: Mapping[str, Any]) -> dict[str, Any]:
     summary = _summary(record)
     rows = _rows(record)
     subject = _best_subject(record)
+    subject_trust = _infer_subject_trust(subject)
+    search_mode = _infer_search_mode(subject_trust)
     subject_label = _clean_text(subject.get("cleaned"))
     quoted_subject = _quoted_subject(subject)
     first_step = rows[0] if rows else {}
@@ -392,38 +523,60 @@ def build_tga_literature_query(record: Mapping[str, Any]) -> dict[str, Any]:
         temperature_band = f"{lower} {upper} C"
 
     prioritized_queries: list[str] = []
-    if preferred_entity:
-        primary_process = "decarbonation" if "decarbonation" in [term.lower() for term in process_terms] else "decomposition"
-        prioritized_queries.append(
-            " ".join(part for part in [preferred_entity, "thermogravimetric analysis", primary_process] if part)
-        )
-    if subject_formulas:
-        formula = subject_formulas[0]
-        formula_parts = [formula, "calcination", "TGA"]
-        if "CaO" in process_terms:
-            formula_parts.append("CaO")
-        if "CO2 release" in process_terms:
-            formula_parts.append("CO2")
-        prioritized_queries.append(" ".join(formula_parts))
-    if len(subject_aliases) > 1:
-        prioritized_queries.append(" ".join([subject_aliases[1], "decomposition", "thermogravimetric analysis"]))
-    elif preferred_entity:
-        prioritized_queries.append(" ".join([preferred_entity, "decomposition", "thermogravimetric analysis"]))
-    if preferred_entity and temperature_band:
-        prioritized_queries.append(" ".join([preferred_entity, "decomposition mass loss", temperature_band]))
-    elif quoted_subject:
-        prioritized_queries.append(" ".join(part for part in [quoted_subject, "decomposition mass loss residue", f"{midpoint} C" if midpoint is not None else ""] if part))
-    prioritized_queries.append("thermogravimetric analysis decomposition mass loss residue")
+    if search_mode == "known_material":
+        if preferred_entity:
+            primary_process = "decarbonation" if "decarbonation" in [term.lower() for term in process_terms] else "decomposition"
+            prioritized_queries.append(
+                " ".join(part for part in [preferred_entity, "thermogravimetric analysis", primary_process] if part)
+            )
+        if subject_formulas:
+            formula = subject_formulas[0]
+            formula_parts = [formula, "calcination", "TGA"]
+            if "CaO" in process_terms:
+                formula_parts.append("CaO")
+            if "CO2 release" in process_terms:
+                formula_parts.append("CO2")
+            prioritized_queries.append(" ".join(formula_parts))
+        if len(subject_aliases) > 1:
+            prioritized_queries.append(" ".join([subject_aliases[1], "decomposition", "thermogravimetric analysis"]))
+        elif preferred_entity:
+            prioritized_queries.append(" ".join([preferred_entity, "decomposition", "thermogravimetric analysis"]))
+        if preferred_entity and temperature_band:
+            prioritized_queries.append(" ".join([preferred_entity, "decomposition mass loss", temperature_band]))
+        elif quoted_subject:
+            prioritized_queries.append(" ".join(part for part in [quoted_subject, "decomposition mass loss residue", f"{midpoint} C" if midpoint is not None else ""] if part))
+        prioritized_queries.append("thermogravimetric analysis decomposition mass loss residue")
+        if subject_label and not subject.get("quote_safe"):
+            prioritized_queries.insert(1, f"{subject_label} thermogravimetric analysis decomposition")
+        if process_terms:
+            process_query_parts = [preferred_entity] if preferred_entity else ([subject_label] if subject_label else [])
+            prioritized_queries.append(" ".join(process_query_parts + process_terms + ["thermogravimetric analysis"]))
+    else:
+        primary_parts = ["thermogravimetric analysis", "decomposition mass loss residue"]
+        if midpoint is not None:
+            primary_parts.append(f"{midpoint} C")
+        prioritized_queries.append(" ".join(primary_parts))
+        if temperature_band:
+            prioritized_queries.append(" ".join(["TGA decomposition mass loss", temperature_band]))
+        if process_terms:
+            prioritized_queries.append(" ".join(_dedupe(["TGA", *process_terms[:3], "thermogravimetric analysis"])))
+        prioritized_queries.append("TGA thermogravimetric analysis decomposition mass loss residue")
+        if subject_label:
+            prioritized_queries.append(f"{subject_label} thermogravimetric analysis decomposition")
+        if subject_formulas:
+            prioritized_queries.append(" ".join([subject_formulas[0], "thermogravimetric analysis decomposition"]))
+        if subject_aliases:
+            prioritized_queries.append(" ".join([subject_aliases[0], "thermogravimetric analysis decomposition"]))
+        if len(subject_aliases) > 1:
+            prioritized_queries.append(" ".join([subject_aliases[1], "decomposition", "thermogravimetric analysis"]))
 
-    query_text = prioritized_queries[0]
+    query_text = prioritized_queries[0] if prioritized_queries else "thermogravimetric analysis decomposition mass loss residue"
     fallback_queries = prioritized_queries[1:]
-    if subject_label and not subject.get("quote_safe"):
-        fallback_queries.insert(0, f"{subject_label} thermogravimetric analysis decomposition")
-    if process_terms:
-        process_query_parts = [preferred_entity] if preferred_entity else ([subject_label] if subject_label else [])
-        fallback_queries.append(" ".join(process_query_parts + process_terms + ["thermogravimetric analysis"]))
-
-    rationale = "The TGA literature search is centered on the decomposition profile"
+    rationale = (
+        "The TGA literature search is centered on the decomposition profile"
+        if search_mode == "known_material"
+        else "The TGA literature search uses behavior-first semantics centered on the decomposition profile"
+    )
     if midpoint is not None:
         rationale += f" with a leading step near {midpoint} C"
     if total_mass_loss is not None:
@@ -431,6 +584,8 @@ def build_tga_literature_query(record: Mapping[str, Any]) -> dict[str, Any]:
     rationale += "."
     return _build_payload(
         analysis_type="TGA",
+        search_mode=search_mode,
+        subject_trust=subject_trust,
         query_text=query_text,
         fallback_queries=fallback_queries,
         query_rationale=rationale,
@@ -440,6 +595,9 @@ def build_tga_literature_query(record: Mapping[str, Any]) -> dict[str, Any]:
         evidence_snapshot={
             "sample_name": subject_label,
             "raw_subject": _clean_text(subject.get("raw")),
+            "subject_source": _clean_text(subject.get("source")),
+            "subject_trust": subject_trust,
+            "search_mode": search_mode,
             "filename_like_subject": bool(subject.get("filename_like")),
             "subject_aliases": subject_aliases,
             "subject_formulas": subject_formulas,

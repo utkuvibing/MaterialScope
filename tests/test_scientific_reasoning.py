@@ -260,3 +260,33 @@ def test_build_scientific_reasoning_tga_follow_up_experiments_are_class_specific
     assert "oxide formation" in carbonate_text
     assert "xrd" in carbonate_text or "raman" in carbonate_text
     assert "controlled atmosphere" in carbonate_text
+
+
+def test_build_scientific_reasoning_raman_is_specialized_not_generic_placeholder():
+    payload = build_scientific_reasoning(
+        analysis_type="RAMAN",
+        summary={
+            "sample_name": "CNT film",
+            "match_status": "matched",
+            "confidence_band": "high_confidence",
+            "top_match_name": "Graphitic carbon reference",
+            "top_match_score": 0.88,
+            "peak_count": 4,
+        },
+        rows=[
+            {
+                "candidate_name": "Graphitic carbon reference",
+                "normalized_score": 0.88,
+                "confidence_band": "high_confidence",
+                "evidence": {"shared_peak_count": 3},
+            }
+        ],
+        metadata={"sample_name": "CNT film", "instrument": "Renishaw"},
+        fit_quality={"r_squared": 0.98},
+        validation={"status": "pass", "warnings": []},
+    )
+
+    joined_claims = " ".join(item.get("claim", "") for item in payload["scientific_claims"]).lower()
+    assert "raman" in joined_claims
+    assert "not specialized for this analysis type yet" not in joined_claims
+    assert payload["next_experiments"]

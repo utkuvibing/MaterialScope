@@ -1,4 +1,4 @@
-# ThermoAnalyzer Desktop - Clean Machine Smoke Checklist
+# MaterialScope Desktop - Clean Machine Smoke Checklist
 
 Use this checklist on a fresh Windows machine before professor demo handoff.
 
@@ -6,15 +6,15 @@ Use this checklist on a fresh Windows machine before professor demo handoff.
 
 - Windows 10/11 x64 machine with no Python requirement.
 - Build artifact available:
-  - `ThermoAnalyzer-Setup-<version>-x64.exe` (NSIS installer)
+  - `MaterialScope-Setup-<version>-x64.exe` (NSIS installer)
 - At least one known-good DSC/TGA CSV sample file ready for import.
 
 ## Smoke Steps
 
 1. Install and launch app
-- Action: Run `ThermoAnalyzer-Setup-<version>-x64.exe`, complete `Next -> Install -> Finish`, then launch from Start Menu shortcut.
+- Action: Run `MaterialScope-Setup-<version>-x64.exe`, complete `Next -> Install -> Finish`, then launch from Start Menu shortcut.
 - Verify:
-  - Main window opens as `ThermoAnalyzer Desktop`.
+  - Main window opens as `MaterialScope Desktop`.
   - No immediate backend startup error dialog appears.
 
 2. Backend startup
@@ -43,7 +43,7 @@ Use this checklist on a fresh Windows machine before professor demo handoff.
   - Result detail panel shows summary/processing/validation/provenance.
 
 6. Save and reload project archive
-- Action: Click `Save Workspace`, save `.thermozip`, then `Open .thermozip` and load that same file.
+- Action: Click `Save Workspace`, save `.scopezip`, then `Open Project Archive` and load that same file (`.scopezip` or legacy `.thermozip`).
 - Verify:
   - Workspace reloads successfully.
   - Dataset/result lists and details remain available after reload.
@@ -74,5 +74,5 @@ Use this checklist on a fresh Windows machine before professor demo handoff.
 ## If Startup Fails
 
 - Capture dialog text and diagnostics log path shown by the app.
-- Collect `startup-*.log` from `%APPDATA%\\ThermoAnalyzer Desktop\\logs`.
+- Collect `startup-*.log` from `%APPDATA%\\MaterialScope Desktop\\logs`.
 - Share both the log and exact build filename.

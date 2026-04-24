@@ -11,11 +11,14 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 import httpx
+import plotly.graph_objects as go
 from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import Response
 
 from backend import BACKEND_API_VERSION
 from backend.detail import (
+    build_dataset_data,
     build_dataset_detail,
     build_result_detail,
     normalize_compare_workspace,
@@ -25,6 +28,8 @@ from backend.exports import (
     build_export_preparation,
     generate_report_docx_artifact,
     generate_results_csv_artifact,
+    generate_results_xlsx_artifact,
+    generate_report_pdf_artifact,
 )
 from backend.library_cloud_service import ManagedLibraryCloudService
 from backend.models import (
@@ -32,12 +37,14 @@ from backend.models import (
     ActiveDatasetUpdateRequest,
     AnalysisRunRequest,
     AnalysisRunResponse,
+    AnalysisStateCurvesResponse,
     BatchRunRequest,
     BatchRunResponse,
     CompareSelectionResponse,
     CompareSelectionUpdateRequest,
     CompareWorkspaceResponse,
     CompareWorkspaceUpdateRequest,
+    DatasetDataResponse,
     DatasetDetailResponse,
     DatasetImportRequest,
     DatasetImportResponse,
@@ -58,17 +65,27 @@ from backend.models import (
     LibrarySyncResponse,
     LiteratureCompareRequest,
     LiteratureCompareResponse,
+    PresetDeleteResponse,
+    PresetListResponse,
+    PresetLoadResponse,
+    PresetSaveRequest,
+    PresetSaveResponse,
+    PresetSummary,
     ProjectLoadRequest,
     ProjectLoadResponse,
     ProjectSaveRequest,
     ProjectSaveResponse,
     ProjectSummary,
     ResultDetailResponse,
+    ResultFigureRegisterRequest,
+    ResultFigureRegisterResponse,
     ResultsListResponse,
     SpectralLibrarySearchRequest,
     ValidationSummary,
     VersionResponse,
     WorkspaceContextResponse,
+    WorkspaceBrandingResponse,
+    WorkspaceBrandingUpdateRequest,
     WorkspaceCreateResponse,
     WorkspaceSummaryResponse,
     XRDLibrarySearchRequest,
@@ -76,7 +93,9 @@ from backend.models import (
 from backend.store import ProjectStore
 from backend.workspace import (
     add_history_event,
+    normalize_branding_payload,
     normalize_workspace_state,
+    remove_dataset_from_workspace,
     summarize_dataset,
     summarize_result,
     unique_dataset_key,
@@ -84,18 +103,23 @@ from backend.workspace import (
 from backend.workspace_context import build_workspace_context, set_active_dataset, update_compare_selection
 from core.data_io import read_thermal_data
 from core.execution_engine import run_batch_analysis, run_single_analysis
-from core.modalities import stable_analysis_types
+from core.modalities import analysis_state_key, stable_analysis_types
 from core.literature_compare import attach_literature_package, compare_result_to_literature
+from core.processing_schema import update_method_context, update_processing_step
+from core.figure_render import render_plotly_figure_png
 from core.literature_provider import (
     LiteratureProvider,
     MultiLiteratureProviderAggregator,
     default_literature_provider_registry,
+    literature_fixture_fallback_enabled,
+    openalex_literature_env_configured,
     resolve_literature_providers,
 )
 from core.project_io import PROJECT_EXTENSION, load_project_archive, save_project_archive
 from core.reference_library import ReferenceLibraryManager, get_reference_library_manager
 from core.result_serialization import split_valid_results
 from core.validation import validate_thermal_dataset
+from utils.diagnostics import get_default_log_file, serialize_support_snapshot
 from utils.license_manager import APP_VERSION, commercial_mode_enabled, load_license_state
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / ".env", override=False)
@@ -122,10 +146,11 @@ def _model_payload(model: Any) -> dict[str, Any]:
 
 
 def _project_summary(project_state: dict) -> ProjectSummary:
+    valid_results, _issues = split_valid_results(project_state.get("results", {}) or {})
     return ProjectSummary(
         active_dataset=project_state.get("active_dataset"),
         dataset_count=len(project_state.get("datasets", {}) or {}),
-        result_count=len(project_state.get("results", {}) or {}),
+        result_count=len(valid_results),
         figure_count=len(project_state.get("figures", {}) or {}),
         analysis_history_count=len(project_state.get("analysis_history", []) or []),
     )
@@ -138,11 +163,330 @@ def _normalize_stable_analysis_error(detail: str) -> str:
     return token
 
 
+def _finite_float_list(values: Any) -> list[float]:
+    if values is None:
+        return []
+    out: list[float] = []
+    for item in list(values):
+        try:
+            parsed = float(item)
+        except (TypeError, ValueError):
+            return []
+        if parsed != parsed or parsed in (float("inf"), float("-inf")):
+            return []
+        out.append(parsed)
+    return out
+
+
+def _dataset_axis_and_signal(dataset: Any) -> tuple[list[float], list[float]]:
+    frame = getattr(dataset, "data", None)
+    if frame is None or "temperature" not in frame.columns or "signal" not in frame.columns:
+        return [], []
+    try:
+        import numpy as np
+
+        axis = np.asarray(frame["temperature"], dtype=float)
+        signal = np.asarray(frame["signal"], dtype=float)
+    except Exception:
+        return [], []
+    if axis.size == 0 or signal.size == 0:
+        return [], []
+    finite_mask = np.isfinite(axis) & np.isfinite(signal)
+    axis = axis[finite_mask]
+    signal = signal[finite_mask]
+    if axis.size == 0:
+        return [], []
+    order = np.argsort(axis)
+    axis = axis[order]
+    signal = signal[order]
+    unique_axis, unique_idx = np.unique(axis, return_index=True)
+    return unique_axis.tolist(), signal[unique_idx].tolist()
+
+
+def _axis_title_for_analysis(analysis_type: str) -> str:
+    token = str(analysis_type or "").strip().upper()
+    if token == "XRD":
+        return "2theta (deg)"
+    if token == "FTIR":
+        return "Wavenumber"
+    if token == "RAMAN":
+        return "Raman Shift"
+    return "Temperature (°C)"
+
+
+def _y_title_for_analysis(analysis_type: str) -> str:
+    token = str(analysis_type or "").strip().upper()
+    if token == "XRD":
+        return "Intensity (a.u.)"
+    return "Signal (a.u.)"
+
+
+def _build_result_snapshot_figure(
+    *,
+    analysis_type: str,
+    dataset_key: str,
+    dataset: Any,
+    state_payload: dict[str, Any],
+) -> go.Figure | None:
+    payload = state_payload or {}
+    state_axis = _finite_float_list(payload.get("axis"))
+    if not state_axis:
+        state_axis = _finite_float_list(payload.get("temperature"))
+    raw_axis, raw_signal = _dataset_axis_and_signal(dataset)
+    axis = state_axis or raw_axis
+    if not axis:
+        return None
+
+    def _series(name: str) -> list[float]:
+        values = _finite_float_list((state_payload or {}).get(name))
+        if values and len(values) == len(axis):
+            return values
+        return []
+
+    smoothed = _series("smoothed")
+    baseline = _series("baseline")
+    corrected = _series("corrected")
+    dtg = _series("dtg")
+    if raw_signal and len(raw_signal) != len(axis):
+        raw_signal = []
+
+    primary = corrected or smoothed or raw_signal
+    if not primary:
+        return None
+
+    fig = go.Figure()
+    has_overlay = bool(corrected or smoothed)
+    if raw_signal:
+        fig.add_trace(
+            go.Scatter(
+                x=axis,
+                y=raw_signal,
+                mode="lines",
+                name="Raw Signal",
+                line=dict(color="#9CA3AF", width=1.2),
+                opacity=0.32 if has_overlay else 0.9,
+            )
+        )
+    if smoothed:
+        fig.add_trace(
+            go.Scatter(
+                x=axis,
+                y=smoothed,
+                mode="lines",
+                name="Smoothed",
+                line=dict(color="#2563EB", width=1.8),
+                opacity=0.9 if corrected else 1.0,
+            )
+        )
+    if baseline:
+        fig.add_trace(
+            go.Scatter(
+                x=axis,
+                y=baseline,
+                mode="lines",
+                name="Baseline",
+                line=dict(color="#64748B", width=1.1, dash="dash"),
+                opacity=0.75,
+            )
+        )
+    if corrected:
+        fig.add_trace(
+            go.Scatter(
+                x=axis,
+                y=corrected,
+                mode="lines",
+                name="Corrected",
+                line=dict(color="#111827", width=2.6),
+            )
+        )
+    if dtg:
+        fig.add_trace(
+            go.Scatter(
+                x=axis,
+                y=dtg,
+                mode="lines",
+                name="DTG",
+                line=dict(color="#059669", width=1.4, dash="dot"),
+                opacity=0.8,
+            )
+        )
+
+    fig.update_layout(
+        title=f"{str(analysis_type or '').upper()} Analysis - {dataset_key}",
+        xaxis_title=_axis_title_for_analysis(analysis_type),
+        yaxis_title=_y_title_for_analysis(analysis_type),
+        template="plotly_white",
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        margin=dict(l=64, r=28, t=72, b=58),
+        width=1200,
+        height=620,
+    )
+    return fig
+
+
+def _merge_result_artifacts(
+    state: dict[str, Any],
+    result_id: str,
+    record: dict[str, Any],
+    *,
+    artifacts_update: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge artifact fields into the saved result and persist into state."""
+    artifacts = dict(record.get("artifacts") or {})
+    artifacts.update(artifacts_update)
+    patched = dict(record)
+    patched["artifacts"] = artifacts
+    state.setdefault("results", {})[result_id] = patched
+    return patched
+
+
+def _auto_register_result_snapshot(
+    state: dict[str, Any],
+    *,
+    result_id: str,
+    record: dict[str, Any],
+    state_payload: dict[str, Any],
+    analysis_type: str,
+) -> dict[str, Any] | None:
+    dataset_key = str(record.get("dataset_key") or "").strip()
+    if not dataset_key:
+        _merge_result_artifacts(
+            state,
+            result_id,
+            record,
+            artifacts_update={
+                "report_figure_status": "failed",
+                "report_figure_error": "missing_dataset_key",
+            },
+        )
+        return None
+    datasets = state.get("datasets") or {}
+    dataset = datasets.get(dataset_key)
+    if dataset is None:
+        _merge_result_artifacts(
+            state,
+            result_id,
+            record,
+            artifacts_update={
+                "report_figure_status": "failed",
+                "report_figure_error": f"dataset_not_in_workspace:{dataset_key}",
+            },
+        )
+        return None
+
+    record = (state.get("results") or {}).get(result_id) or record
+    figures = state.setdefault("figures", {})
+    artifacts = dict(record.get("artifacts") or {})
+
+    existing_keys = artifacts.get("figure_keys")
+    keys: list[str] = []
+    if isinstance(existing_keys, list):
+        for item in existing_keys:
+            if isinstance(item, str) and item and item not in keys:
+                keys.append(item)
+    for key in keys:
+        if key in figures:
+            if not artifacts.get("report_figure_key"):
+                artifacts["report_figure_key"] = key
+            artifacts["report_figure_status"] = "captured"
+            artifacts["report_figure_error"] = ""
+            _merge_result_artifacts(state, result_id, record, artifacts_update=artifacts)
+            return {"figure_key": key, "reused": True, "status": "captured"}
+
+    label = f"{str(analysis_type or '').upper()} Analysis - {dataset_key}"
+    figure = _build_result_snapshot_figure(
+        analysis_type=analysis_type,
+        dataset_key=dataset_key,
+        dataset=dataset,
+        state_payload=state_payload,
+    )
+    if figure is None:
+        _merge_result_artifacts(
+            state,
+            result_id,
+            record,
+            artifacts_update={
+                "report_figure_status": "failed",
+                "report_figure_error": "snapshot_figure_unavailable: no plottable series for axis/primary",
+            },
+        )
+        return None
+
+    png_bytes, render_meta = render_plotly_figure_png(figure, width=1200, height=620)
+    if not png_bytes:
+        _merge_result_artifacts(
+            state,
+            result_id,
+            record,
+            artifacts_update={
+                "report_figure_status": "failed",
+                "report_figure_error": f"png_render_failed:{render_meta or 'unknown'}",
+            },
+        )
+        return None
+
+    figures[label] = png_bytes
+    if label not in keys:
+        keys.append(label)
+    artifacts["figure_keys"] = keys
+    artifacts["report_figure_key"] = label
+    artifacts["report_figure_status"] = "captured"
+    artifacts["report_figure_error"] = ""
+
+    _merge_result_artifacts(state, result_id, record, artifacts_update=artifacts)
+    return {"figure_key": label, "render_mode": render_meta or "kaleido", "status": "captured"}
+
+
 def _require_project_state(project_store: ProjectStore, project_id: str) -> dict:
     project_state = project_store.get(project_id)
     if project_state is None:
         raise HTTPException(status_code=404, detail=f"Unknown project_id: {project_id}")
     return project_state
+
+
+def _apply_processing_overrides(
+    state: dict,
+    *,
+    analysis_type: str,
+    dataset_key: str,
+    overrides: Mapping[str, Any],
+) -> None:
+    """Merge caller-supplied per-step overrides into the workspace analysis-state.
+
+    Overrides are written to ``state[analysis_state_key(...)]["processing"]`` using
+    the canonical ``update_processing_step`` / ``update_method_context`` helpers so
+    that ``core._build_processing_payload`` picks them up as user-tuned parameters
+    that win over the template defaults.
+    """
+    if not overrides:
+        return
+    normalized_type = (analysis_type or "").strip().upper()
+    if not normalized_type:
+        raise ValueError("analysis_type is required to apply processing overrides.")
+    skey = analysis_state_key(normalized_type, dataset_key)
+    existing_state = state.get(skey) or {}
+    processing = dict(existing_state.get("processing") or {})
+    for section_name, values in overrides.items():
+        if not isinstance(values, Mapping):
+            raise ValueError(
+                f"processing_overrides[{section_name!r}] must be an object of parameter values."
+            )
+        if section_name == "method_context":
+            processing = update_method_context(
+                processing, dict(values), analysis_type=normalized_type
+            )
+            continue
+        try:
+            processing = update_processing_step(
+                processing, section_name, dict(values), analysis_type=normalized_type
+            )
+        except ValueError as exc:
+            raise ValueError(
+                f"Unsupported processing_overrides section '{section_name}' for {normalized_type}."
+            ) from exc
+    existing_state["processing"] = processing
+    state[skey] = existing_state
 
 
 def _library_status_payload(manager: ReferenceLibraryManager) -> dict:
@@ -187,6 +531,20 @@ def create_app(
     cloud_library_service = ManagedLibraryCloudService(global_library_manager)
     literature_provider_registry = dict(literature_provider_registry or default_literature_provider_registry())
     app.state.cloud_library_bootstrap_status = dict(cloud_library_service.bootstrap_status or {})
+
+    @app.middleware("http")
+    async def _compatibility_header_aliases(request: Request, call_next):
+        # Accept MaterialScope header names while preserving legacy backend contracts.
+        headers = list(request.scope.get("headers") or [])
+        header_lookup = {key.lower(): value for key, value in headers}
+        materialscope_token = header_lookup.get(b"x-materialscope-token")
+        materialscope_license = header_lookup.get(b"x-materialscope-license")
+        if materialscope_token and b"x-ta-token" not in header_lookup:
+            headers.append((b"x-ta-token", materialscope_token))
+        if materialscope_license and b"x-ta-license" not in header_lookup:
+            headers.append((b"x-ta-license", materialscope_license))
+        request.scope["headers"] = headers
+        return await call_next(request)
 
     def _record_cloud_lookup_success(payload: dict[str, Any]) -> None:
         access_mode = str(payload.get("library_access_mode") or "").strip()
@@ -472,10 +830,10 @@ def create_app(
     ) -> ResultsListResponse:
         _require_token(api_token, x_ta_token)
         state = _require_project_state(project_store, project_id)
-        valid_results, _issues = split_valid_results(state.get("results", {}))
+        valid_results, issues = split_valid_results(state.get("results", {}))
         items = [summarize_result(record) for record in valid_results.values()]
         items.sort(key=lambda item: item.id)
-        return ResultsListResponse(project_id=project_id, results=items)
+        return ResultsListResponse(project_id=project_id, results=items, issues=issues)
 
     @app.get("/workspace/{project_id}/datasets/{dataset_key}", response_model=DatasetDetailResponse)
     def dataset_detail(
@@ -490,6 +848,20 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return DatasetDetailResponse(project_id=project_id, **payload)
+
+    @app.get("/workspace/{project_id}/datasets/{dataset_key}/data", response_model=DatasetDataResponse)
+    def dataset_data(
+        project_id: str,
+        dataset_key: str,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> DatasetDataResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        try:
+            payload = build_dataset_data(state, dataset_key)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return DatasetDataResponse(project_id=project_id, **payload)
 
     @app.get("/workspace/{project_id}/results/{result_id}", response_model=ResultDetailResponse)
     def result_detail(
@@ -506,6 +878,106 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return ResultDetailResponse(project_id=project_id, **payload)
+
+    @app.get("/workspace/{project_id}/analysis-state/{analysis_type}/{dataset_key}", response_model=AnalysisStateCurvesResponse)
+    def analysis_state_curves(
+        project_id: str,
+        analysis_type: str,
+        dataset_key: str,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> AnalysisStateCurvesResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        datasets = state.get("datasets", {}) or {}
+        dataset = datasets.get(dataset_key)
+        if dataset is None:
+            raise HTTPException(status_code=404, detail=f"Unknown dataset_key: {dataset_key}")
+
+        try:
+            skey = analysis_state_key(analysis_type, dataset_key)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        analysis_state = state.get(skey)
+        if analysis_state is None:
+            return AnalysisStateCurvesResponse(
+                project_id=project_id, dataset_key=dataset_key,
+                analysis_type=analysis_type.upper(),
+            )
+
+        import numpy as np
+
+        def _to_list(arr: Any) -> list[float]:
+            if arr is None:
+                return []
+            a = np.asarray(arr, dtype=float)
+            a = np.where(np.isfinite(a), a, None)
+            return a.tolist()
+
+        frame = getattr(dataset, "data", None)
+        temperature = []
+        raw_signal = []
+        if frame is not None and "temperature" in frame.columns and "signal" in frame.columns:
+            raw_axis = np.asarray(frame["temperature"], dtype=float)
+            raw_values = np.asarray(frame["signal"], dtype=float)
+            finite_mask = np.isfinite(raw_axis) & np.isfinite(raw_values)
+            raw_axis = raw_axis[finite_mask]
+            raw_values = raw_values[finite_mask]
+            if raw_axis.size:
+                order = np.argsort(raw_axis)
+                raw_axis = raw_axis[order]
+                raw_values = raw_values[order]
+                unique_axis, unique_idx = np.unique(raw_axis, return_index=True)
+                temperature = unique_axis.tolist()
+                raw_signal = raw_values[unique_idx].tolist()
+
+        state_axis = _to_list(analysis_state.get("axis"))
+        if state_axis:
+            temperature = state_axis
+            if raw_signal and len(raw_signal) != len(temperature):
+                raw_signal = []
+
+        smoothed = _to_list(analysis_state.get("smoothed"))
+        baseline = _to_list(analysis_state.get("baseline"))
+        corrected = _to_list(analysis_state.get("corrected"))
+        normalized = _to_list(analysis_state.get("normalized"))
+        dtg = _to_list(analysis_state.get("dtg"))
+        raw_peaks = analysis_state.get("peaks") or []
+        if not isinstance(raw_peaks, list):
+            raw_peaks = []
+
+        def _peak_to_dict(peak: Any) -> dict[str, Any]:
+            if isinstance(peak, dict):
+                return peak
+            if hasattr(peak, "__dict__"):
+                return vars(peak)
+            if hasattr(peak, "_asdict"):
+                return peak._asdict()
+            return {}
+
+        peaks = [_peak_to_dict(p) for p in raw_peaks]
+        diagnostics = analysis_state.get("diagnostics") or {}
+
+        return AnalysisStateCurvesResponse(
+            project_id=project_id,
+            dataset_key=dataset_key,
+            analysis_type=analysis_type.upper(),
+            temperature=temperature,
+            raw_signal=raw_signal,
+            smoothed=smoothed,
+            baseline=baseline,
+            corrected=corrected,
+            normalized=normalized,
+            dtg=dtg,
+            peaks=peaks,
+            has_smoothed=bool(smoothed),
+            has_baseline=bool(baseline),
+            has_corrected=bool(corrected),
+            has_normalized=bool(normalized),
+            has_dtg=bool(dtg),
+            has_peaks=bool(peaks),
+            diagnostics=diagnostics,
+        )
 
     @app.post("/workspace/{project_id}/results/{result_id}/literature/compare", response_model=LiteratureCompareResponse)
     def result_literature_compare(
@@ -525,8 +997,25 @@ def create_app(
             raise HTTPException(status_code=404, detail=f"Unknown result_id: {result_id}")
 
         provider_ids = [str(item).strip() for item in (request.provider_ids or []) if str(item).strip()]
-        if not provider_ids and str(record.get("analysis_type") or "").upper() in {"XRD", "DSC", "DTA", "TGA", "FTIR"}:
+        if not provider_ids and str(record.get("analysis_type") or "").upper() in {
+            "XRD",
+            "DSC",
+            "DTA",
+            "TGA",
+            "FTIR",
+            "RAMAN",
+        }:
             provider_ids = ["openalex_like_provider"]
+        use_fixture_fallback = (
+            provider_ids == ["openalex_like_provider"]
+            and not openalex_literature_env_configured()
+            and literature_fixture_fallback_enabled()
+        )
+        if use_fixture_fallback:
+            provider_ids = ["openalex_like_provider", "fixture_provider"]
+        compare_filters: dict[str, Any] = dict(request.filters or {})
+        if use_fixture_fallback:
+            compare_filters["allow_fixture_fallback"] = True
         try:
             providers, provider_scope = resolve_literature_providers(
                 provider_ids,
@@ -541,7 +1030,7 @@ def create_app(
             provider=provider,
             provider_scope=provider_scope,
             max_claims=request.max_claims,
-            filters=request.filters,
+            filters=compare_filters,
             user_documents=[_model_payload(item) for item in request.user_documents],
         )
 
@@ -569,6 +1058,227 @@ def create_app(
             literature_comparisons=package.get("literature_comparisons") or [],
             citations=package.get("citations") or [],
             detail=ResultDetailResponse(project_id=project_id, **detail_payload) if detail_payload else None,
+        )
+
+    @app.post(
+        "/workspace/{project_id}/results/{result_id}/figure",
+        response_model=ResultFigureRegisterResponse,
+    )
+    def result_register_figure(
+        project_id: str,
+        result_id: str,
+        request: ResultFigureRegisterRequest,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> ResultFigureRegisterResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+
+        label = (request.figure_label or "").strip()
+        if not label:
+            raise HTTPException(status_code=400, detail="figure_label must be non-empty.")
+
+        results = state.get("results") or {}
+        record = results.get(result_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail=f"Unknown result_id: {result_id}")
+
+        png_bytes = _decode_base64_field(request.figure_png_base64, field_name="figure_png_base64")
+        if not png_bytes:
+            raise HTTPException(status_code=400, detail="figure_png_base64 decoded to empty bytes.")
+
+        figures = state.setdefault("figures", {})
+        if label in figures and not request.replace:
+            raise HTTPException(
+                status_code=409,
+                detail=f"figure_label '{label}' already exists; pass replace=true to overwrite.",
+            )
+        figures[label] = png_bytes
+
+        artifacts = dict(record.get("artifacts") or {})
+        existing = artifacts.get("figure_keys")
+        keys: list[str] = []
+        if isinstance(existing, list):
+            for key in existing:
+                if isinstance(key, str) and key and key not in keys:
+                    keys.append(key)
+        if label not in keys:
+            keys.append(label)
+        artifacts["figure_keys"] = keys
+        current_primary = artifacts.get("report_figure_key")
+        if request.replace or not (isinstance(current_primary, str) and current_primary):
+            artifacts["report_figure_key"] = label
+        artifacts["report_figure_status"] = "captured"
+        artifacts["report_figure_error"] = ""
+        record = dict(record)
+        record["artifacts"] = artifacts
+        state.setdefault("results", {})[result_id] = record
+
+        add_history_event(
+            state,
+            action="Figure Captured",
+            details=f"Figure '{label}' registered for {result_id}",
+            dataset_key=record.get("dataset_key"),
+            result_id=result_id,
+        )
+        project_store.set(project_id, state)
+
+        return ResultFigureRegisterResponse(
+            project_id=project_id,
+            result_id=result_id,
+            figure_key=label,
+            figure_keys=keys,
+        )
+
+    @app.get("/workspace/{project_id}/results/{result_id}/figure")
+    def result_get_figure_png(
+        project_id: str,
+        result_id: str,
+        figure_key: str = Query(..., min_length=1, description="Registered figure label for this result"),
+        max_edge: int | None = Query(
+            default=None,
+            ge=16,
+            le=4096,
+            description="Optional: downscale so max(width,height) <= max_edge (Slice 6 previews).",
+        ),
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> Response:
+        """Return stored PNG bytes for a figure key linked to this result (Slice 5 previews)."""
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        results = state.get("results") or {}
+        record = results.get(result_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail=f"Unknown result_id: {result_id}")
+
+        label = str(figure_key or "").strip()
+        if not label:
+            raise HTTPException(status_code=400, detail="figure_key must be non-empty.")
+
+        artifacts = dict(record.get("artifacts") or {})
+        allowed: set[str] = set()
+        raw_keys = artifacts.get("figure_keys")
+        if isinstance(raw_keys, list):
+            for item in raw_keys:
+                if isinstance(item, str) and item.strip():
+                    allowed.add(item.strip())
+        pk = artifacts.get("report_figure_key")
+        if isinstance(pk, str) and pk.strip():
+            allowed.add(pk.strip())
+
+        if label not in allowed:
+            raise HTTPException(
+                status_code=404,
+                detail="figure_key is not registered for this result.",
+            )
+
+        figures = state.get("figures") or {}
+        png_bytes = figures.get(label)
+        if not isinstance(png_bytes, (bytes, bytearray)) or len(png_bytes) == 0:
+            raise HTTPException(status_code=404, detail="Figure bytes are not available in the workspace store.")
+
+        body = bytes(png_bytes)
+        if max_edge is not None:
+            from core.figure_preview_resize import maybe_downscale_png_to_max_edge
+
+            body = maybe_downscale_png_to_max_edge(body, int(max_edge))
+
+        return Response(
+            content=body,
+            media_type="image/png",
+            headers={"Cache-Control": "private, max-age=60"},
+        )
+
+    @app.get("/presets/{analysis_type}", response_model=PresetListResponse)
+    def presets_list(
+        analysis_type: str,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> PresetListResponse:
+        _require_token(api_token, x_ta_token)
+        from core.preset_store import (
+            MAX_PRESETS_PER_ANALYSIS,
+            PresetStoreError,
+            count_presets,
+            list_presets,
+        )
+
+        try:
+            items = list_presets(analysis_type)
+            count = count_presets(analysis_type)
+        except PresetStoreError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        return PresetListResponse(
+            analysis_type=analysis_type.strip().upper(),
+            count=count,
+            max_count=MAX_PRESETS_PER_ANALYSIS,
+            presets=[PresetSummary(**row) for row in items],
+        )
+
+    @app.post("/presets/{analysis_type}", response_model=PresetSaveResponse)
+    def presets_save(
+        analysis_type: str,
+        request: PresetSaveRequest,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> PresetSaveResponse:
+        _require_token(api_token, x_ta_token)
+        from core.preset_store import PresetLimitError, PresetStoreError, save_preset
+
+        payload = {
+            "workflow_template_id": request.workflow_template_id,
+            "processing": dict(request.processing or {}),
+        }
+        try:
+            result = save_preset(analysis_type, request.preset_name, payload)
+        except PresetLimitError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except PresetStoreError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        return PresetSaveResponse(**result)
+
+    @app.get("/presets/{analysis_type}/{preset_name}", response_model=PresetLoadResponse)
+    def presets_load(
+        analysis_type: str,
+        preset_name: str,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> PresetLoadResponse:
+        _require_token(api_token, x_ta_token)
+        from core.preset_store import PresetStoreError, load_preset
+
+        try:
+            payload = load_preset(analysis_type, preset_name)
+        except PresetStoreError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if payload is None:
+            raise HTTPException(status_code=404, detail=f"Preset not found: {preset_name}")
+
+        return PresetLoadResponse(
+            analysis_type=analysis_type.strip().upper(),
+            preset_name=preset_name.strip(),
+            workflow_template_id=str(payload.get("workflow_template_id") or ""),
+            processing=dict(payload.get("processing") or {}),
+        )
+
+    @app.delete("/presets/{analysis_type}/{preset_name}", response_model=PresetDeleteResponse)
+    def presets_delete(
+        analysis_type: str,
+        preset_name: str,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> PresetDeleteResponse:
+        _require_token(api_token, x_ta_token)
+        from core.preset_store import PresetStoreError, delete_preset
+
+        try:
+            deleted = delete_preset(analysis_type, preset_name)
+        except PresetStoreError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"Preset not found: {preset_name}")
+
+        return PresetDeleteResponse(
+            analysis_type=analysis_type.strip().upper(),
+            preset_name=preset_name.strip(),
+            deleted=True,
         )
 
     @app.get("/workspace/{project_id}/compare", response_model=CompareWorkspaceResponse)
@@ -645,6 +1355,20 @@ def create_app(
             active_dataset=active_dataset,
         )
 
+    @app.delete("/workspace/{project_id}/datasets/{dataset_key}", response_model=WorkspaceSummaryResponse)
+    def workspace_dataset_delete(
+        project_id: str,
+        dataset_key: str,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> WorkspaceSummaryResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        removed = remove_dataset_from_workspace(state, dataset_key)
+        if not removed:
+            raise HTTPException(status_code=404, detail=f"Unknown dataset_key: {dataset_key}")
+        project_store.set(project_id, state)
+        return WorkspaceSummaryResponse(project_id=project_id, summary=_project_summary(state))
+
     @app.post("/workspace/{project_id}/batch/run", response_model=BatchRunResponse)
     def batch_run(
         project_id: str,
@@ -672,6 +1396,35 @@ def create_app(
         normalized_rows = execution["batch_summary"]
         outcomes = execution["outcomes"]
         saved_result_ids = execution["saved_result_ids"]
+
+        if saved_result_ids:
+            for saved_result_id in saved_result_ids:
+                record = (state.get("results") or {}).get(saved_result_id)
+                if not isinstance(record, dict):
+                    continue
+                dataset_key = str(record.get("dataset_key") or "").strip()
+                if not dataset_key:
+                    continue
+                state_payload = state.get(analysis_state_key(analysis_type, dataset_key)) or {}
+                try:
+                    _auto_register_result_snapshot(
+                        state,
+                        result_id=saved_result_id,
+                        record=record,
+                        state_payload=state_payload if isinstance(state_payload, dict) else {},
+                        analysis_type=analysis_type,
+                    )
+                except Exception as exc:
+                    rec = (state.get("results") or {}).get(saved_result_id) or record
+                    _merge_result_artifacts(
+                        state,
+                        saved_result_id,
+                        rec,
+                        artifacts_update={
+                            "report_figure_status": "failed",
+                            "report_figure_error": f"exception:{exc.__class__.__name__}:{exc}",
+                        },
+                    )
 
         completed_at = datetime.now().isoformat(timespec="seconds")
 
@@ -720,6 +1473,92 @@ def create_app(
         payload = build_export_preparation(state)
         return ExportPreparationResponse(project_id=project_id, summary=_project_summary(state), **payload)
 
+    @app.get("/workspace/{project_id}/exports/support-snapshot")
+    def export_support_snapshot(
+        project_id: str,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> Response:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        snapshot_state = dict(state)
+        snapshot_state["license_state"] = _backend_license_state()
+        log_path = snapshot_state.get("diagnostics_log_path") or get_default_log_file()
+        try:
+            body = serialize_support_snapshot(snapshot_state, app_version=APP_VERSION, log_file=log_path)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Support snapshot failed: {exc}") from exc
+        return Response(
+            content=body,
+            media_type="application/json",
+            headers={"Content-Disposition": 'attachment; filename="materialscope_support_snapshot.json"'},
+        )
+
+    @app.get("/workspace/{project_id}/branding", response_model=WorkspaceBrandingResponse)
+    def workspace_branding_get(
+        project_id: str,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> WorkspaceBrandingResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        branding = normalize_branding_payload(state.get("branding"))
+        return WorkspaceBrandingResponse(
+            project_id=project_id,
+            summary=_project_summary(state),
+            branding={
+                "report_title": branding.get("report_title") or "MaterialScope Professional Report",
+                "company_name": branding.get("company_name") or "",
+                "lab_name": branding.get("lab_name") or "",
+                "analyst_name": branding.get("analyst_name") or "",
+                "report_notes": branding.get("report_notes") or "",
+                "logo_name": branding.get("logo_name") or "",
+                "logo_base64": (
+                    base64.b64encode(branding["logo_bytes"]).decode("ascii")
+                    if branding.get("logo_bytes")
+                    else None
+                ),
+            },
+        )
+
+    @app.put("/workspace/{project_id}/branding", response_model=WorkspaceBrandingResponse)
+    def workspace_branding_put(
+        project_id: str,
+        request: WorkspaceBrandingUpdateRequest,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> WorkspaceBrandingResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        branding = normalize_branding_payload(state.get("branding"))
+        request_payload = _model_payload(request)
+        for key in ("report_title", "company_name", "lab_name", "analyst_name", "report_notes", "logo_name"):
+            value = request_payload.get(key)
+            if value is not None:
+                branding[key] = str(value)
+        if request.clear_logo:
+            branding["logo_bytes"] = None
+            branding["logo_name"] = ""
+        elif request.logo_base64 is not None:
+            branding["logo_bytes"] = _decode_base64_field(request.logo_base64, field_name="logo_base64")
+            branding["logo_name"] = str(request.logo_name or branding.get("logo_name") or "branding_logo")
+        state["branding"] = branding
+        project_store.set(project_id, state)
+        return WorkspaceBrandingResponse(
+            project_id=project_id,
+            summary=_project_summary(state),
+            branding={
+                "report_title": branding.get("report_title") or "MaterialScope Professional Report",
+                "company_name": branding.get("company_name") or "",
+                "lab_name": branding.get("lab_name") or "",
+                "analyst_name": branding.get("analyst_name") or "",
+                "report_notes": branding.get("report_notes") or "",
+                "logo_name": branding.get("logo_name") or "",
+                "logo_base64": (
+                    base64.b64encode(branding["logo_bytes"]).decode("ascii")
+                    if branding.get("logo_bytes")
+                    else None
+                ),
+            },
+        )
+
     @app.post("/workspace/{project_id}/exports/results-csv", response_model=ExportArtifactResponse)
     def export_results_csv(
         project_id: str,
@@ -734,6 +1573,20 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return ExportArtifactResponse(project_id=project_id, **payload)
 
+    @app.post("/workspace/{project_id}/exports/results-xlsx", response_model=ExportArtifactResponse)
+    def export_results_xlsx(
+        project_id: str,
+        request: ExportGenerateRequest,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> ExportArtifactResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        try:
+            payload = generate_results_xlsx_artifact(state, selected_result_ids=request.selected_result_ids)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return ExportArtifactResponse(project_id=project_id, **payload)
+
     @app.post("/workspace/{project_id}/exports/report-docx", response_model=ExportArtifactResponse)
     def export_report_docx(
         project_id: str,
@@ -743,7 +1596,29 @@ def create_app(
         _require_token(api_token, x_ta_token)
         state = _require_project_state(project_store, project_id)
         try:
-            payload = generate_report_docx_artifact(state, selected_result_ids=request.selected_result_ids)
+            payload = generate_report_docx_artifact(
+                state,
+                selected_result_ids=request.selected_result_ids,
+                include_figures=bool(request.include_figures),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return ExportArtifactResponse(project_id=project_id, **payload)
+
+    @app.post("/workspace/{project_id}/exports/report-pdf", response_model=ExportArtifactResponse)
+    def export_report_pdf(
+        project_id: str,
+        request: ExportGenerateRequest,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> ExportArtifactResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        try:
+            payload = generate_report_pdf_artifact(
+                state,
+                selected_result_ids=request.selected_result_ids,
+                include_figures=bool(request.include_figures),
+            )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return ExportArtifactResponse(project_id=project_id, **payload)
@@ -761,7 +1636,12 @@ def create_app(
         source.name = request.file_name
 
         try:
-            dataset = read_thermal_data(source, data_type=request.data_type, metadata=request.metadata)
+            dataset = read_thermal_data(
+                source,
+                column_mapping=request.column_mapping or None,
+                data_type=request.data_type,
+                metadata=request.metadata,
+            )
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Dataset import failed: {exc}") from exc
 
@@ -810,6 +1690,16 @@ def create_app(
     ) -> AnalysisRunResponse:
         _require_token(api_token, x_ta_token)
         state = _require_project_state(project_store, request.project_id)
+        if request.processing_overrides:
+            try:
+                _apply_processing_overrides(
+                    state,
+                    analysis_type=request.analysis_type,
+                    dataset_key=request.dataset_key,
+                    overrides=request.processing_overrides,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         try:
             execution = run_single_analysis(
                 state=state,
@@ -817,6 +1707,7 @@ def create_app(
                 analysis_type=request.analysis_type,
                 workflow_template_id=request.workflow_template_id,
                 app_version=APP_VERSION,
+                unit_mode=request.unit_mode,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -830,10 +1721,30 @@ def create_app(
         validation = execution["validation"]
         record = execution["record"] or {}
         state_key = execution["state_key"]
+        state_payload = execution["state_payload"] or {}
 
         if execution_status == "saved" and result_id:
             state.setdefault("results", {})[result_id] = record
-            state[state_key] = execution["state_payload"] or {}
+            state[state_key] = state_payload
+            try:
+                _auto_register_result_snapshot(
+                    state,
+                    result_id=result_id,
+                    record=record,
+                    state_payload=state_payload if isinstance(state_payload, dict) else {},
+                    analysis_type=analysis_type,
+                )
+            except Exception as exc:
+                rec = (state.get("results") or {}).get(result_id) or record
+                _merge_result_artifacts(
+                    state,
+                    result_id,
+                    rec,
+                    artifacts_update={
+                        "report_figure_status": "failed",
+                        "report_figure_error": f"exception:{exc.__class__.__name__}:{exc}",
+                    },
+                )
             add_history_event(
                 state,
                 action="Analysis Saved",

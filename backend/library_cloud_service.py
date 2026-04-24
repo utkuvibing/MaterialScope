@@ -33,9 +33,12 @@ from utils.license_manager import APP_VERSION, get_storage_dir, validate_encoded
 
 _TOKEN_TTL_SECONDS = 15 * 60
 _DEFAULT_RATE_LIMIT_PER_MINUTE = 60
-_TOKEN_SECRET_ENV = "THERMOANALYZER_LIBRARY_CLOUD_TOKEN_SECRET"
-_TOKEN_TTL_ENV = "THERMOANALYZER_LIBRARY_CLOUD_TOKEN_TTL_SECONDS"
-_RATE_LIMIT_ENV = "THERMOANALYZER_LIBRARY_CLOUD_RATE_LIMIT_PER_MINUTE"
+_TOKEN_SECRET_ENV = "MATERIALSCOPE_LIBRARY_CLOUD_TOKEN_SECRET"
+_TOKEN_SECRET_ENV_LEGACY = "THERMOANALYZER_LIBRARY_CLOUD_TOKEN_SECRET"
+_TOKEN_TTL_ENV = "MATERIALSCOPE_LIBRARY_CLOUD_TOKEN_TTL_SECONDS"
+_TOKEN_TTL_ENV_LEGACY = "THERMOANALYZER_LIBRARY_CLOUD_TOKEN_TTL_SECONDS"
+_RATE_LIMIT_ENV = "MATERIALSCOPE_LIBRARY_CLOUD_RATE_LIMIT_PER_MINUTE"
+_RATE_LIMIT_ENV_LEGACY = "THERMOANALYZER_LIBRARY_CLOUD_RATE_LIMIT_PER_MINUTE"
 _AUDIT_FILE_NAME = "cloud_library_audit.jsonl"
 _ALLOWED_STATUSES = {"trial", "activated"}
 _REQUIRED_CLOUD_MODALITIES = ("FTIR", "RAMAN", "XRD")
@@ -66,12 +69,16 @@ def _b64url_decode(token: str) -> bytes:
 
 
 def _token_secret() -> bytes:
-    secret = str(os.getenv(_TOKEN_SECRET_ENV, "thermoanalyzer-cloud-dev-secret")).strip()
+    secret = str(
+        os.getenv(_TOKEN_SECRET_ENV, "")
+        or os.getenv(_TOKEN_SECRET_ENV_LEGACY, "")
+        or "materialscope-cloud-dev-secret"
+    ).strip()
     return secret.encode("utf-8")
 
 
 def _token_ttl_seconds() -> int:
-    raw = str(os.getenv(_TOKEN_TTL_ENV, _TOKEN_TTL_SECONDS)).strip()
+    raw = str(os.getenv(_TOKEN_TTL_ENV, "") or os.getenv(_TOKEN_TTL_ENV_LEGACY, _TOKEN_TTL_SECONDS)).strip()
     try:
         return max(60, int(raw))
     except (TypeError, ValueError):
@@ -79,7 +86,10 @@ def _token_ttl_seconds() -> int:
 
 
 def _rate_limit_per_minute() -> int:
-    raw = str(os.getenv(_RATE_LIMIT_ENV, _DEFAULT_RATE_LIMIT_PER_MINUTE)).strip()
+    raw = str(
+        os.getenv(_RATE_LIMIT_ENV, "")
+        or os.getenv(_RATE_LIMIT_ENV_LEGACY, _DEFAULT_RATE_LIMIT_PER_MINUTE)
+    ).strip()
     try:
         return max(1, int(raw))
     except (TypeError, ValueError):
@@ -115,7 +125,10 @@ class ManagedLibraryCloudService:
         self.manager = manager or get_reference_library_manager()
         if hosted_catalog is None:
             bootstrap_status = ensure_local_dev_hosted_catalog(
-                dev_mode=_truthy(os.getenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", "")),
+                dev_mode=_truthy(
+                    os.getenv("MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH", "")
+                    or os.getenv("THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH", "")
+                ),
             )
             self.hosted_catalog = HostedLibraryCatalog()
             if str(bootstrap_status.get("state")) in {"upgraded", "published"}:
@@ -176,7 +189,10 @@ class ManagedLibraryCloudService:
 
     def issue_token(self, *, x_ta_license: str | None) -> dict[str, Any]:
         if not x_ta_license:
-            raise HTTPException(status_code=401, detail="Missing X-TA-License header.")
+            raise HTTPException(
+                status_code=401,
+                detail="Missing X-MaterialScope-License (or legacy X-TA-License) header.",
+            )
         try:
             state = validate_encoded_license_key(
                 x_ta_license,
@@ -630,20 +646,21 @@ class ManagedLibraryCloudService:
             raise HTTPException(status_code=400, detail="axis and signal arrays are required and must have equal length.")
         axis, signal = _sorted_axis_signal(axis, signal)
         smoothed = _apply_spectral_smoothing(signal, {"method": "none"})
-        normalized_signal = _normalize_spectral_signal(smoothed, {"method": "vector"})
+        normalized_signal, _, _ = _normalize_spectral_signal(smoothed, {"method": "vector"})
         top_n = max(1, int(request_payload.get("top_n") or 5))
         minimum_score = float(request_payload.get("minimum_score") or 0.45)
+        metric = str(request_payload.get("metric") or "cosine").strip().lower() or "cosine"
         peak_config = {"prominence": 0.05, "min_distance": 6, "max_peaks": 12}
-        observed_peaks = _detect_spectral_peaks(axis, normalized_signal, peak_config)
+        observed_peaks, _, _ = _detect_spectral_peaks(axis, normalized_signal, peak_config)
         top_n_internal = top_n if token != "RAMAN" else max(top_n * 5, 10)
         references = self.hosted_catalog.load_entries(token)
         reference_lookup = self._reference_lookup(references)
         rows = _rank_spectral_matches(
             axis=axis,
-            normalized_signal=normalized_signal,
+            query_signal=normalized_signal,
             observed_peaks=observed_peaks,
             references=references,
-            matching_config={"top_n": top_n_internal, "minimum_score": minimum_score},
+            matching_config={"metric": metric, "top_n": top_n_internal, "minimum_score": minimum_score},
             peak_config=peak_config,
         )
         rows = self._attach_hosted_row_provenance(rows, reference_lookup=reference_lookup)

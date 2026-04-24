@@ -1,7 +1,7 @@
 """
 conftest.py
 -----------
-Shared pytest fixtures for the ThermoAnalyzer test suite.
+Shared pytest fixtures for the MaterialScope test suite.
 
 All fixtures generate synthetic data with known analytical properties so
 that tests are deterministic and require no external files.
@@ -12,15 +12,15 @@ import sys
 import uuid
 from pathlib import Path
 
-# Ensure the thermoanalyzer package root is importable regardless of where
+# Ensure the materialscope package root is importable regardless of where
 # pytest is invoked from.
-_THERMOANALYZER_ROOT = os.path.abspath(
+_MATERIALSCOPE_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..")
 )
-if _THERMOANALYZER_ROOT not in sys.path:
-    sys.path.insert(0, _THERMOANALYZER_ROOT)
+if _MATERIALSCOPE_ROOT not in sys.path:
+    sys.path.insert(0, _MATERIALSCOPE_ROOT)
 
-_LOCAL_TMP_ROOT = Path(_THERMOANALYZER_ROOT) / "pytest_temp"
+_LOCAL_TMP_ROOT = Path(_MATERIALSCOPE_ROOT) / "pytest_temp"
 _LOCAL_TMP_ROOT.mkdir(parents=True, exist_ok=True)
 
 import numpy as np
@@ -93,15 +93,15 @@ def _tanh_step(x, center, width, amplitude):
 
 
 @pytest.fixture(autouse=True)
-def isolated_thermoanalyzer_home(monkeypatch, tmp_path):
+def isolated_materialscope_home(monkeypatch, tmp_path):
     """Isolate license/library disk state so global cache never leaks across tests."""
-    storage_root = tmp_path / "thermoanalyzer-home"
+    storage_root = tmp_path / "materialscope-home"
     storage_root.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setenv("THERMOANALYZER_HOME", str(storage_root))
-    monkeypatch.setenv("THERMOANALYZER_ONLINE_SEARCH", "false")
-    monkeypatch.delenv("THERMOANALYZER_LIBRARY_CLOUD_URL", raising=False)
-    monkeypatch.delenv("THERMOANALYZER_LIBRARY_CLOUD_ENABLED", raising=False)
-    monkeypatch.delenv("THERMOANALYZER_LIBRARY_ALLOW_FULL_PROVIDER_SYNC", raising=False)
+    monkeypatch.setenv("MATERIALSCOPE_HOME", str(storage_root))
+    monkeypatch.setenv("MATERIALSCOPE_ONLINE_SEARCH", "false")
+    monkeypatch.delenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", raising=False)
+    monkeypatch.delenv("MATERIALSCOPE_LIBRARY_CLOUD_ENABLED", raising=False)
+    monkeypatch.delenv("MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC", raising=False)
     yield
 
 
