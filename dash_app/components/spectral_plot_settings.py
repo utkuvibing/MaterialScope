@@ -7,6 +7,8 @@ from typing import Any, Mapping
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 
+from utils.i18n import normalize_ui_locale, translate_ui
+
 
 _SPECTRAL_PLOT_FALLBACK = {
     "legend_mode": "auto",
@@ -29,6 +31,46 @@ _SPECTRAL_PLOT_FALLBACK = {
     "show_normalized": True,
     "show_peaks": True,
 }
+
+_SPECTRAL_PLOT_I18N_PREFIX = "dash.analysis.spectral_plot"
+_LEGEND_OPTION_KEYS = (
+    ("auto", "legend_auto"),
+    ("external", "legend_external_right"),
+    ("compact", "legend_compact"),
+    ("hidden", "legend_hidden"),
+)
+
+
+def spectral_plot_settings_chrome(locale: str | None) -> dict[str, Any]:
+    loc = normalize_ui_locale(locale)
+    pfx = _SPECTRAL_PLOT_I18N_PREFIX
+    return {
+        "card_title": translate_ui(loc, f"{pfx}.card_title"),
+        "card_hint": translate_ui(loc, f"{pfx}.card_hint"),
+        "legend_label": translate_ui(loc, f"{pfx}.legend"),
+        "legend_options": [
+            {"label": translate_ui(loc, f"{pfx}.{key}"), "value": value}
+            for value, key in _LEGEND_OPTION_KEYS
+        ],
+        "compact_label": translate_ui(loc, f"{pfx}.compact"),
+        "show_grid_label": translate_ui(loc, f"{pfx}.show_grid"),
+        "show_spikes_label": translate_ui(loc, f"{pfx}.show_spikes"),
+        "reverse_x_axis_label": translate_ui(loc, f"{pfx}.reverse_x_axis"),
+        "export_scale_label": translate_ui(loc, f"{pfx}.export_scale"),
+        "line_width_label": translate_ui(loc, f"{pfx}.line_width"),
+        "marker_size_label": translate_ui(loc, f"{pfx}.marker_size"),
+        "show_raw_label": translate_ui(loc, f"{pfx}.show_raw"),
+        "show_smoothed_label": translate_ui(loc, f"{pfx}.show_smoothed"),
+        "show_corrected_label": translate_ui(loc, f"{pfx}.show_corrected"),
+        "show_normalized_label": translate_ui(loc, f"{pfx}.show_normalized"),
+        "show_peaks_label": translate_ui(loc, f"{pfx}.show_peaks"),
+        "x_lock_label": translate_ui(loc, f"{pfx}.x_lock"),
+        "y_lock_label": translate_ui(loc, f"{pfx}.y_lock"),
+        "x_min_placeholder": translate_ui(loc, f"{pfx}.x_min"),
+        "x_max_placeholder": translate_ui(loc, f"{pfx}.x_max"),
+        "y_min_placeholder": translate_ui(loc, f"{pfx}.y_min"),
+        "y_max_placeholder": translate_ui(loc, f"{pfx}.y_max"),
+    }
 
 
 def _bool(value: Any, fallback: bool) -> bool:
@@ -159,12 +201,7 @@ def spectral_plot_settings_from_controls(
 
 def build_spectral_plot_settings_card(id_prefix: str) -> dbc.Card:
     defaults = normalize_spectral_plot_settings(None)
-    legend_options = [
-        {"label": "Auto", "value": "auto"},
-        {"label": "External Right", "value": "external"},
-        {"label": "Compact", "value": "compact"},
-        {"label": "Hidden", "value": "hidden"},
-    ]
+    chrome = spectral_plot_settings_chrome("en")
     return dbc.Card(
         dbc.CardBody(
             [
@@ -175,19 +212,19 @@ def build_spectral_plot_settings_card(id_prefix: str) -> dbc.Card:
                         dbc.Col(
                             [
                                 dbc.Label(id=f"{id_prefix}-plot-legend-mode-label", html_for=f"{id_prefix}-plot-legend-mode", className="mb-1"),
-                                dbc.Select(id=f"{id_prefix}-plot-legend-mode", options=legend_options, value=defaults["legend_mode"]),
+                                dbc.Select(id=f"{id_prefix}-plot-legend-mode", options=chrome["legend_options"], value=defaults["legend_mode"]),
                             ],
                             md=4,
                         ),
-                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-compact", value=defaults["compact"], label="Compact layout"), md=4),
-                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-show-grid", value=defaults["show_grid"], label="Show grid"), md=4),
+                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-compact", value=defaults["compact"], label=chrome["compact_label"]), md=4),
+                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-show-grid", value=defaults["show_grid"], label=chrome["show_grid_label"]), md=4),
                     ],
                     className="g-2 align-items-end mb-2",
                 ),
                 dbc.Row(
                     [
-                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-show-spikes", value=defaults["show_spikes"], label="Show crosshair spikes"), md=4),
-                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-reverse-x-axis", value=defaults["reverse_x_axis"], label="Reverse x-axis"), md=4),
+                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-show-spikes", value=defaults["show_spikes"], label=chrome["show_spikes_label"]), md=4),
+                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-reverse-x-axis", value=defaults["reverse_x_axis"], label=chrome["reverse_x_axis_label"]), md=4),
                         dbc.Col(
                             [
                                 dbc.Label(id=f"{id_prefix}-plot-export-scale-label", html_for=f"{id_prefix}-plot-export-scale", className="mb-1"),
@@ -223,22 +260,22 @@ def build_spectral_plot_settings_card(id_prefix: str) -> dbc.Card:
                 ),
                 dbc.Row(
                     [
-                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-show-raw", value=defaults["show_raw"], label="Show raw trace"), md=4),
-                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-show-smoothed", value=defaults["show_smoothed"], label="Show smoothed trace"), md=4),
-                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-show-corrected", value=defaults["show_corrected"], label="Show corrected trace"), md=4),
-                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-show-normalized", value=defaults["show_normalized"], label="Show normalized trace"), md=4),
-                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-show-peaks", value=defaults["show_peaks"], label="Show peak markers"), md=4),
+                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-show-raw", value=defaults["show_raw"], label=chrome["show_raw_label"]), md=4),
+                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-show-smoothed", value=defaults["show_smoothed"], label=chrome["show_smoothed_label"]), md=4),
+                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-show-corrected", value=defaults["show_corrected"], label=chrome["show_corrected_label"]), md=4),
+                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-show-normalized", value=defaults["show_normalized"], label=chrome["show_normalized_label"]), md=4),
+                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-show-peaks", value=defaults["show_peaks"], label=chrome["show_peaks_label"]), md=4),
                     ],
                     className="g-2 mb-2",
                 ),
                 dbc.Row(
                     [
-                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-x-range-enabled", value=False, label="Lock X range"), md=4),
-                        dbc.Col(dbc.Input(id=f"{id_prefix}-plot-x-min", type="number", placeholder="X min"), md=4),
-                        dbc.Col(dbc.Input(id=f"{id_prefix}-plot-x-max", type="number", placeholder="X max"), md=4),
-                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-y-range-enabled", value=False, label="Lock Y range"), md=4),
-                        dbc.Col(dbc.Input(id=f"{id_prefix}-plot-y-min", type="number", placeholder="Y min"), md=4),
-                        dbc.Col(dbc.Input(id=f"{id_prefix}-plot-y-max", type="number", placeholder="Y max"), md=4),
+                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-x-range-enabled", value=defaults["x_range_enabled"], label=chrome["x_lock_label"]), md=4),
+                        dbc.Col(dbc.Input(id=f"{id_prefix}-plot-x-min", type="number", placeholder=chrome["x_min_placeholder"]), md=4),
+                        dbc.Col(dbc.Input(id=f"{id_prefix}-plot-x-max", type="number", placeholder=chrome["x_max_placeholder"]), md=4),
+                        dbc.Col(dbc.Checkbox(id=f"{id_prefix}-plot-y-range-enabled", value=defaults["y_range_enabled"], label=chrome["y_lock_label"]), md=4),
+                        dbc.Col(dbc.Input(id=f"{id_prefix}-plot-y-min", type="number", placeholder=chrome["y_min_placeholder"]), md=4),
+                        dbc.Col(dbc.Input(id=f"{id_prefix}-plot-y-max", type="number", placeholder=chrome["y_max_placeholder"]), md=4),
                     ],
                     className="g-2",
                 ),

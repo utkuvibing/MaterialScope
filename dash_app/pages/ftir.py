@@ -104,6 +104,7 @@ from dash_app.components.spectral_plot_settings import (
     build_spectral_plot_settings_card,
     normalize_spectral_plot_settings,
     spectral_legend_layout,
+    spectral_plot_settings_chrome,
     spectral_plot_settings_from_controls,
 )
 from dash_app.theme import PLOT_THEME, normalize_ui_theme
@@ -985,6 +986,7 @@ def render_ftir_raw_quality_panel(project_id, dataset_key, _refresh, locale_data
     Output("ftir-plot-card-title", "children"),
     Output("ftir-plot-card-hint", "children"),
     Output("ftir-plot-legend-mode-label", "children"),
+    Output("ftir-plot-legend-mode", "options"),
     Output("ftir-plot-compact", "label"),
     Output("ftir-plot-show-grid", "label"),
     Output("ftir-plot-show-spikes", "label"),
@@ -998,30 +1000,38 @@ def render_ftir_raw_quality_panel(project_id, dataset_key, _refresh, locale_data
     Output("ftir-plot-show-normalized", "label"),
     Output("ftir-plot-show-peaks", "label"),
     Output("ftir-plot-x-range-enabled", "label"),
+    Output("ftir-plot-x-min", "placeholder"),
+    Output("ftir-plot-x-max", "placeholder"),
     Output("ftir-plot-y-range-enabled", "label"),
+    Output("ftir-plot-y-min", "placeholder"),
+    Output("ftir-plot-y-max", "placeholder"),
     Input("ui-locale", "data"),
 )
 def render_ftir_plot_settings_chrome(locale_data):
-    loc = _loc(locale_data)
-    pfx = "dash.analysis.spectral.plot"
+    chrome = spectral_plot_settings_chrome(_loc(locale_data))
     return (
-        translate_ui(loc, f"{pfx}.card_title"),
-        translate_ui(loc, f"{pfx}.card_hint"),
-        translate_ui(loc, f"{pfx}.legend"),
-        translate_ui(loc, f"{pfx}.compact"),
-        translate_ui(loc, f"{pfx}.show_grid"),
-        translate_ui(loc, f"{pfx}.show_spikes"),
-        translate_ui(loc, f"{pfx}.reverse_x_axis"),
-        translate_ui(loc, f"{pfx}.export_scale"),
-        translate_ui(loc, f"{pfx}.line_width"),
-        translate_ui(loc, f"{pfx}.marker_size"),
-        translate_ui(loc, f"{pfx}.show_raw"),
-        translate_ui(loc, f"{pfx}.show_smoothed"),
-        translate_ui(loc, f"{pfx}.show_corrected"),
-        translate_ui(loc, f"{pfx}.show_normalized"),
-        translate_ui(loc, f"{pfx}.show_peaks"),
-        translate_ui(loc, f"{pfx}.x_lock"),
-        translate_ui(loc, f"{pfx}.y_lock"),
+        chrome["card_title"],
+        chrome["card_hint"],
+        chrome["legend_label"],
+        chrome["legend_options"],
+        chrome["compact_label"],
+        chrome["show_grid_label"],
+        chrome["show_spikes_label"],
+        chrome["reverse_x_axis_label"],
+        chrome["export_scale_label"],
+        chrome["line_width_label"],
+        chrome["marker_size_label"],
+        chrome["show_raw_label"],
+        chrome["show_smoothed_label"],
+        chrome["show_corrected_label"],
+        chrome["show_normalized_label"],
+        chrome["show_peaks_label"],
+        chrome["x_lock_label"],
+        chrome["x_min_placeholder"],
+        chrome["x_max_placeholder"],
+        chrome["y_lock_label"],
+        chrome["y_min_placeholder"],
+        chrome["y_max_placeholder"],
     )
 
 

@@ -812,6 +812,23 @@ def test_build_figure_honors_plot_settings_for_traces_and_ranges(monkeypatch):
     assert list(graph.figure.layout.yaxis.range) == [-1.0, 1.0]
 
 
+def test_render_ftir_plot_settings_chrome_localizes_options_and_placeholders():
+    mod = _import_ftir_page()
+
+    chrome = mod.render_ftir_plot_settings_chrome("tr")
+    legend_options = chrome[3]
+
+    assert [item["label"] for item in legend_options] == ["Otomatik", "Sağ dışta", "Kompakt", "Gizli"]
+    assert chrome[17] == "X minimum"
+    assert chrome[18] == "X maksimum"
+    assert chrome[20] == "Y minimum"
+    assert chrome[21] == "Y maksimum"
+
+    rendered = " ".join(str(item) for item in chrome)
+    for unexpected in ("Compact layout", "Show grid", "External Right", "Auto", "Hidden"):
+        assert unexpected not in rendered
+
+
 def test_build_match_table_library_unavailable_is_hidden():
     mod = _import_ftir_page()
     table = mod._build_match_table([], "en", summary={"match_status": "library_unavailable"})
