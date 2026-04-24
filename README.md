@@ -214,7 +214,7 @@ The current container profile starts:
 - the Streamlit UI (legacy path) on `0.0.0.0:8501`
 - Streamlit waits for backend health before the UI process starts
 
-Dash-first container startup is a forward-looking follow-up as migration hardens.
+Dash-first container startup remains a follow-up even though the combined local Dash server now covers all six analysis pages.
 
 For web deployment:
 
@@ -349,9 +349,9 @@ Local Windows release notes:
 
 ## Forward-looking work (Dash-first)
 
-- Continue modality parity and polish (remaining surfaces and deployment defaults where Dash is not yet primary).
+- Dash analysis-page parity is complete across DSC, DTA, FTIR, Raman, TGA, and XRD; remaining work is deployment/runtime cleanup where Dash is not yet primary.
 - Reuse the shared Dash result-surface patterns (quality cards, raw metadata, processing summaries, literature compare, figure capture) across modalities.
-- Converge desktop and container runtimes toward Dash-first defaults; Streamlit remains until parity is complete.
+- Converge desktop and container runtimes toward Dash-first defaults while keeping Streamlit available as a legacy path.
 - Expand managed cloud-library provider coverage and provenance quality.
 
 ---
