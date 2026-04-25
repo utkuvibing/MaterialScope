@@ -570,7 +570,7 @@ TRANSLATIONS = {
     "dash.home.loaded_datasets_title": {"tr": "Yüklenen veri setleri", "en": "Loaded Datasets"},
     "dash.home.label_active_dataset": {"tr": "Etkin veri seti", "en": "Active Dataset"},
     "dash.home.btn_remove": {"tr": "Kaldır", "en": "Remove"},
-    "dash.home.modality_selected": {"tr": "Seçildi: {modality} — {desc}", "en": "Selected: {modality} -- {desc}"},
+    "dash.home.modality_selected": {"tr": "Seçildi: {modality} - {desc}", "en": "Selected: {modality} - {desc}"},
     "dash.home.upload_queued_dup": {"tr": "Dosyalar içe aktarma önizlemesi için zaten kuyrukta.", "en": "Files already queued for import preview."},
     "dash.home.upload_queued_ok": {"tr": "Önizleme için kuyruğa alındı: {files}", "en": "Queued for preview: {files}"},
     "dash.home.pending_help_empty": {
@@ -639,28 +639,28 @@ TRANSLATIONS = {
     "dash.home.modality_signal.raman": {"tr": "Şiddet sütunu", "en": "Intensity Column"},
     "dash.home.modality_signal.xrd": {"tr": "Şiddet sütunu", "en": "Intensity Column"},
     "dash.home.modality_desc.dsc": {
-        "tr": "Diferansiyel tarama kalorimetrisi — Sıcaklık / Isı akışı (mW/mg)",
-        "en": "Differential Scanning Calorimetry -- Temperature vs Heat Flow (mW/mg)",
+        "tr": "Diferansiyel tarama kalorimetrisi - Sıcaklık / Isı akışı (mW/mg)",
+        "en": "Differential Scanning Calorimetry - Temperature vs Heat Flow (mW/mg)",
     },
     "dash.home.modality_desc.tga": {
-        "tr": "Termogravimetrik analiz — Sıcaklık / Kütle (%/mg)",
-        "en": "Thermogravimetric Analysis -- Temperature vs Mass (%/mg)",
+        "tr": "Termogravimetrik analiz - Sıcaklık / Kütle (%/mg)",
+        "en": "Thermogravimetric Analysis - Temperature vs Mass (%/mg)",
     },
     "dash.home.modality_desc.dta": {
-        "tr": "Diferansiyel termal analiz — Sıcaklık / ΔT (µV)",
-        "en": "Differential Thermal Analysis -- Temperature vs ΔT (µV)",
+        "tr": "Diferansiyel termal analiz - Sıcaklık / ΔT (µV)",
+        "en": "Differential Thermal Analysis - Temperature vs ΔT (µV)",
     },
     "dash.home.modality_desc.ftir": {
-        "tr": "Fourier dönüşümlü kızılötesi — Dalga sayısı (cm⁻¹) / Soğurganlık veya geçirgenlik",
-        "en": "Fourier Transform Infrared -- Wavenumber (cm⁻¹) vs Absorbance/Transmittance",
+        "tr": "Fourier dönüşümlü kızılötesi - Dalga sayısı (cm⁻¹) / Soğurganlık veya geçirgenlik",
+        "en": "Fourier Transform Infrared - Wavenumber (cm⁻¹) vs Absorbance/Transmittance",
     },
     "dash.home.modality_desc.raman": {
-        "tr": "Raman spektroskopisi — Raman kayması (cm⁻¹) / Şiddet",
-        "en": "Raman Spectroscopy -- Raman Shift (cm⁻¹) vs Intensity",
+        "tr": "Raman spektroskopisi - Raman kayması (cm⁻¹) / Şiddet",
+        "en": "Raman Spectroscopy - Raman Shift (cm⁻¹) vs Intensity",
     },
     "dash.home.modality_desc.xrd": {
-        "tr": "X-ışını difraksiyonu — 2θ (derece) / Şiddet (sayım)",
-        "en": "X-Ray Diffraction -- 2θ (degrees) vs Intensity (counts)",
+        "tr": "X-ışını difraksiyonu - 2θ (derece) / Şiddet (sayım)",
+        "en": "X-Ray Diffraction - 2θ (degrees) vs Intensity (counts)",
     },
     "dash.home.validation_badge.pass": {"tr": "GEÇTİ", "en": "PASS"},
     "dash.home.validation_badge.pass_with_review": {"tr": "İNCELE", "en": "REVIEW"},
@@ -1459,7 +1459,7 @@ TRANSLATIONS = {
     "dash.analysis.xrd.tab.setup": {"tr": "Kurulum", "en": "Setup"},
     "dash.analysis.xrd.tab.processing": {"tr": "İşleme", "en": "Processing"},
     "dash.analysis.xrd.tab.run": {"tr": "Çalıştır", "en": "Run"},
-    "dash.analysis.xrd.workflow_guide.title": {"tr": "XRD — önerilen akış", "en": "XRD — recommended flow"},
+    "dash.analysis.xrd.workflow_guide.title": {"tr": "İş Akışı Rehberi", "en": "Workflow Guide"},
     "dash.analysis.xrd.workflow_guide.intro": {
         "tr": "Bu sayfa çalışma alanı verisinde sunucu tarafı XRD analizi çalıştırır.",
         "en": "This page runs server-side XRD analysis on workspace data.",
@@ -2499,7 +2499,7 @@ TRANSLATIONS = {
     "dash.analysis.tga.literature.evidence.provider_prefix": {"tr": "Kaynak: {source}", "en": "Source: {source}"},
     "dash.analysis.tga.literature.evidence.citations_prefix": {"tr": "Bağlı atıflar: {titles}", "en": "Linked citations: {titles}"},
     "dash.analysis.tga.literature.evidence.generic_title": {"tr": "Kalıcı literatür kaynağı", "en": "Retained literature reference"},
-    "dash.analysis.tga.workflow_guide.title": {"tr": "TGA sayfası — önerilen akış", "en": "TGA page — recommended flow"},
+    "dash.analysis.tga.workflow_guide.title": {"tr": "İş Akışı Rehberi", "en": "Workflow Guide"},
     "dash.analysis.tga.workflow_guide.intro": {
         "tr": "Bu sayfa proje verisinde sunucu tarafı analiz çalıştırır. Kısa yol:",
         "en": "This page runs server-side analysis on workspace data. Short path:",
@@ -3181,6 +3181,18 @@ TRANSLATIONS = {
     "dash.analysis.ftir.workflow_guide.step2": {"tr": "İş akışı şablonu ve ön işleme parametrelerini ayarlayın.", "en": "Choose a workflow template and tuning parameters."},
     "dash.analysis.ftir.workflow_guide.step3": {"tr": "Analizi çalıştırın ve spektral tepeleri inceleyin.", "en": "Run analysis and inspect spectral peaks."},
     "dash.analysis.ftir.workflow_guide.step4": {"tr": "Kütüphane eşleştirmesini ve literatür karşılaştırmasını inceleyin.", "en": "Review library matches and literature comparison."},
+    "dash.analysis.dsc.workflow_guide.title": {"tr": "İş Akışı Rehberi", "en": "Workflow Guide"},
+    "dash.analysis.dsc.workflow_guide.intro": {"tr": "DSC analizi için standart adımlar:", "en": "Standard steps for DSC analysis:"},
+    "dash.analysis.dsc.workflow_guide.step1": {"tr": "Bir DSC veri seti seçin ve ham veri özetini doğrulayın.", "en": "Select a DSC dataset and verify the raw data summary."},
+    "dash.analysis.dsc.workflow_guide.step2": {"tr": "İş akışı şablonunu ve normalizasyon ayarını seçin.", "en": "Choose the workflow template and normalization setting."},
+    "dash.analysis.dsc.workflow_guide.step3": {"tr": "İşleme sekmesinde yumuşatma, baseline, pik ve Tg ayarlarını gözden geçirin.", "en": "Review smoothing, baseline, peak, and Tg settings in Processing."},
+    "dash.analysis.dsc.workflow_guide.step4": {"tr": "Analizi çalıştırın; metrikleri, grafiği, kalite kartını ve literatür karşılaştırmasını inceleyin.", "en": "Run analysis; review metrics, figure, quality card, and literature comparison."},
+    "dash.analysis.dta.workflow_guide.title": {"tr": "İş Akışı Rehberi", "en": "Workflow Guide"},
+    "dash.analysis.dta.workflow_guide.intro": {"tr": "DTA analizi için standart adımlar:", "en": "Standard steps for DTA analysis:"},
+    "dash.analysis.dta.workflow_guide.step1": {"tr": "Bir DTA veri seti seçin.", "en": "Select a DTA dataset."},
+    "dash.analysis.dta.workflow_guide.step2": {"tr": "İş akışı şablonunu seçin ve önerilen açıklamayı kontrol edin.", "en": "Choose a workflow template and check the recommended description."},
+    "dash.analysis.dta.workflow_guide.step3": {"tr": "İşleme sekmesinde yumuşatma, baseline ve pik algılama ayarlarını düzenleyin.", "en": "Tune smoothing, baseline, and peak detection in Processing."},
+    "dash.analysis.dta.workflow_guide.step4": {"tr": "Analizi çalıştırın; olay kartları, tablo, grafik ve kalite çıktısını inceleyin.", "en": "Run analysis; review event cards, table, figure, and quality output."},
     "dash.analysis.label.position": {"tr": "Pozisyon (cm⁻¹)", "en": "Position (cm^-1)"},
     "dash.analysis.label.intensity": {"tr": "Yoğunluk", "en": "Intensity"},
     "dash.analysis.raman.title": {"tr": "Raman analizi", "en": "RAMAN Analysis"},
@@ -3243,8 +3255,8 @@ TRANSLATIONS = {
         "en": "Project",
     },
     "sidebar.project.caption": {
-        "tr": "Mevcut çalışma alanını `.scopezip` arşivi olarak kaydet veya yükle (`.thermozip` da desteklenir).",
-        "en": "Save or load the current workspace as a reusable `.scopezip` archive (`.thermozip` is still supported).",
+        "tr": "Mevcut çalışma alanını `.scopezip` arşivi olarak kaydet veya yükle.",
+        "en": "Save or load the current workspace as a reusable `.scopezip` archive.",
     },
     "sidebar.project.new": {
         "tr": "Yeni Proje",
@@ -3419,11 +3431,11 @@ TRANSLATIONS = {
         "tr": (
             "Bu sayfayı çalışma alanı kontrol noktası olarak kullanın: yüklenen koşuları doğrulayın, kaydedilmiş "
             "sonuçları gözden geçirin, karşılaştırma durumunu inceleyin ve MaterialScope `.scopezip` arşivi "
-            "kaydetme/yükleme işlemlerini yönetin (eski `.thermozip` içe aktarımı desteklenir)."
+            "kaydetme/yükleme işlemlerini yönetin."
         ),
         "en": (
             "Use this page as the workspace checkpoint: verify loaded runs, review saved results, inspect compare "
-            "state, and manage MaterialScope `.scopezip` archive save/load (legacy `.thermozip` import is supported)."
+            "state, and manage MaterialScope `.scopezip` archive save/load."
         ),
     },
     "project.dash.workflow_title": {
@@ -3455,16 +3467,16 @@ TRANSLATIONS = {
         "en": "Prepare & Download Archive (.scopezip)",
     },
     "project.dash.upload_cta": {
-        "tr": "MaterialScope proje arşivi yükle (.scopezip veya eski .thermozip)",
-        "en": "Upload a MaterialScope project archive (.scopezip or legacy .thermozip)",
+        "tr": "MaterialScope proje arşivi yükle (.scopezip)",
+        "en": "Upload a MaterialScope project archive (.scopezip)",
     },
     "project.dash.selected_archive_prefix": {
         "tr": "Seçilen arşiv:",
         "en": "Selected archive:",
     },
     "project.dash.invalid_archive_extension": {
-        "tr": "Yalnızca `.scopezip` veya eski `.thermozip` MaterialScope proje arşivleri kabul edilir.",
-        "en": "Only `.scopezip` or legacy `.thermozip` MaterialScope project archives are accepted.",
+        "tr": "Yalnızca `.scopezip` MaterialScope proje arşivleri kabul edilir.",
+        "en": "Only `.scopezip` MaterialScope project archives are accepted.",
     },
     "project.dash.metric_datasets": {
         "tr": "Veri setleri",
@@ -3601,8 +3613,8 @@ TRANSLATIONS = {
         "en": "N/A",
     },
     "project.dash.choose_archive_first": {
-        "tr": "Önce bir MaterialScope proje arşivi seçin (.scopezip veya eski .thermozip).",
-        "en": "Choose a MaterialScope project archive first (.scopezip or legacy .thermozip).",
+        "tr": "Önce bir MaterialScope proje arşivi seçin (.scopezip).",
+        "en": "Choose a MaterialScope project archive first (.scopezip).",
     },
     "project.dash.clear_workspace_warning": {
         "tr": (
@@ -3675,8 +3687,8 @@ TRANSLATIONS = {
         "en": "Workspace required",
     },
     "project.dash.no_workspace_save_body": {
-        "tr": "Kaydedilecek etkin çalışma alanı yok. Önce veri içe aktarın veya bir `.scopezip` / eski `.thermozip` proje arşivi yükleyin.",
-        "en": "No active workspace to save. Import data or load a MaterialScope project archive (.scopezip or legacy .thermozip) first.",
+        "tr": "Kaydedilecek etkin çalışma alanı yok. Önce veri içe aktarın veya bir `.scopezip` proje arşivi yükleyin.",
+        "en": "No active workspace to save. Import data or load a MaterialScope project archive (.scopezip) first.",
     },
 }
 

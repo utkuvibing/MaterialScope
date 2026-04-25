@@ -492,6 +492,20 @@ def _preset_controls_card() -> dbc.Card:
     return build_apply_preset_card(id_prefix="dsc", include_dirty_state=True)
 
 
+def _dsc_workflow_guide_block() -> html.Details:
+    return html.Details(
+        [
+            html.Summary(
+                [html.Span(className="ta-details-chevron"), html.Span(id="dsc-workflow-guide-title", className="ms-1")],
+                className="ta-details-summary",
+            ),
+            html.Div(id="dsc-workflow-guide-body", className="ta-details-body mt-2 small"),
+        ],
+        className="ta-ms-details mb-3",
+        open=False,
+    )
+
+
 def _normalization_setup_card() -> dbc.Card:
     return dbc.Card(
         dbc.CardBody(
@@ -841,6 +855,7 @@ def _dsc_left_column_tabs() -> dbc.Tabs:
                         "dsc.general",
                         card_title_id="dsc-workflow-card-title",
                     ),
+                    _dsc_workflow_guide_block(),
                 ],
                 tab_id="dsc-tab-setup",
                 label_class_name="ta-tab-label",
@@ -1034,6 +1049,31 @@ def render_dsc_tab_chrome(locale_data):
         translate_ui(loc, "dash.analysis.dsc.tab.processing"),
         translate_ui(loc, "dash.analysis.dsc.tab.run"),
     )
+
+
+@callback(
+    Output("dsc-workflow-guide-title", "children"),
+    Output("dsc-workflow-guide-body", "children"),
+    Input("ui-locale", "data"),
+)
+def render_dsc_workflow_guide_chrome(locale_data):
+    loc = _loc(locale_data)
+    pfx = "dash.analysis.dsc.workflow_guide"
+    body = html.Div(
+        [
+            html.P(translate_ui(loc, f"{pfx}.intro"), className="mb-2"),
+            html.Ul(
+                [
+                    html.Li(translate_ui(loc, f"{pfx}.step1"), className="mb-1"),
+                    html.Li(translate_ui(loc, f"{pfx}.step2"), className="mb-1"),
+                    html.Li(translate_ui(loc, f"{pfx}.step3"), className="mb-1"),
+                    html.Li(translate_ui(loc, f"{pfx}.step4"), className="mb-0"),
+                ],
+                className="ps-3 mb-0",
+            ),
+        ]
+    )
+    return translate_ui(loc, f"{pfx}.title"), body
 
 
 @callback(

@@ -1163,6 +1163,7 @@ def _dta_left_column_tabs() -> dbc.Tabs:
                         "dta.general",
                         card_title_id="dta-workflow-card-title",
                     ),
+                    _dta_workflow_guide_block(),
                 ],
                 tab_id="dta-tab-setup",
                 label_class_name="ta-tab-label",
@@ -1196,6 +1197,20 @@ def _dta_left_column_tabs() -> dbc.Tabs:
         id="dta-left-tabs",
         active_tab="dta-tab-setup",
         className="mb-3",
+    )
+
+
+def _dta_workflow_guide_block() -> html.Details:
+    return html.Details(
+        [
+            html.Summary(
+                [html.Span(className="ta-details-chevron"), html.Span(id="dta-workflow-guide-title", className="ms-1")],
+                className="ta-details-summary",
+            ),
+            html.Div(id="dta-workflow-guide-body", className="ta-details-body mt-2 small"),
+        ],
+        className="ta-ms-details mb-3",
+        open=False,
     )
 
 
@@ -1293,6 +1308,31 @@ def render_dta_tab_chrome(locale_data):
         translate_ui(loc, "dash.analysis.dta.tab.processing"),
         translate_ui(loc, "dash.analysis.dta.tab.run"),
     )
+
+
+@callback(
+    Output("dta-workflow-guide-title", "children"),
+    Output("dta-workflow-guide-body", "children"),
+    Input("ui-locale", "data"),
+)
+def render_dta_workflow_guide_chrome(locale_data):
+    loc = _loc(locale_data)
+    pfx = "dash.analysis.dta.workflow_guide"
+    body = html.Div(
+        [
+            html.P(translate_ui(loc, f"{pfx}.intro"), className="mb-2"),
+            html.Ul(
+                [
+                    html.Li(translate_ui(loc, f"{pfx}.step1"), className="mb-1"),
+                    html.Li(translate_ui(loc, f"{pfx}.step2"), className="mb-1"),
+                    html.Li(translate_ui(loc, f"{pfx}.step3"), className="mb-1"),
+                    html.Li(translate_ui(loc, f"{pfx}.step4"), className="mb-0"),
+                ],
+                className="ps-3 mb-0",
+            ),
+        ]
+    )
+    return translate_ui(loc, f"{pfx}.title"), body
 
 
 @callback(

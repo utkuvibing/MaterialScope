@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m py_compile backend/models.py)",
+      "Bash(python -m py_compile backend/app.py)",
+      "Bash(node --check desktop/electron/renderer.js)",
+      "Bash(node --check desktop/electron/preload.js)"
+    ]
+  }
+}

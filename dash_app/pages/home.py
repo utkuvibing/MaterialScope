@@ -497,10 +497,10 @@ layout = html.Div(
                                                     className="ta-btn-remove w-100",
                                                 ),
                                                 md=3,
-                                                className="d-flex align-items-center",
+                                                className="d-flex align-items-start ta-loaded-dataset-actions",
                                             ),
                                         ],
-                                        className="g-2 align-items-center",
+                                        className="g-2 align-items-start",
                                     ),
                                     html.Div(id="dataset-action-status", className="mt-3"),
                                 ]
@@ -521,7 +521,8 @@ layout = html.Div(
                 ),
             ]
         ),
-    ]
+    ],
+    className="import-page",
 )
 
 
@@ -686,7 +687,7 @@ def update_wizard_visibility(step, locale_data, modality):
         styles[step] = display
 
     stepper = stepper_indicator(_wizard_steps(loc), step)
-    badge = dbc.Badge(modality, color="primary", className="fs-6") if modality else ""
+    badge = dbc.Badge(modality, color="secondary", className="fs-6 ta-palette-badge") if modality else ""
     axis_label = _modality_axis_label(loc, modality)
     signal_label = _modality_signal_label(loc, modality)
     rate_label = translate_ui(loc, "dash.home.heating_rate_label")
@@ -764,10 +765,15 @@ def collect_pending_uploads(contents_list, filenames, pending_files, locale_data
         added.append(file_name)
 
     if not added:
-        return dbc.Alert(translate_ui(loc, "dash.home.upload_queued_dup"), color="info"), pending_files, dash.no_update
+        return dbc.Alert(translate_ui(loc, "dash.home.upload_queued_dup"), color="secondary", className="ta-palette-alert"), pending_files, dash.no_update
 
     return (
-        dbc.Alert(translate_ui(loc, "dash.home.upload_queued_ok", files=", ".join(added)), color="success", dismissable=True),
+        dbc.Alert(
+            translate_ui(loc, "dash.home.upload_queued_ok", files=", ".join(added)),
+            color="secondary",
+            dismissable=True,
+            className="ta-palette-alert",
+        ),
         pending_files,
         added[0],
     )
@@ -879,7 +885,7 @@ def build_pending_preview(selected_file, modality, pending_files, locale_data):
 
     confidence = (guessed.get("confidence") or {}).get("overall", "review")
     warnings = guessed.get("warnings") or []
-    status_color = "success" if confidence == "high" else ("warning" if confidence == "medium" else "info")
+    status_color = "secondary"
     status_text = translate_ui(
         loc,
         "dash.home.preview_status",
@@ -890,7 +896,7 @@ def build_pending_preview(selected_file, modality, pending_files, locale_data):
     )
     if warnings:
         status_text += translate_ui(loc, "dash.home.preview_warnings_suffix", n=len(warnings))
-    status = dbc.Alert(status_text, color=status_color)
+    status = dbc.Alert(status_text, color=status_color, className="ta-palette-alert")
 
     def _pick(column_name: str | None) -> str:
         return column_name if column_name in columns else _NONE_VALUE
@@ -1005,9 +1011,9 @@ def build_review_data(
     if all_warnings:
         for w in all_warnings:
             warning_items.append(html.Li(w, className="text-warning"))
-        warning_list = html.Ul(warning_items, className="mt-2")
+        warning_list = html.Ul(warning_items, className="mt-2 ta-palette-warning-list")
     else:
-        warning_list = html.P(translate_ui(loc, "dash.home.no_warnings"), className="text-success")
+        warning_list = html.P(translate_ui(loc, "dash.home.no_warnings"), className="ta-palette-success-text")
 
     # Confidence badge
     conf_color = {"high": "success", "medium": "warning", "review": "info"}.get(confidence, "secondary")
@@ -1016,7 +1022,7 @@ def build_review_data(
     # Metadata summary
     meta_items = []
     meta_items.append(
-        html.Tr([html.Td(translate_ui(loc, "dash.home.meta_modality")), html.Td(dbc.Badge(modality, color="primary"))])
+        html.Tr([html.Td(translate_ui(loc, "dash.home.meta_modality")), html.Td(dbc.Badge(modality, color="secondary", className="ta-palette-badge"))])
     )
     meta_items.append(
         html.Tr(
@@ -1148,7 +1154,7 @@ def build_validation_summary(step, review_data, locale_data):
     warning_display = ""
     if warnings:
         items = [html.Li(w, className="text-warning") for w in warnings]
-        warning_display = html.Div([html.Strong(translate_ui(loc, "dash.home.label_warnings_block")), html.Ul(items, className="mt-1")])
+        warning_display = html.Div([html.Strong(translate_ui(loc, "dash.home.label_warnings_block")), html.Ul(items, className="mt-1 ta-palette-warning-list")])
 
     details = html.Div(
         [
@@ -1177,6 +1183,8 @@ def build_validation_summary(step, review_data, locale_data):
     Output("pending-file-select", "value", allow_duplicate=True),
     Output("home-refresh", "data", allow_duplicate=True),
     Output("import-wizard-step", "data", allow_duplicate=True),
+    Output("validation-summary-status", "children", allow_duplicate=True),
+    Output("modality-select-status", "children", allow_duplicate=True),
     Input("import-mapped-btn", "n_clicks"),
     State("project-id", "data"),
     State("pending-import-preview", "data"),
@@ -1222,7 +1230,8 @@ def import_with_mapping(
                 title=translate_ui(loc, "dash.home.prereq_workspace_import_title"),
                 locale=loc,
             ),
-            dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+            dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+            dash.no_update,
         )
 
     if not preview:
@@ -1233,20 +1242,25 @@ def import_with_mapping(
                 title=translate_ui(loc, "dash.home.prereq_preview_required_title"),
                 locale=loc,
             ),
-            dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+            dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+            dash.no_update,
         )
 
     if temp_col == _NONE_VALUE or signal_col == _NONE_VALUE:
         return (
-            dbc.Alert(translate_ui(loc, "dash.home.import_axis_signal_required"), color="warning"),
+            dbc.Alert(translate_ui(loc, "dash.home.import_axis_signal_required"), color="secondary", className="ta-palette-alert"),
             dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+            dbc.Alert(translate_ui(loc, "dash.home.import_axis_signal_required"), color="secondary", className="ta-palette-alert"),
+            dash.no_update,
         )
 
     available_columns = set(preview.get("columns", []))
     if temp_col not in available_columns or signal_col not in available_columns:
         return (
-            dbc.Alert(translate_ui(loc, "dash.home.import_mapping_stale"), color="warning"),
+            dbc.Alert(translate_ui(loc, "dash.home.import_mapping_stale"), color="secondary", className="ta-palette-alert"),
             dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+            dbc.Alert(translate_ui(loc, "dash.home.import_mapping_stale"), color="secondary", className="ta-palette-alert"),
+            dash.no_update,
         )
 
     from dash_app.api_client import dataset_import as api_dataset_import
@@ -1284,30 +1298,36 @@ def import_with_mapping(
         return (
             dbc.Alert(translate_ui(loc, "dash.home.import_failed", error=exc_msg) + hint, color="danger", dismissable=True),
             dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+            dbc.Alert(translate_ui(loc, "dash.home.import_failed", error=exc_msg) + hint, color="danger", dismissable=True),
+            dash.no_update,
         )
 
     remaining = [item for item in (pending_files or []) if item["file_name"] != selected_file]
     next_selected = remaining[0]["file_name"] if remaining else None
     ds = result.get("dataset", {})
+    success_alert = dbc.Alert(
+        [
+            translate_ui(
+                loc,
+                "dash.home.import_success",
+                name=ds.get("display_name", preview["file_name"]),
+                dtype=ds.get("data_type", "?"),
+            ),
+            " ",
+            translate_ui(loc, "dash.home.import_success_next"),
+        ],
+        color="secondary",
+        dismissable=True,
+        className="ta-palette-alert",
+    )
     return (
-        dbc.Alert(
-            [
-                translate_ui(
-                    loc,
-                    "dash.home.import_success",
-                    name=ds.get("display_name", preview["file_name"]),
-                    dtype=ds.get("data_type", "?"),
-                ),
-                " ",
-                translate_ui(loc, "dash.home.import_success_next"),
-            ],
-            color="success",
-            dismissable=True,
-        ),
+        success_alert,
         remaining,
         next_selected,
         int(refresh_value or 0) + 1,
         0,  # Reset wizard to step 0
+        success_alert,
+        success_alert,
     )
 
 

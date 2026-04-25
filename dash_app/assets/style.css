@@ -986,6 +986,59 @@ html[data-theme="dark"] .main-content textarea.form-control {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Import wizard palette alignment                                             */
+/* -------------------------------------------------------------------------- */
+
+.import-page .ta-loaded-dataset-actions {
+    padding-top: 1.9rem;
+}
+
+.import-page .ta-palette-alert,
+.import-page .alert-info,
+.import-page .alert-success,
+.import-page .alert-warning {
+    background: var(--ta-panel-strong) !important;
+    border-color: var(--ta-border) !important;
+    border-left: 3px solid var(--ta-accent) !important;
+    color: var(--ta-ink) !important;
+}
+
+.import-page .ta-palette-badge,
+.import-page .badge.bg-primary,
+.import-page .badge.bg-success,
+.import-page .badge.bg-warning {
+    background-color: var(--ta-hero-badge-bg) !important;
+    color: var(--ta-hero-badge-fg) !important;
+    border: 1px solid var(--ta-border);
+}
+
+.import-page .text-warning,
+.import-page .ta-palette-warning-list li {
+    color: var(--ta-muted) !important;
+}
+
+.import-page .text-success,
+.import-page .ta-palette-success-text {
+    color: var(--ta-hero-badge-fg) !important;
+}
+
+.import-page .btn-success,
+.import-page .btn-warning,
+.import-page .btn-primary {
+    background: var(--ta-accent) !important;
+    border-color: var(--ta-accent) !important;
+    color: var(--ta-accent-ink) !important;
+}
+
+.import-page .btn-success:hover,
+.import-page .btn-warning:hover,
+.import-page .btn-primary:hover {
+    background: var(--ta-accent-hover) !important;
+    border-color: var(--ta-accent-hover) !important;
+    color: var(--ta-accent-ink) !important;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Guidance blocks — non-analysis workflow help                               */
 /* -------------------------------------------------------------------------- */
 
