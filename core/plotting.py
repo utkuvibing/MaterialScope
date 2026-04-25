@@ -38,6 +38,7 @@ PLOT_THEME = {
         "legend_bg": "rgba(255,255,255,0.86)",
         "annotation_bg": "rgba(255,255,255,0.92)",
         "annotation_border": "rgba(102,100,94,0.22)",
+        "shape_line": "#1C1A1A",
     },
     "dark": {
         "template": "plotly_dark",
@@ -52,6 +53,7 @@ PLOT_THEME = {
         "legend_bg": "rgba(26,25,23,0.86)",
         "annotation_bg": "rgba(26,25,23,0.92)",
         "annotation_border": "rgba(158,154,147,0.24)",
+        "shape_line": "#F2F0EB",
     },
 }
 
@@ -240,6 +242,38 @@ def _scale_trace_styles(fig: go.Figure, *, line_width_scale: float, marker_size_
                 trace.marker.size = max(4.0, float(current_size) * marker_size_scale)
 
 
+def _shape_line_needs_theme_contrast(color: Any) -> bool:
+    if color in (None, ""):
+        return True
+    normalized = str(color).strip().lower().replace(" ", "")
+    return normalized in {
+        "black",
+        "#000",
+        "#000000",
+        "rgb(0,0,0)",
+        "rgba(0,0,0,1)",
+        "white",
+        "#fff",
+        "#ffffff",
+        "rgb(255,255,255)",
+        "rgba(255,255,255,1)",
+    }
+
+
+def _apply_shape_contrast(fig: go.Figure, *, line_color: str) -> None:
+    shapes = list(getattr(fig.layout, "shapes", None) or [])
+    if not shapes:
+        return
+    for shape in shapes:
+        line = getattr(shape, "line", None)
+        color = getattr(line, "color", None) if line is not None else None
+        if _shape_line_needs_theme_contrast(color):
+            shape.line.color = line_color
+        width = getattr(shape.line, "width", None)
+        if width in (None, 0):
+            shape.line.width = 2.5
+
+
 def apply_materialscope_plot_theme(
     fig: go.Figure,
     settings: Mapping[str, Any] | None = None,
@@ -290,9 +324,16 @@ def apply_materialscope_plot_theme(
         hovermode="x unified",
         hoverdistance=80,
         spikedistance=1000,
+        newshape={
+            "line": {
+                "color": tokens["shape_line"],
+                "width": 2.5,
+            }
+        },
         margin={"l": 64 if compact else 76, "r": right_margin, "t": top_margin, "b": 54 if compact else 68},
         height=520 if compact else 620,
     )
+    _apply_shape_contrast(fig, line_color=tokens["shape_line"])
     if for_export:
         fig.update_layout(width=DEFAULT_EXPORT_WIDTH, height=DEFAULT_EXPORT_HEIGHT)
     fig.update_xaxes(

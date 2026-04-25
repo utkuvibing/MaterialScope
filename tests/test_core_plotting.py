@@ -85,6 +85,28 @@ def test_extract_plot_display_settings_reads_figure_meta():
     assert extracted["export_scale"] == 4
 
 
+def test_apply_materialscope_plot_theme_preserves_shapes_and_sets_contrast():
+    fig = go.Figure(data=[go.Scatter(x=[1, 2], y=[3, 4], mode="lines")])
+    fig.add_shape(type="line", x0=1, y0=3, x1=2, y1=4, line={"color": "#000000"})
+
+    plotting.apply_materialscope_plot_theme(fig, theme="dark")
+
+    assert len(fig.layout.shapes) == 1
+    assert fig.layout.shapes[0].line.color == plotting.PLOT_THEME["dark"]["shape_line"]
+    assert fig.layout.shapes[0].line.width >= 2
+    assert fig.layout.newshape.line.color == plotting.PLOT_THEME["dark"]["shape_line"]
+
+
+def test_apply_materialscope_plot_theme_preserves_custom_shape_color():
+    fig = go.Figure(data=[go.Scatter(x=[1, 2], y=[3, 4], mode="lines")])
+    fig.add_shape(type="line", x0=1, y0=3, x1=2, y1=4, line={"color": "rgba(148, 163, 184, 0.55)"})
+
+    plotting.apply_materialscope_plot_theme(fig, theme="dark")
+
+    assert len(fig.layout.shapes) == 1
+    assert fig.layout.shapes[0].line.color == "rgba(148, 163, 184, 0.55)"
+
+
 def test_normalize_plot_display_settings_rejects_non_finite_ranges():
     settings = plotting.normalize_plot_display_settings(
         {

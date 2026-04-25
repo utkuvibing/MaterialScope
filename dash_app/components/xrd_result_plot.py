@@ -20,7 +20,7 @@ _XRD_MATCH_STYLE = {
 _XRD_PLOT_FALLBACK = {
     "show_peak_labels": True,
     "label_density_mode": "smart",
-    "max_labels": 8,
+    "max_labels": 6,
     "min_label_intensity_ratio": 0.12,
     "marker_size": 8,
     "label_position_precision": 2,
@@ -205,7 +205,7 @@ def _pick_peak_label_indices(peaks: list[dict[str, float]], settings: Mapping[st
     if label_mode == "selected":
         label_mode = "smart"
 
-    max_labels = int(settings.get("max_labels", 10))
+    max_labels = int(settings.get("max_labels", 6))
     if max_labels <= 0:
         return set()
 
@@ -227,14 +227,25 @@ def _pick_peak_label_indices(peaks: list[dict[str, float]], settings: Mapping[st
             chosen.add(idx)
         return chosen
 
+    positions = [float(item.get("position", 0.0)) for item in peaks]
+    finite_positions = [value for value in positions if math.isfinite(value)]
+    axis_span = max(finite_positions) - min(finite_positions) if len(finite_positions) >= 2 else 0.0
+    min_label_distance = max(axis_span * 0.045, 1.0)
+
     for idx in ranked_indices:
-        if float(peaks[idx].get("intensity", 0.0)) >= threshold:
+        position = positions[idx]
+        far_enough = all(abs(position - positions[chosen_idx]) >= min_label_distance for chosen_idx in chosen)
+        if float(peaks[idx].get("intensity", 0.0)) >= threshold and far_enough:
             chosen.add(idx)
         if len(chosen) >= max_labels:
             break
     if not chosen:
-        for idx in ranked_indices[:max_labels]:
-            chosen.add(idx)
+        for idx in ranked_indices:
+            position = positions[idx]
+            if all(abs(position - positions[chosen_idx]) >= min_label_distance for chosen_idx in chosen):
+                chosen.add(idx)
+            if len(chosen) >= max_labels:
+                break
     return chosen
 
 
@@ -252,6 +263,7 @@ def build_xrd_result_figure(
     loc: str,
     sample_name: str,
     axis_title: str,
+    drawn_shapes: list[dict[str, Any]] | None = None,
 ) -> go.Figure:
     settings = normalize_xrd_plot_settings(plot_settings)
     line_width = float(settings.get("line_width", 2.0))
@@ -272,6 +284,7 @@ def build_xrd_result_figure(
     fig = go.Figure()
     show_intermediate = bool(settings.get("show_intermediate_traces"))
     if has_raw:
+        demote_raw_for_corrected_view = has_corrected and not show_intermediate
         fig.add_trace(
             go.Scatter(
                 x=axis,
@@ -280,7 +293,8 @@ def build_xrd_result_figure(
                 name=legend_raw,
                 line=dict(color="#94A3B8", width=max(0.8, line_width - 0.4)),
                 opacity=0.35 if has_overlay else 0.95,
-                showlegend=bool(show_intermediate) or not has_overlay,
+                showlegend=bool(show_intermediate) or not has_overlay or demote_raw_for_corrected_view,
+                visible="legendonly" if demote_raw_for_corrected_view else True,
             )
         )
     if show_intermediate and has_smoothed:
@@ -334,6 +348,11 @@ def build_xrd_result_figure(
                 mode="markers",
                 name=translate_ui(loc, "dash.analysis.xrd.figure.peaks"),
                 marker=dict(color="#D97706", size=int(settings.get("marker_size", 8)), symbol="diamond"),
+                text=[
+                    _xrd_peak_label(peak_x[idx], peak_y[idx], settings=settings, lang=loc)
+                    for idx in range(len(peaks))
+                ],
+                hovertemplate="%{text}<extra></extra>",
             )
         )
 
@@ -460,6 +479,9 @@ def build_xrd_result_figure(
                 showlegend=False,
             )
         )
+
+    if drawn_shapes:
+        fig.update_layout(shapes=drawn_shapes)
 
     title_main = translate_ui(loc, "dash.analysis.figure.title_xrd_main")
     subtitle_parts = [sample_name]
