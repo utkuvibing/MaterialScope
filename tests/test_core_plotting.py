@@ -137,6 +137,21 @@ def test_primary_y_range_ignores_non_finite_values_and_pads():
     assert result[1] > 3
 
 
+def test_primary_y_range_handles_numpy_like_iterables_without_truthiness():
+    class ArrayLike:
+        def __bool__(self):
+            raise ValueError("ambiguous truth value")
+
+        def __iter__(self):
+            return iter([1.0, 2.0, 3.0])
+
+    result = plotting.primary_y_range(ArrayLike(), (4.0, 5.0))
+
+    assert result is not None
+    assert result[0] < 1.0
+    assert result[1] > 5.0
+
+
 def test_sparse_label_indices_prefers_strongest_spaced_points():
     points = [
         {"position": 10.0, "intensity": 1.0},

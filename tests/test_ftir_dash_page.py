@@ -486,6 +486,7 @@ def test_build_figure_returns_graph_when_curves_present(monkeypatch):
     assert "ta-plot" in s
     assert "Peaks:" in s or "Tepeler:" in s
     graph = next(c for c in fig_div.children if isinstance(c, dcc.Graph))
+    assert graph.id == "ftir-result-plot-graph"
     assert graph.figure.layout.meta["plot_view_mode"] == "result"
     assert "plot_display_settings" in graph.figure.layout.meta
     assert graph.figure.layout.hovermode == "x unified"
@@ -496,6 +497,34 @@ def test_build_figure_returns_graph_when_curves_present(monkeypatch):
     assert raw_trace.visible == "legendonly"
     assert baseline_trace.visible == "legendonly"
     assert graph.figure.layout.yaxis.range[1] < 1.0
+
+
+def test_build_figure_preserves_drawn_shapes_with_theme_contrast(monkeypatch):
+    mod = _import_ftir_page()
+    import dash_app.api_client as api_client
+
+    monkeypatch.setattr(
+        api_client,
+        "analysis_state_curves",
+        lambda *_: {
+            "temperature": [4000.0, 3000.0, 2000.0, 1000.0],
+            "raw_signal": [0.1, 0.5, 0.3, 0.2],
+            "smoothed": [0.12, 0.48, 0.32, 0.18],
+            "baseline": [0.05, 0.05, 0.05, 0.05],
+            "corrected": [0.07, 0.43, 0.27, 0.13],
+            "normalized": [],
+            "peaks": [],
+            "diagnostics": {"plot_normalized_primary_axis": False},
+        },
+    )
+    shapes = [{"type": "line", "x0": 1000, "y0": 0.1, "x1": 2000, "y1": 0.2, "line": {"color": "#1C1A1A"}}]
+
+    fig_div = mod._build_figure("proj", "ds", {}, "dark", "en", drawn_shapes=shapes)
+    graph = next(c for c in fig_div.children if isinstance(c, dcc.Graph))
+
+    assert mod._spectral_shapes_from_relayout({"shapes": shapes}) == shapes
+    assert len(graph.figure.layout.shapes) == 1
+    assert graph.figure.layout.shapes[0].line.color == "#F2F0EB"
 
 
 def test_build_figure_no_data_when_empty_curves(monkeypatch):

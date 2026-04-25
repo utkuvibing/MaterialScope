@@ -245,9 +245,13 @@ def _scale_trace_styles(fig: go.Figure, *, line_width_scale: float, marker_size_
 def primary_y_range(*series: list[Any] | tuple[Any, ...] | None, padding_ratio: float = 0.08) -> list[float] | None:
     values: list[float] = []
     for entry in series:
-        if not entry:
+        if entry is None:
             continue
-        for value in entry:
+        try:
+            iterator = iter(entry)
+        except TypeError:
+            iterator = iter((entry,))
+        for value in iterator:
             try:
                 parsed = float(value)
             except (TypeError, ValueError):

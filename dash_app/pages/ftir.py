@@ -1917,8 +1917,9 @@ def run_ftir_analysis(n_clicks, project_id, dataset_key, template_id, processing
     Input("ui-locale", "data"),
     Input("ftir-plot-settings", "data"),
     State("project-id", "data"),
+    State("ftir-result-plot-graph", "relayoutData"),
 )
-def display_result(result_id, _refresh, ui_theme, locale_data, plot_settings, project_id):
+def display_result(result_id, _refresh, ui_theme, locale_data, plot_settings, project_id, relayout_data=None):
     loc = _loc(locale_data)
     empty_msg = empty_result_msg(locale_data=locale_data)
     summary_empty = html.P(translate_ui(loc, "dash.analysis.ftir.summary.empty"), className="text-muted")
@@ -2006,7 +2007,15 @@ def display_result(result_id, _refresh, ui_theme, locale_data, plot_settings, pr
     top_match_area = empty_msg
     peak_cards_area = empty_msg
     if dataset_key:
-        figure_area = _build_figure(project_id, dataset_key, summary, ui_theme, loc, plot_settings=plot_settings)
+        figure_area = _build_figure(
+            project_id,
+            dataset_key,
+            summary,
+            ui_theme,
+            loc,
+            plot_settings=plot_settings,
+            drawn_shapes=_spectral_shapes_from_relayout(relayout_data),
+        )
         top_match_area = _build_top_match_panel(summary, rows, loc)
         peak_cards_area = _build_peak_cards_from_curves(project_id, dataset_key, summary, loc)
 
@@ -2460,6 +2469,7 @@ def _build_figure(
     loc: str,
     *,
     plot_settings: dict | None = None,
+    drawn_shapes: list[dict[str, Any]] | None = None,
 ) -> html.Div:
     from dash_app.api_client import analysis_state_curves
 
@@ -2650,6 +2660,28 @@ def _build_figure(
         fig.update_xaxes(autorange="reversed")
     if y_range is not None:
         fig.update_yaxes(range=y_range)
+    if drawn_shapes:
+        fig.update_layout(shapes=drawn_shapes)
+        apply_materialscope_plot_theme(
+            fig,
+            settings,
+            theme=ui_theme,
+            title=title_main,
+            subtitle=sample_name,
+            view_mode="result",
+            scale_traces=False,
+        )
+        fig.update_xaxes(title_text=translate_ui(loc, "dash.analysis.figure.axis_wavenumber"))
+        fig.update_yaxes(title_text=translate_ui(loc, "dash.analysis.figure.axis_signal_au"))
+        if settings["x_range_enabled"] and settings["x_min"] is not None and settings["x_max"] is not None:
+            x_range = [settings["x_min"], settings["x_max"]]
+            if settings["reverse_x_axis"]:
+                x_range = list(reversed(x_range))
+            fig.update_xaxes(range=x_range)
+        elif settings["reverse_x_axis"]:
+            fig.update_xaxes(autorange="reversed")
+        if y_range is not None:
+            fig.update_yaxes(range=y_range)
 
     peak_count_disp = summary.get("peak_count", peak_count)
     top_match_name = summary.get("top_match_name")
@@ -2685,10 +2717,24 @@ def _build_figure(
         [
             html.H5(translate_ui(loc, "dash.analysis.ftir.figure.section_title"), className="mb-2"),
             html.P(run_caption, className="small text-muted mb-2"),
-            dcc.Graph(figure=fig, config=build_spectral_plotly_config(settings, filename="materialscope_ftir_spectrum"), className="ta-plot"),
+            dcc.Graph(
+                id="ftir-result-plot-graph",
+                figure=fig,
+                config=build_spectral_plotly_config(settings, filename="materialscope_ftir_spectrum"),
+                className="ta-plot",
+            ),
             *diag_children,
         ]
     )
+
+
+def _spectral_shapes_from_relayout(relayout_data):
+    if not isinstance(relayout_data, dict):
+        return None
+    shapes = relayout_data.get("shapes")
+    if isinstance(shapes, list):
+        return [dict(shape) for shape in shapes if isinstance(shape, dict)]
+    return None
 
 
 def _build_top_match_panel(summary: dict, rows: list, loc: str) -> html.Div:
