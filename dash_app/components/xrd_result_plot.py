@@ -7,7 +7,7 @@ from typing import Any, Mapping
 
 import plotly.graph_objects as go
 
-from dash_app.theme import PLOT_THEME, apply_figure_theme, normalize_ui_theme
+from core.plotting import apply_materialscope_plot_theme
 from utils.i18n import translate_ui
 
 _XRD_MATCH_STYLE = {
@@ -151,6 +151,25 @@ def normalize_xrd_plot_settings(payload: Mapping[str, Any] | None) -> dict[str, 
     return settings
 
 
+def _shared_display_settings_from_xrd(settings: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "legend_mode": "auto",
+        "compact": False,
+        "show_grid": True,
+        "show_spikes": True,
+        "line_width_scale": 1.0,
+        "marker_size_scale": 1.0,
+        "export_scale": 2,
+        "reverse_x_axis": False,
+        "x_range_enabled": bool(settings.get("x_range_enabled")),
+        "x_min": settings.get("x_min"),
+        "x_max": settings.get("x_max"),
+        "y_range_enabled": bool(settings.get("y_range_enabled")) and not bool(settings.get("log_y")),
+        "y_min": settings.get("y_min"),
+        "y_max": settings.get("y_max"),
+    }
+
+
 def _reference_marker_y(value: Any, observed_max_intensity: float) -> float:
     try:
         parsed = float(value)
@@ -236,10 +255,7 @@ def build_xrd_result_figure(
 ) -> go.Figure:
     settings = normalize_xrd_plot_settings(plot_settings)
     line_width = float(settings.get("line_width", 2.0))
-    tone = normalize_ui_theme(ui_theme)
-    pt = PLOT_THEME[tone]
-    muted = "#66645E" if tone == "light" else "#9E9A93"
-    line_primary = pt["text"]
+    line_primary = "#1C1A1A" if ui_theme != "dark" else "#EEEDEA"
 
     has_corrected = bool(corrected and len(corrected) == len(axis))
     has_smoothed = bool(smoothed and len(smoothed) == len(axis))
@@ -446,28 +462,20 @@ def build_xrd_result_figure(
         )
 
     title_main = translate_ui(loc, "dash.analysis.figure.title_xrd_main")
-    sub_html = f"<br><span style='font-size:0.82em;color:{muted}'>{sample_name}</span>"
+    subtitle_parts = [sample_name]
     if subtitle:
-        sub_html += f"<br><span style='font-size:0.78em;color:{muted}'>{subtitle}</span>"
-    fig.update_layout(
-        title=(f"{title_main}{sub_html}"),
-        paper_bgcolor=pt["paper_bg"],
-        plot_bgcolor=pt["plot_bg"],
-        hovermode="x unified",
-        xaxis_title=axis_title,
-        yaxis_title=translate_ui(loc, "dash.analysis.figure.axis_intensity_au"),
-        margin=dict(l=64, r=24, t=88, b=72),
-        height=500,
-        legend=dict(
-            orientation="h",
-            yanchor="top",
-            y=-0.14,
-            xanchor="left",
-            x=0,
-            font=dict(size=10),
-            traceorder="normal",
-        ),
+        subtitle_parts.append(subtitle)
+    apply_materialscope_plot_theme(
+        fig,
+        _shared_display_settings_from_xrd(settings),
+        theme=ui_theme,
+        title=title_main,
+        subtitle=" | ".join(part for part in subtitle_parts if part),
+        view_mode="result",
+        scale_traces=False,
     )
+    fig.update_xaxes(title_text=axis_title)
+    fig.update_yaxes(title_text=translate_ui(loc, "dash.analysis.figure.axis_intensity_au"))
 
     x_min = settings.get("x_min")
     x_max = settings.get("x_max")
@@ -489,5 +497,4 @@ def build_xrd_result_figure(
         if settings.get("y_range_enabled") and y_min is not None and y_max is not None:
             fig.update_yaxes(range=[float(y_min), float(y_max)])
 
-    apply_figure_theme(fig, ui_theme)
     return fig

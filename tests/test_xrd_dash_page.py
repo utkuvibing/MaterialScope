@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import math
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -387,6 +388,49 @@ def test_build_figure_uses_corrected_as_primary_trace(monkeypatch):
     assert corrected_trace.line.width == 3.0
     assert raw_trace.opacity < 0.4
     assert graph.figure.layout.xaxis.title.text == "2theta (deg)"
+    assert graph.figure.layout.meta["plot_view_mode"] == "result"
+    assert "plot_display_settings" in graph.figure.layout.meta
+    assert graph.figure.layout.hovermode == "x unified"
+    assert graph.figure.layout.legend.y >= 0
+    assert graph.config["displayModeBar"] is True
+    assert graph.config["displaylogo"] is False
+    assert graph.config["responsive"] is True
+    assert graph.config["toImageButtonOptions"]["filename"] == "materialscope_xrd_diffractogram"
+    assert graph.config["toImageButtonOptions"]["width"] == 1400
+
+
+def test_build_xrd_result_figure_preserves_log_y_range_after_shared_theme():
+    from dash_app.components.xrd_result_plot import build_xrd_result_figure
+
+    fig = build_xrd_result_figure(
+        axis=[10.0, 20.0, 30.0, 40.0],
+        raw_signal=[20.0, 50.0, 35.0, 15.0],
+        smoothed=[21.0, 48.0, 34.0, 16.0],
+        baseline=[4.0, 4.0, 4.0, 4.0],
+        corrected=[17.0, 44.0, 30.0, 12.0],
+        peaks=[],
+        selected_match=None,
+        plot_settings={
+            "log_y": True,
+            "y_range_enabled": True,
+            "y_min": 1.0,
+            "y_max": 100.0,
+            "x_range_enabled": True,
+            "x_min": 12.0,
+            "x_max": 38.0,
+        },
+        ui_theme="light",
+        loc="en",
+        sample_name="XRD Run Log",
+        axis_title="2theta (deg)",
+    )
+
+    assert fig.layout.yaxis.type == "log"
+    assert list(fig.layout.yaxis.range) == [math.log10(1.0), math.log10(100.0)]
+    assert list(fig.layout.xaxis.range) == [12.0, 38.0]
+    assert fig.layout.xaxis.title.text == "2theta (deg)"
+    assert fig.layout.yaxis.title.text == "Intensity (a.u.)"
+    assert fig.layout.meta["plot_view_mode"] == "result"
 
 
 def test_build_figure_handles_missing_primary_signal(monkeypatch):
