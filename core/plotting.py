@@ -250,11 +250,13 @@ def _shape_line_needs_theme_contrast(color: Any) -> bool:
         "black",
         "#000",
         "#000000",
+        "#1c1a1a",
         "rgb(0,0,0)",
         "rgba(0,0,0,1)",
         "white",
         "#fff",
         "#ffffff",
+        "#f2f0eb",
         "rgb(255,255,255)",
         "rgba(255,255,255,1)",
     }
@@ -298,6 +300,12 @@ def apply_materialscope_plot_theme(
         top_margin += 20
     if subtitle:
         top_margin += 18
+    bottom_margin = 54 if compact else 68
+    plot_height = 520 if compact else 620
+    if for_export:
+        top_margin = 82 if subtitle else 68
+        bottom_margin = 54
+        plot_height = DEFAULT_EXPORT_HEIGHT
 
     fig.update_layout(
         template=tokens["template"],
@@ -330,8 +338,8 @@ def apply_materialscope_plot_theme(
                 "width": 2.5,
             }
         },
-        margin={"l": 64 if compact else 76, "r": right_margin, "t": top_margin, "b": 54 if compact else 68},
-        height=520 if compact else 620,
+        margin={"l": 64 if compact else 76, "r": right_margin, "t": top_margin, "b": bottom_margin},
+        height=plot_height,
     )
     _apply_shape_contrast(fig, line_color=tokens["shape_line"])
     if for_export:

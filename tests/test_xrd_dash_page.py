@@ -395,6 +395,7 @@ def test_build_figure_uses_corrected_as_primary_trace(monkeypatch):
     assert "plot_display_settings" in graph.figure.layout.meta
     assert graph.figure.layout.hovermode == "x unified"
     assert graph.figure.layout.legend.y >= 0
+    assert graph.figure.layout.yaxis.range[1] < 60
     assert graph.config["displayModeBar"] is True
     assert graph.config["displaylogo"] is False
     assert graph.config["responsive"] is True
@@ -434,6 +435,7 @@ def test_xrd_default_corrected_view_demotes_raw_from_autorange():
     assert raw_trace.showlegend is True
     assert corrected_trace.visible in (None, True)
     assert corrected_trace.line.width == 3.0
+    assert fig.layout.yaxis.range[1] < 60
 
 
 def test_xrd_dense_peak_cluster_labels_are_sparse_and_readable():
@@ -468,7 +470,7 @@ def test_xrd_dense_peak_cluster_labels_are_sparse_and_readable():
 
     label_trace = next(trace for trace in fig.data if trace.mode == "text")
     visible_labels = [label for label in label_trace.text if label]
-    assert len(visible_labels) <= 6
+    assert len(visible_labels) <= 4
     assert len(visible_labels) < len(peaks)
     assert "10.00 deg" in visible_labels[0]
 

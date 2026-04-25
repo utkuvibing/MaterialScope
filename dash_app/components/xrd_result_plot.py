@@ -20,7 +20,7 @@ _XRD_MATCH_STYLE = {
 _XRD_PLOT_FALLBACK = {
     "show_peak_labels": True,
     "label_density_mode": "smart",
-    "max_labels": 6,
+    "max_labels": 4,
     "min_label_intensity_ratio": 0.12,
     "marker_size": 8,
     "label_position_precision": 2,
@@ -192,9 +192,61 @@ def _xrd_match_marker_style(kind: str, settings: Mapping[str, Any]) -> dict[str,
 
 def _xrd_peak_label(position: float, intensity: float, *, settings: Mapping[str, Any], lang: str) -> str:
     pos_precision = int(settings.get("label_position_precision", 2))
+    angle_unit = "°" if lang == "tr" else " deg"
+    return f"{position:.{pos_precision}f}{angle_unit}"
+
+
+def _xrd_peak_hover_label(position: float, intensity: float, *, settings: Mapping[str, Any], lang: str) -> str:
+    pos_precision = int(settings.get("label_position_precision", 2))
     intensity_precision = int(settings.get("label_intensity_precision", 0))
     angle_unit = "°" if lang == "tr" else " deg"
     return f"{position:.{pos_precision}f}{angle_unit} | I={intensity:.{intensity_precision}f}"
+
+
+def _interpolate_signal_at_positions(axis: list[float], signal: list[float], positions: list[float]) -> list[float]:
+    if not axis or not signal or len(axis) != len(signal):
+        return []
+    pairs = sorted(
+        (float(x), float(y))
+        for x, y in zip(axis, signal)
+        if math.isfinite(float(x)) and math.isfinite(float(y))
+    )
+    if not pairs:
+        return []
+    xs = [x for x, _y in pairs]
+    ys = [y for _x, y in pairs]
+    interpolated: list[float] = []
+    for position in positions:
+        if position <= xs[0]:
+            interpolated.append(ys[0])
+            continue
+        if position >= xs[-1]:
+            interpolated.append(ys[-1])
+            continue
+        for idx in range(1, len(xs)):
+            if xs[idx] >= position:
+                x0, y0 = xs[idx - 1], ys[idx - 1]
+                x1, y1 = xs[idx], ys[idx]
+                if x1 == x0:
+                    interpolated.append(y1)
+                else:
+                    ratio = (position - x0) / (x1 - x0)
+                    interpolated.append(y0 + (y1 - y0) * ratio)
+                break
+    return interpolated
+
+
+def _corrected_view_y_range(signal: list[float], peak_y: list[float]) -> list[float] | None:
+    values = [float(value) for value in [*(signal or []), *(peak_y or [])] if math.isfinite(float(value))]
+    if not values:
+        return None
+    y_min = min(values)
+    y_max = max(values)
+    if y_min == y_max:
+        pad = max(abs(y_max) * 0.08, 1.0)
+    else:
+        pad = (y_max - y_min) * 0.08
+    return [y_min - pad, y_max + pad]
 
 
 def _pick_peak_label_indices(peaks: list[dict[str, float]], settings: Mapping[str, Any]) -> set[int]:
@@ -205,7 +257,7 @@ def _pick_peak_label_indices(peaks: list[dict[str, float]], settings: Mapping[st
     if label_mode == "selected":
         label_mode = "smart"
 
-    max_labels = int(settings.get("max_labels", 6))
+    max_labels = int(settings.get("max_labels", 4))
     if max_labels <= 0:
         return set()
 
@@ -230,7 +282,7 @@ def _pick_peak_label_indices(peaks: list[dict[str, float]], settings: Mapping[st
     positions = [float(item.get("position", 0.0)) for item in peaks]
     finite_positions = [value for value in positions if math.isfinite(value)]
     axis_span = max(finite_positions) - min(finite_positions) if len(finite_positions) >= 2 else 0.0
-    min_label_distance = max(axis_span * 0.045, 1.0)
+    min_label_distance = max(axis_span * 0.08, 2.0)
 
     for idx in ranked_indices:
         position = positions[idx]
@@ -336,9 +388,11 @@ def build_xrd_result_figure(
     if peaks:
         label_indices = _pick_peak_label_indices(peaks, settings)
         peak_x = [float(item.get("position", 0.0)) for item in peaks]
-        peak_y = [float(item.get("intensity", 0.0)) for item in peaks]
+        peak_intensity = [float(item.get("intensity", 0.0)) for item in peaks]
+        visual_peak_y = _interpolate_signal_at_positions(axis, primary_signal, peak_x) if has_corrected else []
+        peak_y = visual_peak_y if len(visual_peak_y) == len(peak_x) else peak_intensity
         peak_text = [
-            _xrd_peak_label(peak_x[idx], peak_y[idx], settings=settings, lang=loc) if idx in label_indices else ""
+            _xrd_peak_label(peak_x[idx], peak_intensity[idx], settings=settings, lang=loc) if idx in label_indices else ""
             for idx in range(len(peaks))
         ]
         fig.add_trace(
@@ -349,7 +403,7 @@ def build_xrd_result_figure(
                 name=translate_ui(loc, "dash.analysis.xrd.figure.peaks"),
                 marker=dict(color="#D97706", size=int(settings.get("marker_size", 8)), symbol="diamond"),
                 text=[
-                    _xrd_peak_label(peak_x[idx], peak_y[idx], settings=settings, lang=loc)
+                    _xrd_peak_hover_label(peak_x[idx], peak_intensity[idx], settings=settings, lang=loc)
                     for idx in range(len(peaks))
                 ],
                 hovertemplate="%{text}<extra></extra>",
@@ -474,7 +528,7 @@ def build_xrd_result_figure(
                 mode="text",
                 text=peak_text,
                 textposition="top center",
-                textfont=dict(size=10.5, color="#475569"),
+                textfont=dict(size=9.5, color="#475569"),
                 hoverinfo="skip",
                 showlegend=False,
             )
@@ -518,5 +572,9 @@ def build_xrd_result_figure(
         fig.update_yaxes(type="linear")
         if settings.get("y_range_enabled") and y_min is not None and y_max is not None:
             fig.update_yaxes(range=[float(y_min), float(y_max)])
+        elif has_corrected:
+            corrected_range = _corrected_view_y_range(corrected, peak_y)
+            if corrected_range is not None:
+                fig.update_yaxes(range=corrected_range)
 
     return fig

@@ -97,6 +97,17 @@ def test_apply_materialscope_plot_theme_preserves_shapes_and_sets_contrast():
     assert fig.layout.newshape.line.color == plotting.PLOT_THEME["dark"]["shape_line"]
 
 
+def test_apply_materialscope_plot_theme_recolors_materialscope_default_shape_colors():
+    fig = go.Figure(data=[go.Scatter(x=[1, 2], y=[3, 4], mode="lines")])
+    fig.add_shape(type="line", x0=1, y0=3, x1=2, y1=4, line={"color": "#1C1A1A"})
+
+    plotting.apply_materialscope_plot_theme(fig, theme="dark")
+    assert fig.layout.shapes[0].line.color == plotting.PLOT_THEME["dark"]["shape_line"]
+
+    plotting.apply_materialscope_plot_theme(fig, theme="light")
+    assert fig.layout.shapes[0].line.color == plotting.PLOT_THEME["light"]["shape_line"]
+
+
 def test_apply_materialscope_plot_theme_preserves_custom_shape_color():
     fig = go.Figure(data=[go.Scatter(x=[1, 2], y=[3, 4], mode="lines")])
     fig.add_shape(type="line", x0=1, y0=3, x1=2, y1=4, line={"color": "rgba(148, 163, 184, 0.55)"})
@@ -105,6 +116,17 @@ def test_apply_materialscope_plot_theme_preserves_custom_shape_color():
 
     assert len(fig.layout.shapes) == 1
     assert fig.layout.shapes[0].line.color == "rgba(148, 163, 184, 0.55)"
+
+
+def test_apply_materialscope_plot_theme_uses_compact_export_layout():
+    fig = go.Figure(data=[go.Scatter(x=[1, 2], y=[3, 4], mode="lines")])
+
+    plotting.apply_materialscope_plot_theme(fig, title="Export", subtitle="Sample", for_export=True)
+
+    assert fig.layout.width == plotting.DEFAULT_EXPORT_WIDTH
+    assert fig.layout.height == plotting.DEFAULT_EXPORT_HEIGHT
+    assert fig.layout.margin.b == 54
+    assert fig.layout.margin.t <= 82
 
 
 def test_normalize_plot_display_settings_rejects_non_finite_ranges():
