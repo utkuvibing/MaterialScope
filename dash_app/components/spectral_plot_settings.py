@@ -7,6 +7,9 @@ from typing import Any, Mapping
 import dash_bootstrap_components as dbc
 from dash import dcc, html
 
+from core.plotting import build_plotly_config as build_shared_plotly_config
+from core.plotting import legend_layout as shared_legend_layout
+from core.plotting import normalize_plot_display_settings
 from utils.i18n import normalize_ui_locale, translate_ui
 
 
@@ -112,44 +115,9 @@ def _optional_float(value: Any) -> float | None:
 
 def normalize_spectral_plot_settings(payload: Mapping[str, Any] | None) -> dict[str, Any]:
     source = payload if isinstance(payload, Mapping) else {}
-    settings = dict(_SPECTRAL_PLOT_FALLBACK)
-    legend = str(source.get("legend_mode") or settings["legend_mode"]).strip().lower()
-    settings["legend_mode"] = legend if legend in {"auto", "external", "compact", "hidden"} else "auto"
-    for key in (
-        "compact",
-        "show_grid",
-        "show_spikes",
-        "reverse_x_axis",
-        "x_range_enabled",
-        "y_range_enabled",
-        "show_raw",
-        "show_smoothed",
-        "show_corrected",
-        "show_normalized",
-        "show_peaks",
-    ):
+    settings = normalize_plot_display_settings(source, defaults=_SPECTRAL_PLOT_FALLBACK)
+    for key in ("show_raw", "show_smoothed", "show_corrected", "show_normalized", "show_peaks"):
         settings[key] = _bool(source.get(key), bool(settings[key]))
-    settings["line_width_scale"] = _float(source.get("line_width_scale"), 1.0, 0.6, 1.8)
-    settings["marker_size_scale"] = _float(source.get("marker_size_scale"), 1.0, 0.6, 1.8)
-    settings["export_scale"] = _int(source.get("export_scale"), 2, 1, 4)
-    settings["x_min"] = _optional_float(source.get("x_min"))
-    settings["x_max"] = _optional_float(source.get("x_max"))
-    settings["y_min"] = _optional_float(source.get("y_min"))
-    settings["y_max"] = _optional_float(source.get("y_max"))
-    if (
-        settings["x_range_enabled"]
-        and settings["x_min"] is not None
-        and settings["x_max"] is not None
-        and settings["x_min"] > settings["x_max"]
-    ):
-        settings["x_min"], settings["x_max"] = settings["x_max"], settings["x_min"]
-    if (
-        settings["y_range_enabled"]
-        and settings["y_min"] is not None
-        and settings["y_max"] is not None
-        and settings["y_min"] > settings["y_max"]
-    ):
-        settings["y_min"], settings["y_max"] = settings["y_max"], settings["y_min"]
     return settings
 
 
@@ -286,35 +254,15 @@ def build_spectral_plot_settings_card(id_prefix: str) -> dbc.Card:
 
 
 def build_plotly_config(settings: Mapping[str, Any] | None, *, filename: str | None = None) -> dict[str, Any]:
-    resolved = normalize_spectral_plot_settings(settings)
-    opts: dict[str, Any] = {"format": "png", "filename": filename or "materialscope_spectrum", "scale": resolved["export_scale"]}
-    return {"displaylogo": False, "responsive": True, "toImageButtonOptions": opts}
+    return build_shared_plotly_config(
+        normalize_spectral_plot_settings(settings),
+        filename=filename or "materialscope_spectrum",
+    )
 
 
 def spectral_legend_layout(trace_count: int, settings: Mapping[str, Any], *, theme: Mapping[str, str], legend_bg: str) -> tuple[bool, dict[str, Any]]:
-    mode = str(settings.get("legend_mode") or "auto")
-    if mode == "hidden":
-        return False, {}
-    if mode == "external" or mode == "compact" or (mode == "auto" and trace_count >= 5):
-        return True, {
-            "orientation": "v",
-            "yanchor": "top",
-            "y": 1.0,
-            "xanchor": "left",
-            "x": 1.02,
-            "bgcolor": legend_bg,
-            "bordercolor": "rgba(0,0,0,0)",
-            "borderwidth": 0,
-            "font": {"size": 10 if settings.get("compact") else 11, "color": theme["text"]},
-        }
-    return True, {
-        "orientation": "h",
-        "yanchor": "bottom",
-        "y": 1.02,
-        "xanchor": "left",
-        "x": 0,
-        "bgcolor": legend_bg,
-        "bordercolor": theme["grid"],
-        "borderwidth": 1,
-        "font": {"size": 11 if settings.get("compact") else 12, "color": theme["text"]},
-    }
+    show, legend = shared_legend_layout(trace_count, normalize_spectral_plot_settings(settings))
+    if legend:
+        legend["bgcolor"] = legend_bg
+        legend["font"] = dict(legend.get("font") or {}, color=theme["text"])
+    return show, legend

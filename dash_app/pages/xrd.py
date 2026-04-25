@@ -75,6 +75,7 @@ from dash_app.components.xrd_processing_draft import (
     xrd_ui_snapshot_dict,
 )
 from dash_app.components.xrd_result_plot import build_xrd_result_figure
+from core.plotting import build_plotly_config
 from dash_app.theme import normalize_ui_theme
 from utils.i18n import normalize_ui_locale, translate_ui
 
@@ -2045,7 +2046,11 @@ def _build_figure(project_id, dataset_key, summary, processing, ui_theme):
         sample_name=sample_name,
         axis_title=axis_title,
     )
-    return dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True}, className="ta-plot")
+    return dcc.Graph(
+        figure=fig,
+        config=build_plotly_config(plot_settings, filename="materialscope_xrd_diffractogram"),
+        className="ta-plot",
+    )
 
 
 @callback(
@@ -2247,7 +2252,11 @@ def render_xrd_result_figure_area(cache, overlay_idx, ui_theme, locale_data, pro
         sample_name=sample_name,
         axis_title=axis_title,
     )
-    return dcc.Graph(figure=fig, config={"displaylogo": False, "responsive": True}, className="ta-plot")
+    return dcc.Graph(
+        figure=fig,
+        config=build_plotly_config(plot_settings, filename="materialscope_xrd_diffractogram"),
+        className="ta-plot",
+    )
 
 
 @callback(
