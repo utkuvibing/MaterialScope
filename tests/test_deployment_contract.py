@@ -31,6 +31,7 @@ def test_container_entrypoint_runs_combined_dash_server_only():
     start_script = _repo_text("docker/start.sh")
 
     assert 'exec python -m dash_app.server --host 0.0.0.0 --port "${PORT:-8050}"' in start_script
+    assert 'MATERIALSCOPE_API_URL:-http://127.0.0.1:${PORT:-8050}' in start_script
     assert "python -m backend.main" not in start_script
     assert "streamlit run app.py" not in start_script
     assert "&" not in start_script

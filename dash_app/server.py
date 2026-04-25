@@ -6,6 +6,7 @@ Run with: python -m dash_app.server
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 import uvicorn
@@ -47,6 +48,7 @@ def main() -> None:
         print(line, flush=True)
     for line in apply_combined_dash_server_library_env(listen_host=args.host, listen_port=args.port):
         print(line, flush=True)
+    os.environ.setdefault("MATERIALSCOPE_API_URL", f"http://127.0.0.1:{args.port}")
 
     app = create_combined_app(api_token=args.token or None)
     print(f"MaterialScope (Dash) starting on http://{args.host}:{args.port}", flush=True)
