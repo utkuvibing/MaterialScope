@@ -242,6 +242,63 @@ def _scale_trace_styles(fig: go.Figure, *, line_width_scale: float, marker_size_
                 trace.marker.size = max(4.0, float(current_size) * marker_size_scale)
 
 
+def primary_y_range(*series: list[Any] | tuple[Any, ...] | None, padding_ratio: float = 0.08) -> list[float] | None:
+    values: list[float] = []
+    for entry in series:
+        if not entry:
+            continue
+        for value in entry:
+            try:
+                parsed = float(value)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(parsed):
+                values.append(parsed)
+    if not values:
+        return None
+    y_min = min(values)
+    y_max = max(values)
+    if y_min == y_max:
+        pad = max(abs(y_max) * padding_ratio, 1.0)
+    else:
+        pad = (y_max - y_min) * padding_ratio
+    return [y_min - pad, y_max + pad]
+
+
+def sparse_label_indices(
+    points: list[Mapping[str, Any]],
+    *,
+    position_key: str = "position",
+    intensity_key: str = "intensity",
+    max_labels: int = 4,
+    min_distance_ratio: float = 0.08,
+    min_distance_floor: float = 1.0,
+) -> set[int]:
+    if max_labels <= 0 or not points:
+        return set()
+    parsed: list[tuple[int, float, float]] = []
+    for idx, point in enumerate(points):
+        try:
+            position = float(point.get(position_key))
+            intensity = float(point.get(intensity_key, 0.0))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if math.isfinite(position) and math.isfinite(intensity):
+            parsed.append((idx, position, intensity))
+    if not parsed:
+        return set()
+    positions = [position for _idx, position, _intensity in parsed]
+    span = max(positions) - min(positions) if len(positions) >= 2 else 0.0
+    min_distance = max(span * min_distance_ratio, min_distance_floor)
+    chosen: list[tuple[int, float, float]] = []
+    for candidate in sorted(parsed, key=lambda item: (-item[2], item[1])):
+        if all(abs(candidate[1] - item[1]) >= min_distance for item in chosen):
+            chosen.append(candidate)
+        if len(chosen) >= max_labels:
+            break
+    return {idx for idx, _position, _intensity in chosen}
+
+
 def _shape_line_needs_theme_contrast(color: Any) -> bool:
     if color in (None, ""):
         return True

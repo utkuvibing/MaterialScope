@@ -129,6 +129,29 @@ def test_apply_materialscope_plot_theme_uses_compact_export_layout():
     assert fig.layout.margin.t <= 82
 
 
+def test_primary_y_range_ignores_non_finite_values_and_pads():
+    result = plotting.primary_y_range([1, 2, "bad"], [float("nan"), 3])
+
+    assert result is not None
+    assert result[0] < 1
+    assert result[1] > 3
+
+
+def test_sparse_label_indices_prefers_strongest_spaced_points():
+    points = [
+        {"position": 10.0, "intensity": 1.0},
+        {"position": 10.2, "intensity": 0.95},
+        {"position": 20.0, "intensity": 0.8},
+        {"position": 30.0, "intensity": 0.7},
+    ]
+
+    chosen = plotting.sparse_label_indices(points, max_labels=3, min_distance_floor=1.0)
+
+    assert 0 in chosen
+    assert 1 not in chosen
+    assert len(chosen) <= 3
+
+
 def test_normalize_plot_display_settings_rejects_non_finite_ranges():
     settings = plotting.normalize_plot_display_settings(
         {

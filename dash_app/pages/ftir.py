@@ -103,11 +103,10 @@ from dash_app.components.spectral_plot_settings import (
     build_plotly_config as build_spectral_plotly_config,
     build_spectral_plot_settings_card,
     normalize_spectral_plot_settings,
-    spectral_legend_layout,
     spectral_plot_settings_chrome,
     spectral_plot_settings_from_controls,
 )
-from dash_app.theme import PLOT_THEME, normalize_ui_theme
+from core.plotting import apply_materialscope_plot_theme, primary_y_range, sparse_label_indices
 from utils.i18n import normalize_ui_locale, translate_ui
 
 dash.register_page(__name__, path="/ftir", title="FTIR Analysis - MaterialScope")
@@ -2503,13 +2502,6 @@ def _build_figure(
         return no_data_figure_msg(locale_data=loc)
 
     sample_name = resolve_sample_name(summary, {}, fallback_display_name=dataset_key, locale_data=loc)
-    tone = normalize_ui_theme(ui_theme)
-    pt = PLOT_THEME[tone]
-    muted = "#66645E" if tone == "light" else "#9E9A93"
-    legend_bg = "rgba(255,255,255,0.9)" if tone == "light" else "rgba(26,25,23,0.94)"
-    hover_bg = "rgba(255,255,255,0.96)" if tone == "light" else "rgba(34,33,30,0.96)"
-    hover_fg = "#1C1A1A" if tone == "light" else "#EEEDEA"
-
     dominant_signal = corrected if show_corrected_trace else smoothed if show_intermediate_smoothed else raw_signal if show_raw_trace else []
     legend_query = translate_ui(loc, "dash.analysis.figure.legend_query_spectrum")
     legend_smooth = translate_ui(loc, "dash.analysis.figure.legend_smoothed_spectrum")
@@ -2523,16 +2515,10 @@ def _build_figure(
         legend_query += suffix
         legend_normalized += suffix
 
-    y_series_for_range = [dominant_signal]
-    if show_raw_trace:
-        y_series_for_range.append(raw_signal)
-    if show_baseline_trace:
-        y_series_for_range.append(baseline)
-    if show_intermediate_smoothed:
-        y_series_for_range.append(smoothed)
+    primary_series = [dominant_signal]
     if show_normalized_trace:
-        y_series_for_range.append(normalized)
-    y_range = _y_axis_range(*y_series_for_range)
+        primary_series.append(normalized)
+    y_range = primary_y_range(*primary_series)
     if settings["y_range_enabled"] and settings["y_min"] is not None and settings["y_max"] is not None:
         y_range = [settings["y_min"], settings["y_max"]]
 
@@ -2549,6 +2535,7 @@ def _build_figure(
                 name=legend_baseline,
                 line=dict(color=_FTIR_FIGURE_COLORS["baseline"], width=1.3 * line_scale, dash="dash"),
                 opacity=0.65,
+                visible="legendonly" if show_corrected_trace else True,
             )
         )
 
@@ -2561,6 +2548,7 @@ def _build_figure(
                 name=legend_imported,
                 line=dict(color=_FTIR_FIGURE_COLORS["raw"], width=1.6 * line_scale),
                 opacity=0.45 if has_overlay else 0.95,
+                visible="legendonly" if (show_corrected_trace or show_normalized_trace) else True,
             )
         )
 
@@ -2608,18 +2596,21 @@ def _build_figure(
             return float(raw_signal[index])
         return None
 
-    # Peak annotations (top 8 only to avoid clutter)
-    _ANNOTATION_MIN_SEP = 20.0
-    annotated_positions: list[float] = []
     peak_count = len(peaks)
-    for i, peak in enumerate(peaks[:_FTIR_MAX_PEAK_CARDS] if settings["show_peaks"] else []):
+    peak_candidates = peaks[:_FTIR_MAX_PEAK_CARDS] if settings["show_peaks"] else []
+    label_indices = sparse_label_indices(
+        peak_candidates,
+        max_labels=4,
+        min_distance_ratio=0.08,
+        min_distance_floor=35.0,
+    )
+    for i, peak in enumerate(peak_candidates):
         pos = peak.get("position")
         intensity = peak.get("intensity")
         if pos is None or not wavenumber:
             continue
         idx = min(range(len(wavenumber)), key=lambda i: abs(wavenumber[i] - pos))
-        too_close = any(abs(pos - p) < _ANNOTATION_MIN_SEP for p in annotated_positions)
-        label = "" if too_close else f"{pos:.0f}"
+        label = f"{pos:.0f}" if i in label_indices else ""
         y_at = _peak_display_y(idx)
         if y_at is None:
             continue
@@ -2634,58 +2625,31 @@ def _build_figure(
                 textfont=dict(size=8, color="#DC2626"),
                 name=f"Peak {pos:.0f}",
                 showlegend=False,
+                hovertemplate=f"{pos:.1f} cm⁻¹ | I={float(intensity or 0):.3g}<extra></extra>",
             )
         )
-        if label:
-            annotated_positions.append(pos)
 
     title_main = translate_ui(loc, "dash.analysis.figure.title_ftir_main")
-    show_legend, legend_layout = spectral_legend_layout(len(fig.data), settings, theme=pt, legend_bg=legend_bg)
-    x_axis: dict[str, Any] = {
-        "showgrid": settings["show_grid"],
-        "showspikes": settings["show_spikes"],
-        "gridcolor": pt["grid"],
-        "linecolor": pt["grid"],
-        "tickfont": dict(size=12, color=pt["text"]),
-        "title_font": dict(size=13, color=pt["text"]),
-        "zeroline": False,
-    }
+    apply_materialscope_plot_theme(
+        fig,
+        settings,
+        theme=ui_theme,
+        title=title_main,
+        subtitle=sample_name,
+        view_mode="result",
+        scale_traces=False,
+    )
+    fig.update_xaxes(title_text=translate_ui(loc, "dash.analysis.figure.axis_wavenumber"))
+    fig.update_yaxes(title_text=translate_ui(loc, "dash.analysis.figure.axis_signal_au"))
     if settings["x_range_enabled"] and settings["x_min"] is not None and settings["x_max"] is not None:
         x_range = [settings["x_min"], settings["x_max"]]
         if settings["reverse_x_axis"]:
             x_range = list(reversed(x_range))
-        x_axis["range"] = x_range
+        fig.update_xaxes(range=x_range)
     elif settings["reverse_x_axis"]:
-        x_axis["autorange"] = "reversed"
-    y_axis = {
-        "range": y_range,
-        "showgrid": settings["show_grid"],
-        "showspikes": settings["show_spikes"],
-        "gridcolor": pt["grid"],
-        "linecolor": pt["grid"],
-        "tickfont": dict(size=12, color=pt["text"]),
-        "title_font": dict(size=13, color=pt["text"]),
-        "zeroline": False,
-    }
-    fig.update_layout(
-        title=(f"{title_main}<br><span style='font-size:0.82em;color:{muted}'>{sample_name}</span>"),
-        paper_bgcolor=pt["paper_bg"],
-        plot_bgcolor=pt["plot_bg"],
-        hovermode="x unified",
-        xaxis_title=translate_ui(loc, "dash.analysis.figure.axis_wavenumber"),
-        yaxis_title=translate_ui(loc, "dash.analysis.figure.axis_signal_au"),
-        xaxis=x_axis,
-        yaxis=y_axis,
-        margin=dict(l=64, r=112 if show_legend and legend_layout.get("x") == 1.02 else 28, t=82, b=56),
-        height=460 if settings["compact"] else 520,
-        title_font=dict(size=20, color=pt["text"]),
-        title_x=0.01,
-        showlegend=show_legend,
-        legend=legend_layout,
-        hoverlabel=dict(bgcolor=hover_bg, font=dict(color=hover_fg)),
-    )
-    fig.update_layout(meta={"plot_display_settings": settings})
-    fig.update_layout(template=pt["template"])
+        fig.update_xaxes(autorange="reversed")
+    if y_range is not None:
+        fig.update_yaxes(range=y_range)
 
     peak_count_disp = summary.get("peak_count", peak_count)
     top_match_name = summary.get("top_match_name")
