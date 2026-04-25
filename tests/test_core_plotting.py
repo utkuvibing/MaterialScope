@@ -1,4 +1,5 @@
 import plotly.graph_objects as go
+import math
 
 from core import plotting
 
@@ -82,3 +83,21 @@ def test_extract_plot_display_settings_reads_figure_meta():
     extracted = plotting.extract_plot_display_settings(fig)
 
     assert extracted["export_scale"] == 4
+
+
+def test_normalize_plot_display_settings_rejects_non_finite_ranges():
+    settings = plotting.normalize_plot_display_settings(
+        {
+            "x_range_enabled": True,
+            "x_min": float("nan"),
+            "x_max": "inf",
+            "y_range_enabled": True,
+            "y_min": "-inf",
+            "y_max": math.inf,
+        }
+    )
+
+    assert settings["x_min"] is None
+    assert settings["x_max"] is None
+    assert settings["y_min"] is None
+    assert settings["y_max"] is None

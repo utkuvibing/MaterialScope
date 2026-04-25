@@ -306,16 +306,18 @@ def apply_plot_display_settings(
 def apply_plotly_config(fig):
     """Apply shared crosshair and hover behavior without overriding layout composition."""
     tokens = _plot_tokens()
+    settings = shared_plotting.extract_plot_display_settings(fig)
+    show_spikes = bool(settings.get("show_spikes", True))
     fig.update_layout(hovermode="x unified", hoverdistance=80, spikedistance=1000)
     fig.update_xaxes(
-        showspikes=True,
+        showspikes=show_spikes,
         spikecolor=tokens["axis"],
         spikethickness=1,
         spikedash="dot",
         spikemode="across",
     )
     fig.update_yaxes(
-        showspikes=True,
+        showspikes=show_spikes,
         spikecolor=tokens["axis"],
         spikethickness=1,
         spikedash="dot",
@@ -582,6 +584,6 @@ def fig_to_bytes(fig, format="png", width=1000, height=600):
     if isinstance(meta, dict):
         export_settings = meta.get("plot_display_settings") or {}
     apply_plot_display_settings(export_fig, export_settings, for_export=True, scale_traces=False)
-    export_width = max(int(width), _DEFAULT_EXPORT_WIDTH)
-    export_height = max(int(height), _DEFAULT_EXPORT_HEIGHT)
+    export_width = int(width)
+    export_height = int(height)
     return export_fig.to_image(format=format, width=export_width, height=export_height, engine="kaleido")

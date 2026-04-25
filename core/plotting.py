@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 import plotly.graph_objects as go
+import math
 
 FONT_FAMILY = "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif"
 COLORWAY = [
@@ -126,9 +127,10 @@ def _optional_float(value: Any) -> float | None:
     if value in (None, ""):
         return None
     try:
-        return float(value)
+        parsed = float(value)
     except (TypeError, ValueError):
         return None
+    return parsed if math.isfinite(parsed) else None
 
 
 def normalize_plot_display_settings(

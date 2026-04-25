@@ -89,8 +89,8 @@ def test_fig_to_bytes_uses_report_safe_export_dimensions(monkeypatch):
     assert payload == b"figure-bytes"
     assert captured["format"] == "png"
     assert captured["engine"] == "kaleido"
-    assert captured["width"] >= plot_builder.PLOTLY_CONFIG["toImageButtonOptions"]["width"]
-    assert captured["height"] >= plot_builder.PLOTLY_CONFIG["toImageButtonOptions"]["height"]
+    assert captured["width"] == 900
+    assert captured["height"] == 500
     assert "Export Figure" in captured["title"]
 
 
@@ -171,3 +171,15 @@ def test_create_thermal_plot_applies_display_settings_and_persists_them_for_expo
     assert fig.layout.xaxis.autorange == "reversed"
     assert float(fig.data[0].line.width) > 3.0
     assert fig.layout.meta["plot_display_settings"]["reverse_x_axis"] is True
+
+
+def test_create_thermal_plot_keeps_show_spikes_false_after_legacy_config_wrapper():
+    fig = plot_builder.create_thermal_plot(
+        [25, 50, 75],
+        [1.0, 1.4, 1.1],
+        display_settings={"show_spikes": False},
+    )
+
+    assert fig.layout.xaxis.showspikes is False
+    assert fig.layout.yaxis.showspikes is False
+    assert fig.layout.meta["plot_display_settings"]["show_spikes"] is False
