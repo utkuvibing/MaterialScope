@@ -85,6 +85,88 @@ def test_extract_plot_display_settings_reads_figure_meta():
     assert extracted["export_scale"] == 4
 
 
+def test_apply_materialscope_plot_theme_preserves_shapes_and_sets_contrast():
+    fig = go.Figure(data=[go.Scatter(x=[1, 2], y=[3, 4], mode="lines")])
+    fig.add_shape(type="line", x0=1, y0=3, x1=2, y1=4, line={"color": "#000000"})
+
+    plotting.apply_materialscope_plot_theme(fig, theme="dark")
+
+    assert len(fig.layout.shapes) == 1
+    assert fig.layout.shapes[0].line.color == plotting.PLOT_THEME["dark"]["shape_line"]
+    assert fig.layout.shapes[0].line.width >= 2
+    assert fig.layout.newshape.line.color == plotting.PLOT_THEME["dark"]["shape_line"]
+
+
+def test_apply_materialscope_plot_theme_recolors_materialscope_default_shape_colors():
+    fig = go.Figure(data=[go.Scatter(x=[1, 2], y=[3, 4], mode="lines")])
+    fig.add_shape(type="line", x0=1, y0=3, x1=2, y1=4, line={"color": "#1C1A1A"})
+
+    plotting.apply_materialscope_plot_theme(fig, theme="dark")
+    assert fig.layout.shapes[0].line.color == plotting.PLOT_THEME["dark"]["shape_line"]
+
+    plotting.apply_materialscope_plot_theme(fig, theme="light")
+    assert fig.layout.shapes[0].line.color == plotting.PLOT_THEME["light"]["shape_line"]
+
+
+def test_apply_materialscope_plot_theme_preserves_custom_shape_color():
+    fig = go.Figure(data=[go.Scatter(x=[1, 2], y=[3, 4], mode="lines")])
+    fig.add_shape(type="line", x0=1, y0=3, x1=2, y1=4, line={"color": "rgba(148, 163, 184, 0.55)"})
+
+    plotting.apply_materialscope_plot_theme(fig, theme="dark")
+
+    assert len(fig.layout.shapes) == 1
+    assert fig.layout.shapes[0].line.color == "rgba(148, 163, 184, 0.55)"
+
+
+def test_apply_materialscope_plot_theme_uses_compact_export_layout():
+    fig = go.Figure(data=[go.Scatter(x=[1, 2], y=[3, 4], mode="lines")])
+
+    plotting.apply_materialscope_plot_theme(fig, title="Export", subtitle="Sample", for_export=True)
+
+    assert fig.layout.width == plotting.DEFAULT_EXPORT_WIDTH
+    assert fig.layout.height == plotting.DEFAULT_EXPORT_HEIGHT
+    assert fig.layout.margin.b == 54
+    assert fig.layout.margin.t <= 82
+
+
+def test_primary_y_range_ignores_non_finite_values_and_pads():
+    result = plotting.primary_y_range([1, 2, "bad"], [float("nan"), 3])
+
+    assert result is not None
+    assert result[0] < 1
+    assert result[1] > 3
+
+
+def test_primary_y_range_handles_numpy_like_iterables_without_truthiness():
+    class ArrayLike:
+        def __bool__(self):
+            raise ValueError("ambiguous truth value")
+
+        def __iter__(self):
+            return iter([1.0, 2.0, 3.0])
+
+    result = plotting.primary_y_range(ArrayLike(), (4.0, 5.0))
+
+    assert result is not None
+    assert result[0] < 1.0
+    assert result[1] > 5.0
+
+
+def test_sparse_label_indices_prefers_strongest_spaced_points():
+    points = [
+        {"position": 10.0, "intensity": 1.0},
+        {"position": 10.2, "intensity": 0.95},
+        {"position": 20.0, "intensity": 0.8},
+        {"position": 30.0, "intensity": 0.7},
+    ]
+
+    chosen = plotting.sparse_label_indices(points, max_labels=3, min_distance_floor=1.0)
+
+    assert 0 in chosen
+    assert 1 not in chosen
+    assert len(chosen) <= 3
+
+
 def test_normalize_plot_display_settings_rejects_non_finite_ranges():
     settings = plotting.normalize_plot_display_settings(
         {

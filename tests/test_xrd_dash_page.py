@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import math
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -382,11 +383,153 @@ def test_build_figure_uses_corrected_as_primary_trace(monkeypatch):
     )
 
     assert isinstance(graph, dcc.Graph)
+    assert graph.id == "xrd-result-plot-graph"
     corrected_trace = next(trace for trace in graph.figure.data if trace.name == "Corrected Diffractogram")
     raw_trace = next(trace for trace in graph.figure.data if trace.name == "Raw Diffractogram")
     assert corrected_trace.line.width == 3.0
+    assert corrected_trace.visible in (None, True)
+    assert raw_trace.visible == "legendonly"
     assert raw_trace.opacity < 0.4
     assert graph.figure.layout.xaxis.title.text == "2theta (deg)"
+    assert graph.figure.layout.meta["plot_view_mode"] == "result"
+    assert "plot_display_settings" in graph.figure.layout.meta
+    assert graph.figure.layout.hovermode == "x unified"
+    assert graph.figure.layout.legend.y >= 0
+    assert graph.figure.layout.yaxis.range[1] < 60
+    assert graph.config["displayModeBar"] is True
+    assert graph.config["displaylogo"] is False
+    assert graph.config["responsive"] is True
+    assert graph.config["toImageButtonOptions"]["filename"] == "materialscope_xrd_diffractogram"
+    assert graph.config["toImageButtonOptions"]["width"] == 1400
+
+
+def test_xrd_relayout_shape_payload_is_carried_for_theme_rebuild():
+    mod = _import_xrd_page()
+
+    shapes = [{"type": "line", "x0": 10, "y0": 1, "x1": 20, "y1": 2, "line": {"color": "#000000"}}]
+    assert mod._xrd_shapes_from_relayout({"shapes": shapes}) == shapes
+    assert mod._xrd_shapes_from_relayout({"xaxis.range[0]": 10}) is None
+
+
+def test_xrd_default_corrected_view_demotes_raw_from_autorange():
+    from dash_app.components.xrd_result_plot import build_xrd_result_figure
+
+    fig = build_xrd_result_figure(
+        axis=[10.0, 20.0, 30.0, 40.0],
+        raw_signal=[2000.0, 5000.0, 3500.0, 1500.0],
+        smoothed=[21.0, 48.0, 34.0, 16.0],
+        baseline=[4.0, 4.0, 4.0, 4.0],
+        corrected=[17.0, 44.0, 30.0, 12.0],
+        peaks=[],
+        selected_match=None,
+        plot_settings={},
+        ui_theme="light",
+        loc="en",
+        sample_name="XRD Run A",
+        axis_title="2theta (deg)",
+    )
+
+    raw_trace = next(trace for trace in fig.data if trace.name == "Raw Diffractogram")
+    corrected_trace = next(trace for trace in fig.data if trace.name == "Corrected Diffractogram")
+    assert raw_trace.visible == "legendonly"
+    assert raw_trace.showlegend is True
+    assert corrected_trace.visible in (None, True)
+    assert corrected_trace.line.width == 3.0
+    assert fig.layout.yaxis.range[1] < 60
+
+
+def test_xrd_dense_peak_cluster_labels_are_sparse_and_readable():
+    from dash_app.components.xrd_result_plot import build_xrd_result_figure
+
+    peaks = [
+        {"position": 10.0, "intensity": 100.0},
+        {"position": 10.2, "intensity": 95.0},
+        {"position": 10.4, "intensity": 90.0},
+        {"position": 10.6, "intensity": 85.0},
+        {"position": 10.8, "intensity": 80.0},
+        {"position": 16.0, "intensity": 70.0},
+        {"position": 16.3, "intensity": 68.0},
+        {"position": 24.0, "intensity": 65.0},
+        {"position": 32.0, "intensity": 60.0},
+        {"position": 40.0, "intensity": 55.0},
+    ]
+    fig = build_xrd_result_figure(
+        axis=[10.0, 20.0, 30.0, 40.0],
+        raw_signal=[20.0, 50.0, 35.0, 15.0],
+        smoothed=[21.0, 48.0, 34.0, 16.0],
+        baseline=[4.0, 4.0, 4.0, 4.0],
+        corrected=[17.0, 44.0, 30.0, 12.0],
+        peaks=peaks,
+        selected_match=None,
+        plot_settings={},
+        ui_theme="light",
+        loc="en",
+        sample_name="XRD Dense Peaks",
+        axis_title="2theta (deg)",
+    )
+
+    label_trace = next(trace for trace in fig.data if trace.mode == "text")
+    visible_labels = [label for label in label_trace.text if label]
+    assert len(visible_labels) <= 4
+    assert len(visible_labels) < len(peaks)
+    assert "10.00 deg" in visible_labels[0]
+
+
+def test_build_xrd_result_figure_preserves_log_y_range_after_shared_theme():
+    from dash_app.components.xrd_result_plot import build_xrd_result_figure
+
+    fig = build_xrd_result_figure(
+        axis=[10.0, 20.0, 30.0, 40.0],
+        raw_signal=[20.0, 50.0, 35.0, 15.0],
+        smoothed=[21.0, 48.0, 34.0, 16.0],
+        baseline=[4.0, 4.0, 4.0, 4.0],
+        corrected=[17.0, 44.0, 30.0, 12.0],
+        peaks=[],
+        selected_match=None,
+        plot_settings={
+            "log_y": True,
+            "y_range_enabled": True,
+            "y_min": 1.0,
+            "y_max": 100.0,
+            "x_range_enabled": True,
+            "x_min": 12.0,
+            "x_max": 38.0,
+        },
+        ui_theme="light",
+        loc="en",
+        sample_name="XRD Run Log",
+        axis_title="2theta (deg)",
+    )
+
+    assert fig.layout.yaxis.type == "log"
+    assert list(fig.layout.yaxis.range) == [math.log10(1.0), math.log10(100.0)]
+    assert list(fig.layout.xaxis.range) == [12.0, 38.0]
+    assert fig.layout.xaxis.title.text == "2theta (deg)"
+    assert fig.layout.yaxis.title.text == "Intensity (a.u.)"
+    assert fig.layout.meta["plot_view_mode"] == "result"
+
+
+def test_build_xrd_result_figure_preserves_drawn_shapes_with_theme_contrast():
+    from dash_app.components.xrd_result_plot import build_xrd_result_figure
+
+    fig = build_xrd_result_figure(
+        axis=[10.0, 20.0, 30.0, 40.0],
+        raw_signal=[20.0, 50.0, 35.0, 15.0],
+        smoothed=[21.0, 48.0, 34.0, 16.0],
+        baseline=[4.0, 4.0, 4.0, 4.0],
+        corrected=[17.0, 44.0, 30.0, 12.0],
+        peaks=[],
+        selected_match=None,
+        plot_settings={},
+        ui_theme="dark",
+        loc="en",
+        sample_name="XRD Drawing",
+        axis_title="2theta (deg)",
+        drawn_shapes=[{"type": "line", "x0": 10, "y0": 1, "x1": 20, "y1": 2, "line": {"color": "#000000"}}],
+    )
+
+    assert len(fig.layout.shapes) == 1
+    assert fig.layout.shapes[0].line.color != "#000000"
 
 
 def test_build_figure_handles_missing_primary_signal(monkeypatch):

@@ -38,6 +38,7 @@ PLOT_THEME = {
         "legend_bg": "rgba(255,255,255,0.86)",
         "annotation_bg": "rgba(255,255,255,0.92)",
         "annotation_border": "rgba(102,100,94,0.22)",
+        "shape_line": "#1C1A1A",
     },
     "dark": {
         "template": "plotly_dark",
@@ -52,6 +53,7 @@ PLOT_THEME = {
         "legend_bg": "rgba(26,25,23,0.86)",
         "annotation_bg": "rgba(26,25,23,0.92)",
         "annotation_border": "rgba(158,154,147,0.24)",
+        "shape_line": "#F2F0EB",
     },
 }
 
@@ -240,6 +242,101 @@ def _scale_trace_styles(fig: go.Figure, *, line_width_scale: float, marker_size_
                 trace.marker.size = max(4.0, float(current_size) * marker_size_scale)
 
 
+def primary_y_range(*series: list[Any] | tuple[Any, ...] | None, padding_ratio: float = 0.08) -> list[float] | None:
+    values: list[float] = []
+    for entry in series:
+        if entry is None:
+            continue
+        try:
+            iterator = iter(entry)
+        except TypeError:
+            iterator = iter((entry,))
+        for value in iterator:
+            try:
+                parsed = float(value)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(parsed):
+                values.append(parsed)
+    if not values:
+        return None
+    y_min = min(values)
+    y_max = max(values)
+    if y_min == y_max:
+        pad = max(abs(y_max) * padding_ratio, 1.0)
+    else:
+        pad = (y_max - y_min) * padding_ratio
+    return [y_min - pad, y_max + pad]
+
+
+def sparse_label_indices(
+    points: list[Mapping[str, Any]],
+    *,
+    position_key: str = "position",
+    intensity_key: str = "intensity",
+    max_labels: int = 4,
+    min_distance_ratio: float = 0.08,
+    min_distance_floor: float = 1.0,
+) -> set[int]:
+    if max_labels <= 0 or not points:
+        return set()
+    parsed: list[tuple[int, float, float]] = []
+    for idx, point in enumerate(points):
+        try:
+            position = float(point.get(position_key))
+            intensity = float(point.get(intensity_key, 0.0))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if math.isfinite(position) and math.isfinite(intensity):
+            parsed.append((idx, position, intensity))
+    if not parsed:
+        return set()
+    positions = [position for _idx, position, _intensity in parsed]
+    span = max(positions) - min(positions) if len(positions) >= 2 else 0.0
+    min_distance = max(span * min_distance_ratio, min_distance_floor)
+    chosen: list[tuple[int, float, float]] = []
+    for candidate in sorted(parsed, key=lambda item: (-item[2], item[1])):
+        if all(abs(candidate[1] - item[1]) >= min_distance for item in chosen):
+            chosen.append(candidate)
+        if len(chosen) >= max_labels:
+            break
+    return {idx for idx, _position, _intensity in chosen}
+
+
+def _shape_line_needs_theme_contrast(color: Any) -> bool:
+    if color in (None, ""):
+        return True
+    normalized = str(color).strip().lower().replace(" ", "")
+    return normalized in {
+        "black",
+        "#000",
+        "#000000",
+        "#1c1a1a",
+        "rgb(0,0,0)",
+        "rgba(0,0,0,1)",
+        "white",
+        "#fff",
+        "#ffffff",
+        "#f2f0eb",
+        "rgb(255,255,255)",
+        "rgba(255,255,255,1)",
+    }
+
+
+def _apply_shape_contrast(fig: go.Figure, *, line_color: str) -> None:
+    shapes = list(getattr(fig.layout, "shapes", None) or [])
+    if not shapes:
+        return
+    for shape in shapes:
+        line = getattr(shape, "line", None)
+        color = getattr(line, "color", None) if line is not None else None
+        if _shape_line_needs_theme_contrast(color):
+            shape.line.color = line_color
+        width = getattr(shape.line, "width", None)
+        if width in (None, 0):
+            shape.line.width = 2.5
+
+
 def apply_materialscope_plot_theme(
     fig: go.Figure,
     settings: Mapping[str, Any] | None = None,
@@ -264,6 +361,12 @@ def apply_materialscope_plot_theme(
         top_margin += 20
     if subtitle:
         top_margin += 18
+    bottom_margin = 54 if compact else 68
+    plot_height = 520 if compact else 620
+    if for_export:
+        top_margin = 82 if subtitle else 68
+        bottom_margin = 54
+        plot_height = DEFAULT_EXPORT_HEIGHT
 
     fig.update_layout(
         template=tokens["template"],
@@ -290,9 +393,16 @@ def apply_materialscope_plot_theme(
         hovermode="x unified",
         hoverdistance=80,
         spikedistance=1000,
-        margin={"l": 64 if compact else 76, "r": right_margin, "t": top_margin, "b": 54 if compact else 68},
-        height=520 if compact else 620,
+        newshape={
+            "line": {
+                "color": tokens["shape_line"],
+                "width": 2.5,
+            }
+        },
+        margin={"l": 64 if compact else 76, "r": right_margin, "t": top_margin, "b": bottom_margin},
+        height=plot_height,
     )
+    _apply_shape_contrast(fig, line_color=tokens["shape_line"])
     if for_export:
         fig.update_layout(width=DEFAULT_EXPORT_WIDTH, height=DEFAULT_EXPORT_HEIGHT)
     fig.update_xaxes(

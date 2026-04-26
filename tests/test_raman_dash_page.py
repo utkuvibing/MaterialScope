@@ -493,6 +493,46 @@ def test_build_figure_returns_graph_when_curves_present(monkeypatch):
     s = str(fig_div)
     assert "ta-plot" in s
     assert "Peaks:" in s or "Tepeler:" in s
+    graph = next(c for c in fig_div.children if isinstance(c, dcc.Graph))
+    assert graph.id == "raman-result-plot-graph"
+    assert graph.figure.layout.meta["plot_view_mode"] == "result"
+    assert "plot_display_settings" in graph.figure.layout.meta
+    assert graph.figure.layout.hovermode == "x unified"
+    assert graph.figure.layout.legend.y >= 0
+    assert graph.config["toImageButtonOptions"]["filename"] == "materialscope_raman_spectrum"
+    raw_trace = next(trace for trace in graph.figure.data if "Imported" in str(trace.name))
+    baseline_trace = next(trace for trace in graph.figure.data if "Baseline" in str(trace.name))
+    assert raw_trace.visible == "legendonly"
+    assert baseline_trace.visible == "legendonly"
+    assert graph.figure.layout.yaxis.range[1] < 1.0
+
+
+def test_build_figure_preserves_drawn_shapes_with_theme_contrast(monkeypatch):
+    mod = _import_raman_page()
+    import dash_app.api_client as api_client
+
+    monkeypatch.setattr(
+        api_client,
+        "analysis_state_curves",
+        lambda *_: {
+            "temperature": [4000.0, 3000.0, 2000.0, 1000.0],
+            "raw_signal": [0.1, 0.5, 0.3, 0.2],
+            "smoothed": [0.12, 0.48, 0.32, 0.18],
+            "baseline": [0.05, 0.05, 0.05, 0.05],
+            "corrected": [0.07, 0.43, 0.27, 0.13],
+            "normalized": [],
+            "peaks": [],
+            "diagnostics": {"plot_normalized_primary_axis": False},
+        },
+    )
+    shapes = [{"type": "line", "x0": 1000, "y0": 0.1, "x1": 2000, "y1": 0.2, "line": {"color": "#1C1A1A"}}]
+
+    fig_div = mod._build_figure("proj", "ds", {}, "dark", "en", drawn_shapes=shapes)
+    graph = next(c for c in fig_div.children if isinstance(c, dcc.Graph))
+
+    assert mod._spectral_shapes_from_relayout({"shapes": shapes}) == shapes
+    assert len(graph.figure.layout.shapes) == 1
+    assert graph.figure.layout.shapes[0].line.color == "#F2F0EB"
 
 
 def test_build_figure_no_data_when_empty_curves(monkeypatch):
@@ -819,6 +859,36 @@ def test_build_figure_honors_plot_settings_for_traces_and_ranges(monkeypatch):
     assert not any(str(name).startswith("Peak") for name in names)
     assert list(graph.figure.layout.xaxis.range) == [1000.0, 4000.0]
     assert list(graph.figure.layout.yaxis.range) == [-1.0, 1.0]
+
+
+def test_build_figure_sparse_peak_labels_for_dense_clusters(monkeypatch):
+    mod = _import_raman_page()
+    import dash_app.api_client as api_client
+
+    peaks = [
+        {"position": 1000.0 + idx * 8.0, "intensity": 1.0 - idx * 0.03}
+        for idx in range(10)
+    ]
+    monkeypatch.setattr(
+        api_client,
+        "analysis_state_curves",
+        lambda *_: {
+            "temperature": [900.0, 1000.0, 1100.0, 1200.0],
+            "raw_signal": [10.0, 20.0, 15.0, 12.0],
+            "smoothed": [0.12, 0.48, 0.32, 0.18],
+            "baseline": [0.05, 0.05, 0.05, 0.05],
+            "corrected": [0.07, 0.43, 0.27, 0.13],
+            "normalized": [],
+            "peaks": peaks,
+            "diagnostics": {"plot_normalized_primary_axis": False},
+        },
+    )
+
+    fig_div = mod._build_figure("proj", "ds", {}, "light", "en")
+    graph = next(c for c in fig_div.children if isinstance(c, dcc.Graph))
+    labels = [trace.text[0] for trace in graph.figure.data if str(trace.name).startswith("Peak") and trace.text[0]]
+    assert len(labels) <= 4
+    assert graph.figure.layout.yaxis.range[1] < 1.0
 
 
 def test_render_raman_plot_settings_chrome_localizes_options_and_placeholders():

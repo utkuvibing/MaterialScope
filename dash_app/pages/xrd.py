@@ -657,7 +657,7 @@ layout = html.Div(
                         _xrd_result_section(
                             build_literature_compare_card(
                                 id_prefix="xrd",
-                                class_name="xrd-literature-card mb-0 border-0 shadow-none bg-transparent",
+                                class_name="xrd-literature-card mb-0",
                                 compact_toolbar=True,
                             ),
                             role="secondary",
@@ -2047,6 +2047,7 @@ def _build_figure(project_id, dataset_key, summary, processing, ui_theme):
         axis_title=axis_title,
     )
     return dcc.Graph(
+        id="xrd-result-plot-graph",
         figure=fig,
         config=build_plotly_config(plot_settings, filename="materialscope_xrd_diffractogram"),
         className="ta-plot",
@@ -2195,6 +2196,15 @@ def display_xrd_result(result_id, _refresh, locale_data, project_id):
     )
 
 
+def _xrd_shapes_from_relayout(relayout_data):
+    if not isinstance(relayout_data, dict):
+        return None
+    shapes = relayout_data.get("shapes")
+    if isinstance(shapes, list):
+        return [dict(shape) for shape in shapes if isinstance(shape, dict)]
+    return None
+
+
 @callback(
     Output("xrd-result-figure", "children"),
     Input("xrd-result-cache", "data"),
@@ -2202,8 +2212,9 @@ def display_xrd_result(result_id, _refresh, locale_data, project_id):
     Input("ui-theme", "data"),
     Input("ui-locale", "data"),
     State("project-id", "data"),
+    State("xrd-result-plot-graph", "relayoutData"),
 )
-def render_xrd_result_figure_area(cache, overlay_idx, ui_theme, locale_data, project_id):
+def render_xrd_result_figure_area(cache, overlay_idx, ui_theme, locale_data, project_id, relayout_data):
     loc = _loc(locale_data)
     empty_msg = empty_result_msg(locale_data=locale_data)
     if not cache or not project_id:
@@ -2251,8 +2262,10 @@ def render_xrd_result_figure_area(cache, overlay_idx, ui_theme, locale_data, pro
         loc=loc,
         sample_name=sample_name,
         axis_title=axis_title,
+        drawn_shapes=_xrd_shapes_from_relayout(relayout_data),
     )
     return dcc.Graph(
+        id="xrd-result-plot-graph",
         figure=fig,
         config=build_plotly_config(plot_settings, filename="materialscope_xrd_diffractogram"),
         className="ta-plot",
