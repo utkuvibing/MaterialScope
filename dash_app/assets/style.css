@@ -1770,16 +1770,20 @@ html[data-theme="dark"] .main-content .ms-results-surface .dta-debug-shell {
   line-height: 1.45;
 }
 
-.main-content .ms-results-surface .xrd-literature-card .card-body {
-  padding: 0.65rem 0.75rem;
+/* -------------------------------------------------------------------------- */
+/* XRD — Literature Compare: explicit card chrome (Bootstrap/builder wins)   */
+/* Scoped to .xrd-page so Raman/FTIR/TGA/DSC surfaces stay unchanged.        */
+/* -------------------------------------------------------------------------- */
+
+.main-content .xrd-page .ms-result-secondary > .xrd-literature-card.card {
+  border: 1px solid var(--ta-border) !important;
+  border-radius: 4px !important;
+  box-shadow: var(--ta-card-shadow) !important;
+  background: var(--ta-panel) !important;
 }
 
-.main-content .ms-results-surface .xrd-literature-card .card-title {
-  font-size: 0.9rem;
-  margin-bottom: 0.35rem;
-  color: var(--ta-muted);
+.main-content .xrd-page .ms-result-secondary > .xrd-literature-card.card > .card-body {
+  padding: 1rem !important;
 }
 
-.main-content .ms-results-surface .xrd-literature-card .ta-ms-details .ta-details-summary {
-  font-size: 0.8125rem;
-}
+

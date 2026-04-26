@@ -657,7 +657,7 @@ layout = html.Div(
                         _xrd_result_section(
                             build_literature_compare_card(
                                 id_prefix="xrd",
-                                class_name="xrd-literature-card mb-0 border-0 shadow-none bg-transparent",
+                                class_name="xrd-literature-card mb-0",
                                 compact_toolbar=True,
                             ),
                             role="secondary",
