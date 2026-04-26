@@ -286,6 +286,16 @@ html, body {
     background: var(--ta-panel);
 }
 
+.ta-prerun-snapshot {
+    background: var(--ta-panel-strong);
+    border-color: var(--ta-border) !important;
+    color: var(--ta-ink);
+}
+
+.ta-prerun-snapshot dd {
+    color: var(--ta-ink);
+}
+
 /* Upload zone */
 .upload-zone {
     border: 2px dashed var(--ta-input-border);

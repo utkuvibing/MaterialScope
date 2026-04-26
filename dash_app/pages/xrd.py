@@ -56,6 +56,11 @@ from dash_app.components.literature_compare_ui import (
     literature_t,
     render_literature_output,
 )
+from dash_app.components.raw_quality import (
+    build_raw_quality_panel,
+    compute_raw_quality_stats,
+    extract_xy_series,
+)
 from dash_app.components.xrd_explore import (
     MAX_XRD_UNDO_DEPTH,
     append_undo_after_edit,
@@ -284,6 +289,20 @@ def _xrd_setup_review_card() -> dbc.Card:
             className="xrd-left-panel-card-body",
         ),
         className="xrd-left-panel-card mb-3",
+    )
+
+
+def _xrd_raw_quality_card() -> dbc.Card:
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H6(id="xrd-raw-quality-card-title", className="card-title mb-1"),
+                html.P(id="xrd-raw-quality-card-hint", className="small text-muted mb-2"),
+                html.Div(id="xrd-raw-quality-panel", className="ms-raw-quality-panel"),
+            ],
+            className="xrd-left-panel-card-body",
+        ),
+        className=_XRD_LEFT_PANEL_CARD,
     )
 
 
@@ -578,6 +597,7 @@ def _left_tabs() -> dbc.Tabs:
                         card_title_id="xrd-workflow-card-title",
                     ),
                     _xrd_workflow_guide_block(),
+                    _xrd_raw_quality_card(),
                     _xrd_setup_review_card(),
                 ],
                 tab_id="xrd-tab-setup",
@@ -751,6 +771,55 @@ def render_xrd_workflow_guide_chrome(locale_data):
         ]
     )
     return translate_ui(loc, f"{pfx}.title"), body
+
+
+@callback(
+    Output("xrd-raw-quality-card-title", "children"),
+    Output("xrd-raw-quality-card-hint", "children"),
+    Input("ui-locale", "data"),
+)
+def render_xrd_raw_quality_chrome(locale_data):
+    loc = _loc(locale_data)
+    return translate_ui(loc, "dash.analysis.xrd.raw_quality.card_title"), translate_ui(loc, "dash.analysis.xrd.raw_quality.card_hint")
+
+
+@callback(
+    Output("xrd-raw-quality-panel", "children"),
+    Input("project-id", "data"),
+    Input("xrd-dataset-select", "value"),
+    Input("xrd-refresh", "data"),
+    Input("ui-locale", "data"),
+)
+def render_xrd_raw_quality_panel(project_id, dataset_key, _refresh, locale_data):
+    loc = _loc(locale_data)
+    prefix = "dash.analysis.xrd.raw_quality"
+    if not project_id or not dataset_key:
+        return html.P(translate_ui(loc, f"{prefix}.pick_dataset"), className="text-muted small mb-0")
+
+    from dash_app.api_client import workspace_dataset_data, workspace_dataset_detail
+
+    try:
+        detail = workspace_dataset_detail(project_id, dataset_key)
+        data = workspace_dataset_data(project_id, dataset_key)
+    except Exception as exc:
+        return html.P(translate_ui(loc, f"{prefix}.load_failed", error=str(exc)), className="text-danger small mb-0")
+
+    axis, signal = extract_xy_series(
+        data.get("rows") or [],
+        data.get("columns") or [],
+        axis_candidates=("two_theta", "xrd_2theta", "angle", "q", "temperature"),
+        signal_candidates=("intensity", "signal"),
+    )
+    validation = detail.get("validation") if isinstance(detail.get("validation"), dict) else {}
+    stats = compute_raw_quality_stats(axis, signal, validation=validation)
+    units = detail.get("units") if isinstance(detail.get("units"), dict) else {}
+    return build_raw_quality_panel(
+        stats,
+        loc,
+        i18n_prefix=prefix,
+        axis_unit=str(units.get("two_theta") or units.get("axis") or "deg"),
+        signal_unit=str(units.get("intensity") or units.get("signal") or ""),
+    )
 
 
 # --- Dataset + setup review ---
