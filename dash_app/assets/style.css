@@ -349,6 +349,271 @@ html, body {
     border-left-width: 3px;
 }
 
+/* -------------------------------------------------------------------------- */
+/* About page — professional product information surface                       */
+/* -------------------------------------------------------------------------- */
+
+.about-page-content {
+    display: grid;
+    gap: 1rem;
+    max-width: 1180px;
+}
+
+.about-section-card {
+    margin-bottom: 0;
+}
+
+.about-section-card .card-body {
+    padding: 1.15rem 1.25rem;
+}
+
+.about-section-title,
+.about-notice-title {
+    margin: 0 0 0.75rem;
+    color: var(--ta-ink);
+    font-size: 1.05rem;
+    line-height: 1.25;
+    font-weight: 700;
+}
+
+.about-lead {
+    color: var(--ta-ink);
+    font-size: 0.98rem;
+    line-height: 1.65;
+    margin-bottom: 0.75rem;
+}
+
+.about-page p {
+    color: var(--ta-muted);
+    line-height: 1.65;
+    max-width: 980px;
+}
+
+.about-audience-grid,
+.about-capability-grid {
+    display: grid;
+    gap: 0.65rem;
+}
+
+.about-audience-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.about-audience-item,
+.about-capability-item {
+    border: 1px solid var(--ta-border);
+    border-radius: 6px;
+    background: var(--ta-panel-strong);
+    color: var(--ta-ink);
+}
+
+.about-audience-item {
+    grid-column: span 2;
+    min-height: 9.2rem;
+    padding: 0.9rem;
+}
+
+.about-audience-item:nth-child(4),
+.about-audience-item:nth-child(5) {
+    grid-column: span 3;
+}
+
+.about-audience-heading {
+    display: grid;
+    gap: 0.35rem;
+    margin-bottom: 0.65rem;
+}
+
+.about-audience-label {
+    width: fit-content;
+    padding: 0.18rem 0.45rem;
+    border: 1px solid var(--ta-border);
+    border-radius: 999px;
+    color: var(--ta-hero-badge-fg);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.about-audience-title {
+    margin: 0;
+    color: var(--ta-ink);
+    font-size: 0.98rem;
+    line-height: 1.25;
+    font-weight: 700;
+}
+
+.about-audience-copy {
+    margin: 0;
+    font-size: 0.86rem;
+    line-height: 1.5;
+}
+
+.about-capability-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.about-capability-item {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    padding: 0.78rem 0.85rem;
+}
+
+.about-capability-index {
+    flex: 0 0 auto;
+    color: var(--ta-hero-badge-fg);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.about-capability-text {
+    line-height: 1.45;
+}
+
+.about-modality-table {
+    border-color: var(--ta-border);
+    color: var(--ta-ink);
+}
+
+.about-modality-table > :not(caption) > * > * {
+    background: transparent;
+    border-bottom-color: var(--ta-border);
+    color: var(--ta-ink);
+    vertical-align: top;
+}
+
+.about-modality-table thead th {
+    background: var(--ta-panel-strong);
+    color: var(--ta-muted);
+    font-size: 0.74rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.about-modality-table tbody td {
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+.about-workflow-diagram {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.75rem;
+    position: relative;
+}
+
+.about-workflow-step {
+    position: relative;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 0.65rem;
+    min-height: 7rem;
+    padding: 0.85rem;
+    border: 1px solid var(--ta-border);
+    border-radius: 6px;
+    background: var(--ta-panel-strong);
+    color: var(--ta-ink);
+}
+
+.about-workflow-step::after {
+    content: '';
+    position: absolute;
+    top: 1.67rem;
+    left: calc(100% + 0.1rem);
+    width: 0.55rem;
+    border-top: 1px solid var(--ta-border);
+}
+
+.about-workflow-step:nth-child(6)::after {
+    display: none;
+}
+
+.about-workflow-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.65rem;
+    height: 1.65rem;
+    border-radius: 999px;
+    background: var(--ta-hero-badge-bg);
+    color: var(--ta-hero-badge-fg);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.about-workflow-text {
+    color: var(--ta-ink);
+    font-weight: 600;
+    line-height: 1.42;
+}
+
+.about-architecture-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.45rem 1.5rem;
+    margin: 0 0 1rem;
+    padding-left: 1.15rem;
+    color: var(--ta-ink);
+}
+
+.about-architecture-list li {
+    padding-left: 0.2rem;
+}
+
+.about-note {
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--ta-border);
+}
+
+.about-validation-notice {
+    padding: 1rem 1.15rem;
+    border: 1px solid var(--ta-border);
+    border-left: 3px solid var(--ta-muted);
+    border-radius: 6px;
+    background: var(--ta-panel-strong);
+}
+
+.about-validation-notice p {
+    max-width: 980px;
+}
+
+@media (max-width: 900px) {
+    .about-capability-grid,
+    .about-workflow-diagram,
+    .about-architecture-list {
+        grid-template-columns: 1fr;
+    }
+
+    .about-audience-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .about-audience-item,
+    .about-audience-item:nth-child(4),
+    .about-audience-item:nth-child(5) {
+        grid-column: auto;
+        min-height: auto;
+    }
+
+    .about-workflow-step {
+        min-height: auto;
+    }
+
+    .about-workflow-step::after {
+        top: calc(100% + 0.1rem);
+        left: 1.66rem;
+        width: 0;
+        height: 0.55rem;
+        border-top: 0;
+        border-left: 1px solid var(--ta-border);
+    }
+}
+
 /* Badge */
 .badge {
     font-weight: 600;
