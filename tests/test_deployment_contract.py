@@ -40,27 +40,18 @@ def test_container_entrypoint_runs_combined_dash_server_only():
 def test_env_example_documents_runtime_surface_flags():
     env_example = _repo_text(".env.example")
 
-    assert (
-        "MATERIALSCOPE_LIBRARY_CLOUD_URL=http://127.0.0.1:8000" in env_example
-        or "THERMOANALYZER_LIBRARY_CLOUD_URL=http://127.0.0.1:8000" in env_example
-    )
-    assert (
-        "MATERIALSCOPE_LIBRARY_CLOUD_ENABLED=true" in env_example
-        or "THERMOANALYZER_LIBRARY_CLOUD_ENABLED=true" in env_example
-    )
-    assert (
-        "MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH=true" in env_example
-        or "THERMOANALYZER_LIBRARY_DEV_CLOUD_AUTH=true" in env_example
-    )
+    assert "MATERIALSCOPE_LIBRARY_CLOUD_URL=" in env_example
+    assert "MATERIALSCOPE_LIBRARY_CLOUD_ENABLED=false" in env_example
+    assert "DEV_CLOUD_AUTH" not in env_example
+    assert "THERMOANALYZER" not in env_example
     assert "MATERIALSCOPE_ENABLE_PREVIEW_MODULES=false" in env_example
 
 
 def test_readme_documents_preview_and_dash_container_runtime_flags():
     readme = _repo_text("README.md")
 
-    assert "python -m dash_app.server --host 0.0.0.0 --port" in readme
-    assert "expose port `8050`" in readme
-    assert "`PORT`" in readme
-    assert "`/data/materialscope`" in readme
-    assert "MATERIALSCOPE_ENABLE_PREVIEW_MODULES=false" in readme
-    assert "Set `MATERIALSCOPE_ENABLE_PREVIEW_MODULES=true` only in builds" in readme
+    assert "python -m dash_app.server" in readme
+    assert "Stable prototype" in readme
+    assert "Experimental" in readme
+    assert "MATERIALSCOPE_ENABLE_PREVIEW_MODULES=false" not in readme
+    assert "DEV_CLOUD_AUTH" not in readme

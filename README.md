@@ -1,354 +1,155 @@
 # MaterialScope
 
-MaterialScope is a desktop analysis platform for thermal and broader materials characterization workflows. It brings DSC, TGA, DTA, FTIR, Raman, and XRD into one product with reproducible processing, managed cloud-backed library search, publication-grade reporting, and project archives.
+MaterialScope is a Python materials-characterization workbench for importing, processing, comparing, and reporting common laboratory analysis data. It demonstrates a full-stack scientific application: data ingestion, modality-specific processing, interactive Plotly views, a FastAPI backend, report generation, and regression-tested workflows.
 
-The product is designed so users stay inside MaterialScope instead of switching between vendor software, spreadsheet cleanup, library viewers, and separate reporting tools.
+The current primary interface is a Dash + Plotly app mounted on FastAPI. A legacy Streamlit interface remains in the repository for comparison and transition work.
 
-The current primary application surface is a Dash + Plotly UI mounted into FastAPI (`python -m dash_app.server`). The Streamlit entrypoint remains available as a legacy/transition path during migration.
+## Why This Project Matters
 
-### Version (current release line)
+Materials labs often move between vendor exports, spreadsheets, plotting tools, and handwritten report notes. MaterialScope explores a more reproducible workflow where raw data, processing choices, validation warnings, figures, and report artifacts stay connected in one project archive.
 
-| Item | Value |
-|------|--------|
-| **MaterialScope application version** | `2.0` (see `utils/license_manager.APP_VERSION`) |
-| **Bundled FastAPI / backend API version** | `0.1.0` (see `backend.BACKEND_API_VERSION`; exposed on `/version` and health endpoints) |
-| **Active development branch** | `web-dash-plotly-migration` (Dash + Plotly migration and backend integration) |
+For portfolio review, this repository is intended to show:
 
-Use these when reporting bugs, support tickets, or export diagnostics. The API version tracks the HTTP surface; the application version tracks the product build users see in licensing and support workflows.
+- scientific data parsing and validation across multiple file formats
+- reproducible analysis pipelines for thermal, spectral, and diffraction-style workflows
+- interactive Dash/Plotly UI design for technical users
+- FastAPI endpoints for analysis, project state, export, and diagnostics
+- automated tests around import behavior, backend contracts, plotting, and reporting
 
----
+## Feature Status
 
-## What MaterialScope Covers
+| Area | Status | Notes |
+| --- | --- | --- |
+| DSC, TGA, DTA | Stable prototype | Thermal import, preprocessing, peak/step analysis, summaries, and export paths. |
+| FTIR, Raman | Prototype | Spectral import, preprocessing, and qualitative comparison workflows. |
+| XRD | Prototype | Qualitative phase-screening workflow; not a substitute for expert confirmation. |
+| Compare workspace | Stable prototype | Cross-run review and project-level comparison. |
+| DOCX/PDF/XLSX/CSV export | Stable prototype | Report and data export paths with validation context. |
+| Kinetics and deconvolution | Experimental | Present for exploration; not presented as production-ready. |
+| Streamlit UI | Legacy | Kept as a transition/reference surface while Dash is the primary app. |
 
-### Stable workflows
+## Tech Stack
 
-- DSC
-- TGA
-- DTA
-- FTIR
-- Raman
-- XRD
-- Compare workspace
-- Report/export center
-- Project save/load with `.scopezip` (legacy `.thermozip` still imports)
+- Python
+- Dash and Plotly
+- FastAPI
+- Pandas, NumPy, SciPy, scikit-learn
+- Streamlit legacy UI
+- Pytest
+- Docker-ready server entrypoint
+- Electron packaging experiments for desktop delivery
 
-### Preview workflows
+## Screenshots And Demo
 
-- Kinetics
-- Peak deconvolution
+Screenshots and a short demo walkthrough should be added before sharing this repository widely.
 
----
+Suggested screenshots:
 
-## Product Direction
-
-- Dash + Plotly frontend mounted on FastAPI as the primary app stack
-- Thin-client desktop application with an Electron wrapper and Python backend
-- Streamlit retained as a legacy/transition surface while modality migration completes
-- Cloud-first library access for FTIR, Raman, and XRD
-- Limited local fallback cache for degraded operation
-- No full provider-scale libraries shipped permanently to the client
-- Reproducible result records with processing, validation, provenance, and report context preserved
-
----
-
-## Dash migration status (latest)
-
-- Dash + Plotly is the **default** surface for stable modalities; migration continues modality-by-modality to keep verification explicit.
-- **DTA** — Phase 4 polish: quality and raw-metadata cards, expandable processing summary, preset flow, keyboard shortcuts.
-- **DSC** — Full Dash analysis surface aligned with DTA patterns: literature compare, figure capture for reports, export-oriented figure registration with diagnostics (`report_figure_status` / export warnings when figures are missing).
-- Streamlit remains supported for legacy flows until remaining surfaces reach parity.
-
----
-
-## Core Capabilities
-
-### Import and preprocessing
-
-- CSV, TXT, TSV, XLSX, and XLS import
-- Automatic delimiter, decimal, header-row, and column-role inference
-- Ambiguity-aware import confidence and review prompts
-- Manual correction for metadata and column mapping when needed
-- XRD-specific import handling for axis role, unit, and wavelength provenance
-
-### Analysis workflows
-
-- DSC: baseline correction, peak detection, Tg handling, enthalpy, sign-aware interpretation
-- TGA: DTG, step detection, residue and mass-loss interpretation, class-aware reasoning
-- DTA: Dash Phase 4 polish shipped (quality + raw metadata cards, expandable processing summary, keyboard shortcuts, and preset-to-run tab flow)
-- FTIR and Raman: cloud-backed qualitative library search with provider provenance
-- XRD: qualitative phase screening with cloud-backed candidate ranking, scientific naming, reference dossiers, and caution-safe no-match handling
-
-### Reporting and traceability
-
-- DOCX, PDF, XLSX, and CSV outputs
-- Compact report-style main body with appendix-level technical evidence
-- Scientific reasoning sections by modality
-- Publication-grade figures for UI and export; server-side snapshot figures aligned with processed thermal axes
-- Report-primary figure keys, optional **Figure export notes** when PNGs are missing, and per-result capture status for troubleshooting
-- Preserved validation warnings, processing context, and provenance metadata
-
-### Project workflow
-
-- Compare workspace for cross-run review
-- Batch-oriented stable analysis flows
-- Session persistence plus `.scopezip` project archives (legacy `.thermozip` import supported)
-
----
-
-## Managed Library Model
-
-MaterialScope uses a managed cloud-library architecture:
-
-- full library search comes from MaterialScope cloud endpoints
-- local sync is reserved for small fallback packages only
-- `full_provider` local sync is blocked by default
-- fallback mode is explicitly reduced-capability and not equivalent to cloud full access
-
-### Current provider direction
-
-- FTIR: OpenSpecy
-- Raman: OpenSpecy + ROD
-- XRD: COD + Materials Project
-
-This keeps the desktop footprint small while still allowing broader qualitative search coverage and provider-backed provenance.
-
----
-
-## XRD Notes
-
-XRD is handled as qualitative phase screening, not definitive phase confirmation.
-
-- cloud-backed ranked candidates
-- scientific display naming and formula rendering
-- reference-dossier appendix support in reports
-- explicit caution-safe `no_match` and low-confidence behavior
-- wavelength and provenance gaps surfaced in summaries and reports
-
-`cloud_full_access` means the cloud path is active. It does not suppress coverage-quality warnings when hosted XRD coverage is still limited.
-
----
-
-## Runtime Modes
-
-- `cloud_full_access`: primary managed-library mode
-- `limited_cached_fallback`: reduced fallback-only mode
-- `not_configured`: no usable cloud or fallback path
-
----
+- import and column-mapping workflow
+- thermal analysis result page
+- spectral or XRD qualitative comparison page
+- compare workspace
+- export/report generation screen
 
 ## Installation
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.10 or newer
 - `pip`
 
 ### Setup
 
 ```bash
-git clone https://github.com/utkuvibing/MaterialScope-web-dash-plotly-migration.git
-cd MaterialScope-web-dash-plotly-migration
+git clone https://github.com/utkuvibing/MaterialScope.git
+cd MaterialScope
 
 python -m venv venv
-source venv/bin/activate    # Linux/macOS
-venv\Scripts\activate       # Windows
+```
 
+Activate the virtual environment:
+
+```bash
+# Linux/macOS
+source venv/bin/activate
+
+# Windows PowerShell
+.\venv\Scripts\Activate.ps1
+```
+
+Install dependencies:
+
+```bash
 pip install -r requirements.txt
 ```
 
----
+## Running The App
 
-## Running
-
-### Dash + FastAPI (Primary)
+Start the primary Dash + FastAPI app:
 
 ```bash
 python -m dash_app.server
 ```
 
-Default URL: `http://127.0.0.1:8050`
+Default local URL:
 
-Optional run flags:
-
-```bash
-python -m dash_app.server --host 0.0.0.0 --port 8050 --token <api-token>
+```text
+http://127.0.0.1:8050
 ```
 
-This starts a combined FastAPI app with Dash mounted at `/` and backend routes served from the same process.
-
-On startup, `dash_app.server` applies a small **library env bootstrap** (unless
-`MATERIALSCOPE_LIBRARY_DISABLE_COMBINED_BOOTSTRAP=1`):
-
-- If `MATERIALSCOPE_LIBRARY_CLOUD_URL` is unset, it defaults to `http://<listen-host>:<listen-port>` (loopback
-  adjusted when you bind `0.0.0.0`), so the managed-library HTTP client targets this same process.
-- If the URL is the common Docker-style `http://127.0.0.1:8000` but the server listens on another port (the
-  default `8050`), the URL is rewritten to match the listen port.
-- Windows-style `MATERIALSCOPE_LIBRARY_HOSTED_ROOT` / `MATERIALSCOPE_LIBRARY_MIRROR_ROOT` values are dropped on
-  Linux/WSL so a copied `.env` does not silently point at non-existent paths.
-
-### Backend API (standalone)
+Start the backend API only:
 
 ```bash
 python -m backend.main
 ```
 
-Default URL: `http://localhost:8000`
-
-### Streamlit UI (Legacy / Transition)
+Run the legacy Streamlit UI:
 
 ```bash
 streamlit run app.py
 ```
 
-Default URL: `http://localhost:8501`
+## Sample Data
 
-For local development, start the backend before using Streamlit workflows that require `cloud_full_access`.
+The repository includes small sample and test datasets for local development and automated tests. Some datasets are derived from public academic repositories and are documented in [sample_data/ACADEMIC_SOURCES.md](sample_data/ACADEMIC_SOURCES.md).
 
-### Docker / Coolify deployment
-
-This repo includes a production `Dockerfile` for Coolify-style deployments.
-
-The container starts the combined Dash + FastAPI runtime as a single process:
-
-```bash
-python -m dash_app.server --host 0.0.0.0 --port "${PORT:-8050}"
-```
-
-For web deployment:
-
-- deploy with `Dockerfile`
-- expose port `8050`, or set `PORT` and expose that same container port
-- set runtime secrets in Coolify instead of committing `.env`
-- optionally mount a persistent volume at `/data/materialscope` for runtime state; the image sets
-  `MATERIALSCOPE_HOME=/data/materialscope`
-
-Recommended runtime environment variables:
-
-```dotenv
-MATERIALSCOPE_LIBRARY_CLOUD_ENABLED=true
-MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC=false
-MATERIALSCOPE_ENABLE_PREVIEW_MODULES=false
-MATERIALSCOPE_OPENALEX_EMAIL=
-MATERIALSCOPE_OPENALEX_API_KEY=
-# Optional: when live OpenAlex is not configured, also search bundled demo fixtures (dev/demo only).
-# MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK=1
-```
-
-Live literature compare (DSC, DTA, TGA, FTIR, XRD) uses the OpenAlex-backed provider by default. Set at least `MATERIALSCOPE_OPENALEX_EMAIL` (OpenAlex polite-pool `mailto`) or `MATERIALSCOPE_OPENALEX_API_KEY` so the backend can run real metadata queries. Without that, the API reports `provider_query_status=not_configured` unless `MATERIALSCOPE_LITERATURE_FIXTURE_FALLBACK=1` is enabled to merge the local fixture catalog.
-
-Set `MATERIALSCOPE_ENABLE_PREVIEW_MODULES=true` only in builds where kinetics and deconvolution should be exposed.
-
----
-
-## Local Cloud-Library Development
-
-Use the same repo-root `.env` for Dash (`dash_app/server.py`), Streamlit (`app.py`), and backend (`backend/app.py`).
-**Start from [`.env.example`](.env.example)** — it lists the combined-Dash (8050) case first, then split-backend (8000), then legacy names.
-
-**Combined Dash + FastAPI (typical Linux / WSL dev):** the managed-library client must target the same HTTP
-origin as `/v1/library/*`. With `python -m dash_app.server` you usually want port **8050** (or omit
-`MATERIALSCOPE_LIBRARY_CLOUD_URL` and let the startup bootstrap set it).
-
-```dotenv
-MATERIALSCOPE_LIBRARY_CLOUD_URL=http://127.0.0.1:8050
-MATERIALSCOPE_LIBRARY_CLOUD_ENABLED=true
-MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH=true
-MATERIALSCOPE_LIBRARY_MIRROR_ROOT=/home/you/materialscope/build/reference_library_mirror_live
-MATERIALSCOPE_LIBRARY_HOSTED_ROOT=/home/you/materialscope/build/reference_library_hosted
-MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC=false
-```
-
-**Split-process legacy development (backend on 8000, UI elsewhere):** keep the cloud URL on **8000**.
-
-```dotenv
-MATERIALSCOPE_LIBRARY_CLOUD_URL=http://127.0.0.1:8000
-MATERIALSCOPE_LIBRARY_CLOUD_ENABLED=true
-MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH=true
-MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC=false
-# Optional mirror/hosted: omit on Linux/WSL (repo defaults), or use POSIX paths.
-# MATERIALSCOPE_LIBRARY_MIRROR_ROOT=C:\materialscope\build\reference_library_mirror_live
-# MATERIALSCOPE_LIBRARY_HOSTED_ROOT=C:\materialscope\build\reference_library_hosted
-```
-
-Notes:
-
-- `MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC=false` preserves the limited-fallback policy.
-- `MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH=true` is a dev-only shortcut for local cloud testing.
-- On Linux/WSL, do **not** paste Windows `C:\...` paths for hosted/mirror roots; leave those variables unset to
-  use repo defaults under `build/`, or use POSIX paths. Malformed values are ignored with a warning.
-- hosted XRD coverage warnings remain visible even when the cloud path is healthy.
-
-### Publish hosted library data locally
-
-```bash
-python tools/publish_hosted_library.py --output-root build/reference_library_hosted
-```
-
-### Local cloud smoke test
-
-```bash
-python tools/library_cloud_smoke.py --base-url http://127.0.0.1:8050
-```
-
-For a standalone API on port 8000, use `http://127.0.0.1:8000` instead.
-
-### Spectral library diagnostics (FTIR / Raman / XRD)
-
-```bash
-python tools/ftir_library_diagnostics.py
-python tools/ftir_library_diagnostics.py --json
-```
-
-Expected local/dev result:
-
-- `Library Mode = Cloud Full Access`
-- `Cloud Access = Enabled`
-
----
-
-## Recommended Usage Flow
-
-1. Import one or more datasets from Home / Import.
-2. Review inferred modality, metadata, and validation prompts.
-3. Run the relevant workflow: DSC, TGA, DTA, FTIR, Raman, or XRD.
-4. Use Compare Workspace for cross-run review when needed.
-5. Export results or generate a report.
-6. Save the session as a `.scopezip` project archive.
-
----
+Before publishing or redistributing this repository, review the contents of `sample_data/`, `test_data/`, and any generated reference-library packages to confirm that every included file is permitted for public redistribution under its source license.
 
 ## Repository Layout
 
 ```text
 MaterialScope/
-├── app.py                    # Streamlit legacy entrypoint
-├── dash_app/                 # primary Dash + Plotly frontend and combined server
-├── core/                    # analysis engine, scientific/report logic, library handling
-├── ui/                      # Streamlit pages/components kept during migration
-├── backend/                 # FastAPI backend and managed cloud-library routes
-├── desktop/                 # desktop wrapper and bundling assets
-├── tools/                   # ingest, publish, smoke, packaging helpers
-├── tests/                   # pytest suite
-├── sample_data/             # sample datasets and library fixtures
-├── packaging/windows/       # local Windows release prep scripts/docs
+├── app.py                 # legacy Streamlit entrypoint
+├── dash_app/              # primary Dash + Plotly app and combined server
+├── backend/               # FastAPI backend and API models
+├── core/                  # analysis, validation, plotting, and reporting logic
+├── ui/                    # legacy Streamlit pages/components
+├── tools/                 # local ingest, diagnostics, and utility scripts
+├── tests/                 # pytest suite
+├── sample_data/           # documented sample datasets and fixtures
+├── test_data/             # test fixtures
+├── desktop/               # desktop packaging experiments
+├── packaging/windows/     # Windows packaging scripts and notes
 └── requirements.txt
 ```
 
-Local Windows release notes:
+## Development Notes
 
-- [Local Windows Release Prep](packaging/windows/RELEASE_PREP_LOCAL.md)
+Run tests with:
 
----
+```bash
+pytest
+```
 
-## Forward-looking work (Dash-first)
+Optional environment variables should be placed in a local `.env` file copied from `.env.example`. Do not commit real API keys, tokens, private paths, generated libraries, build outputs, or local packaging artifacts.
 
-- Dash analysis-page parity is complete across DSC, DTA, FTIR, Raman, TGA, and XRD; remaining work is deployment/runtime cleanup where Dash is not yet primary.
-- Reuse the shared Dash result-surface patterns (quality cards, raw metadata, processing summaries, literature compare, figure capture) across modalities.
-- Converge desktop and container runtimes toward Dash-first defaults while keeping Streamlit available as a legacy path.
-- Expand managed cloud-library provider coverage and provenance quality.
+## Limitations
 
----
+- Qualitative spectral and XRD matches are screening aids, not definitive identification.
+- Experimental modules may change without backward compatibility.
+- Bundled sample data is for testing and demonstration, not scientific benchmarking.
+- This repository may contain packaging and migration work that is useful for engineering review but not intended as polished end-user documentation.
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+No license file is currently included in this checkout. If this project is meant to be open source, add an explicit license before publication. If it is intended as a commercial or proprietary product, use an all-rights-reserved notice or publish a separate sanitized demo repository instead.
