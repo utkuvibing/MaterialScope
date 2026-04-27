@@ -102,8 +102,7 @@ function Assert-PackagedRuntime {
 
     $required = @(
         "MaterialScopeLauncher.exe",
-        "_internal\\app.py",
-        "_internal\\.streamlit\\config.toml"
+        "_internal\\app.py"
     )
 
     foreach ($relativePath in $required) {

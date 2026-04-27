@@ -5,10 +5,10 @@ Local ingest tooling writes provider-normalized packages under `build/reference_
 ## Install
 
 ```bash
-python -m pip install -r requirements-ingest.txt
+python -m pip install -r requirements.txt
 ```
 
-`pymatgen` is only needed for COD and Materials Project XRD generation. `mp-api` is only needed when you fetch Materials Project records live. `pyreadr` is only needed when you ingest the raw OpenSpecy RDS bundle.
+`pymatgen` is only needed for COD and Materials Project XRD generation. `mp-api` is only needed when you fetch Materials Project records live. `pyreadr` and `rdata` are only needed when you ingest raw OpenSpecy bundle formats.
 
 ## Provider CLIs
 

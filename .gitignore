@@ -8,11 +8,9 @@ build/
 *.egg
 .env
 .env.*
-!.env.example
 .venv/
 venv/
 env/
-.streamlit/secrets.toml
 *.pem
 *.p12
 *.pfx

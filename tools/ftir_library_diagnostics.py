@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Developer diagnostics: spectral reference library path (FTIR / Raman / XRD).
 
-Prints and appends NDJSON to ``.cursor/debug-d4f4ca.log`` (session d4f4ca) for debug workflows.
+Prints diagnostics and can append NDJSON to a local debug log for development workflows.
 
 Usage:
   python tools/ftir_library_diagnostics.py
@@ -47,7 +47,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-DEBUG_LOG = PROJECT_ROOT / ".cursor" / "debug-d4f4ca.log"
+DEBUG_LOG = PROJECT_ROOT / "support_logs" / "library-diagnostics.jsonl"
 SESSION_ID = "d4f4ca"
 
 

@@ -85,7 +85,7 @@ Professor/end user path is then:
 
 ## Optional: Actions path (secondary only)
 
-The repo still includes `.github/workflows/windows-beta-installer.yml` as an optional automation path. It is not required for the primary release model above.
+The primary release model is local Windows packaging. Add repository automation separately if you need hosted installer builds.
 
 ## End-user behavior
 

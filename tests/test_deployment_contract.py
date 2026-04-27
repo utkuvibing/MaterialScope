@@ -37,14 +37,15 @@ def test_container_entrypoint_runs_combined_dash_server_only():
     assert "&" not in start_script
 
 
-def test_env_example_documents_runtime_surface_flags():
-    env_example = _repo_text(".env.example")
+def test_requirements_include_runtime_and_ingest_dependencies():
+    requirements = _repo_text("requirements.txt")
 
-    assert "MATERIALSCOPE_LIBRARY_CLOUD_URL=" in env_example
-    assert "MATERIALSCOPE_LIBRARY_CLOUD_ENABLED=false" in env_example
-    assert "DEV_CLOUD_AUTH" not in env_example
-    assert "THERMOANALYZER" not in env_example
-    assert "MATERIALSCOPE_ENABLE_PREVIEW_MODULES=false" in env_example
+    assert "dash>=2.18.0" in requirements
+    assert "fastapi>=0.115.0" in requirements
+    assert "pymatgen>=2025.1" in requirements
+    assert "mp-api>=0.45" in requirements
+    assert "pyreadr>=0.5" in requirements
+    assert "rdata>=0.11" in requirements
 
 
 def test_readme_documents_preview_and_dash_container_runtime_flags():

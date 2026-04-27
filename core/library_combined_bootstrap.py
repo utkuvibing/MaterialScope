@@ -109,7 +109,7 @@ def apply_combined_dash_server_library_env(*, listen_host: str, listen_port: int
     if url_port is None:
         url_port = 443 if parsed.scheme == "https" else 80
 
-    # Typical docker/.env.example default while this process listens elsewhere.
+    # Typical split-backend default while this process listens elsewhere.
     if (
         _loopback_hostname(str(parsed.hostname or ""))
         and url_port == 8000

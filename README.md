@@ -141,7 +141,7 @@ Run tests with:
 pytest
 ```
 
-Optional environment variables should be placed in a local `.env` file copied from `.env.example`. Do not commit real API keys, tokens, private paths, generated libraries, build outputs, or local packaging artifacts.
+Optional environment variables can be placed in a local `.env` file when needed. Do not commit real API keys, tokens, private paths, generated libraries, build outputs, or local packaging artifacts.
 
 ## Limitations
 

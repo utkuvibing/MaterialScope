@@ -108,7 +108,7 @@ def _require_pymatgen() -> tuple[Any, Any]:
         from pymatgen.core import Structure
     except ImportError as exc:  # pragma: no cover - exercised only when optional deps missing
         raise RuntimeError(
-            "pymatgen is required for COD and Materials Project ingest. Install requirements-ingest.txt."
+            "pymatgen is required for COD and Materials Project ingest. Install requirements.txt."
         ) from exc
     return Structure, XRDCalculator
 
@@ -200,7 +200,7 @@ def fetch_materials_project_records(*, api_key: str, material_ids: Iterable[str]
         from mp_api.client import MPRester
     except ImportError as exc:  # pragma: no cover - exercised only when optional deps missing
         raise RuntimeError(
-            "mp-api is required for live Materials Project ingest. Install requirements-ingest.txt."
+            "mp-api is required for live Materials Project ingest. Install requirements.txt."
         ) from exc
 
     ordered_ids = [str(item).strip() for item in material_ids if str(item).strip()]
@@ -272,7 +272,7 @@ def _load_openspecy_rds(path: str | Path) -> list[dict[str, Any]]:
         import pyreadr
     except ImportError as exc:  # pragma: no cover - exercised only when optional deps missing
         raise RuntimeError(
-            "pyreadr is required for raw OpenSpecy RDS ingest. Install requirements-ingest.txt."
+            "pyreadr is required for raw OpenSpecy RDS ingest. Install requirements.txt."
         ) from exc
 
     result = pyreadr.read_r(str(path))
