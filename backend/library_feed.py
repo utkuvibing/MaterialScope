@@ -13,7 +13,7 @@ from utils.license_manager import APP_VERSION, validate_encoded_license_key
 
 def _mirror_root(path: str | Path | None) -> Path:
     if path is None:
-        return Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
+        return Path(__file__).resolve().parents[1] / "build" / "reference_library_mirror"
     return Path(path).resolve()
 
 

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from backend.app import create_app
 from core.library_cloud_client import reset_library_cloud_client
+from tests.test_backend_api import _write_mirror_root
 
 
 _LIBRARY_RUNTIME_ENV_KEYS = (
@@ -190,8 +191,8 @@ def test_batch_summary_persists_in_project_roundtrip(thermal_dataset):
     assert len(compare_payload["batch_result_ids"]) == 2
 
 
-def test_batch_run_ftir_similarity_path_returns_no_match_as_saved(thermal_dataset, monkeypatch):
-    mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
+def test_batch_run_ftir_similarity_path_returns_no_match_as_saved(thermal_dataset, monkeypatch, tmp_path):
+    mirror_root = _write_mirror_root(tmp_path / "reference_library_mirror")
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
     app = create_app(api_token="batch-token")
     client = TestClient(app)

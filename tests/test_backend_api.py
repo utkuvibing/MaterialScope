@@ -21,6 +21,7 @@ from core.hosted_library import build_hosted_manifest, write_hosted_dataset
 from core.library_cloud_client import ManagedLibraryCloudClient, reset_library_cloud_client
 from core.project_io import PROJECT_EXTENSION, load_project_archive, save_project_archive
 from core.reference_library import get_reference_library_manager
+from tools.build_reference_library_mirror import main as build_mirror_main
 from tools.library_ingest.common import write_normalized_package
 from tools.library_ingest.schema import PackageSpec, normalized_spectral_entry, normalized_xrd_entry
 from utils.license_manager import APP_VERSION, create_signed_license, encode_license_key
@@ -592,6 +593,13 @@ def _write_normalized_root(root: Path) -> None:
     )
 
 
+def _write_mirror_root(root: Path) -> Path:
+    normalized_root = root.parent / "reference_library_ingest"
+    _write_normalized_root(normalized_root)
+    build_mirror_main(["--normalized-root", str(normalized_root), "--output", str(root)])
+    return root
+
+
 def test_health_and_version_endpoints():
     app = create_app(api_token="test-token")
     client = TestClient(app)
@@ -631,7 +639,7 @@ def test_cloud_library_search_requires_bearer_token():
 
 def test_library_status_reports_limited_fallback_when_cloud_url_missing(tmp_path, monkeypatch):
     home_root = tmp_path / "home"
-    mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
+    mirror_root = _write_mirror_root(tmp_path / "reference_library_mirror")
     monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
     monkeypatch.delenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", raising=False)
@@ -652,7 +660,7 @@ def test_library_status_reports_limited_fallback_when_cloud_url_missing(tmp_path
 
 def test_library_status_reports_cloud_full_access_after_successful_cloud_calls(tmp_path, monkeypatch):
     home_root = tmp_path / "home"
-    mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
+    mirror_root = _write_mirror_root(tmp_path / "reference_library_mirror")
     hosted_root = tmp_path / "reference_library_hosted"
     _write_hosted_root(hosted_root)
     monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
@@ -694,7 +702,7 @@ def test_library_status_reports_cloud_full_access_after_successful_cloud_calls(t
 
 def test_library_status_stays_limited_when_hosted_catalog_is_empty(tmp_path, monkeypatch):
     home_root = tmp_path / "home"
-    mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
+    mirror_root = _write_mirror_root(tmp_path / "reference_library_mirror")
     hosted_root = tmp_path / "reference_library_hosted"
     hosted_root.mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
@@ -726,7 +734,7 @@ def test_library_status_stays_limited_when_hosted_catalog_is_empty(tmp_path, mon
 
 def test_local_dev_bootstraps_hosted_catalog_from_live_ingest_sibling(tmp_path, monkeypatch):
     home_root = tmp_path / "home"
-    mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
+    mirror_root = _write_mirror_root(tmp_path / "reference_library_mirror")
     hosted_root = tmp_path / "reference_library_hosted"
     normalized_live_root = tmp_path / "reference_library_ingest_live"
     _write_normalized_root(normalized_live_root)
@@ -776,7 +784,7 @@ def test_local_dev_bootstraps_hosted_catalog_from_live_ingest_sibling(tmp_path, 
 
 def test_local_dev_bootstrap_prefers_expanded_sample_data_xrd_corpus(tmp_path, monkeypatch):
     home_root = tmp_path / "home"
-    mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
+    mirror_root = _write_mirror_root(tmp_path / "reference_library_mirror")
     hosted_root = tmp_path / "reference_library_hosted"
     monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
@@ -822,7 +830,7 @@ def test_local_dev_bootstrap_prefers_expanded_sample_data_xrd_corpus(tmp_path, m
 
 def test_local_dev_bootstrap_upgrades_stale_seed_manifest_to_expanded_runtime(tmp_path, monkeypatch):
     home_root = tmp_path / "home"
-    mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
+    mirror_root = _write_mirror_root(tmp_path / "reference_library_mirror")
     hosted_root = tmp_path / "reference_library_hosted"
     _write_seed_xrd_manifest(hosted_root)
     monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
@@ -873,7 +881,7 @@ def test_local_dev_bootstrap_upgrades_stale_seed_manifest_to_expanded_runtime(tm
 
 def test_runtime_cloud_client_stays_strict_without_dev_override(tmp_path, monkeypatch):
     home_root = tmp_path / "home"
-    mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
+    mirror_root = _write_mirror_root(tmp_path / "reference_library_mirror")
     monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
@@ -929,7 +937,7 @@ def test_runtime_cloud_client_reports_connection_refused_precisely(monkeypatch):
 
 def test_runtime_cloud_client_dev_override_enables_real_cloud_full_access(tmp_path, monkeypatch):
     home_root = tmp_path / "home"
-    mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
+    mirror_root = _write_mirror_root(tmp_path / "reference_library_mirror")
     hosted_root = tmp_path / "reference_library_hosted"
     _write_hosted_root(hosted_root)
     monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
@@ -1015,7 +1023,7 @@ def test_backend_main_starts_and_runtime_client_reaches_cloud_chain(tmp_path, mo
         pytest.skip("Backend subprocess startup smoke is not supported in this Windows local test harness.")
     home_root = tmp_path / "home"
     hosted_root = tmp_path / "reference_library_hosted"
-    mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
+    mirror_root = _write_mirror_root(tmp_path / "reference_library_mirror")
     _write_hosted_root(hosted_root)
     port = _find_free_port()
     base_url = f"http://127.0.0.1:{port}"

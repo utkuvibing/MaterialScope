@@ -583,8 +583,8 @@ def test_publish_hosted_library_builds_hosted_manifest_and_coverage(tmp_path):
     assert raman_entries[0]["canonical_material_key"]
 
 
-def test_publish_hosted_library_uses_expanded_local_dev_xrd_corpus(tmp_path):
-    normalized_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_ingest_cloud_dev"
+def test_publish_hosted_library_uses_generated_xrd_corpus(tmp_path):
+    normalized_root = _build_seed_xrd_normalized_root(tmp_path)
     hosted_root = tmp_path / "reference_library_hosted"
 
     publish_hosted_main(
@@ -597,15 +597,21 @@ def test_publish_hosted_library_uses_expanded_local_dev_xrd_corpus(tmp_path):
     )
 
     coverage = HostedLibraryCatalog(hosted_root).coverage()
-    assert coverage["XRD"]["total_candidate_count"] == 29
-    assert coverage["XRD"]["providers"]["cod"]["candidate_count"] == 27
+    assert coverage["XRD"]["total_candidate_count"] == 6
+    assert coverage["XRD"]["providers"]["cod"]["candidate_count"] == 4
     assert coverage["XRD"]["providers"]["materials_project"]["candidate_count"] == 2
-    assert coverage["XRD"]["coverage_tier"] == "expanded"
-    assert coverage["XRD"]["coverage_warning_code"] == ""
+    assert coverage["XRD"]["coverage_tier"] == "seed_dev"
+    assert coverage["XRD"]["coverage_warning_code"] == "xrd_seed_coverage_only"
 
 
-def test_publish_hosted_library_defaults_to_expanded_local_dev_xrd_corpus(tmp_path):
+def test_publish_hosted_library_defaults_to_generated_build_corpus(tmp_path, monkeypatch):
+    normalized_root = _build_seed_xrd_normalized_root(tmp_path)
     hosted_root = tmp_path / "reference_library_hosted"
+    build_root = tmp_path / "build"
+    default_root = build_root / "reference_library_ingest"
+    default_root.parent.mkdir(parents=True, exist_ok=True)
+    normalized_root.rename(default_root)
+    monkeypatch.chdir(tmp_path)
 
     publish_hosted_main(
         [
@@ -615,18 +621,15 @@ def test_publish_hosted_library_defaults_to_expanded_local_dev_xrd_corpus(tmp_pa
     )
 
     coverage = HostedLibraryCatalog(hosted_root).coverage()
-    assert coverage["XRD"]["total_candidate_count"] == 29
-    assert coverage["XRD"]["providers"]["cod"]["candidate_count"] == 27
+    assert coverage["XRD"]["total_candidate_count"] == 6
+    assert coverage["XRD"]["providers"]["cod"]["candidate_count"] == 4
     assert coverage["XRD"]["providers"]["materials_project"]["candidate_count"] == 2
-    assert coverage["XRD"]["coverage_tier"] == "expanded"
-    assert coverage["XRD"]["coverage_warning_code"] == ""
+    assert coverage["XRD"]["coverage_tier"] == "seed_dev"
+    assert coverage["XRD"]["coverage_warning_code"] == "xrd_seed_coverage_only"
 
 
-def test_ensure_local_dev_upgrades_stale_seed_manifest_to_expanded(tmp_path):
-    """When a seed-sized hosted manifest exists but a richer normalized root is
-    available, ensure_local_dev_hosted_catalog should detect the upgrade
-    opportunity and republish with the expanded corpus."""
-    normalized_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_ingest_cloud_dev"
+def test_ensure_local_dev_keeps_seed_manifest_without_richer_corpus(tmp_path):
+    normalized_root = _build_seed_xrd_normalized_root(tmp_path)
     hosted_root = tmp_path / "reference_library_hosted"
     hosted_root.mkdir(parents=True, exist_ok=True)
 
@@ -660,21 +663,18 @@ def test_ensure_local_dev_upgrades_stale_seed_manifest_to_expanded(tmp_path):
         dev_mode=True,
     )
 
-    assert result["state"] == "upgraded"
-    assert result["previous_coverage_tier"] == "seed_dev"
-    assert result["previous_xrd_count"] == 6
-    assert result["new_coverage_tier"] == "expanded"
-    assert result["new_xrd_count"] == 29
-    assert "stale_" in result.get("upgrade_reason", "")
+    assert result["state"] == "already_present"
+    assert result["coverage_tier"] == "seed_dev"
+    assert result["xrd_entry_count"] == 6
 
     coverage = HostedLibraryCatalog(hosted_root).coverage()
-    assert coverage["XRD"]["total_candidate_count"] == 29
-    assert coverage["XRD"]["coverage_tier"] == "expanded"
+    assert coverage["XRD"]["total_candidate_count"] == 6
+    assert coverage["XRD"]["coverage_tier"] == "seed_dev"
 
 
-def test_hosted_catalog_refresh_reloads_expanded_xrd_corpus_after_republish(tmp_path):
+def test_hosted_catalog_refresh_reloads_generated_xrd_corpus_after_republish(tmp_path):
     seed_root = _build_seed_xrd_normalized_root(tmp_path)
-    expanded_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_ingest_cloud_dev"
+    refreshed_root = _build_seed_xrd_normalized_root(tmp_path / "refreshed")
     hosted_root = tmp_path / "reference_library_hosted"
 
     publish_hosted_main(
@@ -693,7 +693,7 @@ def test_hosted_catalog_refresh_reloads_expanded_xrd_corpus_after_republish(tmp_
     publish_hosted_main(
         [
             "--normalized-root",
-            str(expanded_root),
+            str(refreshed_root),
             "--output-root",
             str(hosted_root),
             "--clean",
@@ -703,7 +703,7 @@ def test_hosted_catalog_refresh_reloads_expanded_xrd_corpus_after_republish(tmp_
     refreshed_manifest = catalog.refresh()
     assert refreshed_manifest["datasets"]
     refreshed_coverage = catalog.coverage()["XRD"]
-    assert refreshed_coverage["total_candidate_count"] == 29
-    assert refreshed_coverage["providers"]["cod"]["candidate_count"] == 27
+    assert refreshed_coverage["total_candidate_count"] == 6
+    assert refreshed_coverage["providers"]["cod"]["candidate_count"] == 4
     assert refreshed_coverage["providers"]["materials_project"]["candidate_count"] == 2
-    assert refreshed_coverage["coverage_tier"] == "expanded"
+    assert refreshed_coverage["coverage_tier"] == "seed_dev"

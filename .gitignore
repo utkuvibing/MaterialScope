@@ -53,4 +53,5 @@ python3
 
 # Generated/reference-library artifacts: keep source fixtures small and reviewed.
 build/reference_library_*/
-sample_data/reference_library_mirror/packages/*.zip
+sample_data/reference_library_mirror/
+sample_data/reference_library_ingest_cloud_dev/

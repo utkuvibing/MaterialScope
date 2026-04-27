@@ -111,9 +111,9 @@ streamlit run app.py
 
 ## Sample Data
 
-The repository includes small sample and test datasets for local development and automated tests. Some datasets are derived from public academic repositories and are documented in [sample_data/ACADEMIC_SOURCES.md](sample_data/ACADEMIC_SOURCES.md).
+The repository includes small sample and test datasets for local development and automated tests.
 
-Before publishing or redistributing this repository, review the contents of `sample_data/`, `test_data/`, and any generated reference-library packages to confirm that every included file is permitted for public redistribution under its source license.
+Before publishing or redistributing this repository, review the contents of `sample_data/` and `test_data/` to confirm that every included file is permitted for public redistribution under its source license.
 
 ## Repository Layout
 
@@ -152,4 +152,7 @@ Optional environment variables can be placed in a local `.env` file when needed.
 
 ## License
 
-No license file is currently included in this checkout. If this project is meant to be open source, add an explicit license before publication. If it is intended as a commercial or proprietary product, use an all-rights-reserved notice or publish a separate sanitized demo repository instead.
+Copyright © 2026 Utku Şahin. All rights reserved.
+
+This repository is shared publicly as a technical portfolio and product prototype.
+No license is granted for copying, redistribution, commercial use, or derivative works unless explicitly permitted by the author.

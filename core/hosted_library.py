@@ -23,7 +23,6 @@ HOSTED_SCHEMA_VERSION = 1
 _FRESH_THRESHOLD = timedelta(days=14)
 _AGING_THRESHOLD = timedelta(days=45)
 _LOCAL_NORMALIZED_ROOT_NAMES = ("reference_library_ingest_live", "reference_library_ingest")
-_SAMPLE_NORMALIZED_ROOT_NAMES = ("reference_library_ingest_cloud_dev",)
 _XRD_SEED_COVERAGE_THRESHOLD = 12
 
 logger = logging.getLogger(__name__)
@@ -712,12 +711,9 @@ def _normalized_root_candidates(*, hosted_root: Path, explicit_root: str | Path 
     candidates: list[Path] = []
     if explicit_root:
         candidates.append(Path(explicit_root).resolve())
-    search_roots = [hosted_root.parent, PROJECT_ROOT / "build", PROJECT_ROOT / "sample_data"]
+    search_roots = [hosted_root.parent, PROJECT_ROOT / "build"]
     for base_root in search_roots:
-        root_names = _LOCAL_NORMALIZED_ROOT_NAMES
-        if base_root == PROJECT_ROOT / "sample_data":
-            root_names = _SAMPLE_NORMALIZED_ROOT_NAMES
-        for name in root_names:
+        for name in _LOCAL_NORMALIZED_ROOT_NAMES:
             candidates.append((base_root / name).resolve())
     deduped: list[Path] = []
     seen: set[str] = set()
@@ -735,17 +731,11 @@ def _candidate_origin_priority(*, candidate: Path, hosted_root: Path, explicit_r
         explicit_path = Path(explicit_root).resolve()
         if candidate == explicit_path:
             return 4
-    sample_root = (PROJECT_ROOT / "sample_data").resolve()
     build_root = (PROJECT_ROOT / "build").resolve()
     hosted_parent = hosted_root.parent.resolve()
     try:
         if hosted_parent != build_root and candidate.is_relative_to(hosted_parent):
             return 3
-    except ValueError:
-        pass
-    try:
-        if candidate.is_relative_to(sample_root):
-            return 2
     except ValueError:
         pass
     return 1

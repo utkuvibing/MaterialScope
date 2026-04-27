@@ -21,6 +21,7 @@ from core.batch_runner import (
 from core.data_io import ThermalDataset, read_thermal_data
 from core.processing_schema import set_tga_unit_mode
 from core.reference_library import build_reference_library_package, get_reference_library_manager
+from tests.test_backend_api import _write_mirror_root
 
 
 def _manifest_etag(payload: dict) -> str:
@@ -827,8 +828,8 @@ def test_execute_xrd_batch_template_blocks_stable_match_when_axis_mapping_requir
     assert any("2theta/angle confirmation" in issue.lower() for issue in outcome["validation"]["issues"])
 
 
-def test_execute_batch_template_uses_installed_global_reference_libraries(monkeypatch):
-    mirror_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_mirror"
+def test_execute_batch_template_uses_installed_global_reference_libraries(monkeypatch, tmp_path):
+    mirror_root = _write_mirror_root(tmp_path / "reference_library_mirror")
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
     manager = get_reference_library_manager()
     manager.sync(force=True, package_ids=["openspecy_ftir_core", "cod_xrd_core"])
