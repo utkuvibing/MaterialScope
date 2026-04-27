@@ -47,7 +47,11 @@ from dash_app.components.figure_artifacts import (
     figure_action_status_alert,
     figure_artifact_button_labels,
     ordered_figure_preview_keys,
+    prepare_result_graph_figure,
     primary_report_figure_label,
+    result_graph_class,
+    result_graph_config,
+    RESULT_GRAPH_STYLE,
 )
 from dash_app.components.literature_compare_ui import (
     build_literature_compare_card,
@@ -2117,9 +2121,10 @@ def _build_figure(project_id, dataset_key, summary, processing, ui_theme):
     )
     return dcc.Graph(
         id="xrd-result-plot-graph",
-        figure=fig,
-        config=build_plotly_config(plot_settings, filename="materialscope_xrd_diffractogram"),
-        className="ta-plot ms-result-graph",
+        figure=prepare_result_graph_figure(fig),
+        config=result_graph_config(build_plotly_config(plot_settings, filename="materialscope_xrd_diffractogram")),
+        className=result_graph_class(),
+        style=RESULT_GRAPH_STYLE,
     )
 
 
@@ -2335,9 +2340,10 @@ def render_xrd_result_figure_area(cache, overlay_idx, ui_theme, locale_data, pro
     )
     return dcc.Graph(
         id="xrd-result-plot-graph",
-        figure=fig,
-        config=build_plotly_config(plot_settings, filename="materialscope_xrd_diffractogram"),
-        className="ta-plot ms-result-graph",
+        figure=prepare_result_graph_figure(fig),
+        config=result_graph_config(build_plotly_config(plot_settings, filename="materialscope_xrd_diffractogram")),
+        className=result_graph_class(),
+        style=RESULT_GRAPH_STYLE,
     )
 
 

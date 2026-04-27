@@ -1891,16 +1891,28 @@ html[data-theme="dark"] .main-content .ms-results-surface .dta-debug-shell {
 .main-content .ms-results-surface .ms-figure-host {
   min-height: 420px;
   width: 100%;
+  display: block;
 }
 
+.main-content .ms-results-surface .ms-figure-host .ms-result-graph,
 .main-content .ms-results-surface .ms-figure-host .dash-graph,
 .main-content .ms-results-surface .ms-figure-host .js-plotly-plot {
+  height: 420px;
   min-height: 420px;
   width: 100%;
+  display: block;
 }
 
-.main-content .ms-results-surface .ms-figure-host .dash-graph {
-  display: block;
+.main-content .ms-results-surface .ms-figure-host .js-plotly-plot,
+.main-content .ms-results-surface .ms-figure-host .plot-container,
+.main-content .ms-results-surface .ms-figure-host .svg-container,
+.main-content .ms-results-surface .ms-figure-host .main-svg {
+  width: 100% !important;
+  min-height: 420px;
+}
+
+.main-content .ms-results-surface .ms-figure-host .svg-container {
+  height: 420px !important;
 }
 
 @media (min-width: 576px) {

@@ -17,10 +17,31 @@ from utils.i18n import translate_ui
 FIGURE_ARTIFACT_PREVIEW_TILES = 6
 FIGURE_ARTIFACT_PREVIEW_MAX_EDGE = 320
 GENERIC_FIGURE_I18N_PREFIX = "dash.analysis.figure"
+RESULT_GRAPH_STYLE = {"height": "420px", "minHeight": "420px", "width": "100%"}
 
 
 def _classes(*values: str | None) -> str:
     return " ".join(str(v).strip() for v in values if str(v or "").strip())
+
+
+def result_graph_class(*values: str | None) -> str:
+    """Return the standard class list for browser-visible analysis graphs."""
+    return _classes("ta-plot", "ms-result-graph", *values)
+
+
+def result_graph_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Ensure Plotly stays responsive without dropping page-specific options."""
+    merged = dict(config or {})
+    merged["responsive"] = True
+    return merged
+
+
+def prepare_result_graph_figure(fig: Any) -> Any:
+    """Mark a Plotly figure as autosized for Dash's responsive Graph renderer."""
+    update_layout = getattr(fig, "update_layout", None)
+    if callable(update_layout):
+        update_layout(autosize=True)
+    return fig
 
 
 def primary_report_figure_label(analysis_type: str, dataset_key: str | None, result_id: str | None) -> str:

@@ -59,6 +59,10 @@ from dash_app.components.figure_artifacts import (
     figure_action_status_alert,
     figure_artifact_button_labels,
     ordered_figure_preview_keys,
+    prepare_result_graph_figure,
+    result_graph_class,
+    result_graph_config,
+    RESULT_GRAPH_STYLE,
 )
 from dash_app.components.literature_compare_ui import (
     LITERATURE_COMPACT_ALTERNATIVE_PREVIEW_LIMIT,
@@ -3246,5 +3250,10 @@ def _build_figure(
     fig = _build_dsc_go_figure(project_id, dataset_key, summary, peak_rows, ui_theme, loc)
     if fig is None:
         return no_data_figure_msg(text=translate_ui(loc, "dash.analysis.dsc.no_plot_signal"), locale_data=_ld)
-    graph = dcc.Graph(figure=fig, config=_dsc_graph_config(), className="ta-plot ms-result-graph")
+    graph = dcc.Graph(
+        figure=prepare_result_graph_figure(fig),
+        config=result_graph_config(_dsc_graph_config()),
+        className=result_graph_class(),
+        style=RESULT_GRAPH_STYLE,
+    )
     return html.Div(graph, className="ms-result-figure-shell")

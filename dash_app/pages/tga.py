@@ -58,6 +58,10 @@ from dash_app.components.figure_artifacts import (
     figure_action_status_alert,
     figure_artifact_button_labels,
     ordered_figure_preview_keys,
+    prepare_result_graph_figure,
+    result_graph_class,
+    result_graph_config,
+    RESULT_GRAPH_STYLE,
 )
 from dash_app.components.literature_compare_ui import (
     LITERATURE_COMPACT_ALTERNATIVE_PREVIEW_LIMIT,
@@ -2383,9 +2387,10 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, step_rows: l
             html.H5(translate_ui(loc, "dash.analysis.tga.figure.section_title"), className="mb-2"),
             html.P(run_caption, className="small text-muted mb-2"),
             dcc.Graph(
-                figure=fig,
-                config={"displaylogo": False, "responsive": True},
-                className="ta-plot ms-result-graph",
+                figure=prepare_result_graph_figure(fig),
+                config=result_graph_config({"displaylogo": False}),
+                className=result_graph_class(),
+                style=RESULT_GRAPH_STYLE,
             ),
         ]
     )

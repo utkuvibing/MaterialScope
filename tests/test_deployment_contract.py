@@ -56,3 +56,16 @@ def test_readme_documents_preview_and_dash_container_runtime_flags():
     assert "Experimental" in readme
     assert "MATERIALSCOPE_ENABLE_PREVIEW_MODULES=false" not in readme
     assert "DEV_CLOUD_AUTH" not in readme
+
+
+def test_dash_assets_keep_result_plotly_resize_contract():
+    css = _repo_text("dash_app/assets/style.css")
+    resize_js = _repo_text("dash_app/assets/result_figure_resize.js")
+
+    assert ".ms-figure-host" in css
+    assert "height: 420px" in css
+    assert ".ms-figure-host .plot-container" in css
+    assert ".ms-figure-host .svg-container" in css
+    assert ".ms-figure-host .main-svg" in css
+    assert "Plotly.Plots.resize" in resize_js
+    assert ".ms-figure-host .js-plotly-plot" in resize_js

@@ -72,6 +72,10 @@ from dash_app.components.figure_artifacts import (
     figure_action_status_alert,
     figure_artifact_button_labels,
     ordered_figure_preview_keys,
+    prepare_result_graph_figure,
+    result_graph_class,
+    result_graph_config,
+    RESULT_GRAPH_STYLE,
 )
 from dash_app.components.raman_explore import (
     MAX_RAMAN_UNDO_DEPTH,
@@ -2724,9 +2728,10 @@ def _build_figure(
             html.P(run_caption, className="small text-muted mb-2"),
             dcc.Graph(
                 id="raman-result-plot-graph",
-                figure=fig,
-                config=build_spectral_plotly_config(settings, filename="materialscope_raman_spectrum"),
-                className="ta-plot ms-result-graph",
+                figure=prepare_result_graph_figure(fig),
+                config=result_graph_config(build_spectral_plotly_config(settings, filename="materialscope_raman_spectrum")),
+                className=result_graph_class(),
+                style=RESULT_GRAPH_STYLE,
             ),
             *diag_children,
         ]
