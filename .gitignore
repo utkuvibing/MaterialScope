@@ -38,10 +38,7 @@ htmlcov/
 Thumbs.db
 release/
 support_logs/
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
-frontend/*.tsbuildinfo
+frontend/
 packaging/windows/build/
 packaging/windows/dist/
 packaging/windows/*.exe
@@ -49,6 +46,9 @@ packaging/windows/*.msi
 packaging/windows/*.zip
 packaging/windows/*.log
 desktop/electron/node_modules/
+desktop/backend_bundle/dist/
+desktop/backend_bundle/build/
+*.tsbuildinfo
 python3
 
 # Generated/reference-library artifacts: keep source fixtures small and reviewed.

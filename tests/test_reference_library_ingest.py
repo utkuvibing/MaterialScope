@@ -32,6 +32,42 @@ def _read_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def _build_seed_xrd_normalized_root(tmp_path: Path) -> Path:
+    pytest.importorskip("pymatgen")
+    normalized_root = tmp_path / "reference_library_ingest_seed"
+    job_state_root = tmp_path / "reference_library_jobs_seed"
+
+    ingest_cod_main(
+        [
+            "--manifest",
+            str(FIXTURE_ROOT / "cod_records.json"),
+            "--output-root",
+            str(normalized_root),
+            "--generated-at",
+            GENERATED_AT,
+            "--provider-dataset-version",
+            DATASET_VERSION,
+            "--job-state-root",
+            str(job_state_root),
+        ]
+    )
+    ingest_materials_project_main(
+        [
+            "--input-json",
+            str(FIXTURE_ROOT / "materials_project_records.json"),
+            "--output-root",
+            str(normalized_root),
+            "--generated-at",
+            GENERATED_AT,
+            "--provider-dataset-version",
+            DATASET_VERSION,
+            "--job-state-root",
+            str(job_state_root),
+        ]
+    )
+    return normalized_root
+
+
 @pytest.mark.usefixtures("tmp_path")
 def test_cod_ingest_normalizes_cif_records(tmp_path):
     pytest.importorskip("pymatgen")
@@ -637,7 +673,7 @@ def test_ensure_local_dev_upgrades_stale_seed_manifest_to_expanded(tmp_path):
 
 
 def test_hosted_catalog_refresh_reloads_expanded_xrd_corpus_after_republish(tmp_path):
-    seed_root = Path(__file__).resolve().parents[1] / "build" / "reference_library_ingest_live"
+    seed_root = _build_seed_xrd_normalized_root(tmp_path)
     expanded_root = Path(__file__).resolve().parents[1] / "sample_data" / "reference_library_ingest_cloud_dev"
     hosted_root = tmp_path / "reference_library_hosted"
 

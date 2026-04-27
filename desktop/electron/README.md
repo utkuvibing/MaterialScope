@@ -1,118 +1,31 @@
-# Electron Desktop Skeleton (Tranche 8)
+# MaterialScope Electron Shell
 
-This directory contains the brownfield desktop workflow shell for migration tranches.
+This folder is a desktop packaging experiment for MaterialScope. It shows how the Python FastAPI backend can be launched from Electron and presented as a local desktop application shell.
 
-What it does:
-- launches local backend in two modes:
-  - development mode: Python source backend (`backend/main.py`)
-  - packaged mode: bundled backend executable (`resources/backend/materialscope_backend.exe`)
-- waits for `/health`
-- opens an Electron window
-- shows backend status + version
-- supports a minimal workflow:
-  - create/load workspace (`.scopezip`, legacy `.thermozip` import supported)
-  - list datasets and results
-  - inspect dataset details (metadata, units, validation, data preview)
-  - inspect result details (summary, processing, validation, provenance, review)
-  - view/update basic compare workspace selection state
-  - inspect richer workspace context (active dataset, latest result, compare state, recent history)
-  - set active dataset explicitly for workspace state
-  - manage compare selected datasets with add/remove/clear actions
-- run a minimal synchronous DSC/TGA batch on compare-selected datasets with per-dataset outcomes
-  - inspect export/report preparation (exportable saved results + metadata)
-  - generate/download normalized results CSV for selected saved results
-  - generate/download DOCX report for selected saved results
-  - import a dataset file
-  - run one DSC/TGA analysis on a selected dataset
-- save workspace to `.scopezip`
-- writes startup diagnostics logs and shows a clear failure dialog path when backend launch fails
-- provides a desktop product shell with grouped navigation:
-  - `Primary`: Home/Import, Compare, DSC, TGA, Export, Project
-  - `Preview`: placeholder preview modules (non-interactive in this tranche)
-  - `System`: License, Diagnostics
-- keeps technical payload dumps in `Diagnostics` instead of the main product-facing pages
+## What It Demonstrates
 
-What it does not do:
-- does not migrate full Streamlit page parity
-- does not change scientific algorithms
-- does not replace current Streamlit packaging flow yet
+- Electron main/preload/renderer process separation
+- local backend startup and health probing
+- randomized local backend port and token handling
+- startup diagnostics for backend launch failures
+- project archive open/save dialogs
+- basic desktop workflow shell around the Python backend
 
-## Run (development)
+## Development
 
-From repo root:
+From this directory:
 
 ```powershell
-cd desktop\electron
 npm install
 npm start
 ```
 
-Optional environment variable:
-- `TA_PYTHON` to override Python executable used for backend launch.
-- `TA_BACKEND_EXE` to override packaged-backend executable path for diagnostics.
-
-## Startup Diagnostics
-
-On startup failure, the app shows a dialog with a diagnostics log path. Logs are written to:
-
-- `%APPDATA%\\MaterialScope Desktop\\logs\\startup-*.log` (packaged Windows app)
-- `desktop/electron` runtime user-data path when running from `npm start`
-
-Each log includes:
-- app version and mode (development or packaged)
-- backend launch mode/path/candidates
-- backend stdout/stderr lines
-- final startup failure reason/stack
-
-Professor demo validation docs:
-- `CLEAN_MACHINE_SMOKE_CHECKLIST.md`
-- `RELEASE_HANDOFF_CHECKLIST.md`
-
-## Packaging (Windows demo build)
-
-1. Install Node dependencies:
-
-```powershell
-cd desktop\electron
-npm install
-```
-
-2. Build bundled backend executable:
-
-```powershell
-npm run build:backend
-```
-
-3. Build NSIS Windows installer:
-
-```powershell
-npm run build:win:nsis
-```
-
-Expected outputs:
-- bundled backend: `desktop/backend_bundle/dist/materialscope_backend/materialscope_backend.exe`
-- installer: `release/electron/MaterialScope-Setup-0.1.0-x64.exe`
-
-Optional unpacked build output:
-
-```powershell
-npm run build:win:dir
-```
-
-Output:
-- `release/electron/win-unpacked/`
-- NSIS unpacked helper files in `release/electron/` (`.yml`, blockmap, etc.)
-
-## Startup Path Smoke Test
-
-Run startup path resolver smoke checks:
+Useful scripts:
 
 ```powershell
 npm run test:startup-paths
-```
-
-Run diagnostics log smoke checks:
-
-```powershell
 npm run test:startup-diagnostics
+npm run build:backend
 ```
+
+Generated installers, backend bundles, logs, and `node_modules/` are intentionally excluded from the public repository.
