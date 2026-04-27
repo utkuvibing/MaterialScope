@@ -1888,6 +1888,21 @@ html[data-theme="dark"] .main-content .ms-results-surface .dta-debug-shell {
   padding: 0.55rem 0.62rem 0.45rem;
 }
 
+.main-content .ms-results-surface .ms-figure-host {
+  min-height: 420px;
+  width: 100%;
+}
+
+.main-content .ms-results-surface .ms-figure-host .dash-graph,
+.main-content .ms-results-surface .ms-figure-host .js-plotly-plot {
+  min-height: 420px;
+  width: 100%;
+}
+
+.main-content .ms-results-surface .ms-figure-host .dash-graph {
+  display: block;
+}
+
 @media (min-width: 576px) {
   .main-content .ms-results-surface .ms-figure-surface .ms-result-figure-shell > .card-body.ms-figure-shell-body {
     padding: 0.62rem 0.85rem 0.5rem;

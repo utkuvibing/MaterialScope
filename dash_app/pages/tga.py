@@ -2385,7 +2385,7 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, step_rows: l
             dcc.Graph(
                 figure=fig,
                 config={"displaylogo": False, "responsive": True},
-                className="ta-plot",
+                className="ta-plot ms-result-graph",
             ),
         ]
     )

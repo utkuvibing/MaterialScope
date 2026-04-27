@@ -2721,7 +2721,7 @@ def _build_figure(
                 id="ftir-result-plot-graph",
                 figure=fig,
                 config=build_spectral_plotly_config(settings, filename="materialscope_ftir_spectrum"),
-                className="ta-plot",
+                className="ta-plot ms-result-graph",
             ),
             *diag_children,
         ]

@@ -2119,7 +2119,7 @@ def _build_figure(project_id, dataset_key, summary, processing, ui_theme):
         id="xrd-result-plot-graph",
         figure=fig,
         config=build_plotly_config(plot_settings, filename="materialscope_xrd_diffractogram"),
-        className="ta-plot",
+        className="ta-plot ms-result-graph",
     )
 
 
@@ -2337,7 +2337,7 @@ def render_xrd_result_figure_area(cache, overlay_idx, ui_theme, locale_data, pro
         id="xrd-result-plot-graph",
         figure=fig,
         config=build_plotly_config(plot_settings, filename="materialscope_xrd_diffractogram"),
-        className="ta-plot",
+        className="ta-plot ms-result-graph",
     )
 
 

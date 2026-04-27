@@ -2726,7 +2726,7 @@ def _build_figure(
                 id="raman-result-plot-graph",
                 figure=fig,
                 config=build_spectral_plotly_config(settings, filename="materialscope_raman_spectrum"),
-                className="ta-plot",
+                className="ta-plot ms-result-graph",
             ),
             *diag_children,
         ]
