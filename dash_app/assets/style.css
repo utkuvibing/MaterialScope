@@ -9,6 +9,9 @@ html:not([data-theme]) {
     --ta-bg: #FFFFFF;
     --ta-ink: #1C1A1A;
     --ta-muted: #66645E;
+    --ta-secondary-text: #66645E;
+    --ta-table-text: #1C1A1A;
+    --ta-table-header-text: #1C1A1A;
     --ta-border: #E0DDD6;
     --ta-panel: #FFFFFF;
     --ta-panel-strong: #F7F6F3;
@@ -40,7 +43,10 @@ html:not([data-theme]) {
 html[data-theme="dark"] {
     --ta-bg: #121110;
     --ta-ink: #EEEDEA;
-    --ta-muted: #9E9A93;
+    --ta-muted: #C6C0B6;
+    --ta-secondary-text: #C6C0B6;
+    --ta-table-text: #EEEDEA;
+    --ta-table-header-text: #F4E8CF;
     --ta-border: #3D3B38;
     --ta-panel: #1A1917;
     --ta-panel-strong: #22211E;
@@ -51,7 +57,7 @@ html[data-theme="dark"] {
     --ta-hero-badge-fg: #CBB896;
     --ta-sidebar-bg: #1C1A1A;
     --ta-sidebar-text: #F2F0EB;
-    --ta-sidebar-muted: #9E9A93;
+    --ta-sidebar-muted: #C6C0B6;
     --ta-sidebar-border: rgba(255, 255, 255, 0.07);
     --ta-sidebar-hover: rgba(255, 255, 255, 0.05);
     --ta-sidebar-active-bg: rgba(203, 184, 150, 0.14);
@@ -148,7 +154,7 @@ html, body {
     padding: 0.25rem 0;
     border-bottom: 1px solid var(--ta-sidebar-border);
     font-size: 0.72rem;
-    color: var(--ta-sidebar-muted);
+    color: var(--ta-sidebar-text);
     line-height: 1.3;
 }
 
@@ -158,7 +164,8 @@ html, body {
 
 .sidebar-history-ts {
     font-size: 0.62rem;
-    opacity: 0.7;
+    color: var(--ta-sidebar-muted);
+    opacity: 1;
 }
 
 .sidebar-section-label {
@@ -284,6 +291,17 @@ html, body {
     border-radius: 4px;
     box-shadow: var(--ta-card-shadow);
     background: var(--ta-panel);
+    color: var(--ta-ink);
+}
+
+.card-body,
+.main-content,
+.main-content .list-group-item,
+.main-content .form-text,
+.main-content .form-label,
+.main-content .col-form-label,
+.main-content .form-check-label {
+    color: var(--ta-ink);
 }
 
 .ta-prerun-snapshot {
@@ -633,17 +651,44 @@ html, body {
 }
 
 .text-muted {
-    color: var(--ta-muted) !important;
+    color: var(--ta-secondary-text, var(--ta-muted)) !important;
 }
 
 /* Tables */
 .table {
-    color: var(--ta-ink);
+    color: var(--ta-table-text, var(--ta-ink));
     --bs-table-bg: transparent;
+    --bs-table-color: var(--ta-table-text, var(--ta-ink));
+    --bs-table-striped-color: var(--ta-table-text, var(--ta-ink));
+    --bs-table-hover-color: var(--ta-table-text, var(--ta-ink));
+}
+
+.table > :not(caption) > * > * {
+    color: var(--ta-table-text, var(--ta-ink));
+    background-color: var(--bs-table-bg);
+    border-color: var(--ta-border);
+}
+
+.table thead th,
+.table tbody th {
+    color: var(--ta-table-header-text, var(--ta-ink));
+    font-weight: 700;
 }
 
 html[data-theme="dark"] .table-striped > tbody > tr:nth-of-type(odd) > * {
     --bs-table-accent-bg: rgba(255, 255, 255, 0.03);
+    color: var(--ta-table-text);
+}
+
+html[data-theme="dark"] .main-content :is(.table, .table-sm, .table-bordered) td,
+html[data-theme="dark"] .main-content :is(.table, .table-sm, .table-bordered) th {
+    color: var(--ta-table-text) !important;
+    border-color: var(--ta-border) !important;
+}
+
+html[data-theme="dark"] .main-content :is(.table, .table-sm, .table-bordered) thead th {
+    color: var(--ta-table-header-text) !important;
+    background-color: var(--ta-panel-strong) !important;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -664,7 +709,8 @@ html:not([data-theme]) {
 html[data-theme="dark"] {
     --bs-body-color: var(--ta-ink);
     --bs-body-bg: var(--ta-bg);
-    --bs-secondary-color: var(--ta-muted);
+    --bs-secondary-color: var(--ta-secondary-text);
+    --bs-tertiary-color: var(--ta-secondary-text);
     --bs-heading-color: var(--ta-ink);
     --bs-border-color: var(--ta-border);
     --bs-link-color: #CBB896;
@@ -1146,8 +1192,21 @@ html[data-theme="dark"] .ta-datatable thead th,
 html[data-theme="dark"] .ta-datatable .dash-spreadsheet th,
 html[data-theme="dark"] .ta-datatable .dash-spreadsheet-container th {
     background-color: var(--ta-panel-strong) !important;
-    color: var(--ta-ink) !important;
+    color: var(--ta-table-text) !important;
     border-color: var(--ta-border) !important;
+}
+
+html[data-theme="dark"] .ta-datatable .dash-header-cell,
+html[data-theme="dark"] .ta-datatable th.column-header,
+html[data-theme="dark"] .ta-datatable thead th {
+    color: var(--ta-table-header-text) !important;
+}
+
+html[data-theme="dark"] .ta-datatable td,
+html[data-theme="dark"] .ta-datatable td.dash-cell,
+html[data-theme="dark"] .ta-datatable .dash-cell-value,
+html[data-theme="dark"] .dash-spreadsheet-container td {
+    color: var(--ta-table-text) !important;
 }
 
 html[data-theme="dark"] .ta-datatable .dash-spreadsheet-inner tr:hover td.dash-cell {
@@ -1389,9 +1448,9 @@ html[data-theme="dark"] .ta-guidance--warning {
 html[data-theme="dark"] .Select-control,
 html[data-theme="dark"] .is-open > .Select-control,
 html[data-theme="dark"] .is-focused > .Select-control {
-  background: #1A1917 !important;
-  border-color: #3D3B38 !important;
-  color: #EEEDEA !important;
+  background: var(--ta-input-bg) !important;
+  border-color: var(--ta-input-border) !important;
+  color: var(--ta-ink) !important;
   box-shadow: none !important;
 }
 
@@ -1400,31 +1459,31 @@ html[data-theme="dark"] .Select-multi-value-wrapper,
 html[data-theme="dark"] .Select-input,
 html[data-theme="dark"] .Select-input > input,
 html[data-theme="dark"] .Select-input input {
-  background: #1A1917 !important;
-  color: #EEEDEA !important;
+  background: var(--ta-input-bg) !important;
+  color: var(--ta-ink) !important;
 }
 
 html[data-theme="dark"] .Select-placeholder,
 html[data-theme="dark"] .Select-value-label {
-  color: #9E9A93 !important;
+  color: var(--ta-secondary-text) !important;
 }
 
 html[data-theme="dark"] .Select-menu-outer,
 html[data-theme="dark"] .Select-menu {
-  background: #22211E !important;
-  border-color: #3D3B38 !important;
+  background: var(--ta-listbox-bg) !important;
+  border-color: var(--ta-listbox-border) !important;
 }
 
 html[data-theme="dark"] .Select-option,
 html[data-theme="dark"] .VirtualizedSelectOption {
-  background: #22211E !important;
-  color: #EEEDEA !important;
+  background: var(--ta-listbox-bg) !important;
+  color: var(--ta-ink) !important;
 }
 
 html[data-theme="dark"] .Select-option.is-focused,
 html[data-theme="dark"] .VirtualizedSelectFocusedOption {
   background: rgba(203,184,150,0.18) !important;
-  color: #EEEDEA !important;
+  color: var(--ta-ink) !important;
 }
 
 html[data-theme="dark"] .Select-option.is-selected {

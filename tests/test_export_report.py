@@ -705,6 +705,8 @@ def test_pdf_abstract_layout_uses_scientific_xrd_candidate_names():
     )
 
     assert "scientific synthesis" in abstract
+    assert "processed XRD characterization record" in abstract
+    assert "thermal-analysis records" not in abstract
     assert any("MgB₂" in bullet for bullet in bullets)
 
 
@@ -919,7 +921,11 @@ def test_record_full_rows_compacts_xrd_evidence_for_table_safety():
             {
                 "rank": 1,
                 "candidate_id": "xrd_phase_alpha",
+                "candidate_name": "Phase Alpha",
+                "formula": "MgB2",
                 "normalized_score": 0.44,
+                "confidence_band": "candidate",
+                "provider": "cod",
                 "evidence": {
                     "shared_peak_count": 7,
                     "weighted_overlap_score": 0.31,
@@ -938,11 +944,11 @@ def test_record_full_rows_compacts_xrd_evidence_for_table_safety():
 
     assert payload is not None
     headers, rows = payload
-    evidence_index = headers.index("evidence")
-    evidence_cell = rows[0][evidence_index]
-    assert "shared_peak_count" in evidence_cell
-    assert "matched_peak_pairs=120" in evidence_cell
-    assert len(evidence_cell) <= 320
+    assert headers == ["Rank", "Candidate", "Formula", "Score", "Status", "Shared Peaks", "Coverage", "Provider"]
+    assert rows[0][0] == "1"
+    assert rows[0][2:] == ["MgB2", "0.440", "candidate", "7", "0.220", "cod"]
+    assert "evidence" not in headers
+    assert "matched_peak_pairs" not in headers
 
 
 def test_figures_for_record_uses_non_conflicting_generic_when_no_direct_match():

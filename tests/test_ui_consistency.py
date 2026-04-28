@@ -123,3 +123,16 @@ def test_sidebar_navigation_uses_grouped_scientific_structure():
     assert '"nav.primary"' in i18n
     assert '"nav.analyses"' in i18n
     assert '"nav.management"' in i18n
+
+
+def test_dash_dark_theme_uses_readable_table_and_sidebar_tokens():
+    stylesheet = _repo_text("dash_app/assets/style.css")
+
+    assert "--ta-secondary-text: #C6C0B6;" in stylesheet
+    assert "--ta-table-text: #EEEDEA;" in stylesheet
+    assert "--ta-table-header-text: #F4E8CF;" in stylesheet
+    assert "--ta-sidebar-muted: #C6C0B6;" in stylesheet
+    assert "html[data-theme=\"dark\"] .main-content :is(.table, .table-sm, .table-bordered) td" in stylesheet
+    assert "html[data-theme=\"dark\"] .ta-datatable .dash-cell-value" in stylesheet
+    assert ".sidebar-history-item" in stylesheet
+    assert "color: var(--ta-sidebar-text);" in stylesheet

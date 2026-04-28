@@ -953,7 +953,7 @@ def render_ftir_raw_quality_chrome(locale_data):
 @callback(
     Output("ftir-raw-quality-panel", "children"),
     Input("project-id", "data"),
-    Input("ftir-dataset-select", "value"),
+    Input("ftir-dataset-select", "value", allow_optional=True),
     Input("ftir-refresh", "data"),
     Input("ui-locale", "data"),
 )
@@ -1866,7 +1866,7 @@ def toggle_ftir_processing_history_buttons(undo_stack, redo_stack):
     Output("workspace-refresh", "data", allow_duplicate=True),
     Input("ftir-run-btn", "n_clicks"),
     State("project-id", "data"),
-    State("ftir-dataset-select", "value"),
+    State("ftir-dataset-select", "value", allow_optional=True),
     State("ftir-template-select", "value"),
     State("ftir-processing-draft", "data"),
     State("ftir-refresh", "data"),
@@ -1921,7 +1921,7 @@ def run_ftir_analysis(n_clicks, project_id, dataset_key, template_id, processing
     Input("ui-locale", "data"),
     Input("ftir-plot-settings", "data"),
     State("project-id", "data"),
-    State("ftir-result-plot-graph", "relayoutData"),
+    State("ftir-result-plot-graph", "relayoutData", allow_optional=True),
 )
 def display_result(result_id, _refresh, ui_theme, locale_data, plot_settings, project_id, relayout_data=None):
     loc = _loc(locale_data)

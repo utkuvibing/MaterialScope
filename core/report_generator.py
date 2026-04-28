@@ -773,17 +773,56 @@ def _xrd_candidate_mini_table(record: dict, *, max_rows: int = 5) -> tuple[list[
         evidence = dict(row.get("evidence") or {})
         matrix.append(
             [
-                _format_value(row.get("rank")),
+                _format_integerish(row.get("rank")),
                 xrd_candidate_display_name(row, target="unicode") or _format_value(row.get("candidate_name")),
+                _format_value(row.get("formula") or row.get("chemical_formula") or row.get("pretty_formula")),
                 _format_number(row.get("normalized_score"), digits=3),
                 _format_value(row.get("confidence_band") or summary.get("match_status")),
-                _format_value(evidence.get("shared_peak_count")),
+                _format_integerish(evidence.get("shared_peak_count")),
                 _format_number(evidence.get("coverage_ratio"), digits=3),
+                _format_value(row.get("provider") or row.get("library_provider") or row.get("source_provider")),
             ]
         )
     if not matrix:
         return None
-    return ["Rank", "Candidate", "Score", "Status", "Shared Peaks", "Coverage"], matrix
+    return ["Rank", "Candidate", "Formula", "Score", "Status", "Shared Peaks", "Coverage", "Provider"], matrix
+
+
+def _format_integerish(value: Any) -> str:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return _format_value(value)
+    if numeric.is_integer():
+        return str(int(numeric))
+    return _format_number(numeric)
+
+
+def _xrd_candidate_curated_rows(record: dict, *, max_rows: int = 25) -> tuple[list[str], list[list[str]]] | None:
+    if str(record.get("analysis_type") or "").upper() != "XRD":
+        return None
+    rows = record.get("rows") or []
+    if not rows:
+        return None
+
+    matrix: list[list[str]] = []
+    for row in rows[:max_rows]:
+        evidence = dict(row.get("evidence") or {})
+        matrix.append(
+            [
+                _format_integerish(row.get("rank")),
+                xrd_candidate_display_name(row, target="unicode") or _format_value(row.get("candidate_name")),
+                _format_value(row.get("formula") or row.get("chemical_formula") or row.get("pretty_formula")),
+                _format_number(row.get("normalized_score"), digits=3),
+                _format_value(row.get("confidence_band") or row.get("match_status")),
+                _format_integerish(evidence.get("shared_peak_count")),
+                _format_number(evidence.get("coverage_ratio"), digits=3),
+                _format_value(row.get("provider") or row.get("library_provider") or row.get("source_provider")),
+            ]
+        )
+    if not matrix:
+        return None
+    return ["Rank", "Candidate", "Formula", "Score", "Status", "Shared Peaks", "Coverage", "Provider"], matrix
 
 
 def _tga_major_events(record: dict, *, limit: int = 3) -> list[list[str]]:
@@ -814,6 +853,9 @@ def _tga_major_events(record: dict, *, limit: int = 3) -> list[list[str]]:
 
 
 def _record_full_rows(record: dict) -> tuple[list[str], list[list[str]]] | None:
+    if str(record.get("analysis_type") or "").upper() == "XRD":
+        return _xrd_candidate_curated_rows(record)
+
     headers = _record_headers(record)
     if not headers:
         return None
@@ -1336,8 +1378,15 @@ def _build_pdf_abstract_layout(records: list[dict], datasets: dict) -> tuple[str
         family = _analysis_family_label(record.get("analysis_type"))
         family_counts[family] = family_counts.get(family, 0) + 1
     family_phrase = ", ".join(f"{family} (n={count})" for family, count in family_counts.items())
+    family_keys = {str(key).upper() for key in family_counts}
+    if family_keys == {"XRD"}:
+        record_phrase = "processed XRD characterization record" if len(records) == 1 else "processed XRD characterization records"
+    elif family_keys and family_keys.issubset({"DSC", "TGA", "DTA", "KINETICS", "PEAK DECONVOLUTION"}):
+        record_phrase = "processed thermal-analysis records"
+    else:
+        record_phrase = "processed materials characterization records"
     abstract = (
-        "This report presents a scientific synthesis of the processed thermal-analysis records. "
+        f"This report presents a scientific synthesis of the {record_phrase}. "
         f"The analyzed families were {family_phrase}. "
         "Interpretations are evidence-linked and uncertainty-qualified at the analysis level."
     )
@@ -3083,7 +3132,12 @@ def _render_appendix_docx(
             _render_xrd_reference_dossier_docx(doc, dossier, figures=figures)
         if full_rows:
             headers, rows = full_rows
-            _render_docx_matrix_section(doc, "Full Raw Data Table", headers, rows)
+            table_title = (
+                "Curated Candidate Table"
+                if str(record.get("analysis_type") or "").upper() == "XRD"
+                else "Full Raw Data Table"
+            )
+            _render_docx_matrix_section(doc, table_title, headers, rows)
 
 
 def _add_cover_page(doc: Document, branding: dict | None, license_state: dict | None) -> None:
@@ -3982,7 +4036,12 @@ def generate_pdf_report(
                 headers, rows = full_rows
                 raw_layout = _choose_portrait_or_landscape_table_layout(headers, rows, portrait_width=portrait_width)
                 ensure_template('Landscape' if raw_layout == 'landscape' else 'Portrait')
-                add_heading('Full Raw Data Table', level=3)
+                table_title = (
+                    'Curated Candidate Table'
+                    if str(record.get('analysis_type') or '').upper() == 'XRD'
+                    else 'Full Raw Data Table'
+                )
+                add_heading(table_title, level=3)
                 add_matrix_table(headers, rows, width=landscape_width if raw_layout == 'landscape' else portrait_width, compact=True)
                 story.append(Spacer(1, 4))
 

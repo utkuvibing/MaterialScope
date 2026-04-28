@@ -790,7 +790,7 @@ def render_xrd_raw_quality_chrome(locale_data):
 @callback(
     Output("xrd-raw-quality-panel", "children"),
     Input("project-id", "data"),
-    Input("xrd-dataset-select", "value"),
+    Input("xrd-dataset-select", "value", allow_optional=True),
     Input("xrd-refresh", "data"),
     Input("ui-locale", "data"),
 )
@@ -881,7 +881,7 @@ def render_xrd_setup_review_chrome(locale_data):
     Output("xrd-setup-import-warnings", "children"),
     Output("xrd-setup-validation", "children"),
     Input("project-id", "data"),
-    Input("xrd-dataset-select", "value"),
+    Input("xrd-dataset-select", "value", allow_optional=True),
     Input("ui-locale", "data"),
 )
 def hydrate_xrd_setup_from_dataset(project_id, dataset_key, locale_data):
@@ -1714,7 +1714,7 @@ def toggle_xrd_processing_history_buttons(undo_stack, redo_stack):
     Output("workspace-refresh", "data", allow_duplicate=True),
     Input("xrd-run-btn", "n_clicks"),
     State("project-id", "data"),
-    State("xrd-dataset-select", "value"),
+    State("xrd-dataset-select", "value", allow_optional=True),
     State("xrd-template-select", "value"),
     State("xrd-processing-draft", "data"),
     State("xrd-refresh", "data"),
@@ -2282,11 +2282,11 @@ def _xrd_shapes_from_relayout(relayout_data):
 @callback(
     Output("xrd-result-figure", "children"),
     Input("xrd-result-cache", "data"),
-    Input("xrd-candidate-overlay", "value"),
+    Input("xrd-candidate-overlay", "value", allow_optional=True),
     Input("ui-theme", "data"),
     Input("ui-locale", "data"),
     State("project-id", "data"),
-    State("xrd-result-plot-graph", "relayoutData"),
+    State("xrd-result-plot-graph", "relayoutData", allow_optional=True),
 )
 def render_xrd_result_figure_area(cache, overlay_idx, ui_theme, locale_data, project_id, relayout_data):
     loc = _loc(locale_data)

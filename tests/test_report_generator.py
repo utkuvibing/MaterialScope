@@ -796,7 +796,7 @@ def test_generate_docx_report_keeps_xrd_library_dump_out_of_main_body():
     assert "Xrd Provenance State" in appendix_xml
 
 
-def test_generate_docx_report_uses_xrd_candidate_summary_table_and_keeps_evidence_detail_in_appendix():
+def test_generate_docx_report_uses_xrd_candidate_summary_table_and_curated_appendix():
     xrd_record, xrd_dataset = _make_xrd_no_match_record()
     xrd_record["rows"][0]["evidence"] = {
         "shared_peak_count": 7,
@@ -823,8 +823,9 @@ def test_generate_docx_report_uses_xrd_candidate_summary_table_and_keeps_evidenc
     assert "Top Candidates" in main_xml
     assert "matched_peak_pairs" not in main_xml
     assert "Candidate Evidence Summary" in appendix_xml
-    assert "Full Raw Data Table" in appendix_xml
-    assert "matched_peak_pairs=12" in appendix_xml
+    assert "Curated Candidate Table" in appendix_xml
+    assert "Full Raw Data Table" not in appendix_xml
+    assert "matched_peak_pairs=12" not in appendix_xml
 
 
 def test_generate_docx_report_uses_scientific_xrd_candidate_names():

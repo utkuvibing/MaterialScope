@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from typing import Any
+import inspect
 
 import dash
 import pytest
@@ -153,3 +154,107 @@ def test_all_analysis_builders_return_visible_non_empty_result_graphs(monkeypatc
         ),
         "raman-result-plot-graph",
     )
+
+
+@pytest.mark.parametrize(
+    ("module_name", "analysis_type", "expected_graph_id", "expected_prefix"),
+    [
+        ("dash_app.pages.ftir", "FTIR", "ftir-result-plot-graph", "ftir"),
+        ("dash_app.pages.raman", "RAMAN", "raman-result-plot-graph", "raman"),
+    ],
+)
+def test_spectral_result_callback_returns_visible_graph(
+    monkeypatch,
+    module_name: str,
+    analysis_type: str,
+    expected_graph_id: str,
+    expected_prefix: str,
+) -> None:
+    import importlib
+    import dash_app.api_client as api_client
+
+    mod = importlib.import_module(module_name)
+
+    monkeypatch.setattr(
+        api_client,
+        "workspace_result_detail",
+        lambda _project_id, _result_id: {
+            "summary": {
+                "peak_count": 1,
+                "match_status": "no_match",
+                "confidence_band": "no_match",
+                "top_match_score": 0.0,
+            },
+            "result": {"dataset_key": "dataset-1", "analysis_type": analysis_type},
+            "processing": {"signal_pipeline": {}, "analysis_steps": {}, "method_context": {}},
+            "rows_preview": [],
+            "validation": {"status": "pass", "warnings": [], "issues": []},
+        },
+    )
+    monkeypatch.setattr(
+        api_client,
+        "workspace_dataset_detail",
+        lambda _project_id, _dataset_key: {
+            "metadata": {"sample_name": "Spectral Sample", "display_name": "Spectral Sample"}
+        },
+    )
+    monkeypatch.setattr(
+        api_client,
+        "analysis_state_curves",
+        lambda _project_id, _analysis_type, _dataset_key: {
+            "temperature": [4000.0, 3000.0, 2000.0, 1000.0],
+            "raw_signal": [0.1, 0.5, 0.3, 0.2],
+            "smoothed": [0.12, 0.48, 0.32, 0.18],
+            "baseline": [0.05, 0.05, 0.05, 0.05],
+            "corrected": [0.07, 0.43, 0.27, 0.13],
+            "normalized": [0.1, 0.6, 0.4, 0.2],
+            "peaks": [{"position": 2920.0, "intensity": 0.6}],
+            "diagnostics": {},
+        },
+    )
+
+    outputs = mod.display_result(
+        "result-1",
+        1,
+        "light",
+        "en",
+        None,
+        "project-1",
+        None,
+    )
+
+    graph = _find_graph(outputs[3])
+    assert graph is not None
+    assert graph.id == expected_graph_id
+    assert expected_prefix in expected_graph_id
+    _assert_non_empty_graph(outputs[3], expected_graph_id)
+
+
+@pytest.mark.parametrize(
+    ("module_name", "required_fragments"),
+    [
+        (
+            "dash_app.pages.ftir",
+            [
+                'Input("ftir-dataset-select", "value", allow_optional=True)',
+                'State("ftir-dataset-select", "value", allow_optional=True)',
+                'State("ftir-result-plot-graph", "relayoutData", allow_optional=True)',
+            ],
+        ),
+        (
+            "dash_app.pages.raman",
+            [
+                'Input("raman-dataset-select", "value", allow_optional=True)',
+                'State("raman-dataset-select", "value", allow_optional=True)',
+                'State("raman-result-plot-graph", "relayoutData", allow_optional=True)',
+            ],
+        ),
+    ],
+)
+def test_spectral_callbacks_use_optional_dynamic_ids(module_name: str, required_fragments: list[str]) -> None:
+    import importlib
+
+    mod = importlib.import_module(module_name)
+    source = inspect.getsource(mod)
+    for fragment in required_fragments:
+        assert fragment in source

@@ -20,6 +20,7 @@ from dash_app.components.analysis_page import (
     finalized_validation_warning_issue_counts,
     capture_result_figure_from_layout,
     register_result_figure_from_layout_children,
+    dataset_selection_card,
     dataset_options,
     dataset_selector_block,
     eligible_datasets,
@@ -303,7 +304,13 @@ def test_dataset_selector_block_returns_disabled_when_empty():
         eligible_types={"DSC"},
     )
     assert disabled is True
-    assert "Import a file first" in children.children
+    assert isinstance(children, html.Div)
+    selector = children.children[0]
+    assert isinstance(selector, dbc.Select)
+    assert selector.id == "test-select"
+    assert selector.disabled is True
+    assert selector.style["display"] == "none"
+    assert "Import a file first" in children.children[1].children
 
 
 def test_dataset_selector_block_returns_enabled_when_eligible():
@@ -321,6 +328,18 @@ def test_dataset_selector_block_returns_enabled_when_eligible():
     selector = children.children[0]
     assert isinstance(selector, dbc.Select)
     assert selector.id == "test-select"
+
+
+def test_dataset_selection_card_seeds_dynamic_selector_id():
+    card = dataset_selection_card("ftir-dataset-selector-area", card_title_id="ftir-dataset-card-title")
+    body = card.children
+    area = body.children[1]
+    selector = area.children[0]
+    assert area.id == "ftir-dataset-selector-area"
+    assert isinstance(selector, dbc.Select)
+    assert selector.id == "ftir-dataset-select"
+    assert selector.disabled is True
+    assert selector.style["display"] == "none"
 
 
 def test_dataset_selector_block_prefers_active_dataset():

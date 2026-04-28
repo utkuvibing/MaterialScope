@@ -239,6 +239,35 @@ def test_report_exports_include_saved_figure_payloads(monkeypatch):
     assert base64.b64decode(pdf_artifact["artifact_base64"].encode("ascii")) == b"%PDF-1.4\nFAKE"
 
 
+def test_report_exports_use_registered_primary_plotly_figure_artifact(monkeypatch):
+    import backend.exports as exports_module
+
+    state, result_id = _build_spectral_export_state()
+    primary_key = "XRD Primary Diffractogram - current-ui"
+    backup_key = "XRD Legacy Snapshot - fallback"
+    primary_bytes = b"\x89PNG\r\n\x1a\nPRIMARY"
+    backup_bytes = b"\x89PNG\r\n\x1a\nBACKUP"
+    state["results"][result_id]["analysis_type"] = "XRD"
+    state["results"][result_id]["artifacts"] = {
+        "report_figure_key": primary_key,
+        "figure_keys": [backup_key],
+        "report_figure_status": "captured",
+    }
+    state["figures"] = {primary_key: primary_bytes, backup_key: backup_bytes}
+
+    observed: dict[str, dict[str, bytes] | None] = {}
+
+    def _fake_pdf_report(**kwargs):
+        observed["figures"] = kwargs.get("figures")
+        return b"%PDF-1.4\nFAKE"
+
+    monkeypatch.setattr(exports_module, "generate_pdf_report", _fake_pdf_report)
+
+    generate_report_pdf_artifact(state, selected_result_ids=[result_id], include_figures=True)
+
+    assert observed["figures"] == {primary_key: primary_bytes}
+
+
 def test_export_docx_generation_keeps_dta_in_stable_partition(thermal_dataset):
     app = create_app(api_token="exports-token")
     client = TestClient(app)

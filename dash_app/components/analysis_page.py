@@ -108,7 +108,14 @@ def dataset_selector_block(
     if not eligible:
         type_labels = ", ".join(sorted(eligible_types))
         text = translate_ui(loc, "dash.analysis.no_eligible_prefix", types=type_labels, empty=empty_msg)
-        return html.P(text, className="text-muted"), True
+        placeholder = dbc.Select(
+            id=selector_id,
+            options=[],
+            value=None,
+            disabled=True,
+            style={"display": "none"},
+        )
+        return html.Div([placeholder, html.P(text, className="text-muted")]), True
 
     options = dataset_options(eligible)
     default_value = None
@@ -142,11 +149,23 @@ def dataset_selector_block(
 
 def dataset_selection_card(selector_area_id: str, *, card_title_id: str) -> dbc.Card:
     """Card with a placeholder div for the dataset selector."""
+    selector_placeholder = []
+    if selector_area_id.endswith("-dataset-selector-area"):
+        selector_id = selector_area_id[: -len("-selector-area")] + "-select"
+        selector_placeholder.append(
+            dbc.Select(
+                id=selector_id,
+                options=[],
+                value=None,
+                disabled=True,
+                style={"display": "none"},
+            )
+        )
     return dbc.Card(
         dbc.CardBody(
             [
                 html.H5(id=card_title_id, children="", className="mb-3"),
-                html.Div(id=selector_area_id),
+                html.Div(selector_placeholder, id=selector_area_id),
             ]
         ),
         className="mb-4",

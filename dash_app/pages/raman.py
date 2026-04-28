@@ -958,7 +958,7 @@ def render_raman_raw_quality_chrome(locale_data):
 @callback(
     Output("raman-raw-quality-panel", "children"),
     Input("project-id", "data"),
-    Input("raman-dataset-select", "value"),
+    Input("raman-dataset-select", "value", allow_optional=True),
     Input("raman-refresh", "data"),
     Input("ui-locale", "data"),
 )
@@ -1871,7 +1871,7 @@ def toggle_raman_processing_history_buttons(undo_stack, redo_stack):
     Output("workspace-refresh", "data", allow_duplicate=True),
     Input("raman-run-btn", "n_clicks"),
     State("project-id", "data"),
-    State("raman-dataset-select", "value"),
+    State("raman-dataset-select", "value", allow_optional=True),
     State("raman-template-select", "value"),
     State("raman-processing-draft", "data"),
     State("raman-refresh", "data"),
@@ -1926,7 +1926,7 @@ def run_raman_analysis(n_clicks, project_id, dataset_key, template_id, processin
     Input("ui-locale", "data"),
     Input("raman-plot-settings", "data"),
     State("project-id", "data"),
-    State("raman-result-plot-graph", "relayoutData"),
+    State("raman-result-plot-graph", "relayoutData", allow_optional=True),
 )
 def display_result(result_id, _refresh, ui_theme, locale_data, plot_settings, project_id, relayout_data=None):
     loc = _loc(locale_data)
