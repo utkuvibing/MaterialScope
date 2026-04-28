@@ -401,6 +401,29 @@ def test_build_top_match_panel_library_unavailable_is_configuration_message():
     assert "alert" in s
 
 
+def test_raman_summary_separates_peak_detection_from_skipped_library_matching():
+    mod = _import_raman_page()
+    summary = {
+        "peak_count": 3,
+        "match_status": "library_unavailable",
+        "caution_message": "Reference spectral library matching was unavailable or not configured for this run.",
+    }
+
+    assert mod._raman_library_status_label("en", summary) == "Library matching skipped: no reference library"
+    panel = mod._build_raman_analysis_summary(
+        {"metadata": {"file_name": "raman_cnt_figshare.csv"}, "dataset": {}},
+        summary,
+        {"dataset_key": "raman-demo"},
+        "en",
+        locale_data="en",
+    )
+    rendered = str(panel)
+    assert "Peak detection" in rendered
+    assert "Completed (3 peaks)" in rendered
+    assert "Library matching skipped: no reference library" in rendered
+    assert "Configure or import a Raman reference library" in rendered
+
+
 def test_build_top_match_panel_renders_hero_summary():
     mod = _import_raman_page()
     rows = [

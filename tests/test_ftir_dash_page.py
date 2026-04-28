@@ -393,6 +393,29 @@ def test_build_top_match_panel_library_unavailable_is_configuration_message():
     assert "alert" in s
 
 
+def test_ftir_summary_separates_peak_detection_from_skipped_library_matching():
+    mod = _import_ftir_page()
+    summary = {
+        "peak_count": 12,
+        "match_status": "library_unavailable",
+        "caution_message": "Reference spectral library matching was unavailable or not configured for this run.",
+    }
+
+    assert mod._ftir_library_status_label("en", summary) == "Library matching skipped: no reference library"
+    panel = mod._build_ftir_analysis_summary(
+        {"metadata": {"file_name": "ftir_particleboard_50g_figshare.csv"}, "dataset": {}},
+        summary,
+        {"dataset_key": "ftir-demo"},
+        "en",
+        locale_data="en",
+    )
+    rendered = str(panel)
+    assert "Peak detection" in rendered
+    assert "Completed (12 peaks)" in rendered
+    assert "Library matching skipped: no reference library" in rendered
+    assert "Configure or import an FTIR reference library" in rendered
+
+
 def test_build_top_match_panel_renders_hero_summary():
     mod = _import_ftir_page()
     rows = [

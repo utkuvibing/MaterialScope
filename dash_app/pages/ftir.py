@@ -1986,7 +1986,7 @@ def display_result(result_id, _refresh, ui_theme, locale_data, plot_settings, pr
     raw_metadata_panel = _build_ftir_raw_metadata_panel((dataset_detail or {}).get("metadata"), loc)
 
     peak_count = summary.get("peak_count", 0)
-    match_status = _match_status_label(loc, summary.get("match_status"))
+    match_status = _ftir_library_status_label(loc, summary)
     top_score = summary.get("top_match_score", 0.0)
     sample_name = resolve_sample_name(summary, result_meta, locale_data=locale_data)
     na = translate_ui(loc, "dash.analysis.na")
@@ -2339,6 +2339,18 @@ def _match_status_label(loc: str, raw: str | None) -> str:
     return text
 
 
+def _ftir_library_status_label(loc: str, summary: dict | None) -> str:
+    payload = summary if isinstance(summary, dict) else {}
+    status = str(payload.get("match_status") or "").strip().lower()
+    if status == "library_unavailable":
+        return translate_ui(loc, "dash.analysis.match_status.spectral_library_skipped")
+    if status == "matched":
+        return "Library matching completed"
+    if status == "no_match":
+        return "No confident match found"
+    return _match_status_label(loc, status)
+
+
 def _confidence_band_label(loc: str, band: str | None) -> str:
     token = str(band or "no_match").lower().replace(" ", "_")
     key = f"dash.analysis.confidence.{token}"
@@ -2395,6 +2407,12 @@ def _build_ftir_analysis_summary(
 
     instrument = _format_dataset_metadata_value(metadata.get("instrument")) or na
     vendor = _format_dataset_metadata_value(metadata.get("vendor")) or na
+    peak_count = int(summary.get("peak_count") or 0) if isinstance(summary, dict) else 0
+    library_status = _ftir_library_status_label(loc, summary)
+    caution = str((summary or {}).get("caution_message") or "").strip()
+    action_hint = ""
+    if _ftir_library_unavailable(summary):
+        action_hint = "Configure or import an FTIR reference library to enable spectral library matching."
 
     def _meta_value(value: str) -> html.Span:
         return html.Span(value, className="ms-meta-value", title=value)
@@ -2408,7 +2426,25 @@ def _build_ftir_analysis_summary(
         html.Dd(_meta_value(instrument), className="col-sm-8 ms-meta-def"),
         html.Dt(translate_ui(loc, "dash.analysis.ftir.summary.vendor_label"), className="col-sm-4 text-muted ms-meta-term"),
         html.Dd(_meta_value(vendor), className="col-sm-8 ms-meta-def"),
+        html.Dt("Peak detection", className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(f"Completed ({peak_count} peaks)"), className="col-sm-8 ms-meta-def"),
+        html.Dt("Library matching", className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(library_status), className="col-sm-8 ms-meta-def"),
     ]
+    if caution:
+        dl_rows.extend(
+            [
+                html.Dt("Context", className="col-sm-4 text-muted ms-meta-term"),
+                html.Dd(_meta_value(caution), className="col-sm-8 ms-meta-def"),
+            ]
+        )
+    if action_hint:
+        dl_rows.extend(
+            [
+                html.Dt("Action", className="col-sm-4 text-muted ms-meta-term"),
+                html.Dd(_meta_value(action_hint), className="col-sm-8 ms-meta-def"),
+            ]
+        )
     return html.Div(
         [
             html.H5(translate_ui(loc, "dash.analysis.ftir.summary.card_title"), className="mb-3"),
@@ -2689,7 +2725,7 @@ def _build_figure(
 
     peak_count_disp = summary.get("peak_count", peak_count)
     top_match_name = summary.get("top_match_name")
-    match_status = _match_status_label(loc, summary.get("match_status"))
+    match_status = _ftir_library_status_label(loc, summary)
     confidence = _confidence_band_label(loc, summary.get("confidence_band"))
     na = translate_ui(loc, "dash.analysis.na")
     match_str = f"{top_match_name}" if top_match_name else na

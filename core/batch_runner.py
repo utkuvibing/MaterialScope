@@ -34,7 +34,9 @@ from core.result_serialization import (
 )
 from core.tga_processor import TGAProcessor, resolve_tga_unit_interpretation
 from core.validation import enrich_spectral_result_validation, enrich_xrd_result_validation, validate_thermal_dataset
+from core.spectral_demo_references import load_demo_spectral_references
 from core.xrd_display import xrd_candidate_display_payload
+from core.xrd_demo_references import load_demo_xrd_references
 
 
 _DSC_TEMPLATE_DEFAULTS = {
@@ -1110,6 +1112,25 @@ def _resolve_spectral_references(
                     signal=signal,
                 )
             )
+    if not normalized:
+        for entry in load_demo_spectral_references(analysis_type):
+            axis, signal = _extract_reference_signal(entry)
+            if axis is None or signal is None:
+                continue
+            normalized.append(
+                _reference_row(
+                    candidate_id=str(entry.get("candidate_id") or ""),
+                    candidate_name=str(entry.get("candidate_name") or ""),
+                    priority=int(entry.get("priority") or 0),
+                    provider=str(entry.get("provider") or "Demo Spectral"),
+                    package_id=str(entry.get("package_id") or f"demo_{analysis_type.lower()}_seed"),
+                    package_version=str(entry.get("package_version") or "demo"),
+                    attribution=str(entry.get("attribution") or ""),
+                    source_url=str(entry.get("source_url") or ""),
+                    axis=axis,
+                    signal=signal,
+                )
+            )
     normalized.sort(
         key=lambda item: (
             -int(item.get("priority") or 0),
@@ -1389,7 +1410,9 @@ def _execute_spectral_batch(
             if library_access_mode == "cloud_full_access":
                 library_access_mode = "not_configured"
         else:
-            library_result_source = "limited_fallback_cache" if references else "unavailable"
+            library_result_source = "demo_seed_reference_library" if references else "unavailable"
+            if references:
+                library_access_mode = "limited_cached_fallback"
             if library_access_mode == "cloud_full_access":
                 library_access_mode = "not_configured"
         library_provider_scope = _provider_scope_from_ranked_rows(ranked_matches)
@@ -1399,6 +1422,11 @@ def _execute_spectral_batch(
         references = [{}] * max(cloud_candidate_count, len(ranked_matches))
         if not library_result_source:
             library_result_source = "cloud_search"
+    effective_library_reference_package_count = library_context["reference_package_count"]
+    effective_library_reference_candidate_count = library_context["reference_candidate_count"]
+    if references and int(effective_library_reference_candidate_count or 0) <= 0:
+        effective_library_reference_candidate_count = len(references)
+        effective_library_reference_package_count = max(1, len(library_provider_scope))
 
     minimum_score = float(similarity_matching.get("minimum_score") or 0.45)
     top_match = ranked_matches[0] if ranked_matches else None
@@ -1454,8 +1482,8 @@ def _execute_spectral_batch(
             "matching_minimum_score": minimum_score,
             "library_sync_mode": library_context["library_sync_mode"],
             "library_cache_status": library_context["library_cache_status"],
-            "library_reference_package_count": library_context["reference_package_count"],
-            "library_reference_candidate_count": library_context["reference_candidate_count"],
+            "library_reference_package_count": effective_library_reference_package_count,
+            "library_reference_candidate_count": effective_library_reference_candidate_count,
             "library_access_mode": library_access_mode,
             "library_request_id": library_request_id,
             "library_result_source": library_result_source,
@@ -1532,8 +1560,8 @@ def _execute_spectral_batch(
         "library_version": top_version,
         "library_sync_mode": library_context["library_sync_mode"],
         "library_cache_status": library_context["library_cache_status"],
-        "library_reference_package_count": library_context["reference_package_count"],
-        "library_reference_candidate_count": library_context["reference_candidate_count"],
+        "library_reference_package_count": effective_library_reference_package_count,
+        "library_reference_candidate_count": effective_library_reference_candidate_count,
         "library_access_mode": library_access_mode,
         "library_request_id": library_request_id,
         "library_result_source": library_result_source,
@@ -2053,6 +2081,24 @@ def _resolve_xrd_references(
                     provider=str(entry.get("provider") or "dataset"),
                     package_id=str(entry.get("package_id") or "dataset_metadata"),
                     package_version=str(entry.get("package_version") or "embedded"),
+                    attribution=str(entry.get("attribution") or ""),
+                    source_url=str(entry.get("source_url") or ""),
+                    peaks=peaks,
+                )
+            )
+    if not normalized:
+        for entry in load_demo_xrd_references():
+            peaks = _extract_xrd_reference_peaks(entry)
+            if not peaks:
+                continue
+            normalized.append(
+                _reference_row(
+                    candidate_id=str(entry.get("candidate_id") or ""),
+                    candidate_name=str(entry.get("candidate_name") or ""),
+                    priority=int(entry.get("priority") or 0),
+                    provider=str(entry.get("provider") or "Demo XRD"),
+                    package_id=str(entry.get("package_id") or "demo_xrd_seed"),
+                    package_version=str(entry.get("package_version") or "demo"),
                     attribution=str(entry.get("attribution") or ""),
                     source_url=str(entry.get("source_url") or ""),
                     peaks=peaks,
@@ -2713,7 +2759,7 @@ def _execute_xrd_batch(
             if library_access_mode == "cloud_full_access":
                 library_access_mode = "not_configured"
         else:
-            library_result_source = "limited_fallback_cache" if references else "unavailable"
+            library_result_source = "demo_seed_reference_library" if references else "unavailable"
             if library_access_mode == "cloud_full_access":
                 library_access_mode = "not_configured"
         library_provider_scope = _provider_scope_from_ranked_rows(ranked_matches)

@@ -818,10 +818,18 @@ TRANSLATIONS = {
     "dash.analysis.metric.top_score": {"tr": "En yüksek skor", "en": "Top Score"},
     "dash.analysis.metric.top_candidate_score": {"tr": "En iyi aday skoru", "en": "Top Candidate Score"},
     "dash.analysis.metric.detected_peaks": {"tr": "Algılanan tepeler", "en": "Detected Peaks"},
+    "dash.analysis.match_status.not_run": {
+        "tr": "Faz eşleştirme atlandı: referans kütüphanesi yok",
+        "en": "Phase matching skipped: no reference library",
+    },
     "dash.analysis.match_status.no_match": {"tr": "Eşleşme yok", "en": "No Match"},
     "dash.analysis.match_status.library_unavailable": {
         "tr": "Kütüphane eşlemesi kullanılamıyor",
         "en": "Library matching unavailable",
+    },
+    "dash.analysis.match_status.spectral_library_skipped": {
+        "tr": "Kütüphane eşlemesi atlandı: referans kütüphanesi yok",
+        "en": "Library matching skipped: no reference library",
     },
     "dash.analysis.match_status.partial_match": {"tr": "Kısmi eşleşme", "en": "Partial Match"},
     "dash.analysis.match_status.matched": {"tr": "Eşleşti", "en": "Matched"},

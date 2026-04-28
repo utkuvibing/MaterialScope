@@ -162,6 +162,19 @@ def _match_status_label(loc: str, raw: str | None) -> str:
     return text
 
 
+def _xrd_phase_status_label(loc: str, summary: dict | None) -> str:
+    payload = summary if isinstance(summary, dict) else {}
+    status = str(payload.get("match_status") or "").strip().lower()
+    caution_code = str(payload.get("caution_code") or "").strip().lower()
+    if status == "not_run" and caution_code == "xrd_reference_library_unavailable":
+        return _match_status_label(loc, "not_run")
+    if status == "matched":
+        return "Phase matching completed"
+    if status == "no_match":
+        return "No confident match found"
+    return _match_status_label(loc, status)
+
+
 def _display_candidate_name(row: dict, loc: str) -> str:
     for key in ("display_name_unicode", "display_name", "candidate_name", "phase_name", "candidate_id"):
         value = str(row.get(key) or "").strip()
@@ -1817,6 +1830,12 @@ def _build_xrd_analysis_summary(dataset_detail: dict, summary: dict, result_meta
     sample_label = resolve_sample_name(summary or {}, result_meta or {}, fallback_display_name=fallback_display_name, locale_data=locale_data) or na
     instrument = _format_dataset_metadata_value(metadata.get("instrument")) or na
     vendor = _format_dataset_metadata_value(metadata.get("vendor")) or na
+    peak_count = int(summary.get("peak_count") or 0) if isinstance(summary, dict) else 0
+    phase_status = _xrd_phase_status_label(loc, summary)
+    reason = str((summary or {}).get("caution_message") or "").strip()
+    action_hint = ""
+    if str((summary or {}).get("caution_code") or "").strip() == "xrd_reference_library_unavailable":
+        action_hint = "Configure or import an XRD reference library/index to enable qualitative phase matching."
 
     def _meta_value(value: str) -> html.Span:
         return html.Span(value, className="ms-meta-value", title=value)
@@ -1830,7 +1849,25 @@ def _build_xrd_analysis_summary(dataset_detail: dict, summary: dict, result_meta
         html.Dd(_meta_value(instrument), className="col-sm-8 ms-meta-def"),
         html.Dt(translate_ui(loc, "dash.analysis.xrd.summary.vendor_label"), className="col-sm-4 text-muted ms-meta-term"),
         html.Dd(_meta_value(vendor), className="col-sm-8 ms-meta-def"),
+        html.Dt("Peak detection", className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(f"Completed ({peak_count} peaks)"), className="col-sm-8 ms-meta-def"),
+        html.Dt("Phase matching", className="col-sm-4 text-muted ms-meta-term"),
+        html.Dd(_meta_value(phase_status), className="col-sm-8 ms-meta-def"),
     ]
+    if reason:
+        dl_rows.extend(
+            [
+                html.Dt("Reason", className="col-sm-4 text-muted ms-meta-term"),
+                html.Dd(_meta_value(reason), className="col-sm-8 ms-meta-def"),
+            ]
+        )
+    if action_hint:
+        dl_rows.extend(
+            [
+                html.Dt("Action", className="col-sm-4 text-muted ms-meta-term"),
+                html.Dd(_meta_value(action_hint), className="col-sm-8 ms-meta-def"),
+            ]
+        )
     return html.Div(
         [
             html.H5(translate_ui(loc, "dash.analysis.xrd.summary.card_title"), className="mb-2"),
@@ -2180,7 +2217,7 @@ def display_xrd_result(result_id, _refresh, locale_data, project_id):
     analysis_summary = _build_xrd_analysis_summary(dataset_detail, summary, result_meta, loc, locale_data=locale_data)
     quality_panel = _build_xrd_quality_card(detail, result_meta, loc)
     raw_panel = _build_xrd_raw_metadata_panel((dataset_detail or {}).get("metadata"), loc)
-    match_status = _match_status_label(loc, summary.get("match_status"))
+    match_status = _xrd_phase_status_label(loc, summary)
     top_score = _coerce_float(summary.get("top_candidate_score"))
     na = translate_ui(loc, "dash.analysis.na")
     top_score_str = f"{top_score:.4f}" if top_score is not None else na

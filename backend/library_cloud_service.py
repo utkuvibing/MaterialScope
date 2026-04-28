@@ -26,8 +26,10 @@ from core.reference_library import (
     ReferenceLibraryManager,
     get_reference_library_manager,
 )
+from core.spectral_demo_references import load_demo_spectral_references
 from core.xrd_reference_dossier import build_xrd_reference_bundle
 from core.xrd_display import xrd_candidate_display_payload
+from core.xrd_demo_references import load_demo_xrd_references
 from utils.license_manager import APP_VERSION, get_storage_dir, validate_encoded_license_key
 
 
@@ -654,6 +656,10 @@ class ManagedLibraryCloudService:
         observed_peaks, _, _ = _detect_spectral_peaks(axis, normalized_signal, peak_config)
         top_n_internal = top_n if token != "RAMAN" else max(top_n * 5, 10)
         references = self.hosted_catalog.load_entries(token)
+        demo_fallback_used = False
+        if not references:
+            references = load_demo_spectral_references(token)
+            demo_fallback_used = bool(references)
         reference_lookup = self._reference_lookup(references)
         rows = _rank_spectral_matches(
             axis=axis,
@@ -680,10 +686,17 @@ class ManagedLibraryCloudService:
             rows=rows,
             minimum_score=minimum_score,
         )
+        if demo_fallback_used:
+            response["library_access_mode"] = "limited_cached_fallback"
+            response["library_result_source"] = "demo_seed_reference_library"
+            response["library_offline_limited_mode"] = True
         response = self._attach_hosted_summary_provenance(
             response,
             reference_lookup=reference_lookup,
         )
+        if demo_fallback_used:
+            response["summary"]["library_access_mode"] = "limited_cached_fallback"
+            response["summary"]["library_result_source"] = "demo_seed_reference_library"
         self._audit_search(
             request_id=request_id,
             claims=claims,
@@ -779,7 +792,24 @@ class ManagedLibraryCloudService:
                 if wavelength_angstrom is not None:
                     peak["wavelength_angstrom"] = float(wavelength_angstrom)
         references = self.hosted_catalog.load_entries("XRD")
+        if not references:
+            references = load_demo_xrd_references()
         coverage_details = dict((self.hosted_catalog.coverage().get("XRD") or {}))
+        if not coverage_details.get("total_candidate_count") and references:
+            coverage_details = {
+                "total_candidate_count": len(references),
+                "deduped_candidate_count": len(references),
+                "coverage_tier": "seed_dev",
+                "coverage_warning_code": "xrd_seed_coverage_only",
+                "coverage_warning_message": (
+                    f"XRD hosted coverage is using the bundled demo seed ({len(references)} candidates). "
+                    "Matching is available for demo screening, but no-match outcomes can still reflect insufficient corpus depth."
+                ),
+                "provider_candidate_counts": {
+                    str(provider): sum(1 for row in references if str(row.get("provider") or "") == str(provider))
+                    for provider in sorted({str(row.get("provider") or "Demo XRD") for row in references})
+                },
+            }
         reference_lookup = self._reference_lookup(references)
         rows = _rank_xrd_phase_candidates(
             observed_peaks=matching_peaks,

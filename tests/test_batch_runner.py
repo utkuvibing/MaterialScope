@@ -1317,6 +1317,7 @@ def test_execute_ftir_batch_without_candidates_reports_library_unavailable(monke
 
     monkeypatch.setattr("core.batch_runner.get_library_cloud_client", lambda: _OffCloud())
     monkeypatch.setattr("core.batch_runner.get_reference_library_manager", lambda: _StubMgr())
+    monkeypatch.setattr("core.batch_runner.load_demo_spectral_references", lambda _analysis_type: [])
 
     outcome = execute_batch_template(
         dataset_key="synthetic_ftir_no_lib",
@@ -1329,6 +1330,66 @@ def test_execute_ftir_batch_without_candidates_reports_library_unavailable(monke
     assert outcome["record"]["summary"]["match_status"] == "library_unavailable"
     assert outcome["record"]["summary"]["caution_code"] == "spectral_library_unavailable"
     assert not outcome["record"]["rows"]
+
+
+def test_execute_ftir_batch_uses_bundled_demo_references_when_no_library_configured(monkeypatch):
+    dataset = _make_spectral_dataset(analysis_type="FTIR", include_reference_library=False)
+
+    class _OffCloud:
+        configured = False
+        last_error = ""
+
+        def search(self, **kwargs):
+            return None
+
+    monkeypatch.setattr("core.batch_runner.get_library_cloud_client", lambda: _OffCloud())
+
+    outcome = execute_batch_template(
+        dataset_key="synthetic_ftir_demo_seed",
+        dataset=dataset,
+        analysis_type="FTIR",
+        workflow_template_id="ftir.general",
+        batch_run_id="batch_ftir_demo_seed",
+    )
+
+    assert outcome["status"] == "saved"
+    assert outcome["record"]["summary"]["match_status"] in {"matched", "no_match"}
+    assert outcome["record"]["summary"]["candidate_count"] > 0
+    assert outcome["record"]["summary"]["library_result_source"] in {
+        "demo_seed_reference_library",
+        "limited_fallback_cache",
+        "dataset_embedded",
+    }
+
+
+def test_execute_raman_batch_uses_bundled_demo_references_when_no_library_configured(monkeypatch):
+    dataset = _make_spectral_dataset(analysis_type="RAMAN", include_reference_library=False)
+
+    class _OffCloud:
+        configured = False
+        last_error = ""
+
+        def search(self, **kwargs):
+            return None
+
+    monkeypatch.setattr("core.batch_runner.get_library_cloud_client", lambda: _OffCloud())
+
+    outcome = execute_batch_template(
+        dataset_key="synthetic_raman_demo_seed",
+        dataset=dataset,
+        analysis_type="RAMAN",
+        workflow_template_id="raman.general",
+        batch_run_id="batch_raman_demo_seed",
+    )
+
+    assert outcome["status"] == "saved"
+    assert outcome["record"]["summary"]["match_status"] in {"matched", "no_match"}
+    assert outcome["record"]["summary"]["candidate_count"] > 0
+    assert outcome["record"]["summary"]["library_result_source"] in {
+        "demo_seed_reference_library",
+        "limited_fallback_cache",
+        "dataset_embedded",
+    }
 
 
 def test_ftir_retains_multiple_visible_peaks_wide_axis():

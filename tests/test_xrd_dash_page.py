@@ -340,6 +340,30 @@ def test_build_match_cards_empty():
     assert "No candidate matches were returned." in str(result)
 
 
+def test_xrd_status_label_separates_peak_detection_from_unavailable_matching():
+    mod = _import_xrd_page()
+    summary = {
+        "peak_count": 12,
+        "match_status": "not_run",
+        "caution_code": "xrd_reference_library_unavailable",
+        "caution_message": "No XRD reference library/index configured.",
+    }
+
+    assert mod._xrd_phase_status_label("en", summary) == "Phase matching skipped: no reference library"
+    panel = mod._build_xrd_analysis_summary(
+        {"metadata": {"file_name": "xrd_2024_0304_zenodo.csv"}, "dataset": {}},
+        summary,
+        {"dataset_key": "xrd-demo"},
+        "en",
+        locale_data="en",
+    )
+    rendered = str(panel)
+    assert "Peak detection" in rendered
+    assert "Completed (12 peaks)" in rendered
+    assert "Phase matching skipped: no reference library" in rendered
+    assert "Configure or import an XRD reference library/index" in rendered
+
+
 def test_build_match_cards_with_caution():
     mod = _import_xrd_page()
     result = mod._build_match_cards(

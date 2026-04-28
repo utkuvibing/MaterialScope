@@ -291,4 +291,5 @@ def test_batch_run_xrd_preprocessing_path_returns_saved_with_peak_summary(therma
     assert len(payload["saved_result_ids"]) == 1
     assert len(payload["batch_summary"]) == 1
     assert payload["batch_summary"][0]["peak_count"] >= 1
-    assert payload["batch_summary"][0]["match_status"] == "not_run"
+    assert payload["batch_summary"][0]["match_status"] in {"matched", "no_match"}
+    assert payload["batch_summary"][0]["candidate_count"] > 0
