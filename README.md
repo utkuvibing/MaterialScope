@@ -1,6 +1,6 @@
 # MaterialScope
 
-MaterialScope is a Python materials-characterization workbench for importing, processing, comparing, and reporting common laboratory analysis data. It demonstrates a full-stack scientific application: data ingestion, modality-specific processing, interactive Plotly views, a FastAPI backend, report generation, and regression-tested workflows.
+MaterialScope is an open-source scientific software project for reproducible materials-characterization workflows across DSC, TGA, DTA, FTIR, Raman, and XRD data. It is a Python workbench for importing, processing, comparing, and reporting common laboratory analysis data, and demonstrates a full-stack scientific application: data ingestion, modality-specific processing, interactive Plotly views, a FastAPI backend, report generation, and regression-tested workflows.
 
 The current primary interface is a Dash + Plotly app mounted on FastAPI. A legacy Streamlit interface remains in the repository for comparison and transition work.
 
@@ -143,6 +143,12 @@ pytest
 
 Optional environment variables can be placed in a local `.env` file when needed. Do not commit real API keys, tokens, private paths, generated libraries, build outputs, or local packaging artifacts.
 
+## Contributing
+
+Issues, bug reports, documentation improvements, and small feature PRs are welcome.
+
+Scientific results must be validated carefully. XRD, spectral matching, and experimental modules are screening/prototype aids, not definitive expert confirmation.
+
 ## Limitations
 
 - Qualitative spectral and XRD matches are screening aids, not definitive identification.
@@ -152,7 +158,4 @@ Optional environment variables can be placed in a local `.env` file when needed.
 
 ## License
 
-Copyright © 2026 Utku Şahin. All rights reserved.
-
-This repository is shared publicly as a technical portfolio and product prototype.
-No license is granted for copying, redistribution, commercial use, or derivative works unless explicitly permitted by the author.
+This project is licensed under the MIT License. See the LICENSE file for details.
