@@ -1,0 +1,22 @@
+{
+  "name": "materialscope-cursor-automation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Automation-only Cursor SDK scripts for MaterialScope.",
+  "scripts": {
+    "cursor:fix-issue": "tsx scripts/cursor/fix-issue.ts",
+    "cursor:review-pr": "tsx scripts/cursor/review-pr.ts",
+    "typecheck": "tsc --noEmit --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext --types node scripts/cursor/fix-issue.ts scripts/cursor/review-pr.ts"
+  },
+  "dependencies": {
+    "@cursor/sdk": "latest",
+    "@octokit/rest": "latest",
+    "dotenv": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}
