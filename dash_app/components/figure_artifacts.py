@@ -17,7 +17,9 @@ from utils.i18n import translate_ui
 FIGURE_ARTIFACT_PREVIEW_TILES = 6
 FIGURE_ARTIFACT_PREVIEW_MAX_EDGE = 320
 GENERIC_FIGURE_I18N_PREFIX = "dash.analysis.figure"
-RESULT_GRAPH_STYLE = {"height": "420px", "minHeight": "420px", "width": "100%"}
+# Match core.plotting apply_materialscope_plot_theme heights (~520–620px) so titles,
+# subtitles, legends, and the Plotly modebar are not clipped inside the card host.
+RESULT_GRAPH_STYLE = {"height": "560px", "minHeight": "560px", "width": "100%"}
 
 
 def _classes(*values: str | None) -> str:

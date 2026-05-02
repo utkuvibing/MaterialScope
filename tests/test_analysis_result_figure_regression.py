@@ -62,8 +62,8 @@ def _assert_non_empty_graph(component: Any, expected_id: str | None = None) -> N
         assert graph.id == expected_id
     assert "ms-result-graph" in str(getattr(graph, "className", "") or "")
     style = getattr(graph, "style", {}) or {}
-    assert style.get("height") == "420px"
-    assert style.get("minHeight") == "420px"
+    assert style.get("height") == "560px"
+    assert style.get("minHeight") == "560px"
     assert style.get("width") == "100%"
     assert graph.config["responsive"] is True
     figure = graph.figure

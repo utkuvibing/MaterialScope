@@ -1948,7 +1948,7 @@ html[data-theme="dark"] .main-content .ms-results-surface .dta-debug-shell {
 }
 
 .main-content .ms-results-surface .ms-figure-host {
-  min-height: 420px;
+  min-height: 560px;
   width: 100%;
   display: block;
 }
@@ -1956,8 +1956,8 @@ html[data-theme="dark"] .main-content .ms-results-surface .dta-debug-shell {
 .main-content .ms-results-surface .ms-figure-host .ms-result-graph,
 .main-content .ms-results-surface .ms-figure-host .dash-graph,
 .main-content .ms-results-surface .ms-figure-host .js-plotly-plot {
-  height: 420px;
-  min-height: 420px;
+  height: 560px;
+  min-height: 560px;
   width: 100%;
   display: block;
 }
@@ -1967,11 +1967,11 @@ html[data-theme="dark"] .main-content .ms-results-surface .dta-debug-shell {
 .main-content .ms-results-surface .ms-figure-host .svg-container,
 .main-content .ms-results-surface .ms-figure-host .main-svg {
   width: 100% !important;
-  min-height: 420px;
+  min-height: 560px;
 }
 
 .main-content .ms-results-surface .ms-figure-host .svg-container {
-  height: 420px !important;
+  height: 560px !important;
 }
 
 @media (min-width: 576px) {
@@ -2044,12 +2044,12 @@ html[data-theme="dark"] .main-content .ms-results-surface .dta-debug-shell {
 }
 
 .main-content .ms-results-surface .xrd-figure-surface .ta-xrd-figure-host .js-plotly-plot {
-  min-height: 420px;
+  min-height: 560px;
 }
 
 @media (min-width: 992px) {
   .main-content .ms-results-surface .xrd-figure-surface .ta-xrd-figure-host .js-plotly-plot {
-    min-height: 460px;
+    min-height: 600px;
   }
 }
 
