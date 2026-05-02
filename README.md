@@ -4,6 +4,8 @@ MaterialScope is an open-source scientific software project for reproducible mat
 
 The current primary interface is a Dash + Plotly app mounted on FastAPI. A legacy Streamlit interface remains in the repository for comparison and transition work.
 
+**Project home:** [github.com/utkuvibing/MaterialScope](https://github.com/utkuvibing/MaterialScope).
+
 ## Why This Project Matters
 
 Materials labs often move between vendor exports, spreadsheets, plotting tools, and handwritten report notes. MaterialScope explores a more reproducible workflow where raw data, processing choices, validation warnings, figures, and report artifacts stay connected in one project archive.
