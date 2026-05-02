@@ -63,7 +63,7 @@ def test_dash_assets_keep_result_plotly_resize_contract():
     resize_js = _repo_text("dash_app/assets/result_figure_resize.js")
 
     assert ".ms-figure-host" in css
-    assert "height: 420px" in css
+    assert "height: 560px" in css
     assert ".ms-figure-host .plot-container" in css
     assert ".ms-figure-host .svg-container" in css
     assert ".ms-figure-host .main-svg" in css

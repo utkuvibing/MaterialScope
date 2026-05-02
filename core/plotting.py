@@ -361,6 +361,9 @@ def apply_materialscope_plot_theme(
         top_margin += 20
     if subtitle:
         top_margin += 18
+    # Leave room for the interactive modebar and multi-line titles in responsive Dash graphs.
+    if not for_export:
+        top_margin += 20
     bottom_margin = 54 if compact else 68
     plot_height = 520 if compact else 620
     if for_export:
@@ -383,7 +386,7 @@ def apply_materialscope_plot_theme(
             "xanchor": "left",
             "y": 0.98,
             "yanchor": "top",
-            "pad": {"b": 10},
+            "pad": {"t": 4, "b": 12},
             "font": {"size": 16 if compact else 18, "color": tokens["text"], "family": FONT_FAMILY},
         },
         paper_bgcolor=tokens["paper_bg"],
