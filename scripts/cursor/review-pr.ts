@@ -26,6 +26,56 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function logErrorDetails(error: unknown): void {
+  const maybeError = error as { name?: unknown; message?: unknown; stack?: unknown; cause?: unknown };
+
+  console.error(`error.name: ${String(maybeError.name ?? "(unknown)")}`);
+  console.error(`error.message: ${String(maybeError.message ?? "(no message)")}`);
+  if (maybeError.stack) {
+    console.error(`error.stack: ${String(maybeError.stack)}`);
+  }
+  console.error(`String(error): ${String(error)}`);
+  if (maybeError.cause) {
+    console.error("error.cause:", maybeError.cause);
+  }
+}
+
+async function streamAssistantText(run: Awaited<ReturnType<Awaited<ReturnType<typeof Agent.create>>["send"]>>): Promise<void> {
+  for await (const event of run.stream()) {
+    if (event.type !== "assistant") {
+      continue;
+    }
+
+    for (const block of event.message.content) {
+      if (block.type === "text") {
+        process.stdout.write(block.text);
+      }
+    }
+  }
+}
+
+async function runCursorAgent(name: string, prompt: string, apiKey: string): Promise<void> {
+  const agent = await Agent.create({
+    apiKey,
+    name,
+    model: { id: process.env.CURSOR_MODEL ?? "composer-2" },
+    local: { cwd: process.cwd() },
+  });
+
+  try {
+    const run = await agent.send(prompt);
+    await streamAssistantText(run);
+    const result = await run.wait();
+
+    console.log(`\nCursor review finished with status: ${result.status}`);
+    if (result.status === "error") {
+      process.exitCode = 2;
+    }
+  } finally {
+    await agent[Symbol.asyncDispose]();
+  }
+}
+
 async function loadEvent(): Promise<PullRequestEvent> {
   const eventPath = requireEnv("GITHUB_EVENT_PATH");
   return JSON.parse(await readFile(eventPath, "utf8")) as PullRequestEvent;
@@ -89,31 +139,22 @@ Review priorities:
 Do not modify files unless the workflow explicitly asks for an autofix. Provide concise review findings with file references where possible.`;
 
   try {
-    // TODO(Cursor SDK): Keep this as a local one-shot review until the exact
-    // cloud review/comment API shape is confirmed for the installed SDK version.
-    const result = await Agent.prompt(prompt, {
-      apiKey,
-      model: { id: "composer-2" },
-      local: { cwd: process.cwd() },
-    });
-
-    console.log(`Cursor review finished with status: ${result.status}`);
-    if (result.status === "error") {
-      process.exitCode = 2;
-    }
+    await runCursorAgent(`MaterialScope PR #${pullRequest.number} review`, prompt, apiKey);
   } catch (error) {
     if (error instanceof CursorAgentError) {
-      console.error(`Cursor agent startup failed: ${error.message}`);
+      console.error("Cursor agent startup failed.");
+      logErrorDetails(error);
       console.error(`Retryable: ${error.isRetryable}`);
       process.exitCode = 1;
       return;
     }
 
+    logErrorDetails(error);
     throw error;
   }
 }
 
 main().catch((error) => {
-  console.error(error);
+  logErrorDetails(error);
   process.exitCode = 1;
 });
