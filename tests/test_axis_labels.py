@@ -45,6 +45,32 @@ def test_build_axis_title_ftir_signal_semantics():
     assert build_axis_title("FTIR", "y", detected_unit="counts", signal_kind="intensity") == "Intensity (a.u.)"
 
 
+def test_spectral_descriptor_units_are_not_rendered_as_physical_units():
+    ftir_absorbance = build_axis_title("FTIR", "y", detected_unit="absorbance")
+    assert "(absorbance)" not in ftir_absorbance.lower()
+    assert ftir_absorbance == "Absorbance (a.u.)"
+
+    ftir_transmittance = build_axis_title("FTIR", "y", detected_unit="transmittance")
+    assert "(transmittance)" not in ftir_transmittance.lower()
+    assert "%" in ftir_transmittance
+
+    raman_intensity = build_axis_title("RAMAN", "y", detected_unit="intensity")
+    assert "(intensity)" not in raman_intensity.lower()
+    assert raman_intensity == "Intensity (a.u.)"
+
+    xrd_intensity = build_axis_title("XRD", "y", detected_unit="intensity")
+    assert "(intensity)" not in xrd_intensity.lower()
+    assert xrd_intensity == "Intensity (counts)"
+
+
+def test_spectral_x_axis_edge_cases():
+    assert build_axis_title("FTIR", "x", detected_unit="nm") == "Wavelength (nm)"
+    xrd_q_axis = build_axis_title("XRD", "x", detected_unit="1/angstrom")
+    assert xrd_q_axis.startswith("q ")
+    assert "Å⁻¹" in xrd_q_axis
+    assert "2θ" not in xrd_q_axis
+
+
 def test_modality_axis_labels_returns_pair():
     x_title, y_title = modality_axis_labels("XRD", x_unit="degree_2theta", y_unit="cps")
     assert x_title == "2θ (°)"

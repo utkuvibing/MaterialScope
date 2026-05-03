@@ -78,6 +78,12 @@ def canonical_unit_token(unit: str | None) -> str:
         "absorbance": "absorbance",
         "transmittance": "transmittance",
         "reflectance": "reflectance",
+        "nm": "nm",
+        "1/angstrom": "1/angstrom",
+        "angstrom^-1": "1/angstrom",
+        "å^-1": "1/angstrom",
+        "1/å": "1/angstrom",
+        "a^-1": "1/angstrom",
         "%/°c": "%/°C",
         "%/degc": "%/°C",
         "%/c": "%/°C",
@@ -100,6 +106,7 @@ def canonical_unit_label(unit: str | None, *, plotly_html: bool = False) -> str:
             "%/°C": f"% °C{_SUP_MINUS_ONE_HTML}",
             "%/K": f"% K{_SUP_MINUS_ONE_HTML}",
             "degree_2theta": "°",
+            "1/angstrom": f"Å{_SUP_MINUS_ONE_HTML}",
             "uV": "µV",
         }
         if token in html_map:
@@ -112,6 +119,7 @@ def canonical_unit_label(unit: str | None, *, plotly_html: bool = False) -> str:
         "%/°C": f"% °C{_SUP_MINUS_ONE_UNICODE}",
         "%/K": f"% K{_SUP_MINUS_ONE_UNICODE}",
         "degree_2theta": "°",
+        "1/angstrom": f"Å{_SUP_MINUS_ONE_UNICODE}",
         "uV": "µV",
     }
     if token in unicode_map:
@@ -193,6 +201,38 @@ def _title_with_unit(title: str, unit_token: str, *, plotly_html: bool) -> str:
     return f"{title} ({label})" if label else title
 
 
+def _spectral_signal_display_unit(modality: str, inferred_kind: str, unit_token: str) -> str:
+    modality_token = str(modality or "").upper()
+    raw_unit = str(unit_token or "").strip()
+
+    if modality_token == "FTIR":
+        if inferred_kind in {"transmittance", "reflectance"}:
+            return "%"
+        if inferred_kind == "absorbance":
+            if raw_unit in {"", "a.u.", "absorbance", "transmittance", "reflectance", "intensity"}:
+                return "a.u."
+            return raw_unit
+        if inferred_kind == "intensity":
+            if raw_unit in {"counts", "cps", "a.u."}:
+                return raw_unit
+            return "a.u."
+        if inferred_kind == "signal":
+            if raw_unit in {"", "absorbance", "transmittance", "reflectance", "intensity"}:
+                return "a.u."
+            return raw_unit or "a.u."
+        return raw_unit or "a.u."
+
+    if modality_token in {"RAMAN", "XRD"}:
+        fallback = "counts" if modality_token == "XRD" else "a.u."
+        if raw_unit in {"counts", "cps", "a.u."}:
+            return raw_unit
+        if raw_unit in {"", "intensity"}:
+            return fallback
+        return fallback
+
+    return raw_unit
+
+
 def build_axis_title(
     modality: str,
     axis: Literal["x", "y"],
@@ -213,10 +253,14 @@ def build_axis_title(
 
     if axis_token == "x":
         if modality_token == "FTIR":
+            if unit_token == "nm":
+                return _title_with_unit("Wavelength", unit_token, plotly_html=plotly_html)
             return _title_with_unit("Wavenumber", unit_token or "cm^-1", plotly_html=plotly_html)
         if modality_token == "RAMAN":
             return _title_with_unit("Raman Shift", unit_token or "cm^-1", plotly_html=plotly_html)
         if modality_token == "XRD":
+            if unit_token == "1/angstrom":
+                return _title_with_unit("q", unit_token, plotly_html=plotly_html)
             return _title_with_unit("2θ", "degree_2theta", plotly_html=plotly_html)
         if unit_token not in {"°C", "K", "°F"}:
             unit_token = "°C"
@@ -235,22 +279,19 @@ def build_axis_title(
         title = "Signal" if inferred_kind == "signal" else "ΔT"
         return _title_with_unit(title, unit_token or "uV", plotly_html=plotly_html)
     if modality_token == "FTIR":
+        spectral_unit = _spectral_signal_display_unit(modality_token, inferred_kind, unit_token)
         if inferred_kind == "transmittance":
-            if unit_token in {"a.u.", "", "unknown", "intensity"}:
-                unit_token = "%"
-            return _title_with_unit("Transmittance", unit_token, plotly_html=plotly_html)
+            return _title_with_unit("Transmittance", spectral_unit, plotly_html=plotly_html)
         if inferred_kind == "reflectance":
-            if unit_token in {"a.u.", "", "unknown", "intensity"}:
-                unit_token = "%"
-            return _title_with_unit("Reflectance", unit_token, plotly_html=plotly_html)
+            return _title_with_unit("Reflectance", spectral_unit, plotly_html=plotly_html)
         if inferred_kind == "intensity":
-            return _title_with_unit("Intensity", unit_token or "a.u.", plotly_html=plotly_html)
+            return _title_with_unit("Intensity", spectral_unit, plotly_html=plotly_html)
         if inferred_kind == "signal":
-            return _title_with_unit("Signal", unit_token or "a.u.", plotly_html=plotly_html)
-        return _title_with_unit("Absorbance", unit_token or "a.u.", plotly_html=plotly_html)
+            return _title_with_unit("Signal", spectral_unit, plotly_html=plotly_html)
+        return _title_with_unit("Absorbance", spectral_unit, plotly_html=plotly_html)
     if modality_token in {"RAMAN", "XRD"}:
-        fallback = "counts" if modality_token == "XRD" else "a.u."
-        return _title_with_unit("Intensity", unit_token or fallback, plotly_html=plotly_html)
+        spectral_unit = _spectral_signal_display_unit(modality_token, inferred_kind, unit_token)
+        return _title_with_unit("Intensity", spectral_unit, plotly_html=plotly_html)
     return _title_with_unit("Signal", unit_token or "a.u.", plotly_html=plotly_html)
 
 
