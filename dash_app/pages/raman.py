@@ -110,6 +110,7 @@ from dash_app.components.spectral_plot_settings import (
     spectral_plot_settings_chrome,
     spectral_plot_settings_from_controls,
 )
+from core.axis_labels import build_axis_title
 from core.plotting import apply_materialscope_plot_theme, primary_y_range, sparse_label_indices
 from utils.i18n import normalize_ui_locale, translate_ui
 
@@ -2532,6 +2533,13 @@ def _build_figure(
     peaks = curves.get("peaks", [])
     diagnostics = curves.get("diagnostics") or {}
     settings = normalize_spectral_plot_settings(plot_settings)
+    x_axis_title = build_axis_title("RAMAN", "x", detected_unit=curves.get("x_unit"))
+    y_axis_title = build_axis_title(
+        "RAMAN",
+        "y",
+        detected_unit=curves.get("y_unit"),
+        signal_kind=curves.get("signal_role") or diagnostics.get("signal_role"),
+    )
 
     has_corrected = bool(corrected and len(corrected) == len(wavenumber))
     has_smoothed = bool(smoothed and len(smoothed) == len(wavenumber))
@@ -2694,8 +2702,8 @@ def _build_figure(
         view_mode="result",
         scale_traces=False,
     )
-    fig.update_xaxes(title_text=translate_ui(loc, "dash.analysis.figure.axis_raman_shift"))
-    fig.update_yaxes(title_text=translate_ui(loc, "dash.analysis.figure.axis_intensity_au"))
+    fig.update_xaxes(title_text=x_axis_title)
+    fig.update_yaxes(title_text=y_axis_title)
     if settings["x_range_enabled"] and settings["x_min"] is not None and settings["x_max"] is not None:
         x_range = [settings["x_min"], settings["x_max"]]
         if settings["reverse_x_axis"]:
@@ -2716,8 +2724,8 @@ def _build_figure(
             view_mode="result",
             scale_traces=False,
         )
-        fig.update_xaxes(title_text=translate_ui(loc, "dash.analysis.figure.axis_raman_shift"))
-        fig.update_yaxes(title_text=translate_ui(loc, "dash.analysis.figure.axis_intensity_au"))
+        fig.update_xaxes(title_text=x_axis_title)
+        fig.update_yaxes(title_text=y_axis_title)
         if settings["x_range_enabled"] and settings["x_min"] is not None and settings["x_max"] is not None:
             x_range = [settings["x_min"], settings["x_max"]]
             if settings["reverse_x_axis"]:

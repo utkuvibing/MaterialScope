@@ -461,6 +461,7 @@ def render_compare_workspace(
     else:
         fig = go.Figure()
         x_title, y_title = axis_titles(analysis_type)
+        labels_resolved_from_curves = False
         use_best = str(signal_mode or "best").lower() == "best"
 
         for dataset_key in selected_runs:
@@ -472,6 +473,14 @@ def render_compare_workspace(
                     curves = {}
                 picked = pick_best_series(curves) if curves else None
                 if picked:
+                    if not labels_resolved_from_curves:
+                        x_title, y_title = axis_titles(
+                            analysis_type,
+                            x_unit=curves.get("x_unit"),
+                            y_unit=curves.get("y_unit"),
+                            signal_kind=curves.get("signal_role"),
+                        )
+                        labels_resolved_from_curves = True
                     xs, ys, src = picked
                     fig.add_trace(
                         go.Scatter(

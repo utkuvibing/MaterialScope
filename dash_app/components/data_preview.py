@@ -9,6 +9,7 @@ import dash_bootstrap_components as dbc
 from dash import dash_table, dcc, html
 import plotly.graph_objects as go
 
+from core.axis_labels import build_axis_title
 from dash_app.theme import apply_figure_theme
 
 
@@ -80,13 +81,17 @@ def quick_plot(rows: list[dict[str, Any]], detail: dict[str, Any], *, ui_theme: 
     y = [row.get("signal") for row in rows]
     dataset = detail.get("dataset") or {}
     units = detail.get("units") or {}
+    modality = str(dataset.get("data_type") or "UNKNOWN")
+    signal_role = None
+    if modality.upper() == "XRD":
+        signal_role = "intensity"
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=x, y=y, mode="lines", name=dataset.get("display_name", "Signal")))
     fig.update_layout(
         title=f"{dataset.get('data_type', 'Data')} - {dataset.get('display_name', dataset.get('key', 'Dataset'))}",
         margin=dict(l=48, r=24, t=56, b=48),
-        xaxis_title=f"Temperature ({units.get('temperature', '°C')})",
-        yaxis_title=f"Signal ({units.get('signal', 'a.u.')})",
+        xaxis_title=build_axis_title(modality, "x", detected_unit=units.get("temperature")),
+        yaxis_title=build_axis_title(modality, "y", detected_unit=units.get("signal"), signal_kind=signal_role),
         height=360,
     )
     apply_figure_theme(fig, ui_theme)

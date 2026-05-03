@@ -101,6 +101,7 @@ from backend.workspace import (
     unique_dataset_key,
 )
 from backend.workspace_context import build_workspace_context, set_active_dataset, update_compare_selection
+from core.axis_labels import build_axis_title
 from core.data_io import read_thermal_data
 from core.execution_engine import run_batch_analysis, run_single_analysis
 from core.modalities import analysis_state_key, stable_analysis_types
@@ -203,22 +204,48 @@ def _dataset_axis_and_signal(dataset: Any) -> tuple[list[float], list[float]]:
     return unique_axis.tolist(), signal[unique_idx].tolist()
 
 
-def _axis_title_for_analysis(analysis_type: str) -> str:
+def _snapshot_axis_titles(
+    *,
+    analysis_type: str,
+    dataset: Any,
+    state_payload: dict[str, Any],
+) -> tuple[str, str]:
     token = str(analysis_type or "").strip().upper()
-    if token == "XRD":
-        return "2theta (deg)"
+    payload = state_payload if isinstance(state_payload, dict) else {}
+    units = getattr(dataset, "units", {}) or {}
+    metadata = getattr(dataset, "metadata", {}) or {}
+
+    processing = payload.get("processing")
+    if not isinstance(processing, Mapping):
+        processing = {}
+    method_context = processing.get("method_context")
+    if not isinstance(method_context, Mapping):
+        method_context = {}
+    diagnostics = payload.get("diagnostics")
+    if not isinstance(diagnostics, Mapping):
+        diagnostics = {}
+
+    x_unit = units.get("temperature")
+    y_unit = units.get("signal")
+    signal_kind: str | None = None
+
     if token == "FTIR":
-        return "Wavenumber"
-    if token == "RAMAN":
-        return "Raman Shift"
-    return "Temperature (°C)"
+        signal_kind = str(diagnostics.get("signal_role") or method_context.get("ftir_signal_role") or "").strip() or None
+    elif token == "RAMAN":
+        signal_kind = str(diagnostics.get("signal_role") or method_context.get("raman_signal_role") or "").strip() or None
+    elif token == "XRD":
+        x_unit = (
+            method_context.get("xrd_axis_unit")
+            or metadata.get("xrd_axis_unit")
+            or units.get("temperature")
+            or x_unit
+        )
+        signal_kind = "intensity"
 
-
-def _y_title_for_analysis(analysis_type: str) -> str:
-    token = str(analysis_type or "").strip().upper()
-    if token == "XRD":
-        return "Intensity (a.u.)"
-    return "Signal (a.u.)"
+    return (
+        build_axis_title(token, "x", detected_unit=x_unit),
+        build_axis_title(token, "y", detected_unit=y_unit, signal_kind=signal_kind),
+    )
 
 
 def _build_result_snapshot_figure(
@@ -229,6 +256,11 @@ def _build_result_snapshot_figure(
     state_payload: dict[str, Any],
 ) -> go.Figure | None:
     payload = state_payload or {}
+    x_axis_title, y_axis_title = _snapshot_axis_titles(
+        analysis_type=analysis_type,
+        dataset=dataset,
+        state_payload=payload,
+    )
     state_axis = _finite_float_list(payload.get("axis"))
     if not state_axis:
         state_axis = _finite_float_list(payload.get("temperature"))
@@ -313,8 +345,8 @@ def _build_result_snapshot_figure(
 
     fig.update_layout(
         title=f"{str(analysis_type or '').upper()} Analysis - {dataset_key}",
-        xaxis_title=_axis_title_for_analysis(analysis_type),
-        yaxis_title=_y_title_for_analysis(analysis_type),
+        xaxis_title=x_axis_title,
+        yaxis_title=y_axis_title,
         template="plotly_white",
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
@@ -915,6 +947,8 @@ def create_app(
             return a.tolist()
 
         frame = getattr(dataset, "data", None)
+        metadata = getattr(dataset, "metadata", {}) or {}
+        units = getattr(dataset, "units", {}) or {}
         temperature = []
         raw_signal = []
         if frame is not None and "temperature" in frame.columns and "signal" in frame.columns:
@@ -957,11 +991,62 @@ def create_app(
 
         peaks = [_peak_to_dict(p) for p in raw_peaks]
         diagnostics = analysis_state.get("diagnostics") or {}
+        processing = analysis_state.get("processing")
+        if not isinstance(processing, Mapping):
+            processing = {}
+        method_context = processing.get("method_context")
+        if not isinstance(method_context, Mapping):
+            method_context = {}
+
+        normalized_analysis_type = analysis_type.upper()
+        x_unit = units.get("temperature")
+        y_unit = units.get("signal")
+        axis_role = None
+        signal_role = None
+        if normalized_analysis_type == "FTIR":
+            axis_role = str(metadata.get("spectral_axis_role") or "wavenumber")
+            signal_role = str(
+                diagnostics.get("signal_role")
+                or method_context.get("ftir_signal_role")
+                or ""
+            ).strip() or None
+        elif normalized_analysis_type == "RAMAN":
+            axis_role = str(metadata.get("spectral_axis_role") or "raman_shift")
+            signal_role = str(
+                diagnostics.get("signal_role")
+                or method_context.get("raman_signal_role")
+                or ""
+            ).strip() or None
+        elif normalized_analysis_type == "XRD":
+            axis_role = str(
+                method_context.get("xrd_axis_role")
+                or metadata.get("xrd_axis_role")
+                or "two_theta"
+            )
+            x_unit = (
+                method_context.get("xrd_axis_unit")
+                or metadata.get("xrd_axis_unit")
+                or x_unit
+            )
+            signal_role = "intensity"
+        elif normalized_analysis_type == "DSC":
+            axis_role = "temperature"
+            signal_role = "heat_flow"
+        elif normalized_analysis_type == "TGA":
+            axis_role = "temperature"
+            signal_role = "mass"
+        elif normalized_analysis_type == "DTA":
+            axis_role = "temperature"
+            signal_role = "delta_t"
 
         return AnalysisStateCurvesResponse(
             project_id=project_id,
             dataset_key=dataset_key,
-            analysis_type=analysis_type.upper(),
+            analysis_type=normalized_analysis_type,
+            x_unit=str(x_unit) if x_unit not in (None, "") else None,
+            y_unit=str(y_unit) if y_unit not in (None, "") else None,
+            axis_role=axis_role,
+            signal_role=signal_role,
             temperature=temperature,
             raw_signal=raw_signal,
             smoothed=smoothed,

@@ -6,6 +6,7 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from core.axis_labels import build_axis_title
 from core import plotting as shared_plotting
 from utils.session_state import get_ui_theme
 
@@ -341,7 +342,7 @@ def _add_exo_annotation(fig):
 
 
 def create_thermal_plot(
-    x, y, title="", x_label="Temperature (°C)", y_label="Signal",
+    x, y, title="", x_label=None, y_label=None,
     name="Signal", color=None, mode="lines", display_settings: dict | None = None,
 ):
     """Create a basic thermal analysis plot."""
@@ -350,6 +351,10 @@ def create_thermal_plot(
         x=x, y=y, mode=mode, name=name,
         line=dict(color=color or THERMAL_COLORS[0], width=2.6),
     ))
+    if not x_label:
+        x_label = build_axis_title("UNKNOWN", "x", detected_unit="°C")
+    if not y_label:
+        y_label = build_axis_title("UNKNOWN", "y", detected_unit="a.u.")
     fig.update_layout(xaxis_title=x_label, yaxis_title=y_label)
     apply_plot_display_settings(fig, display_settings, title=title)
     apply_plotly_config(fig)
@@ -357,7 +362,7 @@ def create_thermal_plot(
 
 
 def create_dsc_plot(temperature, heat_flow, title="DSC Curve",
-                    y_label="Heat Flow (mW/mg)", baseline=None,
+                    y_label=None, baseline=None,
                     peaks=None, smoothed=None, display_settings: dict | None = None):
     """Create a DSC plot with optional baseline and peak markers."""
     tokens = _plot_tokens()
@@ -417,7 +422,9 @@ def create_dsc_plot(temperature, heat_flow, title="DSC Curve",
                     annotation=dict(font=dict(size=10, color=tokens["subtle_text"], family=_PLOT_FONT_FAMILY)),
                 )
 
-    fig.update_layout(xaxis_title="Temperature (°C)", yaxis_title=y_label)
+    if not y_label:
+        y_label = build_axis_title("DSC", "y")
+    fig.update_layout(xaxis_title=build_axis_title("DSC", "x"), yaxis_title=y_label)
     _add_exo_annotation(fig)
     apply_plot_display_settings(fig, display_settings, title=title)
     apply_plotly_config(fig)
@@ -430,11 +437,11 @@ def create_tga_plot(
     title="TGA Curve",
     dtg=None,
     steps=None,
-    x_label="Temperature (°C)",
-    y_label="Mass (%)",
+    x_label=None,
+    y_label=None,
     mass_name="TGA (Mass %)",
     dtg_name="DTG",
-    dtg_label="DTG (%/°C)",
+    dtg_label=None,
     step_prefix="Step",
     display_settings: dict | None = None,
 ):
@@ -455,6 +462,8 @@ def create_tga_plot(
             x=temperature, y=dtg, mode="lines", name=dtg_name,
             line=dict(color=THERMAL_COLORS[1], width=1.8, dash="dash"),
         ), secondary_y=True)
+        if not dtg_label:
+            dtg_label = build_axis_title("TGA", "y", detected_unit="%/°C", signal_kind="dtg")
         fig.update_yaxes(title_text=dtg_label, secondary_y=True)
 
     if steps:
@@ -468,6 +477,10 @@ def create_tga_plot(
                 annotation=dict(font=dict(size=10, color=tokens["subtle_text"], family=_PLOT_FONT_FAMILY)),
             )
 
+    if not x_label:
+        x_label = build_axis_title("TGA", "x")
+    if not y_label:
+        y_label = build_axis_title("TGA", "y")
     fig.update_layout(xaxis_title=x_label, yaxis_title=y_label)
     apply_plot_display_settings(fig, display_settings, title=title)
     apply_plotly_config(fig)
@@ -479,7 +492,7 @@ def create_dta_plot(temperature, signal, title="DTA Curve",
     """Create a DTA plot."""
     fig = create_dsc_plot(
         temperature, signal, title=title,
-        y_label="\u0394T (\u00b5V)", baseline=baseline,
+        y_label=build_axis_title("DTA", "y", detected_unit="uV"), baseline=baseline,
         peaks=peaks, smoothed=smoothed,
         display_settings=display_settings,
     )
@@ -521,13 +534,16 @@ def create_multirate_overlay(temperature_list, signal_list, rate_labels,
             x=temp, y=sig, mode="lines", name=label,
             line=dict(color=THERMAL_COLORS[i % len(THERMAL_COLORS)], width=2.3),
         ))
-    fig.update_layout(xaxis_title="Temperature (°C)", yaxis_title="Signal")
+    fig.update_layout(
+        xaxis_title=build_axis_title("UNKNOWN", "x", detected_unit="°C"),
+        yaxis_title=build_axis_title("UNKNOWN", "y", detected_unit="a.u."),
+    )
     apply_plot_display_settings(fig, display_settings, title=title)
     apply_plotly_config(fig)
     return fig
 
 
-def create_overlay_plot(series, title="Run Comparison", x_label="Temperature (°C)", y_label="Signal", display_settings: dict | None = None):
+def create_overlay_plot(series, title="Run Comparison", x_label=None, y_label=None, display_settings: dict | None = None):
     """Overlay multiple thermal runs on the same axes."""
     fig = go.Figure()
     for i, item in enumerate(series):
@@ -545,6 +561,10 @@ def create_overlay_plot(series, title="Run Comparison", x_label="Temperature (°
                 opacity=item.get("opacity", 1.0),
             )
         )
+    if not x_label:
+        x_label = build_axis_title("UNKNOWN", "x", detected_unit="°C")
+    if not y_label:
+        y_label = build_axis_title("UNKNOWN", "y", detected_unit="a.u.")
     fig.update_layout(xaxis_title=x_label, yaxis_title=y_label)
     apply_plot_display_settings(fig, display_settings, title=title)
     apply_plotly_config(fig)
@@ -570,7 +590,10 @@ def create_deconvolution_plot(temperature, signal, fitted, components,
             line=dict(color=THERMAL_COLORS[(i+2) % len(THERMAL_COLORS)], width=1.4, dash="dot"),
             fill="tozeroy", opacity=0.18,
         ))
-    fig.update_layout(xaxis_title="Temperature (°C)", yaxis_title="Signal")
+    fig.update_layout(
+        xaxis_title=build_axis_title("UNKNOWN", "x", detected_unit="°C"),
+        yaxis_title=build_axis_title("UNKNOWN", "y", detected_unit="a.u."),
+    )
     apply_plot_display_settings(fig, display_settings, title=title)
     apply_plotly_config(fig)
     return fig

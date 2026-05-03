@@ -84,6 +84,7 @@ from dash_app.components.xrd_processing_draft import (
     xrd_ui_snapshot_dict,
 )
 from dash_app.components.xrd_result_plot import build_xrd_result_figure
+from core.axis_labels import build_axis_title
 from core.plotting import build_plotly_config
 from dash_app.theme import normalize_ui_theme
 from utils.i18n import normalize_ui_locale, translate_ui
@@ -2134,11 +2135,13 @@ def _build_figure(project_id, dataset_key, summary, processing, ui_theme):
     proc = processing if isinstance(processing, dict) else {}
     method_context = proc.get("method_context", {}) if isinstance(proc.get("method_context"), dict) else {}
     plot_settings = method_context.get("xrd_plot_settings") or {}
-    axis_role = str(method_context.get("xrd_axis_role") or "two_theta").strip().lower()
-    if axis_role in {"two_theta", ""}:
-        axis_title = translate_ui(loc, "dash.analysis.figure.axis_two_theta")
-    else:
-        axis_title = translate_ui(loc, "dash.analysis.figure.axis_x_generic", role=axis_role)
+    axis_title = build_axis_title("XRD", "x", detected_unit=curves.get("x_unit") or method_context.get("xrd_axis_unit"))
+    y_axis_title = build_axis_title(
+        "XRD",
+        "y",
+        detected_unit=curves.get("y_unit"),
+        signal_kind=curves.get("signal_role") or "intensity",
+    )
 
     summ = summary if isinstance(summary, dict) else {}
     sample_name = resolve_sample_name(summ, {}, fallback_display_name=dataset_key, locale_data=loc)
@@ -2155,6 +2158,7 @@ def _build_figure(project_id, dataset_key, summary, processing, ui_theme):
         loc=loc,
         sample_name=sample_name,
         axis_title=axis_title,
+        y_axis_title=y_axis_title,
     )
     return dcc.Graph(
         id="xrd-result-plot-graph",
@@ -2354,11 +2358,13 @@ def render_xrd_result_figure_area(cache, overlay_idx, ui_theme, locale_data, pro
         return no_data_figure_msg(locale_data=locale_data)
     plot_settings = (processing.get("method_context") or {}).get("xrd_plot_settings") or {}
     method_context = processing.get("method_context", {})
-    axis_role = str(method_context.get("xrd_axis_role") or "two_theta").strip().lower()
-    if axis_role in {"two_theta", ""}:
-        axis_title = translate_ui(loc, "dash.analysis.figure.axis_two_theta")
-    else:
-        axis_title = translate_ui(loc, "dash.analysis.figure.axis_x_generic", role=axis_role)
+    axis_title = build_axis_title("XRD", "x", detected_unit=curves.get("x_unit") or method_context.get("xrd_axis_unit"))
+    y_axis_title = build_axis_title(
+        "XRD",
+        "y",
+        detected_unit=curves.get("y_unit"),
+        signal_kind=curves.get("signal_role") or "intensity",
+    )
     sample_name = resolve_sample_name(summary, {}, fallback_display_name=dataset_key, locale_data=locale_data)
     fig = build_xrd_result_figure(
         axis=axis,
@@ -2373,6 +2379,7 @@ def render_xrd_result_figure_area(cache, overlay_idx, ui_theme, locale_data, pro
         loc=loc,
         sample_name=sample_name,
         axis_title=axis_title,
+        y_axis_title=y_axis_title,
         drawn_shapes=_xrd_shapes_from_relayout(relayout_data),
     )
     return dcc.Graph(

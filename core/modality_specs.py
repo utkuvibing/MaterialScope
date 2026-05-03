@@ -157,7 +157,7 @@ MODALITY_SPECS: dict[str, dict[str, Any]] = {
     "FTIR": _spec(
         label="Fourier Transform Infrared Spectroscopy",
         axis_label="Wavenumber",
-        axis_role="temperature",
+        axis_role="wavenumber",
         signal_label="Absorbance / Transmittance",
         signal_role="signal",
         allowed_x_units=("cm^-1", "1/cm", "nm"),
@@ -189,7 +189,7 @@ MODALITY_SPECS: dict[str, dict[str, Any]] = {
     "RAMAN": _spec(
         label="Raman Spectroscopy",
         axis_label="Raman Shift",
-        axis_role="temperature",
+        axis_role="raman_shift",
         signal_label="Intensity",
         signal_role="signal",
         allowed_x_units=("cm^-1", "1/cm"),
@@ -221,7 +221,7 @@ MODALITY_SPECS: dict[str, dict[str, Any]] = {
     "XRD": _spec(
         label="X-Ray Diffraction",
         axis_label="2θ",
-        axis_role="temperature",
+        axis_role="two_theta",
         signal_label="Intensity",
         signal_role="signal",
         allowed_x_units=("degree_2theta", "deg", "2theta", "1/angstrom"),

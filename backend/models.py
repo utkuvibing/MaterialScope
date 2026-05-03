@@ -547,6 +547,10 @@ class AnalysisStateCurvesResponse(BaseModel):
     project_id: str
     dataset_key: str
     analysis_type: str
+    x_unit: str | None = None
+    y_unit: str | None = None
+    axis_role: str | None = None
+    signal_role: str | None = None
     temperature: list[float] = Field(default_factory=list)
     raw_signal: list[float] = Field(default_factory=list)
     smoothed: list[float] = Field(default_factory=list)

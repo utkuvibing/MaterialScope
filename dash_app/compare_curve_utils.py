@@ -1,18 +1,23 @@
 """Pure helpers for Compare overlay axes and analysis-state series selection (no Dash page registration)."""
 
+from __future__ import annotations
 
-def axis_titles(analysis_type: str) -> tuple[str, str]:
+from core.axis_labels import build_axis_title
+
+
+def axis_titles(
+    analysis_type: str,
+    *,
+    x_unit: str | None = None,
+    y_unit: str | None = None,
+    signal_kind: str | None = None,
+) -> tuple[str, str]:
     """X and Y axis titles for compare overlay."""
-    upper = (analysis_type or "").upper()
-    if upper == "FTIR":
-        return "Wavenumber (cm^-1)", "Intensity (a.u.)"
-    if upper == "RAMAN":
-        return "Raman shift (cm^-1)", "Intensity (a.u.)"
-    if upper == "XRD":
-        return "2theta (deg)", "Intensity (a.u.)"
-    if upper == "TGA":
-        return "Temperature (C)", "Mass or signal (a.u.)"
-    return "Temperature (C)", "Signal (a.u.)"
+    modality = (analysis_type or "").upper()
+    return (
+        build_axis_title(modality, "x", detected_unit=x_unit),
+        build_axis_title(modality, "y", detected_unit=y_unit, signal_kind=signal_kind),
+    )
 
 
 def pick_best_series(curves: dict) -> tuple[list, list, str] | None:

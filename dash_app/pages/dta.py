@@ -24,6 +24,7 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
 import plotly.graph_objects as go
 
+from core.axis_labels import build_axis_title, canonical_unit_label
 from core.figure_render import render_plotly_figure_png
 from dash_app.components.analysis_boilerplate import (
     build_apply_preset_card,
@@ -546,19 +547,22 @@ def _compute_y_axis_range(*series_collection: list[float]) -> list[float] | None
     return [lower - pad, upper + pad]
 
 
-def _temperature_label(loc: str) -> str:
-    return "Sıcaklık (°C)" if normalize_ui_locale(loc) == "tr" else "Temperature (°C)"
+def _temperature_label(loc: str, temperature_unit: str = "°C") -> str:
+    if normalize_ui_locale(loc) == "tr":
+        return f"Sıcaklık ({temperature_unit})"
+    return f"Temperature ({temperature_unit})"
 
 
-def _format_temp_c(value: float | None) -> str:
+def _format_temperature(value: float | None, temperature_unit: str = "°C") -> str:
     parsed = _coerce_float(value)
     if parsed is None:
         return "--"
-    return f"{parsed:.1f}°C"
+    return f"{parsed:.1f}{temperature_unit}"
 
 
 def _signal_label(loc: str) -> str:
-    return "ΔT (a.b.)" if normalize_ui_locale(loc) == "tr" else "ΔT (a.u.)"
+    _ = loc
+    return "ΔT (µV)"
 
 
 def _format_signal(value: float | None) -> str:
@@ -568,33 +572,45 @@ def _format_signal(value: float | None) -> str:
     return f"{parsed:.4f}"
 
 
-def _trace_hover_template(trace_label: str, loc: str) -> str:
-    temp_label = _temperature_label(loc)
-    signal_label = _signal_label(loc)
+def _trace_hover_template(
+    trace_label: str,
+    loc: str,
+    signal_label: str | None = None,
+    temperature_unit: str = "°C",
+) -> str:
+    temp_label = _temperature_label(loc, temperature_unit)
+    resolved_signal_label = signal_label or _signal_label(loc)
     return (
         f"{trace_label}"
-        f"<br>{temp_label}: %{{x:.1f}}°C"
-        f"<br>{signal_label}: %{{y:.4f}}"
+        f"<br>{temp_label}: %{{x:.1f}}{temperature_unit}"
+        f"<br>{resolved_signal_label}: %{{y:.4f}}"
         "<extra></extra>"
     )
 
 
-def _event_hover_html(row: dict, direction_label: str, signal_value: float | None, loc: str) -> str:
+def _event_hover_html(
+    row: dict,
+    direction_label: str,
+    signal_value: float | None,
+    loc: str,
+    signal_label: str | None = None,
+    temperature_unit: str = "°C",
+) -> str:
     onset_label = "Başlangıç" if normalize_ui_locale(loc) == "tr" else "Onset"
     endset_label = "Bitiş" if normalize_ui_locale(loc) == "tr" else "Endset"
     area_label = translate_ui(loc, "dash.analysis.label.area")
     height_label = translate_ui(loc, "dash.analysis.label.height")
     fwhm_label = translate_ui(loc, "dash.analysis.label.fwhm")
-    signal_label = _signal_label(loc)
+    resolved_signal_label = signal_label or _signal_label(loc)
     return (
         f"{direction_label} event"
-        f"<br>{_temperature_label(loc)}: {_format_temp_c(row.get('peak_temperature'))}"
-        f"<br>{onset_label}: {_format_temp_c(row.get('onset_temperature'))}"
-        f"<br>{endset_label}: {_format_temp_c(row.get('endset_temperature'))}"
+        f"<br>{_temperature_label(loc, temperature_unit)}: {_format_temperature(row.get('peak_temperature'), temperature_unit)}"
+        f"<br>{onset_label}: {_format_temperature(row.get('onset_temperature'), temperature_unit)}"
+        f"<br>{endset_label}: {_format_temperature(row.get('endset_temperature'), temperature_unit)}"
         f"<br>{area_label}: {_format_signal(row.get('area'))}"
         f"<br>{height_label}: {_format_signal(row.get('height'))}"
-        f"<br>{fwhm_label}: {_format_signal(row.get('fwhm'))}°C"
-        f"<br>{signal_label}: {_format_signal(signal_value)}"
+        f"<br>{fwhm_label}: {_format_signal(row.get('fwhm'))}{temperature_unit}"
+        f"<br>{resolved_signal_label}: {_format_signal(signal_value)}"
         "<extra></extra>"
     )
 
@@ -608,6 +624,7 @@ def _event_text_label(
     min_sep: float,
     annotated_temps: list[float],
     mode: str,
+    temperature_unit: str = "°C",
 ) -> str:
     if mode == "debug":
         return ""
@@ -617,7 +634,7 @@ def _event_text_label(
         return ""
     normalized_direction = _normalize_direction(row.get("direction", row.get("peak_type", "unknown")))
     short_direction = "Endo" if normalized_direction == "endotherm" else "Exo"
-    return f"{short_direction} {_format_temp_c(pt)}"
+    return f"{short_direction} {_format_temperature(pt, temperature_unit)}"
 
 
 def _build_event_guides(fig: go.Figure, rows: list[dict], *, loc: str, mode: str) -> None:
@@ -2188,6 +2205,15 @@ def _build_dta_go_figure(
     smoothed = _series_for_temperature(curves.get("smoothed", []), temperature)
     baseline = _series_for_temperature(curves.get("baseline", []), temperature)
     corrected = _series_for_temperature(curves.get("corrected", []), temperature)
+    x_axis_title = build_axis_title("DTA", "x", detected_unit=curves.get("x_unit"))
+    y_axis_title = build_axis_title(
+        "DTA",
+        "y",
+        detected_unit=curves.get("y_unit"),
+        signal_kind=curves.get("signal_role"),
+    )
+    temperature_unit_label = canonical_unit_label(curves.get("x_unit")) or "°C"
+    hover_signal_label = y_axis_title
 
     if not temperature:
         return None
@@ -2220,7 +2246,12 @@ def _build_dta_go_figure(
                 name=legend_raw,
                 line=dict(color="#94A3B8", width=0.95 if primary_name != legend_raw else 1.9),
                 opacity=0.18 if (is_result and primary_name != legend_raw) else (0.88 if primary_name == legend_raw else 0.34),
-                hovertemplate=_trace_hover_template(legend_raw, loc),
+                hovertemplate=_trace_hover_template(
+                    legend_raw,
+                    loc,
+                    hover_signal_label,
+                    temperature_unit=temperature_unit_label,
+                ),
             )
         )
 
@@ -2233,7 +2264,12 @@ def _build_dta_go_figure(
                 name=legend_smooth,
                 line=dict(color="#0891B2", width=1.4 if is_result else 1.6),
                 opacity=0.62 if is_result else 0.84,
-                hovertemplate=_trace_hover_template(legend_smooth, loc),
+                hovertemplate=_trace_hover_template(
+                    legend_smooth,
+                    loc,
+                    hover_signal_label,
+                    temperature_unit=temperature_unit_label,
+                ),
             )
         )
 
@@ -2246,7 +2282,12 @@ def _build_dta_go_figure(
                 name=legend_base,
                 line=dict(color="#64748B", width=1.0 if is_result else 1.1, dash="dot"),
                 opacity=0.38 if is_result else 0.66,
-                hovertemplate=_trace_hover_template(legend_base, loc),
+                hovertemplate=_trace_hover_template(
+                    legend_base,
+                    loc,
+                    hover_signal_label,
+                    temperature_unit=temperature_unit_label,
+                ),
             )
         )
 
@@ -2258,7 +2299,12 @@ def _build_dta_go_figure(
             name=primary_name,
             line=dict(color=primary_color, width=3.0 if is_result else 2.8),
             opacity=1.0,
-            hovertemplate=_trace_hover_template(primary_name, loc),
+            hovertemplate=_trace_hover_template(
+                primary_name,
+                loc,
+                hover_signal_label,
+                temperature_unit=temperature_unit_label,
+            ),
         )
     )
 
@@ -2285,8 +2331,16 @@ def _build_dta_go_figure(
             min_sep=_ANNOTATION_MIN_SEP,
             annotated_temps=annotated_temps,
             mode=view_mode,
+            temperature_unit=temperature_unit_label,
         )
-        marker_hover = _event_hover_html(row, direction_label, _coerce_float(primary_signal[idx]), loc)
+        marker_hover = _event_hover_html(
+            row,
+            direction_label,
+            _coerce_float(primary_signal[idx]),
+            loc,
+            hover_signal_label,
+            temperature_unit=temperature_unit_label,
+        )
         fig.add_trace(
             go.Scatter(
                 x=[temperature[idx]],
@@ -2301,7 +2355,7 @@ def _build_dta_go_figure(
                 text=[text_str],
                 textposition="top center",
                 textfont=dict(size=8 if is_result else 8, color=color),
-                name=f"{direction_label} {_format_temp_c(pt)}",
+                name=f"{direction_label} {_format_temperature(pt, temperature_unit_label)}",
                 showlegend=False,
                 hovertemplate=marker_hover,
             )
@@ -2348,8 +2402,8 @@ def _build_dta_go_figure(
             yanchor="top",
             font=dict(size=title_size),
         ),
-        xaxis_title=translate_ui(loc, "dash.analysis.figure.axis_temperature_c"),
-        yaxis_title=translate_ui(loc, "dash.analysis.figure.axis_delta_t"),
+        xaxis_title=x_axis_title,
+        yaxis_title=y_axis_title,
         hovermode="x unified",
         margin=dict(l=70, r=34, t=86 if is_result else 66, b=62 if is_result else 54),
         height=result_height if is_result else debug_height,

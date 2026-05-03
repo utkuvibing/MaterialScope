@@ -18,7 +18,7 @@ def test_axis_titles_spectral_and_xrd():
 
     assert "Wavenumber" in axis_titles("FTIR")[0]
     assert "Raman" in axis_titles("RAMAN")[0]
-    assert "2theta" in axis_titles("XRD")[0].lower()
+    assert "2θ" in axis_titles("XRD")[0]
 
 
 def test_pick_best_series_prefers_corrected_then_smoothed_then_raw():

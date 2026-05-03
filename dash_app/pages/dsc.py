@@ -23,6 +23,7 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
 import plotly.graph_objects as go
 
+from core.axis_labels import build_axis_title
 from dash_app.components.analysis_boilerplate import (
     build_apply_preset_card,
     build_collapsible_section,
@@ -2989,7 +2990,7 @@ def _build_derivative_panel(
             xanchor="left",
             font=dict(size=14),
         ),
-        xaxis_title=translate_ui(loc, "dash.analysis.figure.axis_temperature_c"),
+        xaxis_title=build_axis_title("DSC", "x", detected_unit=curves.get("x_unit")),
         yaxis_title=translate_ui(loc, "dash.analysis.dsc.derivative.axis_label"),
         height=280,
         margin=dict(l=56, r=18, t=48, b=44),
@@ -3029,6 +3030,8 @@ def _build_dsc_go_figure(
         curves = analysis_state_curves(project_id, "DSC", dataset_key)
     except Exception:
         curves = {}
+    x_axis_title = build_axis_title("DSC", "x", detected_unit=curves.get("x_unit"))
+    y_axis_title = build_axis_title("DSC", "y", detected_unit=curves.get("y_unit"))
 
     raw_temperature = curves.get("temperature") or []
     if not raw_temperature:
@@ -3177,8 +3180,8 @@ def _build_dsc_go_figure(
             yanchor="top",
             font=dict(size=17),
         ),
-        xaxis_title=translate_ui(loc, "dash.analysis.figure.axis_temperature_c"),
-        yaxis_title=translate_ui(loc, "dash.analysis.figure.axis_heat_flow"),
+        xaxis_title=x_axis_title,
+        yaxis_title=y_axis_title,
         hovermode="x unified",
         margin=dict(l=70, r=34, t=86, b=62),
         height=600,

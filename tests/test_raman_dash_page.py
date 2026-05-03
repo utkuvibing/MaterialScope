@@ -522,6 +522,8 @@ def test_build_figure_returns_graph_when_curves_present(monkeypatch):
     assert "plot_display_settings" in graph.figure.layout.meta
     assert graph.figure.layout.hovermode == "x unified"
     assert graph.figure.layout.legend.y >= 0
+    assert graph.figure.layout.xaxis.title.text == "Raman Shift (cm⁻¹)"
+    assert graph.figure.layout.yaxis.title.text == "Intensity (a.u.)"
     assert graph.config["toImageButtonOptions"]["filename"] == "materialscope_raman_spectrum"
     raw_trace = next(trace for trace in graph.figure.data if "Imported" in str(trace.name))
     baseline_trace = next(trace for trace in graph.figure.data if "Baseline" in str(trace.name))
@@ -569,6 +571,30 @@ def test_build_figure_no_data_when_empty_curves(monkeypatch):
     )
     fig = mod._build_figure("proj", "ds", {}, "light", "en")
     assert isinstance(fig, html.P)
+
+
+def test_build_figure_uses_detected_raman_intensity_unit(monkeypatch):
+    mod = _import_raman_page()
+    import dash_app.api_client as api_client
+
+    monkeypatch.setattr(
+        api_client,
+        "analysis_state_curves",
+        lambda *_: {
+            "temperature": [400.0, 800.0, 1200.0, 1600.0],
+            "raw_signal": [120.0, 240.0, 200.0, 180.0],
+            "smoothed": [120.0, 240.0, 200.0, 180.0],
+            "baseline": [],
+            "corrected": [],
+            "normalized": [],
+            "peaks": [],
+            "y_unit": "counts",
+            "diagnostics": {"plot_normalized_primary_axis": False},
+        },
+    )
+    fig_div = mod._build_figure("proj", "ds", {}, "light", "en")
+    graph = next(c for c in fig_div.children if isinstance(c, dcc.Graph))
+    assert graph.figure.layout.yaxis.title.text == "Intensity (counts)"
 
 
 def test_raman_layout_includes_raw_quality_section():

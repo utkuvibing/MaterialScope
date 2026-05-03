@@ -514,6 +514,8 @@ def test_build_figure_returns_graph_when_curves_present(monkeypatch):
     assert "plot_display_settings" in graph.figure.layout.meta
     assert graph.figure.layout.hovermode == "x unified"
     assert graph.figure.layout.legend.y >= 0
+    assert graph.figure.layout.xaxis.title.text == "Wavenumber (cm⁻¹)"
+    assert graph.figure.layout.yaxis.title.text == "Absorbance (a.u.)"
     assert graph.config["toImageButtonOptions"]["filename"] == "materialscope_ftir_spectrum"
     raw_trace = next(trace for trace in graph.figure.data if "Imported" in str(trace.name))
     baseline_trace = next(trace for trace in graph.figure.data if "Baseline" in str(trace.name))
@@ -561,6 +563,31 @@ def test_build_figure_no_data_when_empty_curves(monkeypatch):
     )
     fig = mod._build_figure("proj", "ds", {}, "light", "en")
     assert isinstance(fig, html.P)
+
+
+def test_build_figure_uses_transmittance_label_when_signal_role_is_transmittance(monkeypatch):
+    mod = _import_ftir_page()
+    import dash_app.api_client as api_client
+
+    monkeypatch.setattr(
+        api_client,
+        "analysis_state_curves",
+        lambda *_: {
+            "temperature": [4000.0, 3000.0, 2000.0, 1000.0],
+            "raw_signal": [90.0, 70.0, 60.0, 50.0],
+            "smoothed": [90.0, 70.0, 60.0, 50.0],
+            "baseline": [],
+            "corrected": [],
+            "normalized": [],
+            "peaks": [],
+            "y_unit": "%",
+            "signal_role": "transmittance",
+            "diagnostics": {"plot_normalized_primary_axis": False},
+        },
+    )
+    fig_div = mod._build_figure("proj", "ds", {}, "light", "en")
+    graph = next(c for c in fig_div.children if isinstance(c, dcc.Graph))
+    assert graph.figure.layout.yaxis.title.text == "Transmittance (%)"
 
 
 def test_ftir_layout_includes_raw_quality_section():

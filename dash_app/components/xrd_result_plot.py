@@ -315,6 +315,7 @@ def build_xrd_result_figure(
     loc: str,
     sample_name: str,
     axis_title: str,
+    y_axis_title: str = "Intensity (counts)",
     drawn_shapes: list[dict[str, Any]] | None = None,
 ) -> go.Figure:
     settings = normalize_xrd_plot_settings(plot_settings)
@@ -551,7 +552,7 @@ def build_xrd_result_figure(
         scale_traces=False,
     )
     fig.update_xaxes(title_text=axis_title)
-    fig.update_yaxes(title_text=translate_ui(loc, "dash.analysis.figure.axis_intensity_au"))
+    fig.update_yaxes(title_text=y_axis_title)
 
     x_min = settings.get("x_min")
     x_max = settings.get("x_max")

@@ -471,6 +471,39 @@ def test_build_dta_go_figure_default_mode_is_result(monkeypatch):
     result_data = result_fig.to_plotly_json()["data"]
     assert len(default_data) == len(result_data) == 5
     assert default_data[3]["name"] == result_data[3]["name"] == "Corrected Signal"
+    assert result_fig.layout.xaxis.title.text == "Temperature (°C)"
+    assert result_fig.layout.yaxis.title.text == "ΔT (µV)"
+
+
+def test_build_dta_go_figure_uses_detected_temperature_unit(monkeypatch):
+    mod = _import_dta_page()
+    import dash_app.api_client as api_client
+
+    monkeypatch.setattr(
+        api_client,
+        "analysis_state_curves",
+        lambda _project_id, _analysis_type, _dataset_key: {
+            "temperature": [300.0, 320.0, 340.0, 360.0],
+            "raw_signal": [0.0, 1.2, -0.3, 0.6],
+            "smoothed": [0.1, 1.0, -0.1, 0.5],
+            "baseline": [0.05, 0.05, 0.05, 0.05],
+            "corrected": [0.05, 0.95, -0.15, 0.45],
+            "x_unit": "K",
+            "y_unit": "uV",
+        },
+    )
+
+    fig = mod._build_dta_go_figure(
+        "proj-1",
+        "dataset-1",
+        "Synthetic DTA Run",
+        [{"direction": "exo", "peak_temperature": 320.0}],
+        "light",
+        view_mode="result",
+    )
+    assert fig is not None
+    assert fig.layout.xaxis.title.text == "Temperature (K)"
+    assert fig.layout.yaxis.title.text == "ΔT (µV)"
 
 
 def test_build_dta_go_figure_invalid_mode_falls_back_to_result(monkeypatch):

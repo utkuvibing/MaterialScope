@@ -24,6 +24,7 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, callback, dcc, html
 import plotly.graph_objects as go
 
+from core.axis_labels import build_axis_title, canonical_unit_token
 from dash_app.components.analysis_boilerplate import (
     build_collapsible_section,
     build_load_saveas_preset_card,
@@ -2195,8 +2196,13 @@ def _build_tga_dtg_panel(
             xanchor="left",
             font=dict(size=14),
         ),
-        xaxis_title=translate_ui(_ld, "dash.analysis.figure.axis_temperature_c"),
-        yaxis_title=translate_ui(_ld, "dash.analysis.figure.axis_dtg"),
+        xaxis_title=build_axis_title("TGA", "x", detected_unit=curves.get("x_unit")),
+        yaxis_title=build_axis_title(
+            "TGA",
+            "y",
+            detected_unit="%/K" if canonical_unit_token(curves.get("x_unit")) == "K" else "%/°C",
+            signal_kind="dtg",
+        ),
         height=280,
         margin=dict(l=56, r=18, t=48, b=44),
         showlegend=False,
@@ -2258,6 +2264,8 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, step_rows: l
         curves = analysis_state_curves(project_id, "TGA", dataset_key)
     except Exception:
         curves = {}
+    x_axis_title = build_axis_title("TGA", "x", detected_unit=curves.get("x_unit"))
+    y_axis_title = build_axis_title("TGA", "y", detected_unit=curves.get("y_unit"), signal_kind=curves.get("signal_role"))
 
     temperature = curves.get("temperature", [])
     raw_signal = curves.get("raw_signal", [])
@@ -2357,8 +2365,8 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, step_rows: l
 
     fig.update_layout(
         title=translate_ui(loc, "dash.analysis.figure.title_tga", name=sample_name),
-        xaxis_title=translate_ui(loc, "dash.analysis.figure.axis_temperature_c"),
-        yaxis_title=translate_ui(loc, "dash.analysis.figure.axis_mass_pct"),
+        xaxis_title=x_axis_title,
+        yaxis_title=y_axis_title,
         margin=dict(l=56, r=24, t=56, b=48),
         height=480,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
@@ -2366,7 +2374,7 @@ def _build_figure(project_id: str, dataset_key: str, summary: dict, step_rows: l
     apply_figure_theme(fig, ui_theme)
     ink = PLOT_THEME[normalize_ui_theme(ui_theme)]["text"]
     fig.update_layout(
-        yaxis=dict(title=dict(text=translate_ui(loc, "dash.analysis.figure.axis_mass_pct"), font=dict(color=ink)), tickfont=dict(color=ink))
+        yaxis=dict(title=dict(text=y_axis_title, font=dict(color=ink)), tickfont=dict(color=ink))
     )
 
     step_count_disp = summary.get("step_count", n_steps)

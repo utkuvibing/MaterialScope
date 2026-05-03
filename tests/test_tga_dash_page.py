@@ -365,11 +365,15 @@ def test_build_tga_dtg_panel_renders_graph(monkeypatch):
             "temperature": [100.0, 110.0, 120.0],
             "dtg": [0.01, 0.02, -0.01],
             "has_dtg": True,
+            "x_unit": "K",
         },
     )
     panel = mod._build_tga_dtg_panel("proj", "ds", "light", "en", locale_data="en")
     assert "tga-derivative-helper" in str(getattr(panel, "className", "") or "")
     assert isinstance(panel.children[2], dcc.Graph)
+    graph = panel.children[2]
+    assert graph.figure.layout.xaxis.title.text == "Temperature (K)"
+    assert graph.figure.layout.yaxis.title.text == "DTG (% K⁻¹)"
 
 
 def test_build_tga_dtg_panel_hidden_without_dtg(monkeypatch):
@@ -406,6 +410,8 @@ def test_extract_graph_from_wrapped_tga_figure_area(monkeypatch):
     fig = mod._build_figure("p", "k", summary, [], "light", "en")
     payload = _extract_graph_figure_payload(fig)
     assert payload is not None
+    assert payload.layout.xaxis.title.text == "Temperature (°C)"
+    assert payload.layout.yaxis.title.text == "Mass (%)"
     assert "Steps:" in str(fig) or "Adımlar:" in str(fig)
 
 

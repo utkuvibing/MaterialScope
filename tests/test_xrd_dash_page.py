@@ -395,6 +395,8 @@ def test_build_figure_uses_corrected_as_primary_trace(monkeypatch):
             "smoothed": [21.0, 48.0, 34.0, 16.0],
             "baseline": [4.0, 4.0, 4.0, 4.0],
             "corrected": [17.0, 44.0, 30.0, 12.0],
+            "x_unit": "degree_2theta",
+            "y_unit": "cps",
         },
     )
 
@@ -414,7 +416,8 @@ def test_build_figure_uses_corrected_as_primary_trace(monkeypatch):
     assert corrected_trace.visible in (None, True)
     assert raw_trace.visible == "legendonly"
     assert raw_trace.opacity < 0.4
-    assert graph.figure.layout.xaxis.title.text == "2theta (deg)"
+    assert graph.figure.layout.xaxis.title.text == "2θ (°)"
+    assert graph.figure.layout.yaxis.title.text == "Intensity (cps)"
     assert graph.figure.layout.meta["plot_view_mode"] == "result"
     assert "plot_display_settings" in graph.figure.layout.meta
     assert graph.figure.layout.hovermode == "x unified"
@@ -450,7 +453,7 @@ def test_xrd_default_corrected_view_demotes_raw_from_autorange():
         ui_theme="light",
         loc="en",
         sample_name="XRD Run A",
-        axis_title="2theta (deg)",
+        axis_title="2θ (°)",
     )
 
     raw_trace = next(trace for trace in fig.data if trace.name == "Raw Diffractogram")
@@ -489,7 +492,7 @@ def test_xrd_dense_peak_cluster_labels_are_sparse_and_readable():
         ui_theme="light",
         loc="en",
         sample_name="XRD Dense Peaks",
-        axis_title="2theta (deg)",
+        axis_title="2θ (°)",
     )
 
     label_trace = next(trace for trace in fig.data if trace.mode == "text")
@@ -522,14 +525,14 @@ def test_build_xrd_result_figure_preserves_log_y_range_after_shared_theme():
         ui_theme="light",
         loc="en",
         sample_name="XRD Run Log",
-        axis_title="2theta (deg)",
+        axis_title="2θ (°)",
     )
 
     assert fig.layout.yaxis.type == "log"
     assert list(fig.layout.yaxis.range) == [math.log10(1.0), math.log10(100.0)]
     assert list(fig.layout.xaxis.range) == [12.0, 38.0]
-    assert fig.layout.xaxis.title.text == "2theta (deg)"
-    assert fig.layout.yaxis.title.text == "Intensity (a.u.)"
+    assert fig.layout.xaxis.title.text == "2θ (°)"
+    assert fig.layout.yaxis.title.text == "Intensity (counts)"
     assert fig.layout.meta["plot_view_mode"] == "result"
 
 
@@ -548,7 +551,7 @@ def test_build_xrd_result_figure_preserves_drawn_shapes_with_theme_contrast():
         ui_theme="dark",
         loc="en",
         sample_name="XRD Drawing",
-        axis_title="2theta (deg)",
+        axis_title="2θ (°)",
         drawn_shapes=[{"type": "line", "x0": 10, "y0": 1, "x1": 20, "y1": 2, "line": {"color": "#000000"}}],
     )
 

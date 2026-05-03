@@ -451,6 +451,8 @@ def test_build_figure_returns_result_shell_without_debug(monkeypatch):
     assert isinstance(graph, dcc.Graph)
     assert "ms-result-graph" in str(getattr(graph, "className", "") or "")
     assert graph.figure.layout.height == 600
+    assert graph.figure.layout.xaxis.title.text == "Temperature (°C)"
+    assert graph.figure.layout.yaxis.title.text == "Heat Flow (mW)"
 
 
 def test_dsc_graph_config_exposes_png_export_options():
