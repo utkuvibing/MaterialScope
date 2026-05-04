@@ -485,19 +485,23 @@ layout = html.Div(
                                             dbc.Col(
                                                 [
                                                     dbc.Label(id="home-active-dataset-label", children=""),
-                                                    dbc.Select(id="active-dataset-select"),
+                                                    dbc.Select(
+                                                        id="active-dataset-select",
+                                                        className="ta-dataset-select",
+                                                    ),
                                                 ],
-                                                md=9,
+                                                md=8,
+                                                className="min-width-0",
                                             ),
                                             dbc.Col(
                                                 dbc.Button(
                                                     "",
                                                     id="remove-dataset-btn",
                                                     color="secondary",
-                                                    className="ta-btn-remove w-100",
+                                                    className="ta-btn-remove",
                                                 ),
-                                                md=3,
-                                                className="d-flex align-items-start ta-loaded-dataset-actions",
+                                                md=4,
+                                                className="d-flex align-items-start justify-content-md-end ta-loaded-dataset-actions flex-shrink-0",
                                             ),
                                         ],
                                         className="g-2 align-items-start",
