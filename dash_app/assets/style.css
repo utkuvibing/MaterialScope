@@ -809,6 +809,22 @@ html[data-theme="dark"] .alert-danger {
 
 .ta-btn-remove {
     border-style: dashed !important;
+    white-space: nowrap;
+}
+
+/* Constrained flex rows — allow native <select> to shrink so ellipsis can apply */
+.ta-dataset-selector-block {
+    min-width: 0;
+}
+
+/* Dataset dropdowns — show ellipsis for long names instead of awkward clipping */
+.main-content select.form-select.ta-dataset-select,
+.import-page select.form-select.ta-dataset-select {
+    max-width: 100%;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .ta-link-emphasis {

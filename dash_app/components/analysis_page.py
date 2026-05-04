@@ -114,8 +114,9 @@ def dataset_selector_block(
             value=None,
             disabled=True,
             style={"display": "none"},
+            className="ta-dataset-select",
         )
-        return html.Div([placeholder, html.P(text, className="text-muted")]), True
+        return html.Div([placeholder, html.P(text, className="text-muted")], className="ta-dataset-selector-block"), True
 
     options = dataset_options(eligible)
     default_value = None
@@ -128,6 +129,7 @@ def dataset_selector_block(
         id=selector_id,
         options=options,
         value=default_value or (options[0]["value"] if options else None),
+        className="ta-dataset-select",
     )
     type_labels = ", ".join(sorted(eligible_types))
     info = html.P(
@@ -140,7 +142,7 @@ def dataset_selector_block(
         ),
         className="text-muted small mt-2",
     )
-    return html.Div([selector, info]), False
+    return html.Div([selector, info], className="ta-dataset-selector-block"), False
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +161,7 @@ def dataset_selection_card(selector_area_id: str, *, card_title_id: str) -> dbc.
                 value=None,
                 disabled=True,
                 style={"display": "none"},
+                className="ta-dataset-select",
             )
         )
     return dbc.Card(
