@@ -391,6 +391,13 @@ def compare_workspace(project_id: str) -> dict[str, Any]:
         return r.json()
 
 
+def compare_candidates(project_id: str, analysis_type: str) -> dict[str, Any]:
+    with _client() as c:
+        r = c.get(f"/workspace/{project_id}/compare/candidates", params={"analysis_type": analysis_type})
+        _raise_with_detail(r)
+        return r.json()
+
+
 def workspace_batch_run(
     project_id: str,
     *,
@@ -415,6 +422,20 @@ def update_compare_workspace(
     *,
     analysis_type: str | None = None,
     selected_datasets: list[str] | None = None,
+    compare_display_mode: str | None = None,
+    compare_group_mode: str | None = None,
+    series_filter: str | None = None,
+    temperature_filter_value: float | None = None,
+    temperature_filter_unit: str | None = None,
+    material_type_filter: str | None = None,
+    tag_filters: list[str] | None = None,
+    composition_filter: str | None = None,
+    label_template: str | None = None,
+    signal_mode: str | None = None,
+    normalize_mode: str | None = None,
+    offset_mode: str | None = None,
+    reverse_x_axis: bool | None = None,
+    smoothing_enabled: bool | None = None,
     notes: str | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {}
@@ -422,6 +443,34 @@ def update_compare_workspace(
         payload["analysis_type"] = analysis_type
     if selected_datasets is not None:
         payload["selected_datasets"] = selected_datasets
+    if compare_display_mode is not None:
+        payload["compare_display_mode"] = compare_display_mode
+    if compare_group_mode is not None:
+        payload["compare_group_mode"] = compare_group_mode
+    if series_filter is not None:
+        payload["series_filter"] = series_filter
+    if temperature_filter_value is not None:
+        payload["temperature_filter_value"] = temperature_filter_value
+    if temperature_filter_unit is not None:
+        payload["temperature_filter_unit"] = temperature_filter_unit
+    if material_type_filter is not None:
+        payload["material_type_filter"] = material_type_filter
+    if tag_filters is not None:
+        payload["tag_filters"] = tag_filters
+    if composition_filter is not None:
+        payload["composition_filter"] = composition_filter
+    if label_template is not None:
+        payload["label_template"] = label_template
+    if signal_mode is not None:
+        payload["signal_mode"] = signal_mode
+    if normalize_mode is not None:
+        payload["normalize_mode"] = normalize_mode
+    if offset_mode is not None:
+        payload["offset_mode"] = offset_mode
+    if reverse_x_axis is not None:
+        payload["reverse_x_axis"] = reverse_x_axis
+    if smoothing_enabled is not None:
+        payload["smoothing_enabled"] = smoothing_enabled
     if notes is not None:
         payload["notes"] = notes
     with _client() as c:

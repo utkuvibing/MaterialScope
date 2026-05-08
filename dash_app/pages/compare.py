@@ -9,6 +9,12 @@ import plotly.graph_objects as go
 
 from core.modalities import get_modality, stable_analysis_types
 from core.processing_schema import get_workflow_templates
+from dash_app.compare_academic_utils import (
+    AcademicCompareOptions,
+    build_academic_compare_figure,
+    filter_candidates,
+    render_compare_label,
+)
 from dash_app.compare_curve_utils import axis_titles, pick_best_series
 from dash_app.components.chrome import page_header
 from dash_app.components.data_preview import dataset_table
@@ -70,8 +76,133 @@ layout = html.Div(
                         dbc.Card(
                             dbc.CardBody(
                                 [
+                                    dbc.Label("Compare mode"),
+                                    dbc.RadioItems(
+                                        id="compare-display-mode",
+                                        options=[
+                                            {"label": "Legacy Overlay", "value": "legacy"},
+                                            {"label": "Academic Compare", "value": "academic"},
+                                        ],
+                                        value="legacy",
+                                        inline=True,
+                                    ),
                                     dbc.Label(id="compare-lbl-analysis-type", children=""),
                                     dbc.Select(id="compare-analysis-type"),
+                                    html.Div(
+                                        id="compare-academic-controls",
+                                        children=[
+                                            dbc.Label("Academic grouping", className="mt-3"),
+                                            dbc.Select(
+                                                id="compare-group-mode",
+                                                options=[
+                                                    {"label": "Manual selection", "value": "manual"},
+                                                    {"label": "By sample series", "value": "sample_series"},
+                                                    {"label": "By processing temperature", "value": "processing_temperature"},
+                                                    {"label": "By tag/composition", "value": "tag_composition"},
+                                                ],
+                                                value="manual",
+                                            ),
+                                            dbc.Row(
+                                                [
+                                                    dbc.Col(
+                                                        [
+                                                            dbc.Label("Series prefix", className="mt-3"),
+                                                            dbc.Input(id="compare-series-filter", type="text", placeholder="A, B, C"),
+                                                        ],
+                                                        md=6,
+                                                    ),
+                                                    dbc.Col(
+                                                        [
+                                                            dbc.Label("Processing temperature", className="mt-3"),
+                                                            dbc.Input(id="compare-temperature-filter", type="number", placeholder="1050"),
+                                                        ],
+                                                        md=6,
+                                                    ),
+                                                ]
+                                            ),
+                                            dbc.Row(
+                                                [
+                                                    dbc.Col(
+                                                        [
+                                                            dbc.Label("Material type", className="mt-3"),
+                                                            dbc.Input(id="compare-material-type-filter", type="text"),
+                                                        ],
+                                                        md=6,
+                                                    ),
+                                                    dbc.Col(
+                                                        [
+                                                            dbc.Label("Tags", className="mt-3"),
+                                                            dcc.Dropdown(id="compare-tag-filter", multi=True, className="ta-dropdown"),
+                                                        ],
+                                                        md=6,
+                                                    ),
+                                                ]
+                                            ),
+                                            dbc.Label("Composition", className="mt-3"),
+                                            dbc.Input(id="compare-composition-filter", type="text"),
+                                            dbc.Label("Academic datasets", className="mt-3"),
+                                            dcc.Dropdown(id="compare-academic-selected-datasets", multi=True, className="ta-dropdown"),
+                                            dbc.Label("Label format", className="mt-3"),
+                                            dbc.Select(
+                                                id="compare-label-template",
+                                                options=[
+                                                    {"label": "{sample_id}", "value": "{sample_id}"},
+                                                    {"label": "{sample_id} at {temperature}", "value": "{sample_id} at {temperature}"},
+                                                    {"label": "{sample_id} — {sample_name}", "value": "{sample_id} — {sample_name}"},
+                                                    {"label": "{sample_id} ({composition})", "value": "{sample_id} ({composition})"},
+                                                ],
+                                                value="{sample_id} at {temperature}",
+                                            ),
+                                            dbc.Row(
+                                                [
+                                                    dbc.Col(
+                                                        [
+                                                            dbc.Label("Normalize", className="mt-3"),
+                                                            dbc.Select(
+                                                                id="compare-normalize-mode",
+                                                                options=[
+                                                                    {"label": "None", "value": "none"},
+                                                                    {"label": "Max", "value": "max"},
+                                                                    {"label": "Min-max", "value": "minmax"},
+                                                                    {"label": "Area", "value": "area"},
+                                                                ],
+                                                                value="none",
+                                                            ),
+                                                        ],
+                                                        md=6,
+                                                    ),
+                                                    dbc.Col(
+                                                        [
+                                                            dbc.Label("Offset", className="mt-3"),
+                                                            dbc.Select(
+                                                                id="compare-offset-mode",
+                                                                options=[
+                                                                    {"label": "None", "value": "none"},
+                                                                    {"label": "Stacked", "value": "stacked"},
+                                                                ],
+                                                                value="none",
+                                                            ),
+                                                        ],
+                                                        md=6,
+                                                    ),
+                                                ]
+                                            ),
+                                            dbc.Checklist(
+                                                id="compare-reverse-x-axis",
+                                                options=[{"label": "Reverse x-axis", "value": "reverse"}],
+                                                value=[],
+                                                switch=True,
+                                                className="mt-3",
+                                            ),
+                                            dbc.Checklist(
+                                                id="compare-smoothing-enabled",
+                                                options=[{"label": "Use smoothed processed curves when available", "value": "smooth"}],
+                                                value=["smooth"],
+                                                switch=True,
+                                                className="mt-2",
+                                            ),
+                                        ],
+                                    ),
                                     dbc.Label(id="compare-lbl-selected-runs", className="mt-3", children=""),
                                     html.Div(
                                         id="compare-selected-runs-shell",
@@ -205,6 +336,19 @@ def render_compare_locale_chrome(locale_data):
     Output("compare-analysis-type", "value"),
     Output("compare-selected-runs", "options"),
     Output("compare-selected-runs", "value"),
+    Output("compare-academic-selected-datasets", "value"),
+    Output("compare-display-mode", "value"),
+    Output("compare-group-mode", "value"),
+    Output("compare-series-filter", "value"),
+    Output("compare-temperature-filter", "value"),
+    Output("compare-material-type-filter", "value"),
+    Output("compare-tag-filter", "value"),
+    Output("compare-composition-filter", "value"),
+    Output("compare-label-template", "value"),
+    Output("compare-normalize-mode", "value"),
+    Output("compare-offset-mode", "value"),
+    Output("compare-reverse-x-axis", "value"),
+    Output("compare-smoothing-enabled", "value"),
     Output("compare-notes", "value"),
     Input("project-id", "data"),
     Input("compare-refresh", "data"),
@@ -213,14 +357,14 @@ def render_compare_locale_chrome(locale_data):
 )
 def load_compare_workspace(project_id, _refresh, _global_refresh):
     if not project_id:
-        return [], None, [], [], ""
+        return [], None, [], [], [], "legacy", "manual", "", None, "", [], "", "{sample_id} at {temperature}", "none", "none", [], ["smooth"], ""
 
     from dash_app.api_client import compare_workspace, workspace_datasets
 
     datasets = workspace_datasets(project_id).get("datasets", [])
     available_types = _available_types(datasets)
     if not available_types:
-        return [], None, [], [], ""
+        return [], None, [], [], [], "legacy", "manual", "", None, "", [], "", "{sample_id} at {temperature}", "none", "none", [], ["smooth"], ""
 
     workspace = compare_workspace(project_id).get("compare_workspace", {})
     analysis_type = workspace.get("analysis_type")
@@ -234,6 +378,19 @@ def load_compare_workspace(project_id, _refresh, _global_refresh):
         analysis_type,
         run_options,
         selected,
+        selected,
+        workspace.get("compare_display_mode") or "legacy",
+        workspace.get("compare_group_mode") or "manual",
+        workspace.get("series_filter") or "",
+        workspace.get("temperature_filter_value"),
+        workspace.get("material_type_filter") or "",
+        workspace.get("tag_filters") or [],
+        workspace.get("composition_filter") or "",
+        workspace.get("label_template") or "{sample_id} at {temperature}",
+        workspace.get("normalize_mode") or "none",
+        workspace.get("offset_mode") or "none",
+        ["reverse"] if workspace.get("reverse_x_axis") else [],
+        ["smooth"] if workspace.get("smoothing_enabled", True) else [],
         workspace.get("notes") or "",
     )
 
@@ -256,6 +413,17 @@ def remount_compare_selected_runs_dropdown(_ui_theme, options, value):
 
 
 @callback(
+    Output("compare-academic-controls", "style"),
+    Input("compare-display-mode", "value"),
+    prevent_initial_call=False,
+)
+def toggle_academic_controls(compare_display_mode):
+    if str(compare_display_mode or "legacy").lower() == "academic":
+        return {}
+    return {"display": "none"}
+
+
+@callback(
     Output("compare-selected-runs", "options", allow_duplicate=True),
     Output("compare-selected-runs", "value", allow_duplicate=True),
     Input("compare-analysis-type", "value"),
@@ -274,6 +442,58 @@ def update_compare_eligible_runs(analysis_type, project_id, selected_runs):
     allowed = {item["value"] for item in run_options}
     selected = [key for key in (selected_runs or []) if key in allowed]
     return run_options, selected
+
+
+@callback(
+    Output("compare-academic-selected-datasets", "options"),
+    Output("compare-tag-filter", "options"),
+    Input("compare-analysis-type", "value"),
+    Input("project-id", "data"),
+    Input("compare-series-filter", "value"),
+    Input("compare-temperature-filter", "value"),
+    Input("compare-material-type-filter", "value"),
+    Input("compare-tag-filter", "value"),
+    Input("compare-composition-filter", "value"),
+    prevent_initial_call=False,
+)
+def update_academic_candidates(
+    analysis_type,
+    project_id,
+    series_filter,
+    temperature_filter,
+    material_type_filter,
+    tag_filters,
+    composition_filter,
+):
+    if not project_id or not analysis_type:
+        return [], []
+    from dash_app.api_client import compare_candidates
+
+    payload = compare_candidates(project_id, analysis_type)
+    candidates = payload.get("candidates") or []
+    filtered = filter_candidates(
+        candidates,
+        analysis_type=analysis_type,
+        series_filter=series_filter or "",
+        temperature_filter_value=temperature_filter,
+        material_type_filter=material_type_filter or "",
+        tag_filters=tag_filters or [],
+        composition_filter=composition_filter or "",
+    )
+    options = []
+    for candidate in filtered:
+        label = render_compare_label(candidate, "{sample_id} at {temperature}")
+        sample_name = candidate.get("sample_name") or candidate.get("display_name") or candidate.get("dataset_key")
+        points = candidate.get("points")
+        points_text = f" · {points} pts" if points else ""
+        options.append(
+            {
+                "label": f"{label} — {sample_name} · {candidate.get('data_type')}{points_text}",
+                "value": candidate.get("dataset_key"),
+            }
+        )
+    tag_options = [{"label": tag, "value": tag} for tag in payload.get("available_tags") or []]
+    return options, tag_options
 
 
 @callback(
@@ -300,12 +520,48 @@ def load_batch_templates(analysis_type, project_id, _refresh):
     State("project-id", "data"),
     State("compare-analysis-type", "value"),
     State("compare-selected-runs", "value"),
+    State("compare-academic-selected-datasets", "value"),
+    State("compare-display-mode", "value"),
+    State("compare-group-mode", "value"),
+    State("compare-series-filter", "value"),
+    State("compare-temperature-filter", "value"),
+    State("compare-material-type-filter", "value"),
+    State("compare-tag-filter", "value"),
+    State("compare-composition-filter", "value"),
+    State("compare-label-template", "value"),
+    State("compare-signal-mode", "value"),
+    State("compare-normalize-mode", "value"),
+    State("compare-offset-mode", "value"),
+    State("compare-reverse-x-axis", "value"),
+    State("compare-smoothing-enabled", "value"),
     State("compare-notes", "value"),
     State("compare-refresh", "data"),
     State("ui-locale", "data"),
     prevent_initial_call=True,
 )
-def save_compare_workspace(n_clicks, project_id, analysis_type, selected_runs, notes, refresh_value, locale_data):
+def save_compare_workspace(
+    n_clicks,
+    project_id,
+    analysis_type,
+    selected_runs,
+    academic_selected_runs,
+    compare_display_mode,
+    compare_group_mode,
+    series_filter,
+    temperature_filter,
+    material_type_filter,
+    tag_filters,
+    composition_filter,
+    label_template,
+    signal_mode,
+    normalize_mode,
+    offset_mode,
+    reverse_x_axis,
+    smoothing_enabled,
+    notes,
+    refresh_value,
+    locale_data,
+):
     if not n_clicks or not project_id or not analysis_type:
         raise dash.exceptions.PreventUpdate
     loc = _loc(locale_data)
@@ -315,7 +571,20 @@ def save_compare_workspace(n_clicks, project_id, analysis_type, selected_runs, n
         update_compare_workspace(
             project_id,
             analysis_type=analysis_type,
-            selected_datasets=selected_runs or [],
+            selected_datasets=(academic_selected_runs if str(compare_display_mode or "legacy").lower() == "academic" else selected_runs) or [],
+            compare_display_mode=compare_display_mode or "legacy",
+            compare_group_mode=compare_group_mode or "manual",
+            series_filter=series_filter or "",
+            temperature_filter_value=temperature_filter,
+            material_type_filter=material_type_filter or "",
+            tag_filters=tag_filters or [],
+            composition_filter=composition_filter or "",
+            label_template=label_template or "{sample_id} at {temperature}",
+            signal_mode=signal_mode or "best",
+            normalize_mode=normalize_mode or "none",
+            offset_mode=offset_mode or "none",
+            reverse_x_axis="reverse" in (reverse_x_axis or []),
+            smoothing_enabled="smooth" in (smoothing_enabled or []),
             notes=notes or "",
         )
     except Exception as exc:
@@ -383,7 +652,14 @@ def run_compare_batch(
     Input("project-id", "data"),
     Input("compare-analysis-type", "value"),
     Input("compare-selected-runs", "value"),
+    Input("compare-academic-selected-datasets", "value"),
+    Input("compare-display-mode", "value"),
     Input("compare-signal-mode", "value"),
+    Input("compare-label-template", "value"),
+    Input("compare-normalize-mode", "value"),
+    Input("compare-offset-mode", "value"),
+    Input("compare-reverse-x-axis", "value"),
+    Input("compare-smoothing-enabled", "value"),
     Input("compare-refresh", "data"),
     Input("workspace-refresh", "data"),
     Input("ui-theme", "data"),
@@ -394,7 +670,14 @@ def render_compare_workspace(
     project_id,
     analysis_type,
     selected_runs,
+    academic_selected_runs,
+    compare_display_mode,
     signal_mode,
+    label_template,
+    normalize_mode,
+    offset_mode,
+    reverse_x_axis,
+    smoothing_enabled,
     _compare_refresh,
     _workspace_refresh,
     ui_theme,
@@ -411,6 +694,7 @@ def render_compare_workspace(
 
     from dash_app.api_client import (
         analysis_state_curves,
+        compare_candidates,
         compare_workspace,
         workspace_dataset_data,
         workspace_datasets,
@@ -419,6 +703,9 @@ def render_compare_workspace(
 
     datasets = {item.get("key"): item for item in workspace_datasets(project_id).get("datasets", [])}
     selected_runs = selected_runs or []
+    academic_selected_runs = academic_selected_runs or []
+    is_academic = str(compare_display_mode or "legacy").lower() == "academic"
+    effective_selected_runs = academic_selected_runs if is_academic else selected_runs
     results = workspace_results(project_id).get("results", [])
     result_keys = {
         item.get("dataset_key")
@@ -426,7 +713,7 @@ def render_compare_workspace(
         if item.get("analysis_type") == analysis_type
     }
     cmp = compare_workspace(project_id).get("compare_workspace", {})
-    prereq_state = _compare_prereq_state(list(datasets.values()), analysis_type, selected_runs)
+    prereq_state = _compare_prereq_state(list(datasets.values()), analysis_type, effective_selected_runs)
 
     if prereq_state == "no_datasets":
         empty = prereq_or_empty_help(
@@ -451,7 +738,52 @@ def render_compare_workspace(
         )
         return empty, empty, empty, empty
 
-    if len(selected_runs) < 2:
+    if is_academic and len(effective_selected_runs) >= 2:
+        candidates_payload = compare_candidates(project_id, analysis_type)
+        candidates = candidates_payload.get("candidates") or []
+        curve_payloads = {}
+        raw_payloads = {}
+        for dataset_key in effective_selected_runs:
+            try:
+                curve_payloads[dataset_key] = analysis_state_curves(project_id, analysis_type, dataset_key)
+            except Exception:
+                curve_payloads[dataset_key] = {}
+            try:
+                raw_payloads[dataset_key] = workspace_dataset_data(project_id, dataset_key)
+            except Exception:
+                raw_payloads[dataset_key] = {}
+        result = build_academic_compare_figure(
+            analysis_type=analysis_type,
+            candidates=candidates,
+            selected_dataset_keys=effective_selected_runs,
+            curve_payloads=curve_payloads,
+            raw_payloads=raw_payloads,
+            options=AcademicCompareOptions(
+                analysis_type=analysis_type,
+                selected_dataset_keys=effective_selected_runs,
+                signal_mode=signal_mode or "best",
+                normalize_mode=normalize_mode or "none",
+                offset_mode=offset_mode or "none",
+                reverse_x_axis="reverse" in (reverse_x_axis or []),
+                label_template=label_template or "{sample_id} at {temperature}",
+                smoothing_enabled="smooth" in (smoothing_enabled or []),
+            ),
+        )
+        if not result.figure.data:
+            overlay = html.P(translate_ui(loc, "dash.compare.overlay_build_fail"), className="text-muted")
+        else:
+            apply_figure_theme(result.figure, ui_theme)
+            warning_nodes = [
+                dbc.Alert(warning, color="warning", className="py-2 small mb-2")
+                for warning in result.warnings
+            ]
+            overlay = html.Div(
+                [
+                    dcc.Graph(figure=result.figure, config={"displaylogo": False, "responsive": True}, className="ta-plot"),
+                    html.Div(warning_nodes, className="mt-2") if warning_nodes else None,
+                ]
+            )
+    elif len(effective_selected_runs) < 2:
         overlay = prereq_or_empty_help(
             translate_ui(loc, "dash.compare.prereq_overlay_runs_body"),
             tone="secondary",
@@ -560,7 +892,7 @@ def render_compare_workspace(
     yes = translate_ui(loc, "dash.compare.summary_yes")
     no = translate_ui(loc, "dash.compare.summary_no")
     summary_rows = []
-    for dataset_key in selected_runs:
+    for dataset_key in effective_selected_runs:
         dataset = datasets.get(dataset_key) or {}
         summary_rows.append(
             {
@@ -593,7 +925,7 @@ def render_compare_workspace(
             "saved_at_utc": item.get("saved_at_utc"),
         }
         for item in results
-        if item.get("analysis_type") == analysis_type and item.get("dataset_key") in selected_runs
+        if item.get("analysis_type") == analysis_type and item.get("dataset_key") in effective_selected_runs
     ]
     preview = html.Div(
         [

@@ -437,6 +437,20 @@ class PresetDeleteResponse(BaseModel):
 class CompareWorkspacePayload(BaseModel):
     analysis_type: str = "DSC"
     selected_datasets: list[str] = Field(default_factory=list)
+    compare_display_mode: str = "legacy"
+    compare_group_mode: str = "manual"
+    series_filter: str = ""
+    temperature_filter_value: float | None = None
+    temperature_filter_unit: str = "°C"
+    material_type_filter: str = ""
+    tag_filters: list[str] = Field(default_factory=list)
+    composition_filter: str = ""
+    label_template: str = "{sample_id} at {temperature}"
+    signal_mode: str = "best"
+    normalize_mode: str = "none"
+    offset_mode: str = "none"
+    reverse_x_axis: bool = False
+    smoothing_enabled: bool = True
     notes: str = ""
     figure_key: str | None = None
     saved_at: str | None = None
@@ -457,7 +471,51 @@ class CompareWorkspaceResponse(BaseModel):
 class CompareWorkspaceUpdateRequest(BaseModel):
     analysis_type: str | None = None
     selected_datasets: list[str] | None = None
+    compare_display_mode: str | None = None
+    compare_group_mode: str | None = None
+    series_filter: str | None = None
+    temperature_filter_value: float | None = None
+    temperature_filter_unit: str | None = None
+    material_type_filter: str | None = None
+    tag_filters: list[str] | None = None
+    composition_filter: str | None = None
+    label_template: str | None = None
+    signal_mode: str | None = None
+    normalize_mode: str | None = None
+    offset_mode: str | None = None
+    reverse_x_axis: bool | None = None
+    smoothing_enabled: bool | None = None
     notes: str | None = None
+
+
+class CompareCandidate(BaseModel):
+    dataset_key: str
+    display_name: str
+    data_type: str
+    points: int | None = None
+    sample_id: str = ""
+    sample_name: str = ""
+    material_type: str = ""
+    processing_temperature_value: float | None = None
+    processing_temperature_unit: str = "°C"
+    composition: str = ""
+    tags: list[str] = Field(default_factory=list)
+    linked_result_ids: list[str] = Field(default_factory=list)
+    has_analysis_state: bool = False
+    has_processed_result: bool = False
+    x_unit: str | None = None
+    y_unit: str | None = None
+    signal_role: str | None = None
+
+
+class CompareCandidatesResponse(BaseModel):
+    project_id: str
+    analysis_type: str
+    candidates: list[CompareCandidate] = Field(default_factory=list)
+    available_series_prefixes: list[str] = Field(default_factory=list)
+    available_processing_temperatures: list[str] = Field(default_factory=list)
+    available_material_types: list[str] = Field(default_factory=list)
+    available_tags: list[str] = Field(default_factory=list)
 
 
 class ExportPreparationResponse(BaseModel):

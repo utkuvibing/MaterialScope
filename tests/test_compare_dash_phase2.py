@@ -104,6 +104,21 @@ def test_compare_page_source_contains_phase2_controls():
         assert needle in text
 
 
+def test_compare_page_source_contains_academic_compare_controls():
+    """Avoid importing the page module (duplicate register_page vs Dash pages_folder)."""
+    text = (Path(__file__).resolve().parent.parent / "dash_app" / "pages" / "compare.py").read_text(encoding="utf-8")
+    for needle in (
+        "compare-display-mode",
+        "compare-group-mode",
+        "compare-academic-selected-datasets",
+        "compare-label-template",
+        "compare-normalize-mode",
+        "compare-offset-mode",
+        "compare-reverse-x-axis",
+    ):
+        assert needle in text
+
+
 def test_two_dsc_runs_expose_analysis_state_for_best_overlay():
     """Combined-app: after saved DSC runs, analysis-state supports pick_best_series (Compare best mode)."""
     from fastapi.testclient import TestClient

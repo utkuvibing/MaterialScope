@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import copy
 from datetime import datetime
+import re
 from typing import Any
 
 import pandas as pd
 
-from backend.models import CompareWorkspacePayload
+from backend.models import CompareCandidate, CompareCandidatesResponse, CompareWorkspacePayload
 from backend.workspace import summarize_dataset, summarize_result
-from core.modalities import get_modality, stable_analysis_types
+from core.modalities import analysis_state_key, get_modality, stable_analysis_types
 from core.result_serialization import split_valid_results
 from core.validation import validate_thermal_dataset
 
@@ -59,6 +60,124 @@ def _filter_selected_datasets(state: dict[str, Any], *, analysis_type: str, sele
         if key not in filtered:
             filtered.append(key)
     return filtered
+
+
+def _enum_or_default(value: Any, allowed: set[str], default: str) -> str:
+    token = str(value or "").strip().lower()
+    return token if token in allowed else default
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        raw = [item.strip() for item in value.replace(";", ",").split(",")]
+    elif isinstance(value, (list, tuple, set)):
+        raw = [str(item).strip() for item in value]
+    else:
+        raw = []
+    return [item for item in raw if item]
+
+
+def _sample_metadata_for_dataset(dataset_key: str, dataset: Any) -> dict[str, Any]:
+    metadata = copy.deepcopy(getattr(dataset, "metadata", {}) or {})
+    sample_id = str(metadata.get("sample_id") or "").strip()
+    if not sample_id:
+        sample_id = dataset_key.rsplit(".", 1)[0]
+    sample_name = str(metadata.get("sample_name") or metadata.get("display_name") or metadata.get("file_name") or dataset_key).strip()
+    return {
+        "sample_id": sample_id,
+        "sample_name": sample_name,
+        "material_type": str(metadata.get("material_type") or "").strip(),
+        "processing_temperature_value": metadata.get("processing_temperature_value"),
+        "processing_temperature_unit": str(metadata.get("processing_temperature_unit") or "°C").strip() or "°C",
+        "composition": str(metadata.get("composition") or "").strip(),
+        "tags": _string_list(metadata.get("tags")),
+    }
+
+
+def _series_prefix(sample_id: str) -> str:
+    match = re.match(r"([A-Za-z]+)", str(sample_id or "").strip())
+    return match.group(1).upper() if match else ""
+
+
+def _temperature_label(value: Any, unit: str) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if not pd.notna(number):
+        return ""
+    display = str(int(number)) if number.is_integer() else f"{number:g}"
+    return f"{display}{unit or '°C'}"
+
+
+def build_compare_candidates(state: dict[str, Any], analysis_type: str, *, project_id: str = "") -> CompareCandidatesResponse:
+    """Build sample-aware same-technique compare candidates from workspace state."""
+    normalized_analysis = str(analysis_type or "").upper()
+    if normalized_analysis not in stable_analysis_types():
+        raise ValueError(f"analysis_type must be one of: {', '.join(stable_analysis_types())}.")
+
+    valid_results, _issues = split_valid_results(state.get("results", {}))
+    result_ids_by_dataset: dict[str, list[str]] = {}
+    for result_id, record in valid_results.items():
+        if str(record.get("analysis_type") or "").upper() != normalized_analysis:
+            continue
+        dataset_key = str(record.get("dataset_key") or "").strip()
+        if dataset_key:
+            result_ids_by_dataset.setdefault(dataset_key, []).append(result_id)
+
+    candidates: list[CompareCandidate] = []
+    for dataset_key, dataset in (state.get("datasets") or {}).items():
+        if not _dataset_matches_analysis(dataset, normalized_analysis):
+            continue
+        summary = summarize_dataset(dataset_key, dataset)
+        sample = _sample_metadata_for_dataset(dataset_key, dataset)
+        units = getattr(dataset, "units", {}) or {}
+        try:
+            has_analysis_state = state.get(analysis_state_key(normalized_analysis, dataset_key)) is not None
+        except ValueError:
+            has_analysis_state = False
+        linked_result_ids = result_ids_by_dataset.get(dataset_key, [])
+        candidates.append(
+            CompareCandidate(
+                dataset_key=dataset_key,
+                display_name=summary.display_name,
+                data_type=summary.data_type,
+                points=summary.points,
+                sample_id=sample["sample_id"],
+                sample_name=sample["sample_name"],
+                material_type=sample["material_type"],
+                processing_temperature_value=sample["processing_temperature_value"],
+                processing_temperature_unit=sample["processing_temperature_unit"],
+                composition=sample["composition"],
+                tags=sample["tags"],
+                linked_result_ids=linked_result_ids,
+                has_analysis_state=has_analysis_state,
+                has_processed_result=bool(linked_result_ids),
+                x_unit=units.get("temperature"),
+                y_unit=units.get("signal"),
+                signal_role=None,
+            )
+        )
+
+    prefixes = sorted({prefix for item in candidates if (prefix := _series_prefix(item.sample_id))})
+    temperatures = sorted(
+        {
+            label
+            for item in candidates
+            if (label := _temperature_label(item.processing_temperature_value, item.processing_temperature_unit))
+        }
+    )
+    material_types = sorted({item.material_type for item in candidates if item.material_type})
+    tags = sorted({tag for item in candidates for tag in item.tags})
+    return CompareCandidatesResponse(
+        project_id=project_id,
+        analysis_type=normalized_analysis,
+        candidates=candidates,
+        available_series_prefixes=prefixes,
+        available_processing_temperatures=temperatures,
+        available_material_types=material_types,
+        available_tags=tags,
+    )
 
 
 def build_dataset_detail(state: dict[str, Any], dataset_key: str) -> dict[str, Any]:
@@ -141,6 +260,24 @@ def normalize_compare_workspace(state: dict[str, Any]) -> CompareWorkspacePayloa
     return CompareWorkspacePayload(
         analysis_type=analysis_type,
         selected_datasets=selected_datasets,
+        compare_display_mode=_enum_or_default(raw.get("compare_display_mode"), {"legacy", "academic"}, "legacy"),
+        compare_group_mode=_enum_or_default(
+            raw.get("compare_group_mode"),
+            {"manual", "sample_series", "processing_temperature", "tag_composition"},
+            "manual",
+        ),
+        series_filter=str(raw.get("series_filter") or ""),
+        temperature_filter_value=raw.get("temperature_filter_value"),
+        temperature_filter_unit=str(raw.get("temperature_filter_unit") or "°C"),
+        material_type_filter=str(raw.get("material_type_filter") or ""),
+        tag_filters=_string_list(raw.get("tag_filters")),
+        composition_filter=str(raw.get("composition_filter") or ""),
+        label_template=str(raw.get("label_template") or "{sample_id} at {temperature}"),
+        signal_mode=_enum_or_default(raw.get("signal_mode"), {"best", "raw", "processed"}, "best"),
+        normalize_mode=_enum_or_default(raw.get("normalize_mode"), {"none", "minmax", "max", "area"}, "none"),
+        offset_mode=_enum_or_default(raw.get("offset_mode"), {"none", "stacked"}, "none"),
+        reverse_x_axis=bool(raw.get("reverse_x_axis", False)),
+        smoothing_enabled=bool(raw.get("smoothing_enabled", True)),
         notes=str(raw.get("notes") or ""),
         figure_key=raw.get("figure_key"),
         saved_at=raw.get("saved_at"),
@@ -160,6 +297,20 @@ def update_compare_workspace(
     analysis_type: str | None,
     selected_datasets: list[str] | None,
     notes: str | None,
+    compare_display_mode: str | None = None,
+    compare_group_mode: str | None = None,
+    series_filter: str | None = None,
+    temperature_filter_value: float | None = None,
+    temperature_filter_unit: str | None = None,
+    material_type_filter: str | None = None,
+    tag_filters: list[str] | None = None,
+    composition_filter: str | None = None,
+    label_template: str | None = None,
+    signal_mode: str | None = None,
+    normalize_mode: str | None = None,
+    offset_mode: str | None = None,
+    reverse_x_axis: bool | None = None,
+    smoothing_enabled: bool | None = None,
 ) -> CompareWorkspacePayload:
     workspace = state.setdefault("comparison_workspace", {})
     stable_types = stable_analysis_types()
@@ -191,6 +342,38 @@ def update_compare_workspace(
 
     if notes is not None:
         workspace["notes"] = str(notes)
+    if compare_display_mode is not None:
+        workspace["compare_display_mode"] = _enum_or_default(compare_display_mode, {"legacy", "academic"}, "legacy")
+    if compare_group_mode is not None:
+        workspace["compare_group_mode"] = _enum_or_default(
+            compare_group_mode,
+            {"manual", "sample_series", "processing_temperature", "tag_composition"},
+            "manual",
+        )
+    if series_filter is not None:
+        workspace["series_filter"] = str(series_filter)
+    if temperature_filter_value is not None:
+        workspace["temperature_filter_value"] = temperature_filter_value
+    if temperature_filter_unit is not None:
+        workspace["temperature_filter_unit"] = str(temperature_filter_unit or "°C")
+    if material_type_filter is not None:
+        workspace["material_type_filter"] = str(material_type_filter)
+    if tag_filters is not None:
+        workspace["tag_filters"] = _string_list(tag_filters)
+    if composition_filter is not None:
+        workspace["composition_filter"] = str(composition_filter)
+    if label_template is not None:
+        workspace["label_template"] = str(label_template or "{sample_id} at {temperature}")
+    if signal_mode is not None:
+        workspace["signal_mode"] = _enum_or_default(signal_mode, {"best", "raw", "processed"}, "best")
+    if normalize_mode is not None:
+        workspace["normalize_mode"] = _enum_or_default(normalize_mode, {"none", "minmax", "max", "area"}, "none")
+    if offset_mode is not None:
+        workspace["offset_mode"] = _enum_or_default(offset_mode, {"none", "stacked"}, "none")
+    if reverse_x_axis is not None:
+        workspace["reverse_x_axis"] = bool(reverse_x_axis)
+    if smoothing_enabled is not None:
+        workspace["smoothing_enabled"] = bool(smoothing_enabled)
 
     workspace["saved_at"] = datetime.now().isoformat(timespec="seconds")
     payload = normalize_compare_workspace(state)

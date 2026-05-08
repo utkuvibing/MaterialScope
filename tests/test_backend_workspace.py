@@ -134,3 +134,70 @@ def test_compare_selection_and_active_dataset_validation(thermal_dataset):
     )
     assert unknown_active.status_code == 404
     assert "Unknown dataset_key" in unknown_active.json()["detail"]
+
+
+def test_compare_workspace_academic_fields_roundtrip_and_candidate_endpoint(thermal_dataset):
+    app = create_app(api_token="workspace-token")
+    client = TestClient(app)
+    project_id = client.post("/workspace/new", headers=_headers()).json()["project_id"]
+
+    dataset_key = _import_dataset(client, project_id, thermal_dataset, "A1_1050.csv")
+
+    update = client.put(
+        f"/workspace/{project_id}/compare",
+        headers=_headers(),
+        json={
+            "analysis_type": "DSC",
+            "selected_datasets": [dataset_key],
+            "compare_display_mode": "academic",
+            "compare_group_mode": "sample_series",
+            "series_filter": "A",
+            "temperature_filter_value": 1050,
+            "temperature_filter_unit": "°C",
+            "material_type_filter": "ceramic",
+            "tag_filters": ["sintered"],
+            "composition_filter": "Al2O3",
+            "label_template": "{sample_id} at {temperature}",
+            "signal_mode": "raw",
+            "normalize_mode": "max",
+            "offset_mode": "stacked",
+            "reverse_x_axis": True,
+            "smoothing_enabled": False,
+            "notes": "academic compare",
+        },
+    )
+    assert update.status_code == 200
+    payload = update.json()["compare_workspace"]
+    assert payload["compare_display_mode"] == "academic"
+    assert payload["compare_group_mode"] == "sample_series"
+    assert payload["series_filter"] == "A"
+    assert payload["temperature_filter_value"] == 1050
+    assert payload["tag_filters"] == ["sintered"]
+    assert payload["signal_mode"] == "raw"
+    assert payload["normalize_mode"] == "max"
+    assert payload["offset_mode"] == "stacked"
+    assert payload["reverse_x_axis"] is True
+    assert payload["smoothing_enabled"] is False
+
+    candidates = client.get(
+        f"/workspace/{project_id}/compare/candidates",
+        headers=_headers(),
+        params={"analysis_type": "DSC"},
+    )
+    assert candidates.status_code == 200
+    body = candidates.json()
+    assert body["analysis_type"] == "DSC"
+    assert len(body["candidates"]) == 1
+    candidate = body["candidates"][0]
+    assert candidate["dataset_key"] == dataset_key
+    assert candidate["sample_id"] == "A1_1050"
+    assert candidate["sample_name"]
+    assert candidate["data_type"] == "DSC"
+
+    saved = client.post("/project/save", headers=_headers(), json={"project_id": project_id})
+    loaded = client.post("/project/load", headers=_headers(), json={"archive_base64": saved.json()["archive_base64"]})
+    loaded_project_id = loaded.json()["project_id"]
+    loaded_payload = client.get(f"/workspace/{loaded_project_id}/compare", headers=_headers()).json()["compare_workspace"]
+    assert loaded_payload["compare_display_mode"] == "academic"
+    assert loaded_payload["label_template"] == "{sample_id} at {temperature}"
+    assert loaded_payload["selected_datasets"] == [dataset_key]

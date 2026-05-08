@@ -18,6 +18,7 @@ from fastapi.responses import Response
 
 from backend import BACKEND_API_VERSION
 from backend.detail import (
+    build_compare_candidates,
     build_dataset_data,
     build_dataset_detail,
     build_result_detail,
@@ -42,6 +43,7 @@ from backend.models import (
     BatchRunResponse,
     CompareSelectionResponse,
     CompareSelectionUpdateRequest,
+    CompareCandidatesResponse,
     CompareWorkspaceResponse,
     CompareWorkspaceUpdateRequest,
     DatasetDataResponse,
@@ -1390,11 +1392,38 @@ def create_app(
                 analysis_type=request.analysis_type,
                 selected_datasets=request.selected_datasets,
                 notes=request.notes,
+                compare_display_mode=request.compare_display_mode,
+                compare_group_mode=request.compare_group_mode,
+                series_filter=request.series_filter,
+                temperature_filter_value=request.temperature_filter_value,
+                temperature_filter_unit=request.temperature_filter_unit,
+                material_type_filter=request.material_type_filter,
+                tag_filters=request.tag_filters,
+                composition_filter=request.composition_filter,
+                label_template=request.label_template,
+                signal_mode=request.signal_mode,
+                normalize_mode=request.normalize_mode,
+                offset_mode=request.offset_mode,
+                reverse_x_axis=request.reverse_x_axis,
+                smoothing_enabled=request.smoothing_enabled,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         project_store.set(project_id, state)
         return CompareWorkspaceResponse(project_id=project_id, compare_workspace=payload)
+
+    @app.get("/workspace/{project_id}/compare/candidates", response_model=CompareCandidatesResponse)
+    def compare_candidates_get(
+        project_id: str,
+        analysis_type: str = Query(..., min_length=1),
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> CompareCandidatesResponse:
+        _require_token(api_token, x_ta_token)
+        state = _require_project_state(project_store, project_id)
+        try:
+            return build_compare_candidates(state, analysis_type, project_id=project_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/workspace/{project_id}/compare/selection", response_model=CompareSelectionResponse)
     def compare_selection_update(
