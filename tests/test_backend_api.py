@@ -859,7 +859,7 @@ def test_local_dev_bootstrap_prefers_richest_sibling_corpus(tmp_path, monkeypatc
     """Dev bootstrap must select the richest local normalized root near the hosted root."""
     home_root = tmp_path / "home"
     hosted_root = tmp_path / "reference_library_hosted"
-    expanded_root = _write_expanded_xrd_normalized_root(tmp_path / "reference_library_ingest")
+    _write_expanded_xrd_normalized_root(tmp_path / "reference_library_ingest")
     monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_HOSTED_ROOT", str(hosted_root))
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
@@ -912,7 +912,7 @@ def test_local_dev_bootstrap_upgrades_stale_seed_manifest_to_expanded_runtime(tm
     home_root = tmp_path / "home"
     hosted_root = tmp_path / "reference_library_hosted"
     _write_seed_xrd_manifest(hosted_root)
-    expanded_root = _write_expanded_xrd_normalized_root(tmp_path / "reference_library_ingest")
+    _write_expanded_xrd_normalized_root(tmp_path / "reference_library_ingest")
     monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_HOSTED_ROOT", str(hosted_root))
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")

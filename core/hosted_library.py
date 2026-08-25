@@ -589,10 +589,11 @@ class HostedLibraryCatalog:
                 }
                 try:
                     _dataset_payload, dataset_rows = self._read_dataset_bundle(dataset)
-                except OSError:
+                except FileNotFoundError:
                     # Manifest-only or truncated dataset entries still contribute their
                     # declared candidate_count above; they simply cannot contribute
-                    # dedupe keys without their artifact bundles.
+                    # dedupe keys without their artifact bundles. Unrelated I/O
+                    # failures (permissions, disk) must propagate.
                     continue
                 dedupe_keys.update(
                     str(item.get("canonical_material_key") or canonical_material_key(item, modality=modality))
