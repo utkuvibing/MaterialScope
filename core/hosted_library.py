@@ -587,7 +587,13 @@ class HostedLibraryCatalog:
                     "failed_ingest_count": _coerce_int(dataset.get("failed_ingest_count"), 0),
                     "freshness_state": str(dataset.get("freshness_state") or _freshness_state(published_at=str(dataset.get("published_at") or ""))),
                 }
-                _dataset_payload, dataset_rows = self._read_dataset_bundle(dataset)
+                try:
+                    _dataset_payload, dataset_rows = self._read_dataset_bundle(dataset)
+                except OSError:
+                    # Manifest-only or truncated dataset entries still contribute their
+                    # declared candidate_count above; they simply cannot contribute
+                    # dedupe keys without their artifact bundles.
+                    continue
                 dedupe_keys.update(
                     str(item.get("canonical_material_key") or canonical_material_key(item, modality=modality))
                     for item in dataset_rows
