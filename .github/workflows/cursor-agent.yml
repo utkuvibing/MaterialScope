@@ -49,18 +49,10 @@ jobs:
       - name: Install automation dependencies
         run: npm ci
 
-      - name: Set up Python for optional validation
+      - name: Set up Python for automation tooling
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
-      - name: Install lightweight pytest validation dependencies
-        id: pytest_deps
-        shell: bash
-        continue-on-error: true
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pytest
 
       - name: Write local automation environment
         shell: bash
@@ -68,7 +60,6 @@ jobs:
           set -euo pipefail
           {
             echo "CURSOR_API_KEY=${{ secrets.CURSOR_API_KEY }}"
-            echo "MATERIALSCOPE_PYTEST_OPTIONAL=${{ steps.pytest_deps.outcome == 'success' }}"
           } > .env
 
       - name: Run Cursor issue fixer
@@ -77,21 +68,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ steps.branch.outputs.issue_number }}
         run: npm run cursor:fix-issue
-
-      - name: Run optional pytest smoke validation
-        if: steps.pytest_deps.outcome == 'success'
-        shell: bash
-        continue-on-error: true
-        run: |
-          if python - <<'PY'
-          import importlib.util
-          raise SystemExit(0 if importlib.util.find_spec("pytest") else 1)
-          PY
-          then
-            pytest
-          else
-            echo "pytest is unavailable; skipping optional validation."
-          fi
 
       - name: Detect changes
         id: changes
@@ -139,5 +115,4 @@ jobs:
           Safety notes:
           - This workflow never merges automatically.
           - This workflow pushes only to \`${{ steps.branch.outputs.branch }}\`, not to the default branch.
-          - Full Python dependency installation is intentionally skipped in the initial scaffold.
-          - Pytest is best-effort and may be skipped or fail if optional scientific dependencies are unavailable."
+          - This automation is NOT a validation signal: the authoritative test/lint checks run in the separate \`CI\` workflow and must pass before merge."

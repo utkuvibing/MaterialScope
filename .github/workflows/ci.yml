@@ -1,0 +1,71 @@
+name: CI
+
+# Authoritative test/lint signal for MaterialScope.
+# PRs targeting main and pushes to main must keep this green.
+# The Cursor-agent automation workflow is NOT a validation signal.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: tests (python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    env:
+      # kaleido v1.x locates a browser for static PNG export; runners ship Chrome.
+      BROWSER_PATH: /usr/bin/google-chrome
+      CHROME_BIN: /usr/bin/google-chrome
+      # Keep any accidental CWD-relative state inside the workspace, not $HOME.
+      MATERIALSCOPE_HOME: /tmp/materialscope-home
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install project dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Show resolved versions
+        run: |
+          python --version
+          python -m pip list | grep -Ei 'numpy|pandas|scipy|dash|plotly|kaleido|fastapi|pybaselines|lmfit'
+
+      - name: Run full test suite
+        run: python -m pytest tests/ -q --tb=short -rf
+
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: python -m pip install ruff
+
+      - name: Lint (ruff.toml contract)
+        run: ruff check . --output-format concise

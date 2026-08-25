@@ -200,7 +200,8 @@ def render():
     tracked_keys = tuple(default_state.keys())
 
     # y-axis label: DTA uses delta-T in µV
-    y_label = f"\u0394T ({dataset.units.get('signal', '\u00b5V')})"
+    default_signal_unit = "\u00b5V"
+    y_label = f"\u0394T ({dataset.units.get('signal', default_signal_unit)})"
 
     undo_count = len(state.get("_undo_stack", []))
     redo_count = len(state.get("_redo_stack", []))

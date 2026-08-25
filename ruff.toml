@@ -1,0 +1,77 @@
+# Ruff configuration — introduced in PR-2 as a lint ratchet.
+#
+# Contract: syntax errors, undefined names, and pyflakes basics (E4/E7/E9/F).
+# Everything currently dirty is frozen explicitly below; do NOT add entries.
+# Burn down frozen debt in ordinary feature PRs, then delete its entry.
+# Any NEW or CHANGED file must be clean under the global rule set.
+
+target-version = "py311"
+line-length = 120
+
+[lint]
+select = ["E4", "E7", "E9", "F"]
+
+[lint.per-file-ignores]
+
+## --- Legacy Streamlit entrypoint (retirement tracked in roadmap) ---
+"app.py" = ["E402"]
+
+## --- Intentional duplicate keys in locale tables ---
+"utils/i18n.py" = ["F601"]
+
+## --- Test-suite path bootstraps before imports (sys.path setup) ---
+"tests/conftest.py" = ["E402"]
+"tests/test_data_io.py" = ["E402"]
+"tests/test_dsc_dash_page.py" = ["E402"]
+"tests/test_dsc_processor.py" = ["E402", "F401"]
+"tests/test_dta_dash_page.py" = ["E402", "F401"]
+"tests/test_modality_import.py" = ["E402", "F401"]
+"tests/test_peak_analysis.py" = ["E402", "F401", "F841"]
+"tests/test_preprocessing.py" = ["E402"]
+"tests/test_result_detail_figure_artifacts.py" = ["E402"]
+"tests/test_tga_dash_page.py" = ["F401"]
+"tests/test_tga_explore.py" = ["E402", "F401"]
+"tests/test_tga_processor.py" = ["E402", "F401"]
+"tests/test_xrd_dash_page.py" = ["E402"]
+"tests/test_xrd_literature_query_builder.py" = ["E402"]
+"tests/test_xrd_processing_draft.py" = ["E402"]
+
+## --- Tool CLIs with path bootstraps before imports ---
+"tools/build_reference_library_mirror.py" = ["E402"]
+"tools/ftir_library_diagnostics.py" = ["F401"]
+"tools/ingest_cod.py" = ["E402"]
+"tools/ingest_materials_project.py" = ["E402"]
+"tools/ingest_openspecy.py" = ["E402"]
+"tools/ingest_rod.py" = ["E402"]
+"tools/library_cloud_smoke.py" = ["E402"]
+"tools/publish_hosted_library.py" = ["E402", "F401"]
+
+## --- Frozen unused-import/variable debt (burn down over time) ---
+"backend/exports.py" = ["F401"]
+"core/baseline.py" = ["F401"]
+"core/batch_runner.py" = ["F401"]
+"core/data_io.py" = ["F401", "F841"]
+"core/dsc_processor.py" = ["F401", "F841"]
+"core/experiment_recommender.py" = ["F401"]
+"core/online_providers/cod_provider.py" = ["F401"]
+"core/online_providers/mp_provider.py" = ["F401"]
+"core/online_providers/rruff_provider.py" = ["F401"]
+"core/peak_analysis.py" = ["F401"]
+"core/peak_deconvolution.py" = ["F401"]
+"core/tga_processor.py" = ["F401"]
+"core/validation.py" = ["F841"]
+"dash_app/pages/home.py" = ["F401", "F841"]
+"dash_app/pages/xrd.py" = ["F401", "F841"]
+"tests/test_backend_batch.py" = ["F401"]
+"tests/test_batch_runner.py" = ["F401"]
+"tests/test_compare_dash_phase2.py" = ["F401"]
+"tests/test_ftir_dash_page.py" = ["F401"]
+"tests/test_raman_dash_page.py" = ["F401"]
+"tests/test_reference_library.py" = ["F401"]
+"tests/test_report_generator.py" = ["F401"]
+"ui/components/column_mapper.py" = ["F401"]
+"ui/components/data_preview.py" = ["F401"]
+"ui/dta_page.py" = ["F401"]
+"ui/export_page.py" = ["F841"]
+"ui/kinetics_page.py" = ["F541"]
+"ui/xrd_page.py" = ["F841"]
