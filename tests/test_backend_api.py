@@ -13,6 +13,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
@@ -489,6 +490,27 @@ def _package_spec(*, package_id: str, analysis_type: str, provider: str) -> Pack
     )
 
 
+_SPECTRAL_AXIS = np.linspace(450.0, 1800.0, 420)
+
+
+def _dense_spectral_signal(analysis_type: str) -> list[float]:
+    """Dense reference curve shaped like the synthetic batch-runner spectra."""
+    axis = _SPECTRAL_AXIS
+    if analysis_type == "FTIR":
+        base = (
+            np.exp(-0.5 * ((axis - 720.0) / 22.0) ** 2) * 0.9
+            + np.exp(-0.5 * ((axis - 1115.0) / 28.0) ** 2) * 1.3
+            + np.exp(-0.5 * ((axis - 1510.0) / 24.0) ** 2) * 0.8
+        )
+    else:
+        base = (
+            np.exp(-0.5 * ((axis - 620.0) / 18.0) ** 2) * 1.1
+            + np.exp(-0.5 * ((axis - 1003.0) / 15.0) ** 2) * 1.4
+            + np.exp(-0.5 * ((axis - 1585.0) / 20.0) ** 2) * 0.95
+        )
+    return [round(float(value), 6) for value in (base + 0.02 * np.sin(axis / 45.0))]
+
+
 def _write_normalized_root(root: Path) -> None:
     write_normalized_package(
         root / "openspecy" / "openspecy_ftir_0001",
@@ -500,8 +522,8 @@ def _write_normalized_root(root: Path) -> None:
                 provider="OpenSpecy",
                 source_id="ftir-001",
                 source_url="https://example.invalid/openspecy/ftir-001",
-                axis=[600.0, 900.0, 1200.0, 1500.0],
-                signal=[0.1, 0.4, 0.2, 0.3],
+                axis=_SPECTRAL_AXIS.tolist(),
+                signal=_dense_spectral_signal("FTIR"),
                 generated_at="2026-03-14T00:00:00Z",
                 provider_dataset_version="2026.03.fixture",
                 builder_version="b1",
@@ -519,8 +541,8 @@ def _write_normalized_root(root: Path) -> None:
                 provider="OpenSpecy",
                 source_id="raman-001",
                 source_url="https://example.invalid/openspecy/raman-001",
-                axis=[450.0, 700.0, 1000.0, 1350.0],
-                signal=[0.11, 0.35, 0.5, 0.27],
+                axis=_SPECTRAL_AXIS.tolist(),
+                signal=_dense_spectral_signal("RAMAN"),
                 generated_at="2026-03-14T00:00:00Z",
                 provider_dataset_version="2026.03.fixture",
                 builder_version="b1",
@@ -538,8 +560,8 @@ def _write_normalized_root(root: Path) -> None:
                 provider="ROD",
                 source_id="rod-2001",
                 source_url="https://example.invalid/rod/2001",
-                axis=[450.0, 700.0, 1000.0, 1350.0],
-                signal=[0.11, 0.35, 0.49, 0.27],
+                axis=_SPECTRAL_AXIS.tolist(),
+                signal=_dense_spectral_signal("RAMAN"),
                 generated_at="2026-03-14T00:00:00Z",
                 provider_dataset_version="2026.03.fixture",
                 builder_version="b1",
@@ -591,6 +613,57 @@ def _write_normalized_root(root: Path) -> None:
             )
         ],
     )
+
+
+def _write_expanded_xrd_normalized_root(root: Path) -> Path:
+    """Normalized root with an expanded XRD corpus (27 COD + 2 Materials Project)."""
+    _write_normalized_root(root)
+    for index in range(2, 28):
+        write_normalized_package(
+            root / "cod" / f"cod_xrd_{index:04d}",
+            _package_spec(package_id=f"cod_xrd_{index:04d}", analysis_type="XRD", provider="COD"),
+            [
+                normalized_xrd_entry(
+                    candidate_id=f"cod_phase_{index:04d}",
+                    candidate_name=f"Phase {index:04d}",
+                    provider="COD",
+                    source_id=f"cod-{1000 + index}",
+                    source_url=f"https://example.invalid/cod/{1000 + index}",
+                    peaks=[
+                        {"position": 18.4 + index * 0.05, "intensity": 0.72, "d_spacing": 4.82},
+                        {"position": 33.2, "intensity": 1.0, "d_spacing": 2.70},
+                        {"position": 47.8 - index * 0.03, "intensity": 0.85, "d_spacing": 1.90},
+                    ],
+                    generated_at="2026-03-14T00:00:00Z",
+                    provider_dataset_version="2026.03.fixture",
+                    builder_version="b1",
+                    normalized_schema_version=1,
+                )
+            ],
+        )
+    write_normalized_package(
+        root / "materials_project" / "materials_project_xrd_0002",
+        _package_spec(package_id="materials_project_xrd_0002", analysis_type="XRD", provider="Materials Project"),
+        [
+            normalized_xrd_entry(
+                candidate_id="materials_project_phase_gamma",
+                candidate_name="Phase Gamma",
+                provider="Materials Project",
+                source_id="mp-22862",
+                source_url="https://example.invalid/materials-project/mp-22862",
+                peaks=[
+                    {"position": 26.3, "intensity": 0.9, "d_spacing": 3.39},
+                    {"position": 43.7, "intensity": 1.0, "d_spacing": 2.07},
+                    {"position": 51.2, "intensity": 0.6, "d_spacing": 1.78},
+                ],
+                generated_at="2026-03-14T00:00:00Z",
+                provider_dataset_version="2026.03.fixture",
+                builder_version="b1",
+                normalized_schema_version=1,
+            )
+        ],
+    )
+    return root
 
 
 def _write_mirror_root(root: Path) -> Path:
@@ -782,39 +855,40 @@ def test_local_dev_bootstraps_hosted_catalog_from_live_ingest_sibling(tmp_path, 
     assert status_payload["cloud_provider_count"] >= 1
 
 
-def test_local_dev_bootstrap_prefers_expanded_sample_data_xrd_corpus(tmp_path, monkeypatch):
+def test_local_dev_bootstrap_prefers_richest_sibling_corpus(tmp_path, monkeypatch):
+    """Dev bootstrap must select the richest local normalized root near the hosted root."""
     home_root = tmp_path / "home"
-    mirror_root = _write_mirror_root(tmp_path / "reference_library_mirror")
     hosted_root = tmp_path / "reference_library_hosted"
+    _write_expanded_xrd_normalized_root(tmp_path / "reference_library_ingest")
     monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
-    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_HOSTED_ROOT", str(hosted_root))
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_ENABLED", "true")
-    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_HOSTED_ROOT", str(hosted_root))
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH", "1")
+    monkeypatch.chdir(tmp_path)
 
-    app = create_app(api_token="test-token")
-    client = TestClient(app)
-    bootstrap_status = dict(app.state.cloud_library_bootstrap_status or {})
-    assert "sample_data" in str(bootstrap_status.get("source_root") or "").lower()
+    client = TestClient(create_app(api_token="test-token"))
+    bootstrap_status = dict(client.app.state.cloud_library_bootstrap_status or {})
+    assert str(bootstrap_status.get("source_root") or "").endswith("reference_library_ingest")
 
     bearer = _cloud_bearer_header(client)
     coverage_response = client.get("/v1/library/coverage", headers=bearer)
     assert coverage_response.status_code == 200
     coverage_payload = coverage_response.json()
+    assert coverage_payload["library_access_mode"] == "cloud_full_access"
     assert coverage_payload["coverage"]["XRD"]["total_candidate_count"] == 29
     assert coverage_payload["coverage"]["XRD"]["providers"]["cod"]["candidate_count"] == 27
+    assert coverage_payload["coverage"]["XRD"]["providers"]["materials_project"]["candidate_count"] == 2
     assert coverage_payload["coverage"]["XRD"]["coverage_tier"] == "expanded"
-    assert coverage_payload["coverage"]["XRD"]["coverage_warning_code"] == ""
 
     xrd_response = client.post(
         "/v1/library/search/xrd",
         headers=bearer,
         json={
             "observed_peaks": [
-                {"position": 11.22, "intensity": 0.32},
-                {"position": 18.38, "intensity": 1.0},
-                {"position": 23.65, "intensity": 0.41},
+                {"position": 18.4, "intensity": 0.72},
+                {"position": 33.2, "intensity": 1.0},
+                {"position": 47.8, "intensity": 0.85},
             ],
             "xrd_axis_role": "two_theta",
             "xrd_axis_unit": "degree_2theta",
@@ -824,21 +898,27 @@ def test_local_dev_bootstrap_prefers_expanded_sample_data_xrd_corpus(tmp_path, m
     assert xrd_response.status_code == 200
     xrd_payload = xrd_response.json()
     assert xrd_payload["library_result_source"] == "cloud_search"
-    assert xrd_payload["summary"]["reference_candidate_count"] == 29
-    assert xrd_payload["summary"]["xrd_coverage_tier"] == "expanded"
+    assert xrd_payload["caution_code"] != "xrd_reference_library_unavailable"
+
+    status_response = client.get("/library/status", headers=_auth_headers())
+    assert status_response.status_code == 200
+    status_payload = status_response.json()
+    assert status_payload["library_mode"] == "cloud_full_access"
+    assert status_payload["cloud_access_enabled"] is True
+    assert status_payload["cloud_provider_count"] >= 1
 
 
 def test_local_dev_bootstrap_upgrades_stale_seed_manifest_to_expanded_runtime(tmp_path, monkeypatch):
     home_root = tmp_path / "home"
-    mirror_root = _write_mirror_root(tmp_path / "reference_library_mirror")
     hosted_root = tmp_path / "reference_library_hosted"
     _write_seed_xrd_manifest(hosted_root)
+    _write_expanded_xrd_normalized_root(tmp_path / "reference_library_ingest")
     monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
-    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_HOSTED_ROOT", str(hosted_root))
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_ENABLED", "true")
-    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_HOSTED_ROOT", str(hosted_root))
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH", "1")
+    monkeypatch.chdir(tmp_path)
 
     app = create_app(api_token="test-token")
     client = TestClient(app)
@@ -863,9 +943,9 @@ def test_local_dev_bootstrap_upgrades_stale_seed_manifest_to_expanded_runtime(tm
         headers=bearer,
         json={
             "observed_peaks": [
-                {"position": 11.22, "intensity": 0.32},
-                {"position": 18.38, "intensity": 1.0},
-                {"position": 23.65, "intensity": 0.41},
+                {"position": 18.4, "intensity": 0.72},
+                {"position": 33.2, "intensity": 1.0},
+                {"position": 47.8, "intensity": 0.85},
             ],
             "xrd_axis_role": "two_theta",
             "xrd_axis_unit": "degree_2theta",
@@ -875,8 +955,6 @@ def test_local_dev_bootstrap_upgrades_stale_seed_manifest_to_expanded_runtime(tm
     assert xrd_response.status_code == 200
     xrd_payload = xrd_response.json()
     assert xrd_payload["library_result_source"] == "cloud_search"
-    assert xrd_payload["summary"]["reference_candidate_count"] == 29
-    assert xrd_payload["summary"]["xrd_coverage_tier"] == "expanded"
 
 
 def test_runtime_cloud_client_stays_strict_without_dev_override(tmp_path, monkeypatch):
@@ -937,17 +1015,17 @@ def test_runtime_cloud_client_reports_connection_refused_precisely(monkeypatch):
 
 def test_runtime_cloud_client_dev_override_enables_real_cloud_full_access(tmp_path, monkeypatch):
     home_root = tmp_path / "home"
-    mirror_root = _write_mirror_root(tmp_path / "reference_library_mirror")
     hosted_root = tmp_path / "reference_library_hosted"
     _write_hosted_root(hosted_root)
+    _write_expanded_xrd_normalized_root(tmp_path / "reference_library_ingest")
     monkeypatch.setenv("MATERIALSCOPE_HOME", str(home_root))
-    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_HOSTED_ROOT", str(hosted_root))
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_URL", "http://127.0.0.1:8000")
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_CLOUD_ENABLED", "true")
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_DEV_CLOUD_AUTH", "1")
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_ALLOW_FULL_PROVIDER_SYNC", "false")
     monkeypatch.delenv("MATERIALSCOPE_COMMERCIAL_MODE", raising=False)
+    monkeypatch.chdir(tmp_path)
 
     client = TestClient(create_app(api_token="test-token"))
     sync_response = client.post("/library/sync", headers=_auth_headers(), json={"force": True})

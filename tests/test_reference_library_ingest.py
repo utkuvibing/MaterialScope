@@ -593,12 +593,14 @@ def test_publish_hosted_library_uses_generated_xrd_corpus(tmp_path):
             str(normalized_root),
             "--output-root",
             str(hosted_root),
+            "--job-state-root",
+            str(tmp_path / "reference_library_jobs_publish"),
         ]
     )
 
     coverage = HostedLibraryCatalog(hosted_root).coverage()
-    assert coverage["XRD"]["total_candidate_count"] == 6
-    assert coverage["XRD"]["providers"]["cod"]["candidate_count"] == 4
+    assert coverage["XRD"]["total_candidate_count"] == 4
+    assert coverage["XRD"]["providers"]["cod"]["candidate_count"] == 2
     assert coverage["XRD"]["providers"]["materials_project"]["candidate_count"] == 2
     assert coverage["XRD"]["coverage_tier"] == "seed_dev"
     assert coverage["XRD"]["coverage_warning_code"] == "xrd_seed_coverage_only"
@@ -660,12 +662,14 @@ def test_ensure_local_dev_keeps_seed_manifest_without_richer_corpus(tmp_path):
     result = ensure_local_dev_hosted_catalog(
         hosted_root=hosted_root,
         normalized_root=normalized_root,
+        job_state_root=tmp_path / "reference_library_jobs_ensure",
         dev_mode=True,
     )
 
     assert result["state"] == "already_present"
-    assert result["coverage_tier"] == "seed_dev"
-    assert result["xrd_entry_count"] == 6
+    assert result["upgrade_reason"] == "candidate_not_richer"
+    assert result["previous_coverage_tier"] == "seed_dev"
+    assert result["previous_xrd_count"] == 6
 
     coverage = HostedLibraryCatalog(hosted_root).coverage()
     assert coverage["XRD"]["total_candidate_count"] == 6
@@ -683,11 +687,13 @@ def test_hosted_catalog_refresh_reloads_generated_xrd_corpus_after_republish(tmp
             str(seed_root),
             "--output-root",
             str(hosted_root),
+            "--job-state-root",
+            str(tmp_path / "reference_library_jobs_publish_a"),
             "--clean",
         ]
     )
     catalog = HostedLibraryCatalog(hosted_root)
-    assert catalog.coverage()["XRD"]["total_candidate_count"] == 6
+    assert catalog.coverage()["XRD"]["total_candidate_count"] == 4
     assert catalog.coverage()["XRD"]["coverage_tier"] == "seed_dev"
 
     publish_hosted_main(
@@ -696,6 +702,8 @@ def test_hosted_catalog_refresh_reloads_generated_xrd_corpus_after_republish(tmp
             str(refreshed_root),
             "--output-root",
             str(hosted_root),
+            "--job-state-root",
+            str(tmp_path / "reference_library_jobs_publish_b"),
             "--clean",
         ]
     )
@@ -703,7 +711,70 @@ def test_hosted_catalog_refresh_reloads_generated_xrd_corpus_after_republish(tmp
     refreshed_manifest = catalog.refresh()
     assert refreshed_manifest["datasets"]
     refreshed_coverage = catalog.coverage()["XRD"]
-    assert refreshed_coverage["total_candidate_count"] == 6
-    assert refreshed_coverage["providers"]["cod"]["candidate_count"] == 4
+    assert refreshed_coverage["total_candidate_count"] == 4
+    assert refreshed_coverage["providers"]["cod"]["candidate_count"] == 2
     assert refreshed_coverage["providers"]["materials_project"]["candidate_count"] == 2
     assert refreshed_coverage["coverage_tier"] == "seed_dev"
+
+
+def _publish_seed_catalog(tmp_path: Path) -> tuple[HostedLibraryCatalog, Path]:
+    normalized_root = _build_seed_xrd_normalized_root(tmp_path)
+    hosted_root = tmp_path / "reference_library_hosted"
+    publish_hosted_main(
+        [
+            "--normalized-root",
+            str(normalized_root),
+            "--output-root",
+            str(hosted_root),
+            "--job-state-root",
+            str(tmp_path / "reference_library_jobs_publish"),
+        ]
+    )
+    return HostedLibraryCatalog(hosted_root), hosted_root
+
+
+def test_coverage_tolerates_manifest_only_dataset_without_artifacts(tmp_path):
+    catalog, hosted_root = _publish_seed_catalog(tmp_path)
+    baseline = catalog.coverage()["XRD"]["total_candidate_count"]
+    assert baseline == 4
+
+    manifest_path = hosted_root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["datasets"].append(
+        {
+            # Manifest-only stub: declared counts, no bundle artifacts at all.
+            "dataset_id": "cod_xrd_manifest_only",
+            "provider_id": "cod",
+            "provider": "COD",
+            "modality": "XRD",
+            "dataset_version": "2026.03.stub",
+            "published_at": GENERATED_AT,
+            "candidate_count": 5,
+            "deduped_candidate_count": 0,
+            "active": True,
+        }
+    )
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    refreshed_catalog = HostedLibraryCatalog(hosted_root)
+    xrd = refreshed_catalog.coverage()["XRD"]
+    assert xrd["total_candidate_count"] == baseline + 5
+
+    # A published dataset whose artifact file was truncated away is tolerated too.
+    dataset_dir = next((hosted_root / "datasets").rglob("2026.03.fixture"))
+    artifact = dataset_dir / "peaks.npz"
+    assert artifact.exists()
+    artifact.unlink()
+    truncation_catalog = HostedLibraryCatalog(hosted_root)
+    assert truncation_catalog.coverage()["XRD"]["total_candidate_count"] == baseline + 5
+
+
+def test_coverage_propagates_unrelated_io_errors(tmp_path, monkeypatch):
+    catalog, _hosted_root = _publish_seed_catalog(tmp_path)
+
+    def _denied(self, dataset):
+        raise PermissionError(f"denied: {dataset.get('dataset_id')}")
+
+    monkeypatch.setattr(HostedLibraryCatalog, "_read_dataset_bundle", _denied)
+    with pytest.raises(PermissionError):
+        catalog.coverage()

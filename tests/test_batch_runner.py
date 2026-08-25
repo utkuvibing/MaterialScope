@@ -831,8 +831,11 @@ def test_execute_xrd_batch_template_blocks_stable_match_when_axis_mapping_requir
 def test_execute_batch_template_uses_installed_global_reference_libraries(monkeypatch, tmp_path):
     mirror_root = _write_mirror_root(tmp_path / "reference_library_mirror")
     monkeypatch.setenv("MATERIALSCOPE_LIBRARY_MIRROR_ROOT", str(mirror_root))
+    # Keep the hosted-catalog fallback and CWD-relative job state inside the test sandbox.
+    monkeypatch.setenv("MATERIALSCOPE_LIBRARY_HOSTED_ROOT", str(tmp_path / "reference_library_hosted"))
+    monkeypatch.chdir(tmp_path)
     manager = get_reference_library_manager()
-    manager.sync(force=True, package_ids=["openspecy_ftir_core", "cod_xrd_core"])
+    manager.sync(force=True, package_ids=["openspecy_ftir_0001", "cod_xrd_0001"])
 
     spectral_dataset = _make_spectral_dataset(analysis_type="FTIR", include_reference_library=False)
     spectral_outcome = execute_batch_template(
@@ -844,10 +847,10 @@ def test_execute_batch_template_uses_installed_global_reference_libraries(monkey
     )
 
     assert spectral_outcome["status"] == "saved"
-    assert spectral_outcome["record"]["summary"]["library_package"] == "openspecy_ftir_core"
+    assert spectral_outcome["record"]["summary"]["library_package"] == "openspecy_ftir_0001"
     assert spectral_outcome["record"]["summary"]["library_provider"] == "OpenSpecy"
     assert spectral_outcome["record"]["summary"]["library_cache_status"] == "warm"
-    assert spectral_outcome["record"]["rows"][0]["library_package"] == "openspecy_ftir_core"
+    assert spectral_outcome["record"]["rows"][0]["library_package"] == "openspecy_ftir_0001"
 
     xrd_dataset = _make_xrd_dataset(include_reference_library=False)
     xrd_outcome = execute_batch_template(
@@ -859,11 +862,11 @@ def test_execute_batch_template_uses_installed_global_reference_libraries(monkey
     )
 
     assert xrd_outcome["status"] == "saved"
-    assert xrd_outcome["record"]["summary"]["library_package"] == "cod_xrd_core"
+    assert xrd_outcome["record"]["summary"]["library_package"] == "cod_xrd_0001"
     assert xrd_outcome["record"]["summary"]["library_provider"] == "COD"
     assert xrd_outcome["record"]["summary"]["library_cache_status"] == "warm"
-    assert xrd_outcome["record"]["summary"]["top_candidate_package"] == "cod_xrd_core"
-    assert xrd_outcome["record"]["rows"][0]["library_package"] == "cod_xrd_core"
+    assert xrd_outcome["record"]["summary"]["top_candidate_package"] == "cod_xrd_0001"
+    assert xrd_outcome["record"]["rows"][0]["library_package"] == "cod_xrd_0001"
 
 
 def test_execute_batch_template_blocks_failed_validation(thermal_dataset):

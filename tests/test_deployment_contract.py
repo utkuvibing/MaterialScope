@@ -51,9 +51,11 @@ def test_requirements_include_runtime_and_ingest_dependencies():
 def test_readme_documents_preview_and_dash_container_runtime_flags():
     readme = _repo_text("README.md")
 
+    # Runtime contract: the README must document the combined Dash server entrypoint.
     assert "python -m dash_app.server" in readme
-    assert "Stable prototype" in readme
-    assert "Experimental" in readme
+    assert "http://127.0.0.1:8050" in readme
+    # Marketing copy is intentionally not asserted here; wording evolves
+    # independently of runtime behavior (see ee0325b).
     assert "MATERIALSCOPE_ENABLE_PREVIEW_MODULES=false" not in readme
     assert "DEV_CLOUD_AUTH" not in readme
 
