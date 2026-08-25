@@ -614,17 +614,22 @@ def test_publish_hosted_library_defaults_to_generated_build_corpus(tmp_path, mon
     default_root.parent.mkdir(parents=True, exist_ok=True)
     normalized_root.rename(default_root)
     monkeypatch.chdir(tmp_path)
+    # Sandbox PROJECT_ROOT/build discovery so a developer machine's real
+    # build/ corpus cannot outrank (or mask) this test's generated corpus.
+    monkeypatch.setattr("core.hosted_library.PROJECT_ROOT", tmp_path)
 
     publish_hosted_main(
         [
             "--output-root",
             str(hosted_root),
+            "--job-state-root",
+            str(tmp_path / "reference_library_jobs_publish"),
         ]
     )
 
     coverage = HostedLibraryCatalog(hosted_root).coverage()
-    assert coverage["XRD"]["total_candidate_count"] == 6
-    assert coverage["XRD"]["providers"]["cod"]["candidate_count"] == 4
+    assert coverage["XRD"]["total_candidate_count"] == 4
+    assert coverage["XRD"]["providers"]["cod"]["candidate_count"] == 2
     assert coverage["XRD"]["providers"]["materials_project"]["candidate_count"] == 2
     assert coverage["XRD"]["coverage_tier"] == "seed_dev"
     assert coverage["XRD"]["coverage_warning_code"] == "xrd_seed_coverage_only"
