@@ -11,20 +11,24 @@ scipy>=1.11.0
 pybaselines>=1.1.0
 lmfit>=1.3.0
 
-plotly>=5.18.0
-kaleido>=0.2.1
+# Plotly 6+ dropped Kaleido v0 support; static PNG export is validated with
+# the Kaleido v1 line against a real Chrome/Chromium (see PR-3 evidence).
+plotly>=6.1.1,<8
+kaleido>=1,<2
 Pillow>=10.0.0
 
 openpyxl>=3.1.0
 python-docx>=1.0.0
 reportlab>=4.0.0
 
+# httpx <0.29 is an intentional compatibility ceiling: FastAPI/Starlette's
+# TestClient and this repo's HTTP clients are validated only on the 0.27-0.28
+# series, and httpx 0.x may break on each minor bump (0.29 did not exist when
+# this ceiling was set). Any migration belongs in a dedicated dependency-
+# upgrade PR after testing against newer Starlette TestClient behavior.
 httpx>=0.27,<0.29
 python-dotenv>=1.0.0
 
 pymatgen>=2025.1
 mp-api>=0.45
 pyreadr>=0.5
-rdata>=0.11
-
-pytest>=7.0.0
