@@ -56,3 +56,6 @@ python3
 build/reference_library_*/
 sample_data/reference_library_mirror/
 sample_data/reference_library_ingest_cloud_dev/
+
+# Runtime output (reports, exports, playwright captures) is generated content.
+output/
