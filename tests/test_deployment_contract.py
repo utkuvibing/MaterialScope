@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import json
+import sys
 import tomllib
 from pathlib import Path
 
@@ -56,6 +58,67 @@ def test_container_entrypoint_runs_combined_dash_server_only():
     assert "python -m backend.main" not in start_script
     assert "streamlit run app.py" not in start_script
     assert "&" not in start_script
+
+
+def _uvicorn_run_kwargs() -> dict[str, str | int | None]:
+    """Extract the keyword arguments of the ``uvicorn.run(...)`` call in the
+    combined Dash server entrypoint. Non-literal arguments (e.g. ``args.host``)
+    evaluate to None — the contract only pins literal choices like ``http``."""
+    tree = ast.parse(_repo_text("dash_app/server.py"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if (
+            isinstance(func, ast.Attribute)
+            and func.attr == "run"
+            and isinstance(func.value, ast.Name)
+            and func.value.id == "uvicorn"
+        ):
+            kwargs: dict[str, str | int | None] = {}
+            for kw in node.keywords:
+                if kw.arg is None:
+                    continue
+                try:
+                    kwargs[kw.arg] = ast.literal_eval(kw.value)
+                except ValueError:
+                    kwargs[kw.arg] = None
+            return kwargs
+    raise AssertionError("dash_app/server.py does not call uvicorn.run(...)")
+
+
+def test_combined_server_pins_h11_http_parser():
+    """The deployed server must pin uvicorn's HTTP parser to h11.
+
+    requirements.txt depends on plain ``uvicorn`` (no [standard] extra), so
+    httptools only ever reaches container images transitively. With
+    ``http="auto"`` uvicorn silently selects the httptools parser whenever it
+    is importable, and current uvicorn/httptools releases reject valid
+    proxy-generated request shapes (e.g. absolute-form targets) with
+    ``400 Invalid HTTP request received.`` where h11 accepts them — on Vercel
+    that 400s every POST /_dash-update-component and the Dash shell never
+    populates. h11 is uvicorn's own hard dependency and accepts those shapes.
+    """
+    kwargs = _uvicorn_run_kwargs()
+    assert kwargs.get("http") == "h11"
+
+
+def test_h11_pin_resolves_to_h11_protocol_even_when_httptools_is_importable():
+    """Runtime half of the parser contract: with httptools importable (the
+    transitive-install scenario behind the Vercel 400s), the server's pinned
+    configuration must still resolve uvicorn's protocol to H11Protocol."""
+    import unittest.mock
+
+    import uvicorn
+    from uvicorn.protocols.http.h11_impl import H11Protocol
+
+    async def asgi_app(scope, receive, send):  # pragma: no cover - never run
+        return
+
+    with unittest.mock.patch.dict(sys.modules, {"httptools": unittest.mock.MagicMock()}):
+        config = uvicorn.Config(asgi_app, http="h11", lifespan="off")
+        config.load()
+        assert config.http_protocol_class is H11Protocol
 
 
 def test_vercel_seam_reuses_docker_contract():

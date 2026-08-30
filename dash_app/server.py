@@ -52,7 +52,7 @@ def main() -> None:
 
     app = create_combined_app(api_token=args.token or None)
     print(f"MaterialScope (Dash) starting on http://{args.host}:{args.port}", flush=True)
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info", http="h11")
 
 
 if __name__ == "__main__":
