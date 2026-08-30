@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tomllib
 from pathlib import Path
 
@@ -55,6 +56,29 @@ def test_container_entrypoint_runs_combined_dash_server_only():
     assert "python -m backend.main" not in start_script
     assert "streamlit run app.py" not in start_script
     assert "&" not in start_script
+
+
+def test_vercel_seam_reuses_docker_contract():
+    """Vercel deploys the existing Dockerfile as a container service — no
+    duplicated Docker contract (no Dockerfile.vercel, no copied steps)."""
+    vercel = json.loads(_repo_text("vercel.json"))
+
+    # Exactly one service, built by the container runtime from the real
+    # Dockerfile at the repository root.
+    assert list(vercel["services"]) == ["materialscope"]
+    service = vercel["services"]["materialscope"]
+    assert service["root"] == "."
+    assert service["runtime"] == "container"
+    assert service["entrypoint"] == "Dockerfile"
+
+    # The seam must point at the real Docker contract, not a copy.
+    assert (REPO_ROOT / service["entrypoint"]).is_file()
+    assert not (REPO_ROOT / "Dockerfile.vercel").exists()
+
+    # A single catch-all rewrite exposes the service publicly.
+    assert vercel["rewrites"] == [
+        {"source": "/(.*)", "destination": {"service": "materialscope"}}
+    ]
 
 
 def _requirement_name(line: str) -> str:
