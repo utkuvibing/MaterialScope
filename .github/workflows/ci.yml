@@ -40,15 +40,16 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install project dependencies
+      - name: Install project through the packaging contract
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m pip install -e ".[dev]"
+          python -m pip check
 
       - name: Show resolved versions
         run: |
           python --version
-          python -m pip list | grep -Ei 'numpy|pandas|scipy|dash|plotly|kaleido|fastapi|pybaselines|lmfit'
+          python -m pip list | grep -Ei 'numpy|pandas|scipy|dash|plotly|kaleido|fastapi|httpx|pybaselines|lmfit'
 
       - name: Run full test suite
         run: python -m pytest tests/ -q --tb=short -rf

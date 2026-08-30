@@ -22,7 +22,7 @@ MaterialScope is designed to keep source data, processing choices, visualization
 
 ## Run locally
 
-**Prerequisites:** Python 3.10+ and `pip`.
+**Prerequisites:** Python 3.11+ and `pip`.
 
 ```bash
 git clone https://github.com/utkuvibing/MaterialScope.git
@@ -40,11 +40,17 @@ Activate the virtual environment:
 source .venv/bin/activate
 ```
 
-Install dependencies and start the app:
+Install the project and start the app:
 
 ```bash
-pip install -r requirements.txt
+pip install -e .
 python -m dash_app.server
+```
+
+For development and testing, also install the tooling extra:
+
+```bash
+pip install -e ".[dev]"
 ```
 
 Open [http://127.0.0.1:8050](http://127.0.0.1:8050) in your browser.

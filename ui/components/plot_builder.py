@@ -600,7 +600,11 @@ def create_deconvolution_plot(temperature, signal, fitted, components,
 
 
 def fig_to_bytes(fig, format="png", width=1000, height=600):
-    """Export a Plotly figure to bytes (PNG or SVG)."""
+    """Export a Plotly figure to bytes (PNG or SVG).
+
+    No explicit ``engine=`` argument: that parameter is deprecated in
+    Plotly 6+, which auto-selects Kaleido for static export when installed.
+    """
     export_fig = go.Figure(fig)
     export_settings = {}
     meta = getattr(fig.layout, "meta", None)
@@ -609,4 +613,4 @@ def fig_to_bytes(fig, format="png", width=1000, height=600):
     apply_plot_display_settings(export_fig, export_settings, for_export=True, scale_traces=False)
     export_width = int(width)
     export_height = int(height)
-    return export_fig.to_image(format=format, width=export_width, height=export_height, engine="kaleido")
+    return export_fig.to_image(format=format, width=export_width, height=export_height)

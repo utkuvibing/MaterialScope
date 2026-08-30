@@ -22,7 +22,7 @@ MaterialScope; ham veri, işleme tercihleri, görselleştirmeler ve dışa aktar
 
 ## Yerel kurulum
 
-**Gereksinimler:** Python 3.10+ ve `pip`.
+**Gereksinimler:** Python 3.11+ ve `pip`.
 
 ```bash
 git clone https://github.com/utkuvibing/MaterialScope.git
@@ -40,11 +40,17 @@ Sanal ortamı etkinleştirin:
 source .venv/bin/activate
 ```
 
-Bağımlılıkları kurup uygulamayı başlatın:
+Projeyi kurup uygulamayı başlatın:
 
 ```bash
-pip install -r requirements.txt
+pip install -e .
 python -m dash_app.server
+```
+
+Geliştirme ve test araçları için ekstra kurulum:
+
+```bash
+pip install -e ".[dev]"
 ```
 
 Tarayıcıdan [http://127.0.0.1:8050](http://127.0.0.1:8050) adresini açın.

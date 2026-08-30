@@ -156,10 +156,12 @@ def render_plotly_figure_png(
 
     if not force_fallback:
         try:
+            # No explicit ``engine=`` argument: it is deprecated in Plotly 6+.
+            # With kaleido installed (see requirements.txt) Plotly selects it
+            # automatically for static PNG output.
             return pio.to_image(
                 fig,
                 format="png",
-                engine="kaleido",
                 width=width,
                 height=height,
             ), None

@@ -74,11 +74,10 @@ def test_fig_to_bytes_uses_report_safe_export_dimensions(monkeypatch):
     )
     captured = {}
 
-    def _fake_to_image(self, *, format, width, height, engine):
+    def _fake_to_image(self, *, format, width, height):
         captured["format"] = format
         captured["width"] = width
         captured["height"] = height
-        captured["engine"] = engine
         captured["title"] = str(self.layout.title.text)
         return b"figure-bytes"
 
@@ -88,7 +87,6 @@ def test_fig_to_bytes_uses_report_safe_export_dimensions(monkeypatch):
 
     assert payload == b"figure-bytes"
     assert captured["format"] == "png"
-    assert captured["engine"] == "kaleido"
     assert captured["width"] == 900
     assert captured["height"] == 500
     assert "Export Figure" in captured["title"]
