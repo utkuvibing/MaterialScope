@@ -4,10 +4,20 @@ from __future__ import annotations
 
 import dash
 import dash_bootstrap_components as dbc
+from fastapi import FastAPI
 
 
-def create_dash_app(*, requests_pathname_prefix: str = "/") -> dash.Dash:
-    """Create and return the Dash application instance."""
+def create_dash_app(
+    *,
+    requests_pathname_prefix: str = "/",
+    server: FastAPI | None = None,
+) -> dash.Dash:
+    """Create and return the Dash application instance.
+
+    ``server`` may be an existing FastAPI app so Dash registers its routes on
+    that same ASGI app (Dash 4.2+ native FastAPI backend) instead of creating
+    its own Flask server behind a WSGI bridge.
+    """
     # Unit tests may ``import dash_app.pages.*`` with a throwaway Dash app, which registers
     # pages under ``dash_app.pages.<name>``. The real app loads the same files via
     # ``pages_folder`` as ``pages.<name>``, which would duplicate routes — clear stale entries.
@@ -19,6 +29,7 @@ def create_dash_app(*, requests_pathname_prefix: str = "/") -> dash.Dash:
 
     app = dash.Dash(
         __name__,
+        server=server if server is not None else True,
         use_pages=True,
         pages_folder="pages",
         external_stylesheets=[

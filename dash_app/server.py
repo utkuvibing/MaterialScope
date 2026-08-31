@@ -8,10 +8,10 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 import uvicorn
 from dotenv import load_dotenv
-from a2wsgi import WSGIMiddleware
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -24,14 +24,72 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+class _AbsoluteFormTargetMiddleware:
+    """Translate absolute-form request targets to origin-form (RFC 9110 7.2).
+
+    The deployment contract pins uvicorn's ``http="h11"`` parser because
+    proxy-fronted runtimes (Vercel's container service) send request shapes
+    such as ``POST https://<host>/_dash-update-component`` that httptools
+    rejects with a parser-level ``400 Invalid HTTP request received.``. h11
+    accepts those targets, but uvicorn forwards the full absolute URL as the
+    ASGI ``path``, where it can never match a concrete route — callback POSTs
+    fell through to Dash's GET-only index catch-all. RFC 9110 requires a
+    server to translate absolute-form targets to origin-form; this middleware
+    performs that translation and leaves origin-form targets untouched.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and b"://" in (scope.get("raw_path") or b""):
+            target = scope["raw_path"].decode("ascii", "replace")
+            parts = urlsplit(target)
+            origin_path = parts.path or "/"
+            scope["raw_path"] = origin_path.encode("ascii")
+            scope["path"] = unquote(origin_path)
+            if parts.query:
+                scope["query_string"] = parts.query.encode("ascii")
+        await self.app(scope, receive, send)
+
+
+def _register_dash_catchall(dash_app) -> None:
+    """Register Dash's client-side-routing catch-all at app creation time.
+
+    Dash's FastAPI backend wires its ``{path:path}`` index catch-all only from
+    ASGI lifespan (via ``DashMiddleware``), so deep links (``/dsc``, ``/tga``,
+    ...) would 404 until a lifespan-aware server has started — and would never
+    resolve under plain TestClient usage. Calling the same hook eagerly keeps
+    page paths answering the Dash index from the very first request; the later
+    lifespan call simply registers a duplicate that never wins route matching.
+    """
+    setup_catchall = getattr(dash_app.backend, "_setup_catchall", None)
+    if not callable(setup_catchall):
+        raise RuntimeError(
+            "The installed Dash FastAPI backend does not expose "
+            "_setup_catchall; page deep links would not resolve. "
+            "Check the dash[fastapi] version contract (>=4.2,<5)."
+        )
+    setup_catchall()
+
+
 def create_combined_app(*, api_token: str | None = None):
-    """Create a FastAPI app with the Dash UI mounted as WSGI fallback."""
+    """Create the MaterialScope FastAPI app with the native Dash FastAPI backend.
+
+    One ASGI app serves both the REST API and the Dash UI: Dash (4.2+) registers
+    its routes directly on the existing FastAPI instance, so no WSGI bridge is
+    involved anywhere in the request path.
+    """
     from backend.app import create_app as create_backend
     from dash_app.app import create_dash_app
 
     api = create_backend(api_token=api_token)
-    dash = create_dash_app()
-    api.mount("/", WSGIMiddleware(dash.server))
+    dash_app = create_dash_app(server=api)
+    _register_dash_catchall(dash_app)
+    api.state.dash_app = dash_app
+    # Registered last so it is the outermost middleware: proxy-shaped targets
+    # are normalized before Dash's middleware and FastAPI's router see them.
+    api.add_middleware(_AbsoluteFormTargetMiddleware)
     return api
 
 

@@ -185,8 +185,11 @@ def test_dev_extra_isolates_test_tooling_from_runtime():
 def test_requirements_keep_runtime_and_ingest_dependencies_without_test_tooling():
     requirements = "\n".join(_requirement_lines("requirements.txt"))
 
-    # Combined Dash/FastAPI runtime contract stays intact.
-    assert "dash>=2.18.0" in requirements
+    # Combined Dash/FastAPI runtime contract stays intact. Dash must declare
+    # the native FastAPI backend contract ([fastapi] extra, 4.2+) because the
+    # combined server passes the existing FastAPI app into Dash directly; the
+    # a2wsgi WSGI bridge was removed with that migration.
+    assert "dash[fastapi]>=4.2,<5" in requirements
     assert "fastapi>=0.115.0" in requirements
 
     # Ingest dependencies stay represented (tools/library_ingest/providers.py).
@@ -199,11 +202,13 @@ def test_requirements_keep_runtime_and_ingest_dependencies_without_test_tooling(
     assert "plotly>=6.1.1,<8" in requirements
     assert "kaleido>=1,<2" in requirements
 
-    # pytest is development infrastructure (moved to the `dev` extra), and
-    # rdata was verified to have zero importers anywhere in the repository.
+    # pytest is development infrastructure (moved to the `dev` extra), rdata
+    # has zero importers anywhere in the repository, and the a2wsgi WSGI
+    # bridge was removed with the native Dash FastAPI backend migration.
     names = {_requirement_name(line) for line in _requirement_lines("requirements.txt")}
     assert "pytest" not in names
     assert "rdata" not in names
+    assert "a2wsgi" not in names
 
 
 def test_readme_documents_preview_and_dash_container_runtime_flags():

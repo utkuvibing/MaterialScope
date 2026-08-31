@@ -1,9 +1,12 @@
 streamlit>=1.39.0
-dash>=2.18.0
+# Dash must ship its native FastAPI backend (4.2+): the combined server passes
+# the MaterialScope FastAPI app as Dash's server, so the Flask default server
+# and any WSGI bridge are dead paths. The [fastapi] extra is the documented
+# dependency contract for that backend (janus rides in dash's base deps).
+dash[fastapi]>=4.2,<5
 dash-bootstrap-components>=1.6.0
 fastapi>=0.115.0
 uvicorn>=0.30.0
-a2wsgi>=1.10.0
 
 numpy>=1.26,<3
 pandas>=2.2,<3
