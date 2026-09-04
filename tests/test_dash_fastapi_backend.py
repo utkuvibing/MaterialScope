@@ -200,3 +200,38 @@ def test_proxy_absolute_form_callback_post_reaches_dash(combined: tuple[FastAPI,
     assert response.get("complete")
     body = jsonlib.loads(response["body"])
     assert body["response"]["proxy-probe-output"]["children"] == "echo:absolute-form"
+
+
+def test_explicit_token_wins_over_stale_client_env(monkeypatch):
+    """Explicit api_token synchronizes the bundled client; backend needs it."""
+    import os
+
+    from dash_app import api_client
+
+    monkeypatch.setenv("MATERIALSCOPE_API_TOKEN", "old")
+    app = create_combined_app(api_token="new")
+    client = TestClient(app)
+
+    assert os.environ["MATERIALSCOPE_API_TOKEN"] == "new"
+    assert api_client._headers()["X-TA-Token"] == "new"
+
+    assert client.get("/health").status_code == 200
+    assert client.post("/workspace/new").status_code == 401
+    assert client.post("/workspace/new", headers={"X-TA-Token": "wrong"}).status_code == 401
+    authed = client.post("/workspace/new", headers={"X-TA-Token": "new"})
+    assert authed.status_code == 200
+    assert authed.json()["project_id"]
+    assert client.get("/").status_code == 200
+
+
+def test_no_explicit_token_leaves_client_env_alone(monkeypatch):
+    """Without api_token the open-by-default contract is unchanged."""
+    import os
+
+    monkeypatch.setenv("MATERIALSCOPE_API_TOKEN", "env-only")
+    app = create_combined_app()
+    client = TestClient(app)
+
+    assert os.environ["MATERIALSCOPE_API_TOKEN"] == "env-only"
+    assert client.get("/health").status_code == 200
+    assert client.post("/workspace/new").status_code == 200
