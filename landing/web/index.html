@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MaterialScope — materials characterization workbench</title>
+<meta name="description" content="Open-source workbench for reproducible materials characterization: DSC, TGA, DTA, FTIR, Raman, and XRD data — import, analysis, comparison, and report-ready export in one workflow.">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121110" media="(prefers-color-scheme: dark)">
+<meta property="og:type" content="website">
+<meta property="og:title" content="MaterialScope — materials characterization workbench">
+<meta property="og:description" content="Import, analyze, compare, and export DSC, TGA, DTA, FTIR, Raman, and XRD data in one reproducible workbench. Open source under MIT.">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/static/fonts/ibm-plex-sans-latin-400.woff2" as="font" type="font/woff2">
+<link rel="preload" href="/static/fonts/ibm-plex-sans-latin-700.woff2" as="font" type="font/woff2">
+<link rel="stylesheet" href="/static/landing.css">
+<script defer src="/static/traces.js"></script>
+<script defer src="/static/landing.js"></script>
+<script>
+  // Set theme before first paint to avoid a flash (mirrors the product's data-theme convention).
+  (function () {
+    try {
+      var stored = localStorage.getItem('ms-theme');
+      var theme = stored === 'light' || stored === 'dark' ? stored
+        : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', theme);
+    } catch (e) { /* private mode etc. — keep the default */ }
+  })();
+</script>
+</head>
+<body id="top">
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="nav" id="nav">
+  <div class="nav-inner">
+    <a class="brand" href="#top" aria-label="MaterialScope — back to top">
+      <svg class="brand-mark" width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+        <path d="M13 2.5 23.5 13 13 23.5 2.5 13 13 2.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M13 8 18 13 13 18 8 13 13 8Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" opacity=".55"/>
+        <circle cx="13" cy="13" r="1.7" fill="currentColor"/>
+      </svg>
+      <span class="brand-name">Material<span>Scope</span></span>
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#why">Why</a>
+      <a href="#how">How it works</a>
+      <a href="#capabilities">Capabilities</a>
+      <a href="#modalities">Modalities</a>
+      <a href="#who">Who it&rsquo;s for</a>
+    </nav>
+    <div class="nav-actions">
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Switch to dark theme">
+        <svg class="icon-sun" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <circle cx="8" cy="8" r="3.2" stroke="currentColor" stroke-width="1.4"/>
+          <path d="M8 1.4v1.6M8 13v1.6M1.4 8h1.6M13 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+        <svg class="icon-moon" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8 5.6 5.6 0 1 0 13.2 9.6Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <a class="icon-btn nav-github" href="https://github.com/utkuvibing/MaterialScope" rel="noopener" target="_blank" aria-label="MaterialScope on GitHub">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.5 7.5 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A7.99 7.99 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
+        </svg>
+      </a>
+      <a class="btn btn-primary btn-sm nav-cta" href="#waitlist" data-focus-email>Join the waitlist</a>
+      <button class="icon-btn nav-burger" id="nav-burger" type="button" aria-expanded="false" aria-controls="nav-sheet" aria-label="Open menu">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+          <path d="M2.5 5h13M2.5 9h13M2.5 13h13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+  <div class="nav-sheet" id="nav-sheet" hidden>
+    <nav aria-label="Mobile">
+      <a href="#why">Why</a>
+      <a href="#how">How it works</a>
+      <a href="#capabilities">Capabilities</a>
+      <a href="#modalities">Modalities</a>
+      <a href="#who">Who it&rsquo;s for</a>
+      <a href="https://github.com/utkuvibing/MaterialScope" rel="noopener" target="_blank">GitHub</a>
+    </nav>
+    <a class="btn btn-primary" href="#waitlist" data-focus-email>Join the waitlist</a>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ─────────────────────────────── HERO ─────────────────────────────── -->
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero-deco" aria-hidden="true">
+      <svg class="lattice" viewBox="0 0 1200 620" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <pattern id="tri" width="56" height="48.5" patternUnits="userSpaceOnUse">
+            <path d="M28 0 56 48.5H0ZM28 97 0 48.5h56Z" fill="none" stroke="var(--deco-line)" stroke-width="1"/>
+            <circle cx="28" cy="0" r="1.6" fill="var(--deco-dot)"/>
+            <circle cx="0" cy="48.5" r="1.6" fill="var(--deco-dot)"/>
+            <circle cx="56" cy="48.5" r="1.6" fill="var(--deco-dot)"/>
+          </pattern>
+          <radialGradient id="veil" cx="70%" cy="18%" r="75%">
+            <stop offset="0%" stop-color="var(--accent-glow-a)"/>
+            <stop offset="100%" stop-color="var(--accent-glow-b)" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <rect width="1200" height="620" fill="url(#tri)"/>
+        <rect width="1200" height="620" fill="url(#veil)"/>
+      </svg>
+    </div>
+
+    <div class="container hero-inner">
+      <div class="hero-copy">
+        <p class="hero-badge mono" data-reveal style="--d:0">
+          <span class="badge-dot" aria-hidden="true"></span>
+          Early access · open source under MIT
+        </p>
+        <h1 id="hero-title" data-reveal style="--d:1">Materials characterization,<br>from instrument file<br class="br-lg"> to report.</h1>
+        <p class="lede" data-reveal style="--d:2">
+          MaterialScope brings DSC, TGA, DTA, FTIR, Raman, and XRD data into one
+          reproducible workbench — guided import, modality-aware analysis, run
+          comparison, and report-ready output, with every processing choice kept
+          alongside the measurement.
+        </p>
+        <div class="hero-cta" data-reveal style="--d:3">
+          <a class="btn btn-primary btn-lg" href="#waitlist" data-focus-email>Join the waitlist</a>
+          <a class="btn btn-ghost btn-lg" href="#how">
+            See how it works
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M7 2v8.5M3 7l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+        </div>
+        <p class="hero-meta mono" data-reveal style="--d:4">Python&nbsp;·&nbsp;Dash + Plotly&nbsp;·&nbsp;FastAPI&nbsp;·&nbsp;no vendor lock-in</p>
+      </div>
+
+      <div class="hero-visual" data-reveal style="--d:3">
+        <figure class="panel trace-panel" id="trace-panel">
+          <div class="panel-bar">
+            <span class="file-dot" aria-hidden="true"></span>
+            <span class="mono panel-file" id="trace-file">xrd_2024_0304_zenodo.csv</span>
+            <span class="panel-chip mono" id="trace-meta">Cu Kα λ = 1.5406 Å</span>
+          </div>
+          <div class="trace-tabs" role="group" aria-label="Characterization modality" id="trace-tabs"></div>
+          <div class="trace-stage-wrap" id="trace-stage"></div>
+          <figcaption class="trace-foot mono">
+            <span id="trace-readout">&nbsp;</span>
+            <span class="trace-hint" id="trace-hint">hover to inspect · click a technique</span>
+          </figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── WHY ─────────────────────────────── -->
+  <section class="band" id="why" aria-labelledby="why-title">
+    <div class="container why-grid">
+      <div class="why-copy">
+        <p class="kicker mono" data-reveal>01 — Why MaterialScope</p>
+        <h2 id="why-title" data-reveal style="--d:1">One experiment.<br>Five disconnected tools.</h2>
+        <p class="body-copy" data-reveal style="--d:2">
+          Vendor export utilities, a spreadsheet for cleaning, a plotting tool for
+          figures, a database for reference data, a separate document for the report.
+          The science is continuous — the tooling around it usually isn&rsquo;t.
+        </p>
+        <p class="body-copy" data-reveal style="--d:3">
+          MaterialScope keeps import, processing, comparison, and export inside a single
+          project workspace, so every figure stays traceable to the raw measurement it
+          came from.
+        </p>
+      </div>
+      <div class="why-diagram" data-reveal style="--d:2">
+        <svg class="frag-diagram" viewBox="0 0 480 300" role="img" aria-label="Diagram: vendor export, spreadsheet, plotting script, library lookup, and report document all converging into the MaterialScope workspace.">
+          <g class="frag-chip-g">
+            <rect class="frag-chip" x="10" y="10" width="128" height="34" rx="8"/>
+            <circle class="frag-chip-mark" cx="24" cy="27" r="2.5"/>
+            <text class="frag-chip-label" x="34" y="31.5">vendor export</text>
+          </g>
+          <g class="frag-chip-g">
+            <rect class="frag-chip" x="176" y="10" width="128" height="34" rx="8"/>
+            <circle class="frag-chip-mark" cx="190" cy="27" r="2.5"/>
+            <text class="frag-chip-label" x="200" y="31.5">spreadsheet</text>
+          </g>
+          <g class="frag-chip-g">
+            <rect class="frag-chip" x="342" y="10" width="128" height="34" rx="8"/>
+            <circle class="frag-chip-mark" cx="356" cy="27" r="2.5"/>
+            <text class="frag-chip-label" x="366" y="31.5">plotting script</text>
+          </g>
+          <g class="frag-chip-g">
+            <rect class="frag-chip" x="93" y="72" width="128" height="34" rx="8"/>
+            <circle class="frag-chip-mark" cx="107" cy="89" r="2.5"/>
+            <text class="frag-chip-label" x="117" y="93.5">library lookup</text>
+          </g>
+          <g class="frag-chip-g">
+            <rect class="frag-chip" x="259" y="72" width="128" height="34" rx="8"/>
+            <circle class="frag-chip-mark" cx="273" cy="89" r="2.5"/>
+            <text class="frag-chip-label" x="283" y="93.5">report document</text>
+          </g>
+          <path class="frag-link" pathLength="1" style="--fd:0" d="M74 44 C 74 120, 150 150, 232 206"/>
+          <path class="frag-link" pathLength="1" style="--fd:1" d="M240 44 C 240 100, 226 140, 236 206"/>
+          <path class="frag-link" pathLength="1" style="--fd:2" d="M406 44 C 406 120, 330 150, 248 206"/>
+          <path class="frag-link" pathLength="1" style="--fd:3" d="M157 106 C 157 150, 190 168, 226 206"/>
+          <path class="frag-link" pathLength="1" style="--fd:4" d="M323 106 C 323 150, 290 168, 254 206"/>
+          <g class="frag-core-g">
+            <rect class="frag-core-box" x="128" y="210" width="224" height="64" rx="12"/>
+            <path class="frag-core-diamond" d="M240 206l5 5-5 5-5-5z" fill="var(--trace)"/>
+            <text class="frag-core-label" x="240" y="240" text-anchor="middle">MaterialScope workspace</text>
+            <text class="frag-core-sub" x="240" y="258" text-anchor="middle">import · process · compare · export</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────── HOW ─────────────────────────────── -->
+  <section class="band band-alt" id="how" aria-labelledby="how-title">
+    <div class="container">
+      <p class="kicker mono" data-reveal>02 — How it works</p>
+      <h2 id="how-title" class="h2" data-reveal style="--d:1">A workflow that mirrors the bench.</h2>
+      <ol class="steps">
+        <li data-reveal style="--d:1">
+          <span class="step-no mono">01</span>
+          <h3>Import</h3>
+          <p>Bring in CSV, TXT, TSV, XLSX, or XLS measurement files from any instrument vendor.</p>
+        </li>
+        <li data-reveal style="--d:2">
+          <span class="step-no mono">02</span>
+          <h3>Review</h3>
+          <p>Check column mapping, units, and data-quality warnings before any analysis runs.</p>
+        </li>
+        <li data-reveal style="--d:3">
+          <span class="step-no mono">03</span>
+          <h3>Analyze</h3>
+          <p>Run the matching workflow — thermal events, spectral bands, or diffraction patterns.</p>
+        </li>
+        <li data-reveal style="--d:4">
+          <span class="step-no mono">04</span>
+          <h3>Compare</h3>
+          <p>Overlay runs and samples in a shared workspace with aligned axes and styling.</p>
+        </li>
+        <li data-reveal style="--d:5">
+          <span class="step-no mono">05</span>
+          <h3>Export</h3>
+          <p>Take away figures, tabulated results, and structured report outputs — linked to their history.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ──────────────────────────── CAPABILITIES ─────────────────────────── -->
+  <section class="band" id="capabilities" aria-labelledby="cap-title">
+    <div class="container">
+      <p class="kicker mono" data-reveal>03 — Capabilities</p>
+      <h2 id="cap-title" class="h2" data-reveal style="--d:1">Engineered around characterization data.</h2>
+      <div class="cap-grid">
+        <article class="cap-card" data-reveal style="--d:1">
+          <div class="cap-icon" aria-hidden="true">
+            <svg viewBox="0 0 40 40" fill="none">
+              <rect x="5" y="7" width="30" height="26" rx="3" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M5 14h30M12 14v19" stroke="currentColor" stroke-width="1.4"/>
+              <path d="M17 20h12M17 25h9M17 30h12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity=".55"/>
+              <circle cx="9.5" cy="20" r="1.3" fill="currentColor"/><circle cx="9.5" cy="25" r="1.3" fill="currentColor"/><circle cx="9.5" cy="30" r="1.3" fill="currentColor"/>
+            </svg>
+          </div>
+          <h3>Guided import with a quality gate</h3>
+          <p>Column mapping, unit detection, and quality checks run before analysis — so a malformed scan fails loudly instead of quietly skewing your results.</p>
+          <p class="cap-note mono">core/data_io · preview · warnings</p>
+        </article>
+        <article class="cap-card" data-reveal style="--d:2">
+          <div class="cap-icon" aria-hidden="true">
+            <svg viewBox="0 0 40 40" fill="none">
+              <path d="M4 32C10 32 12 12 17 12s7 14 11 14 3-8 8-8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              <path d="M4 20h32" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 3" opacity=".5"/>
+              <path d="M14 26c2-4 4-6 6-6" stroke="currentColor" stroke-width="1.2" opacity=".0"/>
+            </svg>
+          </div>
+          <h3>Analysis you can adjust and audit</h3>
+          <p>Baseline correction, peak analysis and deconvolution, and Kissinger kinetics for multi-rate thermal data — each step exposed, not hidden in a black box.</p>
+          <p class="cap-note mono">scipy · pybaselines · lmfit</p>
+        </article>
+        <article class="cap-card" data-reveal style="--d:3">
+          <div class="cap-icon" aria-hidden="true">
+            <svg viewBox="0 0 40 40" fill="none">
+              <path d="M6 30c6 0 8-16 13-16S25 30 34 30" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".45"/>
+              <path d="M6 24c6 0 8-10 13-10s6 14 15 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+              <path d="M6 34h28" stroke="currentColor" stroke-width="1.2" opacity=".5"/>
+            </svg>
+          </div>
+          <h3>Comparison in one workspace</h3>
+          <p>Stack DSC scans, TGA ramps, spectra, or XRD patterns from multiple runs on shared axes — then capture a curated figure straight from the comparison view.</p>
+          <p class="cap-note mono">Plotly · figure capture</p>
+        </article>
+        <article class="cap-card" data-reveal style="--d:4">
+          <div class="cap-icon" aria-hidden="true">
+            <svg viewBox="0 0 40 40" fill="none">
+              <rect x="8" y="5" width="24" height="30" rx="2.5" stroke="currentColor" stroke-width="1.6"/>
+              <path d="M13 12h14M13 17h14M13 22h9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity=".55"/>
+              <path d="M13 28h5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              <path d="M22 27l2.6 2.6L30 24" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h3>Outputs that remember their source</h3>
+          <p>PNG/SVG figures, CSV/XLSX results, and structured DOCX/PDF reports leave with the project&rsquo;s processing history attached — reproducible months later.</p>
+          <p class="cap-note mono">provenance · reportlab · python-docx</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────────────────────── MODALITIES ───────────────────────────── -->
+  <section class="band band-alt" id="modalities" aria-labelledby="mod-title">
+    <div class="container">
+      <p class="kicker mono" data-reveal>04 — Modalities</p>
+      <h2 id="mod-title" class="h2" data-reveal style="--d:1">Six techniques, one data model.</h2>
+      <p class="section-sub" data-reveal style="--d:2">
+        Each modality gets its own workflow, plot conventions, and review
+        tools — on the same import, comparison, and export pipeline.
+        These traces come from the project&rsquo;s real sample datasets.
+      </p>
+      <div class="mod-strip" id="mod-strip" data-reveal style="--d:3"></div>
+    </div>
+  </section>
+
+  <!-- ────────────────────────────── WHO ────────────────────────────── -->
+  <section class="band" id="who" aria-labelledby="who-title">
+    <div class="container who-grid">
+      <div class="who-head">
+        <p class="kicker mono" data-reveal>05 — Who it&rsquo;s for</p>
+        <h2 id="who-title" class="h2" data-reveal style="--d:1">Built with lab workflows in mind.</h2>
+      </div>
+      <ul class="who-list">
+        <li data-reveal style="--d:1">
+          <h3>Research teams</h3>
+          <p>Materials science &amp; engineering groups running multi-technique campaigns — from synthesis screening to failure analysis.</p>
+        </li>
+        <li data-reveal style="--d:2">
+          <h3>QC &amp; R&amp;D laboratories</h3>
+          <p>Quality control and development labs standardizing characterization routines across samples, shifts, and instruments.</p>
+        </li>
+        <li data-reveal style="--d:3">
+          <h3>Graduate workflows</h3>
+          <p>Thesis projects where reproducibility and publication-quality figures are not optional extras.</p>
+        </li>
+        <li data-reveal style="--d:4">
+          <h3>Testing groups</h3>
+          <p>Industrial material testing teams comparing runs across conditions, batches, and suppliers.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ──────────────────────────── WAITLIST ──────────────────────────── -->
+  <section class="waitlist" id="waitlist" aria-labelledby="waitlist-title">
+    <div class="waitlist-deco" aria-hidden="true">
+      <svg viewBox="0 0 1440 480" preserveAspectRatio="xMidYMid slice">
+        <path d="M-40 300 C 220 300, 260 120, 480 120 S 720 280, 940 280 1220 90, 1500 140" fill="none" stroke="var(--deco-line)" stroke-width="1.5"/>
+        <path d="M-40 380 C 260 380, 300 240, 560 240 S 840 400, 1060 400 1300 220, 1500 250" fill="none" stroke="var(--deco-line)" stroke-width="1.2"/>
+      </svg>
+    </div>
+    <div class="container waitlist-grid">
+      <div class="waitlist-copy">
+        <p class="kicker mono" data-reveal>06 — Early access</p>
+        <h2 id="waitlist-title" data-reveal style="--d:1">Join the waitlist.</h2>
+        <p class="body-copy" data-reveal style="--d:2">
+          MaterialScope stays open source under MIT. Early access is about testing the
+          current build on real data and shaping what comes next.
+        </p>
+        <ul class="waitlist-points" data-reveal style="--d:3">
+          <li>An invitation to run the current build on your own measurements</li>
+          <li>Direct feedback into development priorities</li>
+          <li>One email when your access opens — no newsletter</li>
+        </ul>
+      </div>
+      <div class="waitlist-form-wrap" data-reveal style="--d:2">
+        <div class="panel form-panel">
+          <form id="waitlist-form" novalidate autocomplete="on" action="/api/waitlist/form" method="post">
+            <h3 class="form-title">Request early access</h3>
+            <p class="form-sub">Two fields. Thirty seconds.</p>
+            <div class="field">
+              <label for="waitlist-email" class="field-label">Email address</label>
+              <input class="field-input" type="email" id="waitlist-email" name="email"
+                     autocomplete="email" inputmode="email" spellcheck="false"
+                     placeholder="you@lab.org" autocapitalize="none" aria-describedby="form-status" required>
+            </div>
+            <div class="field">
+              <label for="waitlist-role" class="field-label">What describes you best? <span class="optional">optional</span></label>
+              <div class="select-wrap">
+                <select class="field-input" id="waitlist-role" name="role">
+                  <option value="">Select a role…</option>
+                  <option value="research">Research team (materials science &amp; engineering)</option>
+                  <option value="qc_rd_lab">QC / R&amp;D laboratory</option>
+                  <option value="graduate">Graduate student / thesis work</option>
+                  <option value="testing">Industrial testing group</option>
+                  <option value="industry">Other industry engineer</option>
+                  <option value="other">Something else</option>
+                </select>
+                <svg class="select-caret" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+            </div>
+            <div class="hp" aria-hidden="true"><label>Company<input name="company" tabindex="-1" autocomplete="off"></label></div>
+            <button class="btn btn-primary btn-lg btn-block" type="submit" id="waitlist-submit">
+              <span class="btn-label">Request early access</span>
+              <svg class="btn-spinner" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.8" opacity=".25"/>
+                <path d="M14 8a6 6 0 0 0-6-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <p class="form-status" id="form-status" role="status" aria-live="polite"></p>
+            <p class="form-note mono">Stored solely to manage invitations: email and role, nothing else.</p>
+          </form>
+
+          <div class="form-success" id="waitlist-success" hidden>
+            <svg class="success-check" width="44" height="44" viewBox="0 0 44 44" fill="none" aria-hidden="true">
+              <circle cx="22" cy="22" r="19" stroke="var(--accent-strong)" stroke-width="2" pathLength="1"/>
+              <path d="M14 22.5l5.5 5.5L30.5 17" stroke="var(--accent-strong)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" pathLength="1"/>
+            </svg>
+            <h3 tabindex="-1" id="success-title">You&rsquo;re on the list.</h3>
+            <p class="body-copy">We&rsquo;ll email <strong id="success-email"></strong> when early access opens.</p>
+            <p class="form-note mono" id="success-detail">status · saved to waitlist</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="container footer-grid">
+    <div class="footer-brand">
+      <a class="brand" href="#top" aria-label="MaterialScope — back to top">
+        <svg class="brand-mark" width="22" height="22" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+          <path d="M13 2.5 23.5 13 13 23.5 2.5 13 13 2.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <circle cx="13" cy="13" r="1.7" fill="currentColor"/>
+        </svg>
+        <span class="brand-name">Material<span>Scope</span></span>
+      </a>
+      <p>Open-source workbench for reproducible materials characterization.</p>
+    </div>
+    <nav class="footer-links" aria-label="Product">
+      <h3>Product</h3>
+      <a href="#how">How it works</a>
+      <a href="#capabilities">Capabilities</a>
+      <a href="#modalities">Modalities</a>
+      <a href="#waitlist">Early access</a>
+    </nav>
+    <nav class="footer-links" aria-label="Open source">
+      <h3>Open source</h3>
+      <a href="https://github.com/utkuvibing/MaterialScope" rel="noopener" target="_blank">GitHub</a>
+      <a href="https://github.com/utkuvibing/MaterialScope#readme" rel="noopener" target="_blank">README</a>
+      <a href="https://github.com/utkuvibing/MaterialScope/blob/main/LICENSE" rel="noopener" target="_blank">License (MIT)</a>
+      <a href="https://github.com/utkuvibing/MaterialScope/issues" rel="noopener" target="_blank">Issue tracker</a>
+    </nav>
+  </div>
+  <div class="container footer-base">
+    <p>Analysis outputs support scientific workflows and do not replace expert validation.</p>
+    <p class="mono">© <span id="year">2026</span> Utku Şahin · MIT</p>
+  </div>
+</footer>
+
+<noscript>
+  <link rel="stylesheet" href="/static/noscript.css">
+</noscript>
+</body>
+</html>

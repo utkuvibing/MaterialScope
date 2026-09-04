@@ -55,6 +55,15 @@ pip install -e ".[dev]"
 
 Open [http://127.0.0.1:8050](http://127.0.0.1:8050) in your browser.
 
+## Public landing page
+
+A self-contained marketing site with the waitlist lives in
+[`landing/`](landing/README.md):
+
+```bash
+python -m landing.server --port 8090
+```
+
 ## Note
 
 MaterialScope is an evolving research and engineering project. Its analysis outputs support scientific workflows but do not replace expert validation, particularly for qualitative spectral and XRD interpretation.

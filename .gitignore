@@ -59,3 +59,6 @@ sample_data/reference_library_ingest_cloud_dev/
 
 # Runtime output (reports, exports, playwright captures) is generated content.
 output/
+
+# Landing page runtime submissions (waitlist) — never commit user data.
+landing/data/

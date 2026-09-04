@@ -1,0 +1,11 @@
+/* Graceful degradation without JavaScript: the interactive visualizations
+   and the modality picker cannot run, so they are hidden rather than left
+   as empty shells. Reveal states are forced visible, and the waitlist form
+   degrades to a plain server-rendered form POST. */
+.hero-visual { display: none; }
+.mod-sel-note { display: none; }
+[data-reveal],
+[data-reveal]:not(.is-in) {
+    opacity: 1 !important;
+    transform: none !important;
+}
