@@ -1,4 +1,11 @@
-"""Offline license helpers for MaterialScope."""
+"""Offline license helpers for MaterialScope.
+
+Licensing here is HMAC with a client-held shared secret: enough for local
+demo/development gating, not for distributable commercial licensing, since
+anyone holding the secret can forge keys. The correct long-term fix is
+asymmetric signing (Ed25519/RSA) with only a public verification key in the
+application; that migration is explicitly out of scope for this change.
+"""
 
 from __future__ import annotations
 
@@ -33,8 +40,28 @@ LICENSE_REQUIRED_FIELDS = {
     "signature",
 }
 
-# Demo-only signing secret. Commercial builds should override this via env var.
+# Demo/development-only signing secret. This value is public in the repository,
+# so anyone with the source can forge keys that validate. Commercial
+# deployments MUST provide MATERIALSCOPE_LICENSE_SECRET externally. Changing
+# the secret invalidates existing HMAC-signed licenses (re-issue required).
 DEFAULT_LICENSE_SECRET = "materialscope-professional-demo-secret"
+
+
+def _resolve_license_secret(explicit: str | None = None) -> str:
+    """Return the HMAC secret, preserving the long-standing precedence.
+
+    Order: explicit argument, then MATERIALSCOPE_LICENSE_SECRET, then the
+    legacy THERMOANALYZER_LICENSE_SECRET, then the public demo default.
+    Sign and verify share this single resolution point, so a payload created
+    under one environment validates under the same environment. Rotating the
+    secret invalidates previously signed licenses (re-issue required).
+    """
+    return (
+        explicit
+        or os.getenv("MATERIALSCOPE_LICENSE_SECRET")
+        or os.getenv("THERMOANALYZER_LICENSE_SECRET")
+        or DEFAULT_LICENSE_SECRET
+    )
 
 
 def commercial_mode_enabled() -> bool:
@@ -116,12 +143,7 @@ def create_trial_payload(
 
 def sign_license_payload(payload: dict[str, Any], secret: str | None = None) -> str:
     """Return HMAC signature for a license payload."""
-    secret_bytes = (
-        secret
-        or os.getenv("MATERIALSCOPE_LICENSE_SECRET")
-        or os.getenv("THERMOANALYZER_LICENSE_SECRET")
-        or DEFAULT_LICENSE_SECRET
-    ).encode("utf-8")
+    secret_bytes = _resolve_license_secret(secret).encode("utf-8")
     message = json.dumps(_canonical_payload(payload), sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return hmac.new(secret_bytes, message, hashlib.sha256).hexdigest()
 
