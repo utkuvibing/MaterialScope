@@ -22,6 +22,8 @@ import numpy as np
 
 from .schema import PackageSpec
 
+from core.archive_safety import safe_extract_tar, safe_extract_zip
+
 BUILD_ROOT = Path("build") / "reference_library_ingest"
 JOB_STATE_ROOT = Path("build") / "reference_library_jobs"
 BUILDER_VERSION = "b1"
@@ -255,11 +257,11 @@ def _extract_archive(archive_path: Path, target_dir: Path) -> Path:
     lower = archive_path.name.lower()
     if lower.endswith(".zip"):
         with zipfile.ZipFile(archive_path, "r") as archive:
-            archive.extractall(target_dir)
+            safe_extract_zip(archive, target_dir)
         return target_dir
     if lower.endswith((".tar.gz", ".tgz", ".tar")):
         with tarfile.open(archive_path, "r:*") as archive:
-            archive.extractall(target_dir)
+            safe_extract_tar(archive, target_dir)
         return target_dir
     raise ValueError(f"Unsupported archive format: {archive_path}")
 

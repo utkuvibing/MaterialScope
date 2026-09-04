@@ -9,7 +9,7 @@ from pathlib import Path
 import uvicorn
 from dotenv import load_dotenv
 
-from backend.app import create_app
+from backend.app import create_app, non_loopback_bind_warning
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REPO_DOTENV_PATH = REPO_ROOT / ".env"
@@ -42,6 +42,9 @@ def main() -> None:
     except OSError as exc:
         raise SystemExit(f"MaterialScope backend failed preflight bind on {bind_url}: {exc}") from exc
     app = create_app(api_token=args.token or None)
+    bind_warning = non_loopback_bind_warning(host=args.host, api_token=args.token or None)
+    if bind_warning:
+        print(bind_warning, flush=True)
 
     @app.on_event("startup")
     async def _log_bound_address() -> None:

@@ -68,3 +68,61 @@ def test_commercial_mode_requires_license_for_write_access(tmp_path, monkeypatch
 
     assert state["status"] == "unlicensed"
     assert license_allows_write(state) is False
+
+
+def _professional_payload(**overrides):
+    fields = {
+        "customer_name": "Ada Lovelace",
+        "company_name": "Acme Lab",
+        "sku": "PROFESSIONAL",
+        "seat_count": 1,
+        "issued_at": datetime(2026, 3, 7, tzinfo=UTC),
+        "expires_at": datetime(2027, 3, 7, tzinfo=UTC),
+        "allowed_major_version": 2,
+    }
+    fields.update(overrides)
+    return create_signed_license(**fields)
+
+
+def _clear_secret_env(monkeypatch):
+    monkeypatch.delenv("MATERIALSCOPE_LICENSE_SECRET", raising=False)
+    monkeypatch.delenv("THERMOANALYZER_LICENSE_SECRET", raising=False)
+
+
+def test_env_secret_sign_verify_roundtrip(monkeypatch):
+    from utils.license_manager import validate_license_payload
+
+    _clear_secret_env(monkeypatch)
+    monkeypatch.setenv("MATERIALSCOPE_LICENSE_SECRET", "test-secret-a")
+    state = validate_license_payload(_professional_payload())
+    assert state["status"] == "activated"
+
+
+def test_rotated_env_secret_invalidates_old_payload(monkeypatch):
+    from utils.license_manager import validate_license_payload
+
+    _clear_secret_env(monkeypatch)
+    monkeypatch.setenv("MATERIALSCOPE_LICENSE_SECRET", "test-secret-a")
+    payload = _professional_payload()
+    monkeypatch.setenv("MATERIALSCOPE_LICENSE_SECRET", "test-secret-b")
+    state = validate_license_payload(payload)
+    assert state["status"] == "unlicensed"
+    assert "signature is invalid" in state["message"]
+
+
+def test_default_secret_roundtrip_preserved(monkeypatch):
+    from utils.license_manager import validate_license_payload
+
+    _clear_secret_env(monkeypatch)
+    state = validate_license_payload(_professional_payload())
+    assert state["status"] == "activated"
+
+
+def test_explicit_secret_beats_env(monkeypatch):
+    from utils.license_manager import validate_license_payload
+
+    _clear_secret_env(monkeypatch)
+    monkeypatch.setenv("MATERIALSCOPE_LICENSE_SECRET", "test-secret-a")
+    payload = _professional_payload(secret="explicit-secret")
+    assert validate_license_payload(payload, secret="explicit-secret")["status"] == "activated"
+    assert validate_license_payload(payload)["status"] == "unlicensed"

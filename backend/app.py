@@ -6,6 +6,7 @@ import base64
 import binascii
 import io
 from datetime import datetime
+import ipaddress
 from pathlib import Path
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -136,6 +137,30 @@ def _decode_base64_field(payload: str, *, field_name: str) -> bytes:
         return base64.b64decode(payload.encode("ascii"), validate=True)
     except (ValueError, binascii.Error) as exc:
         raise HTTPException(status_code=400, detail=f"{field_name} is not valid base64: {exc}") from exc
+
+
+def non_loopback_bind_warning(*, host: str | None, api_token: str | None) -> str | None:
+    """Return a startup warning when an unauthenticated bind may be remote.
+
+    Local-first behavior is intentionally unchanged: the service stays open by
+    default because Docker requires a non-loopback bind and an auto-generated
+    token would lock out the bundled Dash UI and break existing setups. Callers
+    print a non-None result at startup. ``/health`` stays unauthenticated.
+    """
+    if api_token:
+        return None
+    label = str(host or "")
+    try:
+        if ipaddress.ip_address(label.strip()).is_loopback:
+            return None
+    except ValueError:
+        if label.strip().lower() == "localhost":
+            return None
+    return (
+        f"MaterialScope is listening on {label} without an API token; it may be "
+        "reachable from other hosts depending on the deployment network. "
+        "Restart with --token to require X-TA-Token."
+    )
 
 
 def _model_payload(model: Any) -> dict[str, Any]:

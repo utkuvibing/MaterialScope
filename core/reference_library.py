@@ -20,6 +20,7 @@ import httpx
 import numpy as np
 
 from core.path_env import library_filesystem_env_looks_like_windows_leak
+from core.archive_safety import safe_extract_zip
 from utils.license_manager import encode_license_key, get_storage_dir
 
 
@@ -782,21 +783,38 @@ class ReferenceLibraryManager:
         self.save_sync_state(state)
 
     def _install_package(self, package: LibraryPackage, raw: bytes) -> tuple[Path, Path]:
-        archive_path = self._packages_root() / package.archive_name
-        archive_path.parent.mkdir(parents=True, exist_ok=True)
-        archive_path.write_bytes(raw)
-
+        # Staged, rollback-capable install: validate and extract the replacement
+        # fully before touching the active install. A hostile or corrupt
+        # replacement raises before the working package is disturbed, and a
+        # failed promotion restores the previous install. Install-level
+        # ValueError propagates out of sync(), like hash mismatches do.
         extract_dir = self._installed_root() / package.package_id / package.version
-        if extract_dir.exists():
-            shutil.rmtree(extract_dir)
         extract_dir.parent.mkdir(parents=True, exist_ok=True)
-
-        with tempfile.TemporaryDirectory(prefix="ta_lib_", dir=str(self.root)) as tmp_dir:
-            temp_extract = Path(tmp_dir) / "extract"
-            temp_extract.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="ta_lib_install_", dir=str(self.root)) as tmp_dir:
+            staged = Path(tmp_dir) / "staged"
+            staged.mkdir(parents=True, exist_ok=True)
             with zipfile.ZipFile(io.BytesIO(raw), "r") as archive:
-                archive.extractall(temp_extract)
-            shutil.move(str(temp_extract), str(extract_dir))
+                safe_extract_zip(archive, staged)
+            archive_path = self._packages_root() / package.archive_name
+            archive_path.parent.mkdir(parents=True, exist_ok=True)
+            archive_path.write_bytes(raw)
+            backup = extract_dir.with_name(extract_dir.name + ".bak")
+            if extract_dir.exists():
+                if backup.exists():
+                    shutil.rmtree(backup)
+                os.replace(extract_dir, backup)
+            elif backup.exists():
+                # A previous swap died between backup and promotion; the backup
+                # holds the last working install, so restore it first.
+                os.replace(backup, extract_dir)
+            try:
+                os.replace(staged, extract_dir)
+            except BaseException:
+                if backup.exists():
+                    os.replace(backup, extract_dir)
+                raise
+            if backup.exists():
+                shutil.rmtree(backup, ignore_errors=True)
         return archive_path, extract_dir
 
     def count_installed_candidates(self, analysis_type: str) -> int:

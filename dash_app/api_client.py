@@ -14,15 +14,26 @@ from typing import Any
 import httpx
 
 _BASE_URL = os.environ.get("MATERIALSCOPE_API_URL", "http://127.0.0.1:8050")
-_TOKEN = os.environ.get("MATERIALSCOPE_API_TOKEN", "")
+
+
+def _client_token() -> str:
+    """Return the outbound API token, resolved per call.
+
+    Resolved late (not at import) so a combined server started with an
+    explicit ``--token`` can synchronize this process' outbound token before
+    the first request without depending on Dash import order.
+    """
+    return os.environ.get("MATERIALSCOPE_API_TOKEN", "")
+
 _TIMEOUT = 60.0
 
 
 def _headers() -> dict[str, str]:
     h: dict[str, str] = {"Accept": "application/json"}
-    if _TOKEN:
-        h["X-MaterialScope-Token"] = _TOKEN
-        h["X-TA-Token"] = _TOKEN
+    token = _client_token()
+    if token:
+        h["X-MaterialScope-Token"] = token
+        h["X-TA-Token"] = token
     return h
 
 

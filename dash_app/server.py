@@ -80,6 +80,12 @@ def create_combined_app(*, api_token: str | None = None):
     its routes directly on the existing FastAPI instance, so no WSGI bridge is
     involved anywhere in the request path.
     """
+    if api_token:
+        # Explicit server token is authoritative: synchronize the co-located
+        # Dash client's outbound token to the same value (explicit wins over
+        # any stale MATERIALSCOPE_API_TOKEN). Server auth itself is still
+        # controlled only by api_token; the env var is never read as auth.
+        os.environ["MATERIALSCOPE_API_TOKEN"] = api_token
     from backend.app import create_app as create_backend
     from dash_app.app import create_dash_app
 
@@ -107,9 +113,16 @@ def main() -> None:
     for line in apply_combined_dash_server_library_env(listen_host=args.host, listen_port=args.port):
         print(line, flush=True)
     os.environ.setdefault("MATERIALSCOPE_API_URL", f"http://127.0.0.1:{args.port}")
+    if args.token:
+        os.environ["MATERIALSCOPE_API_TOKEN"] = args.token
 
     app = create_combined_app(api_token=args.token or None)
     print(f"MaterialScope (Dash) starting on http://{args.host}:{args.port}", flush=True)
+    from backend.app import non_loopback_bind_warning
+
+    warning = non_loopback_bind_warning(host=args.host, api_token=args.token or None)
+    if warning:
+        print(warning, flush=True)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info", http="h11")
 
 
