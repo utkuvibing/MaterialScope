@@ -1,6 +1,8 @@
 # Windows Setup Packaging (Local-First)
 
-This folder defines the primary Windows distribution flow for MaterialScope:
+This folder contains the retained Windows installer for the Streamlit application. For the current Dash application, use the [root README setup](../../README.md#run-locally). This installer does not launch Dash.
+
+The intended release flow, after build inputs and the resulting installer have been validated, is:
 
 1. Build locally on Windows.
 2. Produce one installer: `MaterialScope_Setup_<APP_VERSION>.exe`.
@@ -15,12 +17,12 @@ For the short release checklist, see [RELEASE_PREP_LOCAL.md](RELEASE_PREP_LOCAL.
 - Installer: Inno Setup 6
 - Launch model: local launcher that starts Streamlit and opens the default browser
 
-No architecture rewrite, no framework migration, and no data-contract changes are required.
+The launcher prefers port 8501 and chooses another available port if needed. Dash defaults to 8050. Streamlit retirement and installer migration require separate work; see the [parity inventory](../../docs/streamlit-parity-inventory.md).
 
 ## Prerequisites (build machine only)
 
 - Windows machine
-- Python 3.10+ available on PATH
+- Python 3.11+ available on PATH
 - Repository checked out locally
 - Dependencies installed with `pip install -r requirements.txt`
 - Inno Setup 6 installed (`ISCC.exe`)
@@ -28,7 +30,7 @@ No architecture rewrite, no framework migration, and no data-contract changes ar
 
 ## Primary build commands (local Windows)
 
-From repo root:
+These are the existing build commands, not evidence of a verified installer build. Review the missing inputs under Known limitations first. From repo root:
 
 ```powershell
 pip install -r requirements.txt
@@ -95,6 +97,9 @@ The primary release model is local Windows packaging. Add repository automation 
 
 ## Known limitations
 
+- The spec references untracked/absent inputs: `build/reference_library_hosted`, `build/reference_library_mirror_live`, `PROFESOR_KURULUM_VE_KULLANIM_KILAVUZU.md`, `PROFESSOR_SETUP_AND_USAGE_GUIDE.md`, and `PROFESSOR_BETA_GUIDE.md`. Its collection helper can omit missing paths, so a completed build alone does not prove those resources were bundled. Reconcile inputs and validate the installed contents in a separate packaging change before release.
+- This documentation pass does not verify an installer build. The Dash [early-tester guide](../../docs/early-tester-guide.md) is current guidance for Dash, not a replacement installer manifest input.
+- `ThermoAnalyzerLauncher.spec`, `ThermoAnalyzer_Beta.iss`, and legacy environment aliases retain their compatibility names. Use the exact existing filenames in build commands.
 - UI still opens in a browser tab (not a native desktop shell).
 - Some systems may show one-time Windows prompts (browser/firewall/runtime).
 - Installer size remains larger due to `onedir` reliability choice.

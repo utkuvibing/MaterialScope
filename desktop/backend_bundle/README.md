@@ -2,6 +2,8 @@
 
 This folder contains the Windows-focused backend freezing path used by the Electron desktop package.
 
+This is an experimental backend-only bundle for `backend.main`; it does not include the Dash UI or the Streamlit Windows installer. For the combined Dash/FastAPI application, follow the [root README](../../README.md#run-locally).
+
 ## Goal
 
 Build a local backend executable so the packaged Electron app does not require system Python.

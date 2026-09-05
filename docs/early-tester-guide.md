@@ -6,6 +6,12 @@ MaterialScope is an early-stage software platform designed to make materials cha
 
 ---
 
+## Setup
+
+Follow the [English setup instructions](../README.md#run-locally) or [Türkçe kurulum yönergeleri](../README.tr.md#yerel-kurulum), then open the local Dash application at [127.0.0.1:8050](http://127.0.0.1:8050). The README is the canonical setup guide; one command starts both the interface and its API.
+
+This walkthrough targets Dash. The retained Windows installer starts Streamlit, and the experimental Electron shell uses a separate backend-only launch path. Their screens and capabilities differ.
+
 ## What is MaterialScope?
 
 MaterialScope supports workflows around common materials characterization methods:
@@ -64,15 +70,15 @@ MaterialScope aims to bring these steps into a cleaner and more reproducible wor
 
 ## Suggested 10-minute testing flow
 
-1. Open MaterialScope.
-2. Explore the main interface.
-3. Try one characterization workflow, preferably XRD, FTIR, Raman, DSC, TGA, or DTA.
-4. Import or inspect sample data if available.
-5. Check the plot and visualization quality.
-6. Try sample comparison if available.
-7. Check export or report-related options.
-8. Note anything confusing, missing, broken, or scientifically weak.
-9. Fill out the feedback form.
+1. Open the Dash app after setup. On the import/home page, load the DSC polymer-melting sample, or upload [dsc_polymer_melting.csv](../sample_data/dsc_polymer_melting.csv).
+2. Review the detected DSC modality, temperature/signal columns, units, and import warnings.
+3. Open DSC, run the analysis, inspect the plot and detected features, and save the result to the workspace.
+4. Import a second DSC dataset, such as [dsc_HDPE_melting_10Kmin.csv](../test_data/dsc_HDPE_melting_10Kmin.csv), then inspect its metadata and run/save its analysis too.
+5. Open Compare, choose DSC, select both datasets, inspect the overlay, and save the comparison workspace. These example files use different heat-flow units (mW/mg versus mW); use this step to assess the interface, not to compare amplitudes quantitatively. Scientific comparisons require compatible units and processing choices.
+6. Open Export, select saved results, and download a data export or report. Check that the output contains the intended results and labels.
+7. On Project, download a `.scopezip` archive and keep it on disk before stopping the server. A result saved inside the running workspace is not a disk backup.
+8. Note confusing controls, missing features, failed downloads, or questionable scientific results, including the sample filename and steps to reproduce.
+9. Fill out the feedback form below. You can repeat the workflow with your own data or another supported modality.
 
 ## What kind of feedback is most useful?
 
@@ -90,6 +96,10 @@ Useful examples:
 ## Known limitations
 
 MaterialScope is still early-stage. Some features may be incomplete, experimental, or not fully polished. The goal of this testing round is not to evaluate a finished commercial product, but to understand whether the workflow direction is useful for real users.
+
+Workspaces are held in memory and are lost when the server restarts unless you download and later reopen a project archive. Keep original measurement files separately. Configured library and literature features may contact network services; local-first does not guarantee fully offline operation.
+
+Library, license, kinetics, and deconvolution have Streamlit pages without equivalent Dash pages. Kinetics and deconvolution are preview features on that legacy surface. The [parity inventory](streamlit-parity-inventory.md) records the differences; it does not authorize Streamlit removal or certify scientific results. Check units, calibration, and interpretation independently.
 
 Please focus on:
 

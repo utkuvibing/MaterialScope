@@ -2,6 +2,8 @@
 
 This folder is a desktop packaging experiment for MaterialScope. It shows how the Python FastAPI backend can be launched from Electron and presented as a local desktop application shell.
 
+It does not package the Dash UI. For Dash, follow the [root README](../../README.md#run-locally); its combined server starts both Dash and the API. Electron's separate `backend.main` launch is intentional and remains backend-only.
+
 ## What It Demonstrates
 
 - Electron main/preload/renderer process separation
