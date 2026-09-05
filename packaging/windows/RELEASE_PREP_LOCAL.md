@@ -1,6 +1,8 @@
 # Local Windows Release Prep
 
-This is the primary release process for MaterialScope beta distribution.
+This checklist describes the retained Streamlit Windows installer. It is separate from the [Dash setup](../../README.md#run-locally) and does not establish that an installer has been built or validated.
+
+Before building, use Python 3.11+ and reconcile the missing guide/library inputs listed in [packaging limitations](README.md#known-limitations). Keep the existing `ThermoAnalyzer` spec and installer filenames; packaging migration is separate work.
 
 ## 1. Build on local Windows machine
 
@@ -27,7 +29,8 @@ MaterialScope_Setup_<APP_VERSION>.exe
 
 - Confirm installer file exists under `release\`.
 - Install once on a clean/secondary Windows machine if available.
-- Validate launch path: Start Menu shortcut opens app in browser.
+- Validate launch path: Start Menu shortcut opens the Streamlit app in a browser, preferring port 8501 (with an available-port fallback), rather than the Dash app on 8050.
+- Check that the intended help files and library resources are actually installed; missing spec inputs may be silently omitted.
 - Verify stable beta scope flows still run (DSC, TGA, Compare Workspace, Batch Template Runner, export, `.scopezip` save/load with legacy `.thermozip` open support).
 
 ## 3. Publish to GitHub Releases
