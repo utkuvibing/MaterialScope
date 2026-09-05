@@ -1,12 +1,14 @@
 # MaterialScope Roadmap — living execution plan
 
-**Created:** 2026-08-26 · **Baseline:** `ee0325b` · **Current:** post PR-6 ([PR #33](https://github.com/utkuvibing/MaterialScope/pull/33) merged 2026-09-05 → main @ `42e9641`); PR-7 implemented locally 2026-09-06, not yet merged
+**Created:** 2026-08-26 · **Baseline:** `ee0325b` · **Current:** PR-7 implementation complete — [PR #34](https://github.com/utkuvibing/MaterialScope/pull/34); delivery closes Phase 0 (2026-09-06)
 **Current evidence:** [Streamlit parity inventory](streamlit-parity-inventory.md) plus current source for runtime claims. The original scout is a local, untracked historical snapshot and is not a published prerequisite.
 **Working agreements:** every work package = one reviewable PR · no feature lands on red main · RAG merges only by separate approval · Streamlit removal is a migration (separately approved), not cleanup.
 
 ---
 
-## Phase 0 — Stabilize truth *(in progress)*
+<a id="phase-0--stabilize-truth-in-progress"></a>
+
+## Phase 0 — Stabilize truth *(complete with PR #34)*
 
 Objective: green main protected by CI, honest packaging, dead weight gone, legacy stack inventoried. No science changes.
 
@@ -18,7 +20,7 @@ Objective: green main protected by CI, honest packaging, dead weight gone, legac
 | **PR-4** | Dead code & hygiene: delete `core/online_providers/` (687 LOC, zero importers), tracked `output/playwright/*.png`; stale-branch deletion list for owner sign-off | ✅ Done — PR #25 (merged 2026-08-30; main @ `166a083`; 12 files +3/−879; suite 1171 passed / 15 skipped; `ruff` clean) | Branch deletion owner-gated follow-up, none run in PR |
 | **PR-5** | Security trio, three independent commits: (a) archive extraction hardening — shared `core/archive_safety.py` (OS-independent traversal/link/device rejection, 3.11-safe manual validation) + failure-atomic `_install_package` (stage→backup→promote→restore); install `ValueError` still aborts `sync()`; (b) HMAC secret resolution centralized with byte-identical precedence, documented as demo-forgeable hygiene only (asymmetric signing deferred); (c) unauthenticated non-loopback bind warning, open-by-default preserved, explicit `--token`/`api_token` synchronized to bundled Dash client | ✅ Done — PR #31 (merged 2026-09-04; main @ `17ee101`; suite 1221 passed / 10 skipped; `ruff` clean; CI matrix 3.11/3.12 green) | Rotation note: secret change ⇒ re-issue keys; no enforcement added |
 | **PR-6** | Streamlit parity/deprecation inventory (**read-only doc**, no deletions): Streamlit-only functionality ↔ Dash equivalents, packaging dependencies, tests, docs; removal itself becomes an independently approved later WP | ✅ Done — [PR #33](https://github.com/utkuvibing/MaterialScope/pull/33) (merged 2026-09-05; main @ `42e9641`) | Added `docs/streamlit-parity-inventory.md`; no runtime/dependency/packaging changes. PR reports 86 targeted tests passed and Ruff clean. Removal remains separately approved |
-| **PR-7** | README/docs truth pass: local-first Dash single-process story; correct stale launch guidance; refresh early-tester-guide pointers; document retained ThermoAnalyzer compatibility names | ✅ Implementation done locally — 2026-09-06; not yet merged | EN/TR READMEs, tester walkthrough, Windows help/build caveats, and Electron/backend-only distinctions updated. Source/link/whitespace checks; no runtime changes or tests |
+| **PR-7** | README/docs truth pass: local-first Dash single-process story; correct stale launch guidance; refresh early-tester-guide pointers; document retained ThermoAnalyzer compatibility names | ✅ Done — [PR #34](https://github.com/utkuvibing/MaterialScope/pull/34) (2026-09-06) | EN/TR READMEs, tester walkthrough, Windows help/build caveats, and Electron/backend-only distinctions updated. Source/link/whitespace checks; no runtime changes or tests |
 
 ### PR-7 — implementation plan (2026-09-06)
 
@@ -117,7 +119,7 @@ Out of scope: Rietveld, Kα2 stripping (documented limitation instead).
 5. ~~pyproject + dependency pins (PR-3)~~ ✔ (PR #24)
 6. ~~Security trio (PR-5)~~ ✔ (PR #31)
 7. Disk autosave + copy-on-read store
-8. ~~Delete dead weight (PR-4)~~ ✔ (PR #25); ~~PR-6 Streamlit inventory~~ ✔ (PR #33); PR-7 docs implemented locally → review/merge pending
+8. ~~Delete dead weight (PR-4)~~ ✔ (PR #25); ~~PR-6 Streamlit inventory~~ ✔ (PR #33); ~~PR-7 docs truth pass~~ ✔ (PR #34)
 9. DSC enthalpy done right
 10. PR-7 legacy-status documentation implemented; approve the actual Streamlit migration separately in Phase 4
 
@@ -136,4 +138,4 @@ Out of scope: Rietveld, Kα2 stripping (documented limitation instead).
 | 2026-09-04 | PR-5 merged as #31 (squash `17ee101`): open-by-default preserved with startup warning instead of enforcement; explicit server token wins over stale client env; install failures keep the working package via backup/restore |
 | 2026-09-05 | PR-6 merged as #33 (`42e9641`): read-only Streamlit parity inventory complete; four Streamlit routes lack Dash pages, shared translations still depend on Streamlit, and the Windows installer remains a Streamlit path. No removal authorized |
 | 2026-09-06 | PR-7 planned as a documentation-only truth pass. Keep EN/TR aligned, explain the combined native FastAPI/Dash launch and PR-5 operational limits, link tester guidance, and retain runtime/installer compatibility names until Phase 4 |
-| 2026-09-06 | PR-7 implemented locally on `42e9641`: docs only; current evidence links to the merged parity inventory, with the scout left untracked. Compatibility names retained; historical source/test wording and embedded UI text deferred. No installer validation or Streamlit retirement claimed; merge pending |
+| 2026-09-06 | PR-7 delivered in [PR #34](https://github.com/utkuvibing/MaterialScope/pull/34), based on `42e9641`: docs only; current evidence links to the merged parity inventory, with the scout left untracked. Compatibility names retained; historical source/test wording and embedded UI text deferred. No installer validation or Streamlit retirement claimed. This delivery closes the seven Phase 0 work packages; deferred follow-ups retain their original scope |
