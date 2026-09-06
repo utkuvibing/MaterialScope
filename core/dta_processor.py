@@ -44,6 +44,7 @@ from typing import List, Optional
 from core.preprocessing import smooth_signal
 from core.baseline import correct_baseline
 from core.peak_analysis import find_thermal_peaks, ThermalPeak
+from core.sign_convention import CANONICAL, SignConvention, parse_declared
 
 
 # ---------------------------------------------------------------------------
@@ -113,9 +114,11 @@ class DTAProcessor:
         temperature,
         signal,
         metadata: Optional[dict] = None,
+        sign_convention: Optional[str] = None,
     ):
         self._temperature = np.asarray(temperature, dtype=float)
         self._raw_signal = np.asarray(signal, dtype=float)
+        self._sign_convention: SignConvention = parse_declared(sign_convention, default=CANONICAL)
 
         if self._temperature.shape != self._raw_signal.shape:
             raise ValueError(
@@ -243,12 +246,18 @@ class DTAProcessor:
         ---------
         1. Use the baseline-corrected and smoothed signal (falling back to
            the raw signal if neither pre-processing step has been applied).
-        2. Detect positive peaks (exothermic events, where delta-T > 0) by
-           calling :func:`~core.peak_analysis.find_thermal_peaks` directly.
-        3. Detect negative peaks (endothermic events, where delta-T < 0) by
-           inverting the signal and calling the same function.
+           Both passes operate on the SAME working signal — no inverted
+           re-find — so each event is detected exactly once (PR-8 fix for
+           the historical duplicate/contradictory-tag behaviour).
+        2. Detect positive-direction peaks (exothermic events in the
+           canonical exo-up frame) with ``direction='up'``.
+        3. Detect negative-direction peaks (endothermic events in the
+           canonical frame) with ``direction='down'``.
         4. Tag each peak with a ``direction`` attribute (``'exo'`` or
-           ``'endo'``) and merge the two lists, sorting by temperature.
+           ``'endo'``) derived from the recorded sign convention; for
+           ``'unknown'`` polarity frames every event is tagged ``'unknown'``
+           instead of being silently attributed.  Merge both lists,
+           sorting by temperature.
 
         Parameters
         ----------
@@ -287,13 +296,16 @@ class DTAProcessor:
             prominence = max(0.05 * signal_range, 1e-6)
 
         all_peaks: List[ThermalPeak] = []
+        polarity_known = self._sign_convention is not SignConvention.UNKNOWN
 
-        # --- Exothermic peaks (positive signal) ---
+        # --- Positive-direction pass (exothermic in the canonical frame) ---
         if detect_exothermic:
             exo_peaks: List[ThermalPeak] = find_thermal_peaks(
                 self._temperature,
                 working_signal,
                 prominence=prominence,
+                direction='up',
+                sign_convention=self._sign_convention,
                 **kwargs,
             )
             for peak in exo_peaks:
@@ -301,22 +313,23 @@ class DTAProcessor:
                     continue
                 # Tag the direction; ThermalPeak may support extra attributes
                 # or we store it in the existing direction field if available.
-                _tag_peak_direction(peak, "exo")
+                _tag_peak_direction(peak, "exo" if polarity_known else "unknown")
                 all_peaks.append(peak)
 
-        # --- Endothermic peaks (negative signal, inverted for detection) ---
+        # --- Negative-direction pass (endothermic in the canonical frame) ---
         if detect_endothermic:
-            inverted = -working_signal
             endo_peaks: List[ThermalPeak] = find_thermal_peaks(
                 self._temperature,
-                inverted,
+                working_signal,
                 prominence=prominence,
+                direction='down',
+                sign_convention=self._sign_convention,
                 **kwargs,
             )
             for peak in endo_peaks:
                 if min_peak_height is not None and peak.height < min_peak_height:
                     continue
-                _tag_peak_direction(peak, "endo")
+                _tag_peak_direction(peak, "endo" if polarity_known else "unknown")
                 all_peaks.append(peak)
 
         # Sort by temperature (ascending)

@@ -11,11 +11,18 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import numpy as np
 from scipy.signal import find_peaks, peak_widths
 from scipy.interpolate import interp1d
+
+from core.sign_convention import (
+    CANONICAL,
+    SignConvention,
+    label_from_direction,
+    parse_declared,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +95,7 @@ def find_thermal_peaks(
     distance: Optional[int] = None,
     width: Optional[float] = None,
     direction: str = 'both',
+    sign_convention: Optional[Union[SignConvention, str]] = None,
 ) -> List[ThermalPeak]:
     """
     Detect peaks in a thermal analysis signal using scipy.signal.find_peaks
@@ -99,6 +107,9 @@ def find_thermal_peaks(
         1-D array of temperatures (x-axis).
     signal:
         1-D array of the measured signal (same length as temperature).
+        Callers are expected to pass a signal in the frame described by
+        ``sign_convention`` — for app data that is the canonical frame
+        produced at ingest (see ``core.sign_convention``).
     prominence:
         Minimum peak prominence.  Defaults to 10 % of the signal range.
     height:
@@ -109,9 +120,15 @@ def find_thermal_peaks(
     width:
         Minimum peak width in samples.
     direction:
-        'up'   - detect upward peaks only (exotherms in heat-flow convention).
-        'down' - detect downward peaks only (endotherms).
-        'both' - detect peaks in both directions.
+        Sign direction of the peaks to detect, relative to the passed
+        signal: 'up', 'down', or 'both'.
+    sign_convention:
+        Polarity convention of the passed signal.  ``None`` (default)
+        means the canonical frame (exo-up).  Event labels (``peak_type``)
+        are derived from this convention via
+        ``core.sign_convention.label_from_direction`` — never hardcoded.
+        For ``'unknown'`` frames every label is ``'unknown'``: polarity
+        uncertainty is preserved rather than silently assumed.
 
     Returns
     -------
@@ -119,6 +136,7 @@ def find_thermal_peaks(
     """
     temperature = np.asarray(temperature, dtype=float)
     signal = np.asarray(signal, dtype=float)
+    convention = parse_declared(sign_convention, default=CANONICAL)
 
     if temperature.shape != signal.shape:
         raise ValueError(
@@ -156,11 +174,14 @@ def find_thermal_peaks(
             )
             peaks.append(p)
 
+    up_label = label_from_direction('up', convention)
+    down_label = label_from_direction('down', convention)
+
     if direction in ('up', 'both'):
-        _collect(signal, 'exotherm')
+        _collect(signal, up_label)
 
     if direction in ('down', 'both'):
-        _collect(-signal, 'endotherm')
+        _collect(-signal, down_label)
 
     # Deduplicate (same index can appear if signal has a flat top)
     seen: set[int] = set()
@@ -342,8 +363,13 @@ def integrate_peak(
 
     Returns
     -------
-    Signed area.  Positive when the signal lies above the baseline (endotherm
-    in a heat-flow-up convention); negative when below.
+    Signed area in the frame of the passed signal.  In the canonical
+    frame (exo-up, see ``core.sign_convention``) a positive area means the
+    signal lies above the baseline (exothermic deviation) and a negative
+    area means it lies below (endothermic deviation); in an endo-up frame
+    the signs reverse.  The sign carries no absolute meaning without the
+    frame — consumers must read it together with the dataset's recorded
+    sign-convention provenance.
     """
     temperature = np.asarray(temperature, dtype=float)
     signal = np.asarray(signal, dtype=float)

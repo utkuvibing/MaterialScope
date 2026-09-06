@@ -15,6 +15,7 @@ from core.literature_models import (
     normalize_literature_context,
 )
 from core.peak_analysis import ThermalPeak
+from core.sign_convention import summarize_provenance
 from core.xrd_reference_dossier import (
     XRD_REFERENCE_DOSSIER_LIMIT,
     XRD_REFERENCE_PEAK_DISPLAY_LIMIT,
@@ -947,6 +948,9 @@ def serialize_dsc_result(
         "sample_mass": dataset.metadata.get("sample_mass"),
         "heating_rate": dataset.metadata.get("heating_rate"),
         "glass_transition_count": len(glass_transitions),
+        # PR-8 canon: unambiguous polarity provenance (declared raw
+        # convention + whether the working signal was inverted).
+        "sign_convention": summarize_provenance(dataset.metadata),
     }
     if glass_transitions:
         first_tg = glass_transitions[0]
@@ -1080,6 +1084,9 @@ def serialize_dta_result(
         "display_name": dataset.metadata.get("display_name"),
         "sample_mass": dataset.metadata.get("sample_mass"),
         "heating_rate": dataset.metadata.get("heating_rate"),
+        # PR-8 canon: unambiguous polarity provenance (declared raw
+        # convention + whether the working signal was inverted).
+        "sign_convention": summarize_provenance(dataset.metadata),
     }
     return make_result_record(
         result_id=f"dta_{dataset_key}",

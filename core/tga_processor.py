@@ -547,6 +547,12 @@ class TGAProcessor:
             **peak_finder_kwargs,
         )
 
+        # PR-8 canon: TGA's signal axis is mass, not heat flow.  A DTG
+        # peak marks a mass-change step event and must not inherit a
+        # thermal endotherm/exotherm label from the shared detector.
+        for peak in dtg_peaks:
+            peak.peak_type = "step"
+
         self._dtg_peaks = dtg_peaks
 
         steps: List[MassLossStep] = []

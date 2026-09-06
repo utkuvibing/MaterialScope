@@ -23,6 +23,7 @@ import numpy as np
 from core.preprocessing import smooth_signal, compute_derivative, normalize_by_mass
 from core.baseline import correct_baseline
 from core.peak_analysis import find_thermal_peaks, characterize_peaks, ThermalPeak
+from core.sign_convention import CANONICAL, SignConvention, parse_declared
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +98,7 @@ class DSCProcessor:
         signal: np.ndarray,
         sample_mass: Optional[float] = None,
         heating_rate: Optional[float] = None,
+        sign_convention: Optional[str] = None,
     ) -> None:
         """
         Initialise with raw experimental data.
@@ -113,12 +115,18 @@ class DSCProcessor:
         heating_rate:
             Heating rate in K/min.  Stored as metadata; not used in
             computation unless explicitly requested by the caller.
+        sign_convention:
+            Polarity frame of the passed signal (see
+            ``core.sign_convention``).  ``None`` (default) means the
+            canonical frame (exo-up); ``'unknown'`` withholds
+            endo/exo labels instead of assuming polarity.
         """
         self._temperature: np.ndarray = np.asarray(temperature, dtype=float)
         self._raw_signal: np.ndarray = np.asarray(signal, dtype=float)
         self._signal: np.ndarray = self._raw_signal.copy()
         self._sample_mass: Optional[float] = sample_mass
         self._heating_rate: Optional[float] = heating_rate
+        self._sign_convention: SignConvention = parse_declared(sign_convention, default=CANONICAL)
 
         # Pipeline state
         self._baseline: Optional[np.ndarray] = None
@@ -127,6 +135,7 @@ class DSCProcessor:
         self._metadata: Dict = {
             'sample_mass_mg': sample_mass,
             'heating_rate_K_min': heating_rate,
+            'signal_convention': self._sign_convention.value,
             'steps': [],
         }
 
@@ -221,7 +230,12 @@ class DSCProcessor:
         -------
         self, for method chaining.
         """
-        raw_peaks = find_thermal_peaks(self._temperature, self._signal, **kwargs)
+        raw_peaks = find_thermal_peaks(
+            self._temperature,
+            self._signal,
+            sign_convention=self._sign_convention,
+            **kwargs,
+        )
         self._peaks = characterize_peaks(
             self._temperature,
             self._signal,
