@@ -148,6 +148,10 @@ def summarize_dataset(dataset_key: str, dataset) -> DatasetSummary:
     """Build a dataset summary with validation rollup for desktop list views."""
     validation = validate_thermal_dataset(dataset, analysis_type=getattr(dataset, "data_type", "unknown"))
     metadata = getattr(dataset, "metadata", {}) or {}
+    raw_convention = metadata.get("raw_signal_convention")
+    declared_raw = raw_convention if raw_convention in {"exo_up", "endo_up"} else (
+        "unknown" if raw_convention == "unknown" else None
+    )
     return DatasetSummary(
         key=dataset_key,
         display_name=metadata.get("display_name") or metadata.get("file_name") or dataset_key,
@@ -160,6 +164,13 @@ def summarize_dataset(dataset_key: str, dataset) -> DatasetSummary:
         validation_status=validation.get("status", "unknown"),
         warning_count=len(validation.get("warnings") or []),
         issue_count=len(validation.get("issues") or []),
+        signal_convention=str(getattr(dataset, "signal_convention", "unknown") or "unknown"),
+        raw_signal_convention=declared_raw,
+        signal_inverted_at_import=(
+            bool(metadata.get("signal_inverted_at_import", False))
+            if declared_raw in {"exo_up", "endo_up"}
+            else None
+        ),
     )
 
 

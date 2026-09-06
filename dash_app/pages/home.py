@@ -374,6 +374,38 @@ layout = html.Div(
                                 className="g-3",
                                 id="xrd-wavelength-row",
                             ),
+                            dbc.Row(
+                                [
+                                    dbc.Col(
+                                        [
+                                            dbc.Label(
+                                                "Signal polarity (DSC / DTA)",
+                                                id="mapping-sign-convention-label",
+                                                className="mt-3",
+                                            ),
+                                            dbc.Select(
+                                                id="mapping-sign-convention",
+                                                options=[
+                                                    {"label": "Exo up — positive = exothermic", "value": "exo_up"},
+                                                    {"label": "Endo up — positive = endothermic", "value": "endo_up"},
+                                                    {"label": "Unknown — withhold endo/exo labels", "value": "unknown"},
+                                                ],
+                                                value="exo_up",
+                                                persistence=True,
+                                                persistence_type="session",
+                                            ),
+                                            html.Small(
+                                                "Applied once at import; header hints never override this choice.",
+                                                className="form-text text-muted d-block",
+                                                id="mapping-sign-convention-hint",
+                                            ),
+                                        ],
+                                        md=4,
+                                    ),
+                                ],
+                                className="g-3",
+                                id="sign-convention-row",
+                            ),
                         ]
                     ),
                     className="mb-4",
@@ -1202,6 +1234,7 @@ def build_validation_summary(step, review_data, locale_data):
     State("mapping-sample-mass", "value"),
     State("mapping-heating-rate", "value"),
     State("mapping-xrd-wavelength", "value"),
+    State("mapping-sign-convention", "value"),
     State("home-refresh", "data"),
     State("ui-locale", "data"),
     prevent_initial_call=True,
@@ -1220,6 +1253,7 @@ def import_with_mapping(
     sample_mass,
     heating_rate,
     xrd_wavelength,
+    sign_convention,
     refresh_value,
     locale_data,
 ):
@@ -1270,6 +1304,7 @@ def import_with_mapping(
     from dash_app.api_client import dataset_import as api_dataset_import
 
     data_type = modality or "DSC"
+    declared_sign_convention = sign_convention if data_type in {"DSC", "DTA"} else None
     metadata = {
         "sample_name": sample_name or "Unknown",
         "sample_mass": float(sample_mass) if sample_mass not in (None, "", 0, 0.0) else None,
@@ -1291,6 +1326,7 @@ def import_with_mapping(
             data_type=data_type,
             column_mapping=column_mapping,
             metadata=metadata,
+            sign_convention=declared_sign_convention,
         )
     except Exception as exc:
         exc_msg = str(exc)

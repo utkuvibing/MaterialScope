@@ -33,6 +33,17 @@ from typing import Dict, IO, List, Optional, Union
 import numpy as np
 import pandas as pd
 
+from core.sign_convention import (
+    CANONICAL,
+    CANONICAL_SIGNAL_CONVENTION,
+    SignConvention,
+    apply_canonicalization,
+    inspect_header_hints,
+    is_declared,
+    parse_declared,
+    provenance_record,
+)
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -216,6 +227,15 @@ class ThermalDataset:
         in the source file, e.g. {'temperature': 'Temp/°C', 'signal': 'DSC/(mW/mg)'}.
     file_path : str
         Path to the source file (empty string when loaded from a buffer).
+    signal_convention : str
+        Resolved polarity frame of ``data['signal']``: ``'exo_up'`` when
+        the working signal is in the canonical frame (declared exo-up or
+        endo-up canonicalized at import), ``'unknown'`` when polarity is
+        undeclared.  The raw/source provenance (originally declared
+        convention, whether the working signal was inverted) lives in
+        ``metadata`` keys ``raw_signal_convention``,
+        ``canonical_signal_convention``, ``signal_inverted_at_import``,
+        and ``sign_convention_declared_by`` — see ``core.sign_convention``.
     """
 
     data: pd.DataFrame
@@ -224,6 +244,7 @@ class ThermalDataset:
     units: dict
     original_columns: dict
     file_path: str = ""
+    signal_convention: str = "unknown"
 
     # ------------------------------------------------------------------
     # Convenience helpers
@@ -238,6 +259,7 @@ class ThermalDataset:
             units=copy.deepcopy(self.units),
             original_columns=copy.deepcopy(self.original_columns),
             file_path=self.file_path,
+            signal_convention=self.signal_convention,
         )
 
     def __repr__(self) -> str:  # pragma: no cover
@@ -1274,6 +1296,7 @@ def read_thermal_data(
     column_mapping: Optional[Dict[str, str]] = None,
     data_type: Optional[str] = None,
     metadata: Optional[dict] = None,
+    sign_convention: Optional[str] = None,
 ) -> ThermalDataset:
     """Load a thermal analysis file and return a standardised ThermalDataset.
 
@@ -1292,12 +1315,25 @@ def read_thermal_data(
         'DSC', 'TGA', 'DTA', 'FTIR', 'RAMAN', 'XRD'.
     metadata : dict, optional
         Extra metadata to merge into the dataset's metadata dict.
+    sign_convention : str, optional
+        Declared polarity of the raw heat-flow-like signal for DSC/DTA:
+        ``'exo_up'`` (default), ``'endo_up'`` (working signal inverted once
+        into the canonical frame), or ``'unknown'`` (polarity left
+        unresolved; endo/exo labels are withheld downstream).  This must
+        be an explicit declaration — header hints (e.g. "endo up") are
+        inspected separately and only ever produce warnings/provenance,
+        never a convention choice.  Defaults are recorded as
+        ``sign_convention_declared_by: 'import_default'``.
 
     Returns
     -------
     ThermalDataset
     """
     metadata = metadata or {}
+    declared_convention = parse_declared(sign_convention, default=SignConvention.EXO_UP)
+    sign_convention_declared_by = "user" if sign_convention not in (None, "") else "import_default"
+    sign_convention_frame = "unknown"
+    sign_convention_evidence: Optional[dict] = None
     source_name = ""
 
     # ------------------------------------------------------------------
@@ -1540,6 +1576,31 @@ def read_thermal_data(
         xrd_axis_mapping_review_required = False
         xrd_provenance_state, xrd_provenance_warning = ("complete", "")
 
+    # ------------------------------------------------------------------
+    # Sign-convention declaration (PR-8 canon)
+    # Header hints are evidence only: they may raise warnings, they can
+    # never set, choose, or flip the declared convention.
+    # ------------------------------------------------------------------
+    if resolved_type in {"DSC", "DTA"}:
+        sign_convention_evidence = inspect_header_hints(
+            " ".join(str(part) for part in (col_map.get("signal"), source_name) if part)
+        )
+        if is_declared(declared_convention):
+            implied = sign_convention_evidence.get("implied")
+            if implied and implied != declared_convention.value:
+                import_warnings.append(
+                    f"Sign-convention header evidence suggests an '{implied}' frame while "
+                    f"'{declared_convention.value}' was declared; the declared convention "
+                    "was applied unchanged. Review the source if event labels look inverted."
+                )
+        else:
+            import_warnings.append(
+                "Signal polarity was not declared; endothermic/exothermic labels are "
+                "withheld until the sign convention is declared at import."
+            )
+        if is_declared(declared_convention):
+            sign_convention_frame = CANONICAL_SIGNAL_CONVENTION
+
     import_warnings = list(dict.fromkeys(warning for warning in import_warnings if warning))
 
     base_meta: dict = {
@@ -1584,6 +1645,25 @@ def read_thermal_data(
             base_meta[optional_key] = metadata[optional_key]
     base_meta.update(metadata)  # let caller override defaults
 
+    # ------------------------------------------------------------------
+    # Canonicalize once at ingest; preserve raw/source provenance.
+    # source_data_hash above was computed on the pre-canonicalization
+    # frame on purpose: it identifies the imported source data.
+    # ------------------------------------------------------------------
+    if resolved_type in {"DSC", "DTA"}:
+        sign_convention_record = provenance_record(
+            declared_convention, declared_by=sign_convention_declared_by
+        )
+        if sign_convention_evidence is not None:
+            sign_convention_record["sign_convention_header_evidence"] = sign_convention_evidence
+        base_meta.update(sign_convention_record)  # authoritative provenance wins over caller metadata
+        if is_declared(declared_convention):
+            canonical_signal, _ = apply_canonicalization(
+                out_df["signal"].to_numpy(dtype=float), declared_convention
+            )
+            out_df = out_df.copy()
+            out_df["signal"] = canonical_signal
+
     return ThermalDataset(
         data=out_df,
         metadata=base_meta,
@@ -1591,6 +1671,7 @@ def read_thermal_data(
         units=units,
         original_columns=keep_cols,
         file_path=source_name,
+        signal_convention=sign_convention_frame,
     )
 
 
