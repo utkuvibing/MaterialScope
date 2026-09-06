@@ -233,6 +233,10 @@ class DatasetSummary(BaseModel):
     validation_status: str
     warning_count: int
     issue_count: int
+    # PR-8 sign-convention canon (raw/source provenance, not an inference)
+    signal_convention: str | None = None
+    raw_signal_convention: str | None = None
+    signal_inverted_at_import: bool | None = None
 
 
 class DatasetsListResponse(BaseModel):
@@ -267,6 +271,8 @@ class DatasetImportRequest(BaseModel):
     data_type: str | None = None
     column_mapping: dict[str, str] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    # PR-8 canon: explicit declaration only; header hints never choose.
+    sign_convention: str | None = None
 
 
 class ValidationSummary(BaseModel):

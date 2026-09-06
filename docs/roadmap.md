@@ -1,6 +1,6 @@
 # MaterialScope Roadmap — living execution plan
 
-**Created:** 2026-08-26 · **Baseline:** `ee0325b` · **Current:** PR-7 implementation complete — [PR #34](https://github.com/utkuvibing/MaterialScope/pull/34); delivery closes Phase 0 (2026-09-06)
+**Created:** 2026-08-26 · **Baseline:** `ee0325b` · **Current:** PR-7 implementation complete — [PR #34](https://github.com/utkuvibing/MaterialScope/pull/34); delivery closes Phase 0 (2026-09-06). Phase 1 planned as PR-8…PR-14, one PR per work package (2026-09-06); PR-8 plan below
 **Current evidence:** [Streamlit parity inventory](streamlit-parity-inventory.md) plus current source for runtime claims. The original scout is a local, untracked historical snapshot and is not a published prerequisite.
 **Working agreements:** every work package = one reviewable PR · no feature lands on red main · RAG merges only by separate approval · Streamlit removal is a migration (separately approved), not cleanup.
 
@@ -68,19 +68,82 @@ Deep revenue conversation grounded in scout facts: local-first privacy as wedge;
 
 ---
 
+<a id="phase-1--core-workflow-correctness"></a>
+
 ## Phase 1 — Core-workflow correctness
 
-Work packages (each independently reviewable; golden/property tests required):
+Objective: make the core thermal workflows scientifically trustworthy — one sign convention, honest units and labels, guarded imports, a safe store. No UI redesign, no Phase 2 scientific depth, no Streamlit changes.
 
-1. **Sign-convention canon** — one enum applied at ingest; labels derived post-inversion; resolves internal contradiction (`peak_analysis.py`). Acceptance: both-convention golden test end-to-end.
-2. **Dimensional honesty** — ΔCp either β-corrected or relabeled; peak area β-aware J/g path or honest relabeling. Acceptance: known-β conversion golden test.
-3. **Temperature-scale gate** — K-vs-°C plausibility check at import (`validation.py`); unit propagated into reasoning prose. Acceptance: K fixture blocked; °C fixture labeled correctly throughout reports.
-4. **DTA characterization** — reuse `characterize_peaks`; fix documented-kwarg crash; align docstring.
-5. **Normalization & confidence guards** — detect already-specific heat flow (opt-in re-normalization); fit-quality band defaults "low" without statistics.
-6. **Import honesty pack** — dropped-row/bad-line counts surfaced in metadata; ±Inf rejected at import; thousands-separator handling; encoding-mojibake warning; Excel sheet picker.
-7. **Store hygiene** — copy-on-read + per-project locks; disk autosave journal (crash-safe workspace restore).
+| WP | Scope | Status | Notes |
+|---|---|---|---|
+| **PR-8** | Sign-convention canon: one enum applied at ingest; labels derived post-inversion; resolves internal contradiction (`peak_analysis.py`) | 🔨 Implemented — branch `pr8/sign-convention-canon` (2026-09-06), PR pending | Acceptance: both-convention golden test end-to-end ✅ (+ unknown-polarity gate). Evidence: four contradictory conventions coexist — `peak_analysis.find_thermal_peaks` hardcodes up=exotherm; `integrate_peak` docstring claims positive=endotherm; `ui/dsc_page.py` offers "up (endotherm)"; `processing_schema.py` declares display-only `dsc.endotherm_up` vs `dta.exotherm_up`. Canonical decision: exo-up |
+| **PR-9** | Dimensional honesty: ΔCp either β-corrected or relabeled; peak area β-aware J/g path or honest relabeling | ⬜ Planned | Acceptance: known-β conversion golden test. Builds on the PR-8 canonical frame for area sign semantics. **Feed from PR-8:** fix the `DSCProcessor.find_peaks` corrected-signal/raw-baseline double-subtraction before the β conversion (see PR-8 execution record) |
+| **PR-10** | Temperature-scale gate: K-vs-°C plausibility check at import (`validation.py`); unit propagated into reasoning prose | ⬜ Planned | Acceptance: K fixture blocked; °C fixture labeled correctly throughout reports |
+| **PR-11** | DTA characterization: reuse `characterize_peaks`; fix documented-kwarg crash; align docstring | ⬜ Planned | Scheduled after PR-8 so peak labeling does not churn twice |
+| **PR-12** | Normalization & confidence guards: detect already-specific heat flow (opt-in re-normalization); fit-quality band defaults "low" without statistics | ⬜ Planned | Already-specific detection must respect the PR-8 canonical frame so normalized-unit fixtures are not double-inverted or double-normalized |
+| **PR-13** | Import honesty pack: dropped-row/bad-line counts surfaced in metadata; ±Inf rejected at import; thousands-separator handling; encoding-mojibake warning; Excel sheet picker | ⬜ Planned | Shares the PR-8 import-declaration surface; do not reopen that surface twice |
+| **PR-14** | Store hygiene: copy-on-read + per-project locks; disk autosave journal (crash-safe workspace restore) | ⬜ Planned | No science changes; unlocks crash-safe multi-dataset sessions |
 
 Dependencies: Phase 0 CI protecting all of this.
+
+### PR-8 — implementation plan (2026-09-06)
+
+**Execution record:** implemented on branch `pr8/sign-convention-canon` (2026-09-06) against main `dca974d`; the plan below is retained as the work-package record. Implementation: `core/sign_convention.py` (enum, strict `parse_declared`, evidence-only `inspect_header_hints`, `apply_canonicalization` + provenance records, `label_from_direction`); declaration + canonicalization + raw-provenance recording in `read_thermal_data` (hash stays on the pre-canonicalization frame); `/dataset/import` + Dash import wizard declare `sign_convention` (recorded `sign_convention_declared_by`); detector labels derived from the canon; DTA single-signal direction passes (fixed the historical duplicate/contradictory-tag bug — each event detected once); TGA DTG events labeled `'step'`; enforced canonical method-context id replaced the contradictory display-only defaults; result records/dataset summaries carry the `sign_convention` provenance block; project archives restore the resolved frame. Golden gates green end-to-end (endo-up + exo-up melting event → both `endotherm`, matching temps/areas; mirrored DTA → single `exo` event; unknown → labels withheld + warnings). Suite 1269 passed / 10 skipped, ruff clean.
+
+**Merge-blocker fix (pre-merge review):** DTAProcessor's serialized ``direction`` tags were previously hardcoded per pass ('exo' for the positive-direction pass, 'endo' for the negative pass) and could contradict the convention-derived ``peak_type`` when DTAProcessor was used directly with ``sign_convention='endo_up'``. Event-family passes now select a convention-aware search direction (exo events point down in an endo-up frame) and the tag is derived from the SAME canon label as ``peak_type`` via ``core.sign_convention.direction_tag_from_label`` — the two fields are structurally incapable of disagreeing. Canonical-ingest behavior and ``'exo'``/``'endo'`` serialization compatibility unchanged; regression tests cover direct endo-up use (up + down events), event-family gating under the convention, and the tag helper.
+
+**Discovered during implementation (handed to PR-9):** `DSCProcessor.find_peaks` passes the corrected signal together with the RAW baseline array to `characterize_peaks`, so peak areas integrate ∫(corrected − raw_baseline) — the baseline is subtracted twice and the error scales with the baseline level × window width. This is an area-semantics defect, not a sign-convention defect (labels/provenance are unaffected); the both-convention golden uses a zero-baseline fixture so it tests the canon rather than baseline math. PR-9 owns the area fix alongside the β-aware J/g path.
+
+**Pre-implementation clarifications (2026-09-06 review, binding):** (1) `UNKNOWN` polarity is preserved as unresolved — it is never silently handled or described as canonical exo-up; the only permitted unknown-as-exo-up handling is an explicitly recorded backward-compatibility assumption in metadata, and this PR implements none. (2) Explicit convention parsing and header-hint inspection are separate code paths: header tokens may produce warnings and contradiction evidence, and must never choose or flip the convention. (3) Raw/source provenance survives canonicalization: serialized/exported metadata must unambiguously state the originally declared convention and whether the working signal was inverted.
+
+**Outcome:** an endothermic event encoded in either vendor convention produces the same event label and honest derived metrics end to end — ingest → analysis → serialized record — and the codebase carries exactly one documented, enforced sign convention.
+
+**Evidence and starting point (contradiction inventory):**
+
+- `core/peak_analysis.py::find_thermal_peaks` hard-tags upward peaks `'exotherm'` and downward peaks `'endotherm'` (exo-up assumption baked into the shared detector); its docstring repeats "up - exotherms in heat-flow convention".
+- `core/peak_analysis.py::integrate_peak` docstring claims positive area means "endotherm in a heat-flow-up convention" — contradicting the same file's detector.
+- `ui/dsc_page.py` labels the direction picker "up (endotherm)" / "down (exotherm)" (endo-up assumption), so a user selecting "up (endotherm)" receives peaks tagged `exotherm` in the results table.
+- `core/processing_schema.py` method context declares display-only strings `dsc.endotherm_up` (DSC) and `dta.exotherm_up` (DTA) — declared conventions with no enforcement, and they contradict each other.
+- `core/baseline.py` documents exotherm-up; `core/dta_processor.py` is physically exo-up (positive ΔT = exothermic).
+- `core/dta_processor.py` calls `find_thermal_peaks` without `direction` in both its exo and endo passes (the parameter defaults to `'both'`), so a single event can be found in both passes and tagged `'exo'` then `'endo'`; `core/result_serialization.py` counts exotherms/endotherms from these tags, so summary counts can double-count.
+- `core/tga_processor.py` negates DTG so mass-loss events surface as upward peaks, inheriting the nonsensical `'exotherm'` label for mass-loss steps.
+- Ingest (`ThermalDataset`, `core/data_io.py`) carries no sign-convention field; modality `y_aliases` already detect `endo`/`exo` header tokens but nothing uses them for convention.
+- `sample_data/dta_tnaa_10c_mendeley.csv` is exo-up in practice (the decomposition event is a positive excursion); the DSC samples carry no convention evidence — so the convention must be declared, not inferred from data shape.
+
+#### Deliverables and edit scope
+
+| Files | Planned change | Source of truth |
+|---|---|---|
+| `core/sign_convention.py` (new) | Single deep module with two strictly separated surfaces. Declaration surface: `SignConvention` enum (`EXO_UP`, `ENDO_UP`, `UNKNOWN`), canonical constant `EXO_UP`, `parse_declared()` accepting only explicitly declared values, `apply_canonicalization()` (returns signal + inversion record), `label_from_direction()` deriving `'endotherm'`/`'exotherm'`/`'unknown'`. Evidence surface: `inspect_header_hints()` returns read-only endo/exo header evidence for warnings and provenance; it can never set, choose, or flip a convention. No I/O, no pipeline imports | Contradiction inventory above |
+| `core/data_io.py`, `backend/models.py`, `backend/app.py`, `dash_app/pages/home.py`, `dash_app/api_client.py` | Convention declared at ingest through the import wizard/API: new `ThermalDataset.signal_convention` (resolved working frame); `/dataset/import` accepts `sign_convention` (default `exo_up`, recorded as `sign_convention_declared_by: import_default` when not user-set); canonicalize once at ingest (declared endo-up inputs inverted once); raw/source provenance preserved — metadata records `raw_signal_convention`, `signal_inverted_at_import`, `canonical_signal_convention`, and `source_data_hash` keeps hashing the pre-canonicalization frame; header-token contradictions become warnings only (never a flip). Streamlit legacy import untouched | `/dataset/import` handler; existing `endo`/`exo` y-aliases |
+| `core/peak_analysis.py` | `find_thermal_peaks` gains a `sign_convention` parameter (default canonical) and derives `peak_type` from it instead of hardcoding up=exotherm; rewrite `find_thermal_peaks` and `integrate_peak` docstrings to canonical semantics | Contradiction items 1–2 |
+| `core/dsc_processor.py` | Forward the canonical frame; record the convention in result metadata/method context | DSC pipeline path |
+| `core/dta_processor.py` | Both passes operate on one working signal (`direction='up'` exo pass, `direction='down'` endo pass); remove the inverted+`'both'` re-find; tags derived from canonical labels; `direction` attribute values stay `exo`/`endo` for serialization compatibility | Contradiction items 4–5; documented-kwarg crash stays PR-11 |
+| `core/tga_processor.py` | DTG-derived peaks labeled `'step'` (mass-loss events), not `'exotherm'` | Contradiction item 6 |
+| `core/processing_schema.py`, `core/result_serialization.py` | Method context: replace the display-only `dsc.endotherm_up`/`dta.exotherm_up` strings with one enforced canonical id; result records surface an unambiguous `sign_convention` provenance block (declared raw convention, canonical frame, whether the working signal was inverted) so exports can never be misread as "unknown polarity handled as exo-up"; summary counts read canon labels and never claim unknown-polarity events | Method-context evidence item |
+| `ui/dsc_page.py`, `dash_app` import-preview UI | Direction picker relabeled to canonical truth ("up = exothermic deviation" / "down = endothermic deviation") with help text naming the canon; convention declaration added to the Dash import flow. Streamlit legacy pages untouched | Contradiction item 3; PR-6 inventory |
+| `tests/test_sign_convention.py` (new), `tests/test_peak_analysis.py`, `tests/test_data_io.py`, `tests/test_backend_batch.py`, `tests/test_dsc_tga_parity.py` | Unit tests for the enum module; both-convention golden test through the backend API; DTA no-double-tag regression; TGA step-label test; ingest inversion and unknown-fallback tests | Acceptance gate |
+
+#### Boundaries and decisions
+
+- Canonical convention = **exo-up** (positive deviation above baseline = exothermic): matches `core/baseline.py`'s documented contract, DTA's physical ΔT direction, and the existing detector hardcode, so existing synthetic fixtures and result labels remain valid. An endo-up canonical would flip labels, Tg step signs, and serialization counts app-wide for zero correctness gain.
+- The convention is **declared, not inferred**, and the surfaces stay separated: `parse_declared()` handles only user/API-declared values; `inspect_header_hints()` reads `endo`/`exo` header tokens and returns evidence used exclusively for warnings and provenance. Hints can never set, choose, or flip the convention — a contradiction between the declared convention and header evidence surfaces as a review warning, nothing more.
+- `UNKNOWN` is a first-class unresolved state, never silently mapped onto canonical exo-up: no inversion, no polarity assumption, `peak_type='unknown'`, and exo/endo summary counts do not claim unknown-polarity events. Datasets imported without an explicit declaration default to a *recorded* `exo_up` declaration (`sign_convention_declared_by: import_default`) — that is a recorded default, not an unknown-as-known mapping. Legacy project archives restore with polarity unresolved plus an analysis-time warning prompting re-declaration. If backward compatibility ever requires assuming exo-up for unknown-polarity data, that assumption must be recorded explicitly in metadata; this PR implements no such assumption.
+- Labels derived post-inversion with raw provenance preserved: canonicalization at ingest never destroys the source picture — `raw_signal_convention` (what was declared), `signal_inverted_at_import` (whether the working signal is a sign-flip of the imported frame), and `canonical_signal_convention` travel into dataset metadata, result records, and project archives. Every `'endotherm'`/`'exotherm'` label in the codebase traces to `label_from_direction` on the canonical frame; one derivation site, no per-module assumptions.
+- In scope: the DTA duplicate/double-tag fix (it *is* the labeling contradiction), `peak_type` derivation, sign-semantics docstrings, the Dash convention-declaration surface. Out of scope: ΔCp/β math (PR-9), K/°C gate (PR-10), DTA `characterize_peaks` reuse and documented-kwarg crash (PR-11), broader import validation (PR-13), store changes (PR-14), Streamlit pages, report-template work beyond label rendering, plot styling.
+- No dependency changes; EN/TR UI strings via the existing `tx()` mechanism.
+
+#### Implementation order and acceptance
+
+1. Branch from main; add `core/sign_convention.py` (enum, parser, canonicalizer, label derivation) with unit tests. Pure addition; full suite stays green.
+2. Wire ingest: extend `ThermalDataset`, the `/dataset/import` parameter, and the Dash import preview; canonicalization + metadata recording + contradiction warnings; tests for both conventions and the unknown fallback.
+3. Derive labels post-inversion: `sign_convention` parameter on `find_thermal_peaks`; `peak_type` from the canon; fix the `integrate_peak`/`find_thermal_peaks` docstrings; run direction unit tests under both conventions.
+4. Align processors and serialization: DSC pass-through; DTA single-signal direction passes without duplicate or conflicting tags; TGA `'step'` labels; enforced method-context ids; counts from canon labels.
+5. Dash UI truth pass: relabel the DSC direction picker and help text; surface the declared convention in the import preview. Verify EN/TR strings agree.
+6. Golden gate: import the same melting event as an endo-up CSV and as an exo-up CSV through the backend API; both must produce peaks labeled `endotherm` with matching temperatures and areas. Mirror a DTA fixture in both conventions: identical labels, no duplicate peaks. TGA steps labeled `'step'`. An `unknown`-declared import of the same event yields peaks without endo/exo attribution (labels withheld, counts unclaimed), proving no silent polarity assumption.
+7. Run the full pytest suite and `ruff check`; run `git diff --check`; verify `git status --short` shows only intended files. Any discovered adjacent defect (e.g., area unit handling) becomes its own work package — PR-9/PR-11 feed on findings.
+
+**Completion gate:** deliver the implementation with the both-convention golden test green end-to-end and every inventory item above either fixed or explicitly dispositioned; mark PR-8 done only after implementation and CI, not on the strength of this plan.
 
 ## Phase 2 — Scientific depth
 
@@ -114,7 +177,7 @@ Out of scope: Rietveld, Kα2 stripping (documented limitation instead).
 
 1. ~~Commit working tree properly~~ ✔ (RAG parked on branch)
 2. ~~PR-2: real CI~~ ✔ (PR #23)
-3. Fix P0-1…P0-5 scientific integrity pack
+3. ~~Fix P0-1…P0-5 scientific integrity pack~~ → Phase 1 correctness pack PR-8…PR-12; PR-8 (sign-convention canon) planned below
 4. Import honesty pack
 5. ~~pyproject + dependency pins (PR-3)~~ ✔ (PR #24)
 6. ~~Security trio (PR-5)~~ ✔ (PR #31)
@@ -139,3 +202,6 @@ Out of scope: Rietveld, Kα2 stripping (documented limitation instead).
 | 2026-09-05 | PR-6 merged as #33 (`42e9641`): read-only Streamlit parity inventory complete; four Streamlit routes lack Dash pages, shared translations still depend on Streamlit, and the Windows installer remains a Streamlit path. No removal authorized |
 | 2026-09-06 | PR-7 planned as a documentation-only truth pass. Keep EN/TR aligned, explain the combined native FastAPI/Dash launch and PR-5 operational limits, link tester guidance, and retain runtime/installer compatibility names until Phase 4 |
 | 2026-09-06 | PR-7 delivered in [PR #34](https://github.com/utkuvibing/MaterialScope/pull/34), based on `42e9641`: docs only; current evidence links to the merged parity inventory, with the scout left untracked. Compatibility names retained; historical source/test wording and embedded UI text deferred. No installer validation or Streamlit retirement claimed. This delivery closes the seven Phase 0 work packages; deferred follow-ups retain their original scope |
+| 2026-09-06 | Phase 1 renumbered one-PR-per-WP: PR-8 sign-convention canon → PR-14 store hygiene; the bare list is replaced by a Phase-0-style table |
+| 2026-09-06 | PR-8 planned: canonical sign convention = exo-up (positive deviation above baseline = exothermic), matching `core/baseline.py`, DTA physics, and the existing detector so existing fixtures stay valid; convention declared at ingest (endo-up inputs inverted once, recorded in metadata/provenance); all event labels derived post-inversion from the canon; DTA double-tag fix included; both-convention golden test is the acceptance gate |
+| 2026-09-06 | PR-8 implemented on branch `pr8/sign-convention-canon` against `dca974d`: canon module + ingest declaration + canonicalization + provenance, DTA duplicate-tag fix, TGA step labels, enforced canonical method-context id, both-convention golden tests green (1264 passed / 10 skipped, ruff clean). UNKNOWN polarity stays unresolved (labels withheld; no backward-compat assumption implemented). Discovered and deferred to PR-9: DSC area double-subtraction (corrected signal integrated against the raw baseline) |

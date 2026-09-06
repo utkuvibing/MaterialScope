@@ -1751,6 +1751,7 @@ def create_app(
                 column_mapping=request.column_mapping or None,
                 data_type=request.data_type,
                 metadata=request.metadata,
+                sign_convention=request.sign_convention,
             )
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Dataset import failed: {exc}") from exc

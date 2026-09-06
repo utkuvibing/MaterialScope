@@ -144,6 +144,7 @@ def dataset_import(
     *,
     column_mapping: dict[str, str] | None = None,
     metadata: dict[str, Any] | None = None,
+    sign_convention: str | None = None,
 ) -> dict[str, Any]:
     with _client() as c:
         r = c.post(
@@ -155,6 +156,7 @@ def dataset_import(
                 "data_type": data_type,
                 "column_mapping": column_mapping or {},
                 "metadata": metadata or {},
+                "sign_convention": sign_convention,
             },
         )
         _raise_with_detail(r)

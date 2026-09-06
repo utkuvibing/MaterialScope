@@ -168,7 +168,7 @@ def test_validate_dsc_processing_records_calibration_and_sign_convention(thermal
     assert summary["checks"]["calibration_state"] == "calibrated"
     assert summary["checks"]["calibration_acceptance"] == "accepted"
     assert summary["checks"]["calibration_status"] == "verified"
-    assert summary["checks"]["sign_convention"] == "Endotherm up / Exotherm down"
+    assert summary["checks"]["sign_convention"] == "Exotherm up / Endotherm down (canonical)"
     assert summary["checks"]["reference_state"] == "not recorded"
     assert summary["checks"]["reference_acceptance"] == "review"
     assert summary["checks"]["peak_detection_context"] == "recorded"
@@ -221,7 +221,7 @@ def test_validate_dta_processing_passes_with_stable_method_context(thermal_datas
     assert not summary["issues"]
     assert not summary["warnings"]
     assert summary["checks"]["workflow_template_id"] == "dta.general"
-    assert summary["checks"]["sign_convention"] == "Exotherm up / Endotherm down"
+    assert summary["checks"]["sign_convention"] == "Exotherm up / Endotherm down (canonical)"
     assert summary["checks"]["peak_detection_context"] == "recorded"
     assert summary["checks"]["reference_acceptance"] == "accepted"
 

@@ -6,6 +6,8 @@ import copy
 import re
 from typing import Any
 
+from core.sign_convention import CANONICAL_METHOD_CONTEXT_ID, canonical_frame_label, parse_declared
+
 
 PROCESSING_SCHEMA_VERSION = 1
 
@@ -106,8 +108,10 @@ _TGA_METHOD_CONTEXT_ALIASES = (
 )
 _METHOD_CONTEXT_DEFAULTS = {
     "DSC": {
-        "sign_convention_id": "dsc.endotherm_up",
-        "sign_convention_label": "Endotherm up / Exotherm down",
+        # PR-8 canon: one enforced frame (exo-up) for all heat-flow-like
+        # analysis; per-dataset declarations override via method context.
+        "sign_convention_id": CANONICAL_METHOD_CONTEXT_ID,
+        "sign_convention_label": canonical_frame_label(parse_declared("exo_up")),
     },
     "TGA": {
         "step_analysis_basis": "DTG-derived onset, midpoint, and endset estimation",
@@ -115,8 +119,9 @@ _METHOD_CONTEXT_DEFAULTS = {
         "tga_unit_mode_label": "Auto",
     },
     "DTA": {
-        "sign_convention_id": "dta.exotherm_up",
-        "sign_convention_label": "Exotherm up / Endotherm down",
+        # PR-8 canon: DTA shares the canonical exo-up analysis frame.
+        "sign_convention_id": CANONICAL_METHOD_CONTEXT_ID,
+        "sign_convention_label": canonical_frame_label(parse_declared("exo_up")),
     },
     "FTIR": {
         "spectral_domain": "wavenumber",

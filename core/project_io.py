@@ -130,13 +130,21 @@ def deserialize_project(
             raise ValueError(f"Missing dataset file in archive: {archive_path}")
 
         data = pd.read_csv(io.BytesIO(archive_members[archive_path]))
+        restored_metadata = entry.get("metadata", {})
+        restored_raw_convention = str(restored_metadata.get("raw_signal_convention") or "").strip().lower()
         datasets[dataset_key] = ThermalDataset(
             data=data,
-            metadata=entry.get("metadata", {}),
+            metadata=restored_metadata,
             data_type=entry.get("data_type", "unknown"),
             units=entry.get("units", {}),
             original_columns=entry.get("original_columns", {}),
             file_path=entry.get("file_path", ""),
+            # PR-8 canon: declared datasets were canonicalized at import,
+            # so the restored working signal is in the canonical frame;
+            # anything else keeps polarity unresolved.
+            signal_convention=(
+                "exo_up" if restored_raw_convention in {"exo_up", "endo_up"} else "unknown"
+            ),
         )
 
     results, issues = split_valid_results(results_payload)

@@ -23,6 +23,13 @@ from core.processing_schema import (
 )
 from core.provenance import build_calibration_reference_context, build_result_provenance
 from core.reference_library import get_reference_library_manager
+from core.sign_convention import (
+    CANONICAL_METHOD_CONTEXT_ID,
+    UNKNOWN_METHOD_CONTEXT_ID,
+    canonical_frame_label,
+    parse_declared,
+    summarize_provenance,
+)
 from core.xrd_reference_dossier import build_xrd_reference_bundle
 from core.result_serialization import (
     make_result_record,
@@ -316,6 +323,53 @@ def _resolve_processing_override(processing: Mapping[str, Any], section_name: st
     return {}
 
 
+def _dataset_working_sign_convention(dataset) -> str:
+    """Resolve the polarity frame of a stored dataset's working signal.
+
+    Datasets imported through the PR-8 canon are stored canonicalized to
+    exo-up.  Datasets without recorded provenance (legacy project
+    archives, unknown-polarity imports) keep polarity unresolved and are
+    NEVER silently treated as exo-up.
+    """
+    metadata = getattr(dataset, "metadata", {}) or {}
+    raw = str(metadata.get("raw_signal_convention") or "").strip().lower()
+    if raw in {"exo_up", "endo_up"}:
+        return "exo_up"  # canonicalized once at import (see core.sign_convention)
+    return "unknown"
+
+
+def _sign_convention_method_context(dataset, resolved_convention: str) -> dict[str, Any]:
+    """Method-context values recording the enforced PR-8 sign canon.
+
+    The raw/source provenance travels with every record so exports are
+    unambiguous about whether the working signal was inverted.
+    """
+    metadata = getattr(dataset, "metadata", {}) or {}
+    convention_id = CANONICAL_METHOD_CONTEXT_ID if resolved_convention == "exo_up" else UNKNOWN_METHOD_CONTEXT_ID
+    return {
+        "sign_convention_id": convention_id,
+        "sign_convention_label": canonical_frame_label(parse_declared(resolved_convention)),
+        "raw_signal_convention": metadata.get("raw_signal_convention"),
+        "canonical_signal_convention": metadata.get("canonical_signal_convention"),
+        "signal_inverted_at_import": bool(metadata.get("signal_inverted_at_import", False)),
+        "sign_convention_declared_by": str(metadata.get("sign_convention_declared_by") or "not_recorded"),
+        "sign_convention_header_evidence": metadata.get("sign_convention_header_evidence"),
+    }
+
+
+def _apply_unknown_polarity_warning(validation: dict[str, Any], resolved_convention: str) -> dict[str, Any]:
+    """Surface unresolved polarity as an explicit analysis-time warning."""
+    if resolved_convention != "unknown":
+        return validation
+    warnings = [str(item) for item in ((validation or {}).get("warnings") or []) if item]
+    warnings.append(
+        "Sign polarity is not recorded for this dataset (legacy or unknown-polarity "
+        "import); endo/exo labels are withheld. Re-import or declare the sign "
+        "convention to resolve event labels."
+    )
+    return {**(validation or {}), "warnings": warnings}
+
+
 def _execute_dsc_batch(
     *,
     dataset_key: str,
@@ -353,6 +407,7 @@ def _execute_dsc_batch(
         signal,
         sample_mass=sample_mass,
         heating_rate=heating_rate,
+        sign_convention=_dataset_working_sign_convention(dataset),
     )
 
     smooth_method = smoothing.pop("method", "savgol")
@@ -386,7 +441,16 @@ def _execute_dsc_batch(
         reference_temperature_c=_select_dsc_reference_temperature(result),
     )
     processing = update_method_context(processing, calibration_context, analysis_type="DSC")
-    validation = validate_thermal_dataset(dataset, analysis_type="DSC", processing=processing)
+    working_sign_convention = _dataset_working_sign_convention(dataset)
+    processing = update_method_context(
+        processing,
+        _sign_convention_method_context(dataset, working_sign_convention),
+        analysis_type="DSC",
+    )
+    validation = _apply_unknown_polarity_warning(
+        validate_thermal_dataset(dataset, analysis_type="DSC", processing=processing),
+        working_sign_convention,
+    )
     provenance = build_result_provenance(
         dataset=dataset,
         dataset_key=dataset_key,
@@ -400,6 +464,7 @@ def _execute_dsc_batch(
             "reference_state": calibration_context.get("reference_state"),
             "reference_name": calibration_context.get("reference_name"),
             "reference_delta_c": calibration_context.get("reference_delta_c"),
+            "sign_convention": summarize_provenance(dataset.metadata),
         },
     )
     record = serialize_dsc_result(
@@ -627,6 +692,7 @@ def _execute_dta_batch(
         temperature,
         signal,
         metadata=dataset.metadata,
+        sign_convention=_dataset_working_sign_convention(dataset),
     )
 
     smooth_method = smoothing.pop("method", "savgol")
@@ -672,7 +738,16 @@ def _execute_dta_batch(
         reference_temperature_c=_select_dta_reference_temperature(result),
     )
     processing = update_method_context(processing, calibration_context, analysis_type="DTA")
-    validation = validate_thermal_dataset(dataset, analysis_type="DTA", processing=processing)
+    working_sign_convention = _dataset_working_sign_convention(dataset)
+    processing = update_method_context(
+        processing,
+        _sign_convention_method_context(dataset, working_sign_convention),
+        analysis_type="DTA",
+    )
+    validation = _apply_unknown_polarity_warning(
+        validate_thermal_dataset(dataset, analysis_type="DTA", processing=processing),
+        working_sign_convention,
+    )
     provenance = build_result_provenance(
         dataset=dataset,
         dataset_key=dataset_key,
@@ -686,6 +761,7 @@ def _execute_dta_batch(
             "reference_state": calibration_context.get("reference_state"),
             "reference_name": calibration_context.get("reference_name"),
             "reference_delta_c": calibration_context.get("reference_delta_c"),
+            "sign_convention": summarize_provenance(dataset.metadata),
         },
     )
     record = serialize_dta_result(

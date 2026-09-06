@@ -53,10 +53,18 @@ TGA_PERCENT_MAX = 120.0
 _TGA_PERCENT_SIGNAL_UNITS = {"%"}
 _TGA_ABSOLUTE_SIGNAL_UNITS = {"mg", "g"}
 DTA_STABLE_TEMPLATE_IDS = {"dta.general", "dta.thermal_events"}
+# PR-8 canon: the enforced canonical exo-up frame (and the honest
+# unresolved-polarity state, which withholds endo/exo attribution) are
+# both acceptable stable contexts. The legacy pre-canon tokens remain
+# listed so historical records still validate.
 _DTA_EXPECTED_SIGN_CONVENTIONS = {
     "exotherm up / endotherm down",
     "exo_up_endo_down",
     "dta.exotherm_up",
+    "exotherm up / endotherm down (canonical)",
+    "materialscope.canonical_exo_up",
+    "unknown polarity (endo/exo labels withheld)",
+    "materialscope.unknown_polarity",
 }
 _SPECTRAL_TEMPLATE_IDS = {
     "FTIR": {"ftir.general", "ftir.functional_groups"},
