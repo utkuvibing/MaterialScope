@@ -361,6 +361,20 @@ def create_thermal_plot(
     return fig
 
 
+def _area_unit_suffix(y_label: str | None) -> str:
+    """Derive the temperature-domain area unit from a DSC y-axis label.
+
+    The label reads like ``Heat Flow (mW/mg)``; the area is that unit
+    integrated over temperature, so it carries a trailing ·K.
+    """
+    import re as _re
+
+    from core.units_dimensional import area_units_label
+
+    match = _re.search(r"\(([^)]+)\)", str(y_label or ""))
+    return area_units_label(match.group(1) if match else None)
+
+
 def create_dsc_plot(temperature, heat_flow, title="DSC Curve",
                     y_label=None, baseline=None,
                     peaks=None, smoothed=None, display_settings: dict | None = None):
@@ -399,7 +413,15 @@ def create_dsc_plot(temperature, heat_flow, title="DSC Curve",
             if p.onset_temperature is not None:
                 text += f"<br>Onset={p.onset_temperature:.1f}°C"
             if p.area is not None:
-                text += f"<br>Area={p.area:.2f} J/g"
+                # PR-9: area is temperature-domain unless enthalpy_basis
+                # says the value is a beta-corrected J/g figure.
+                from core.units_dimensional import BASIS_BETA_CORRECTED
+
+                basis = getattr(p, "enthalpy_basis", None)
+                if basis == BASIS_BETA_CORRECTED and getattr(p, "enthalpy_j_g", None) is not None:
+                    text += f"<br>Enthalpy={p.enthalpy_j_g:.2f} J/g"
+                else:
+                    text += f"<br>Area={p.area:.2f} {_area_unit_suffix(y_label)}"
             hover_texts.append(text)
 
         fig.add_trace(go.Scatter(

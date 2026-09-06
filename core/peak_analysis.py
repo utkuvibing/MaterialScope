@@ -38,10 +38,15 @@ class ThermalPeak:
     peak_signal: float               # Signal value at peak maximum
     onset_temperature: Optional[float] = None   # Tangent-construction onset
     endset_temperature: Optional[float] = None  # Tangent-construction endset
-    area: Optional[float] = None     # Integrated area (enthalpy for DSC)
+    area: Optional[float] = None     # Temperature-domain area: integral((signal - baseline) dT),
+                                     # in [signal unit] x K.  NOT J/g unless enthalpy_basis says so.
     fwhm: Optional[float] = None     # Full width at half maximum [temperature units]
     peak_type: str = 'unknown'       # 'endotherm', 'exotherm', 'step'
     height: Optional[float] = None   # Peak height above local baseline
+    # --- PR-9 dimensional honesty -------------------------------------
+    enthalpy_j_g: Optional[float] = None   # Enthalpy in J/g; ONLY set when beta-corrected
+    enthalpy_basis: str = 'legacy_unknown'
+    enthalpy_withheld_reason: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

@@ -164,9 +164,20 @@ def render_column_mapper(df, guessed_mapping=None, data_type=None, key_prefix="c
                 key=f"{key_prefix}_xrd_wavelength",
             )
         else:
+            # PR-9: no fabricated default. An untouched control yields None,
+            # so no dataset carries a heating rate nobody entered.
             heating_rate = st.number_input(
-                tx("Isıtma Hızı (°C/dk)", "Heating Rate (°C/min)"), min_value=0.0, value=10.0,
-                step=1.0, format="%.1f", key=f"{key_prefix}_rate",
+                tx("Isıtma Hızı (°C/dk)", "Heating Rate (°C/min)"),
+                min_value=0.0,
+                value=None,
+                placeholder=tx("örn. 10", "e.g. 10"),
+                step=1.0,
+                format="%.1f",
+                key=f"{key_prefix}_rate",
+                help=tx(
+                    "Boş bırakılırsa J/g ve J/(g·K) birimleri hesaplanmaz.",
+                    "Leave blank and J/g and J/(g·K) units will not be computed.",
+                ),
             )
 
     if selected_type == "XRD" and temp_col != none_label and not _looks_like_xrd_axis_label(temp_col):
@@ -208,6 +219,11 @@ def render_column_mapper(df, guessed_mapping=None, data_type=None, key_prefix="c
             "sample_name": sample_name or tx("Bilinmiyor", "Unknown"),
             "sample_mass": sample_mass if sample_mass > 0 else None,
             "heating_rate": heating_rate if heating_rate and heating_rate > 0 else None,
+            # PR-9: provenance. Only a user-entered rate is trusted for
+            # dimensional conversion; a blank control records "missing".
+            "heating_rate_source": (
+                "user" if heating_rate and heating_rate > 0 else "missing"
+            ),
             "xrd_wavelength_angstrom": (
                 xrd_wavelength_angstrom if selected_type == "XRD" and xrd_wavelength_angstrom and xrd_wavelength_angstrom > 0 else None
             ),

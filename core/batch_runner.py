@@ -384,6 +384,8 @@ def _execute_dsc_batch(
     signal = dataset.data["signal"].values
     sample_mass = dataset.metadata.get("sample_mass")
     heating_rate = dataset.metadata.get("heating_rate")
+    heating_rate_source = dataset.metadata.get("heating_rate_source")
+    signal_unit = (dataset.units or {}).get("signal")
 
     smoothing = copy.deepcopy((processing.get("signal_pipeline") or {}).get("smoothing") or {})
     baseline = copy.deepcopy((processing.get("signal_pipeline") or {}).get("baseline") or {})
@@ -408,6 +410,8 @@ def _execute_dsc_batch(
         sample_mass=sample_mass,
         heating_rate=heating_rate,
         sign_convention=_dataset_working_sign_convention(dataset),
+        signal_unit=signal_unit,
+        heating_rate_source=heating_rate_source,
     )
 
     smooth_method = smoothing.pop("method", "savgol")
@@ -479,6 +483,15 @@ def _execute_dsc_batch(
         review={"commercial_scope": "stable_dsc", "batch_runner": "compare_workspace"},
     )
     axis_list = np.asarray(temperature, dtype=float).tolist()
+    # PR-9: carry the processor's real unit provenance so the record states
+    # whether the working signal was actually normalized by mass.
+    record["summary"].update(
+        {
+            "source_signal_unit": processor.source_signal_unit,
+            "working_signal_unit": processor.working_signal_unit,
+            "normalization_applied": processor.normalization_applied,
+        }
+    )
     state = {
         "axis": axis_list,
         "temperature": axis_list,
@@ -725,11 +738,19 @@ def _execute_dta_batch(
     )
     result = processor.get_result()
     if result.peaks:
+        # result.smoothed_signal is already baseline-corrected; pairing it
+        # with the raw baseline would subtract the baseline twice and
+        # distort area, height, and FWHM.
+        baseline_for_char = (
+            np.zeros_like(result.smoothed_signal)
+            if result.baseline is not None
+            else None
+        )
         result.peaks = characterize_peaks(
             temperature,
             result.smoothed_signal,
             list(result.peaks),
-            baseline=result.baseline,
+            baseline=baseline_for_char,
         )
 
     calibration_context = build_calibration_reference_context(

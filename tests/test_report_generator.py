@@ -52,11 +52,12 @@ def _make_peak() -> ThermalPeak:
 
 
 def _make_tg() -> GlassTransition:
+    # PR-9: a bare step is never a ΔCp; corrected values carry a basis.
     return GlassTransition(
         tg_midpoint=120.0,
         tg_onset=115.0,
         tg_endset=125.0,
-        delta_cp=0.12,
+        heat_flow_step=0.12,
     )
 
 

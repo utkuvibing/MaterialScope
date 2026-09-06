@@ -229,6 +229,7 @@ class DatasetSummary(BaseModel):
     vendor: str
     sample_name: str
     heating_rate: float | None = None
+    heating_rate_source: str | None = None
     import_confidence: str | None = None
     validation_status: str
     warning_count: int

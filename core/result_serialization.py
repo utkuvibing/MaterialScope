@@ -16,6 +16,12 @@ from core.literature_models import (
 )
 from core.peak_analysis import ThermalPeak
 from core.sign_convention import summarize_provenance
+from core.units_dimensional import (
+    BASIS_BETA_CORRECTED,
+    BASIS_LEGACY_UNKNOWN,
+    WITHHELD_LEGACY_UNKNOWN,
+    area_units_label,
+)
 from core.xrd_reference_dossier import (
     XRD_REFERENCE_DOSSIER_LIMIT,
     XRD_REFERENCE_PEAK_DISPLAY_LIMIT,
@@ -194,13 +200,30 @@ def _build_dsc_scientific_context(
         "signal_pipeline": (processing or {}).get("signal_pipeline") or {},
         "analysis_steps": (processing or {}).get("analysis_steps") or {},
     }
+    # PR-9: state what the code actually computes.  Area is a
+    # temperature-domain integral; the J/g form is emitted only when the
+    # record really carries beta-corrected enthalpies.
+    area_units = str(summary.get("area_units") or "signal units·K")
     equations = [
         build_equation(
-            "Enthalpy Integration",
-            "DeltaH = integral((signal - baseline) dT) / beta",
+            "Peak-Area Integration",
+            f"event_area = integral((signal - baseline) dT)  [{area_units}]",
             notes="Area sign follows configured DSC sign convention.",
         )
     ]
+    if any(row.get("enthalpy_basis") == BASIS_BETA_CORRECTED for row in rows or []):
+        equations.append(
+            build_equation(
+                "Enthalpy Conversion",
+                "DeltaH [J/g] = event_area x 60 / beta",
+                notes=(
+                    "Applied only when a verified heating rate and a "
+                    "mass-normalised signal unit are recorded; otherwise "
+                    "enthalpy is withheld and the area is reported in "
+                    f"{area_units}."
+                ),
+            )
+        )
     if summary.get("tg_midpoint") is not None:
         equations.append(
             build_equation(
@@ -228,6 +251,12 @@ def _build_dsc_scientific_context(
     limitations = [
         "Peak area and onset/endset are sensitive to baseline selection and smoothing strategy.",
         "Interpretation requires domain review when calibration/reference checks are not accepted.",
+        # PR-9: dimensional honesty.
+        "Peak area is a temperature-domain integral in signal units x K; it is only "
+        "an enthalpy in J/g when a verified heating rate and a mass-normalised signal "
+        "unit are recorded.",
+        "A heat-flow step is only a ΔCp in J/(g·K) after β-correction; otherwise it "
+        "is reported as a step height in signal units.",
     ]
     warnings = _validation_warnings(validation)
     base_context = build_scientific_context(
@@ -829,7 +858,12 @@ def _build_deconvolution_scientific_context(
 
 
 def thermal_peak_to_dict(peak: ThermalPeak) -> dict[str, Any]:
-    """Serialize a ThermalPeak."""
+    """Serialize a ThermalPeak.
+
+    PR-9: ``area`` is always the temperature-domain area.  ``enthalpy_j_g``
+    is emitted only when the value really is a β-corrected J/g figure.
+    """
+    basis = str(getattr(peak, "enthalpy_basis", "") or BASIS_LEGACY_UNKNOWN)
     payload = {
         "peak_index": peak.peak_index,
         "peak_temperature": peak.peak_temperature,
@@ -840,7 +874,11 @@ def thermal_peak_to_dict(peak: ThermalPeak) -> dict[str, Any]:
         "fwhm": peak.fwhm,
         "peak_type": peak.peak_type,
         "height": peak.height,
+        "enthalpy_basis": basis,
+        "enthalpy_withheld_reason": getattr(peak, "enthalpy_withheld_reason", None),
     }
+    if basis == BASIS_BETA_CORRECTED:
+        payload["enthalpy_j_g"] = getattr(peak, "enthalpy_j_g", None)
     direction = getattr(peak, "direction", None)
     if direction is not None:
         payload["direction"] = direction
@@ -848,7 +886,24 @@ def thermal_peak_to_dict(peak: ThermalPeak) -> dict[str, Any]:
 
 
 def thermal_peak_from_dict(payload: dict[str, Any]) -> ThermalPeak:
-    """Deserialize a ThermalPeak."""
+    """Deserialize a ThermalPeak.
+
+    PR-9: a payload without ``enthalpy_basis`` predates PR-9.  Its ``area``
+    is a temperature-domain area and must never be read as J/g, so the
+    basis degrades to ``legacy_unknown`` and no enthalpy is synthesized.
+    """
+    raw_basis = payload.get("enthalpy_basis")
+    basis = str(raw_basis) if raw_basis is not None else BASIS_LEGACY_UNKNOWN
+
+    if basis == BASIS_BETA_CORRECTED:
+        enthalpy = _to_optional_float(payload.get("enthalpy_j_g"))
+        withheld = payload.get("enthalpy_withheld_reason")
+    else:
+        enthalpy = None
+        withheld = payload.get("enthalpy_withheld_reason") or (
+            WITHHELD_LEGACY_UNKNOWN if raw_basis is None else None
+        )
+
     peak = ThermalPeak(
         peak_index=int(payload["peak_index"]),
         peak_temperature=float(payload["peak_temperature"]),
@@ -859,6 +914,9 @@ def thermal_peak_from_dict(payload: dict[str, Any]) -> ThermalPeak:
         fwhm=_to_optional_float(payload.get("fwhm")),
         peak_type=str(payload.get("peak_type", "unknown")),
         height=_to_optional_float(payload.get("height")),
+        enthalpy_j_g=enthalpy,
+        enthalpy_basis=basis,
+        enthalpy_withheld_reason=withheld,
     )
     direction = payload.get("direction")
     if direction is not None:
@@ -870,22 +928,59 @@ def thermal_peak_from_dict(payload: dict[str, Any]) -> ThermalPeak:
 
 
 def glass_transition_to_dict(tg: GlassTransition) -> dict[str, Any]:
-    """Serialize a GlassTransition."""
-    return {
+    """Serialize a GlassTransition.
+
+    PR-9: the measured step is always emitted as ``heat_flow_step``.
+    ``delta_cp`` appears only when the value really is a β-corrected
+    J/(g·K) figure, so a raw step is never labelled as ΔCp.
+    """
+    basis = str(getattr(tg, "delta_cp_basis", "") or BASIS_LEGACY_UNKNOWN)
+    payload: dict[str, Any] = {
         "tg_midpoint": _clean_scalar(tg.tg_midpoint),
         "tg_onset": _clean_scalar(tg.tg_onset),
         "tg_endset": _clean_scalar(tg.tg_endset),
-        "delta_cp": _clean_scalar(tg.delta_cp),
+        "heat_flow_step": _clean_scalar(getattr(tg, "heat_flow_step", None)),
+        "delta_cp_basis": basis,
+        "delta_cp_withheld_reason": getattr(tg, "delta_cp_withheld_reason", None),
     }
+    if basis == BASIS_BETA_CORRECTED:
+        payload["delta_cp"] = _clean_scalar(getattr(tg, "delta_cp_j_g_k", None))
+    return payload
 
 
 def glass_transition_from_dict(payload: dict[str, Any]) -> GlassTransition:
-    """Deserialize a GlassTransition."""
+    """Deserialize a GlassTransition.
+
+    PR-9: a payload without ``delta_cp_basis`` predates PR-9.  Its
+    ``delta_cp`` is an unlabeled step of unknown provenance and must never
+    be treated as corrected J/(g·K), so it is preserved as
+    ``heat_flow_step`` and the basis degrades to ``legacy_unknown``.
+    """
+    raw_basis = payload.get("delta_cp_basis")
+    basis = str(raw_basis) if raw_basis is not None else BASIS_LEGACY_UNKNOWN
+
+    if basis == BASIS_BETA_CORRECTED:
+        corrected = _to_optional_float(payload.get("delta_cp"))
+        withheld = payload.get("delta_cp_withheld_reason")
+    else:
+        # Legacy or uncorrected: never promote to a corrected ΔCp.
+        corrected = None
+        withheld = payload.get("delta_cp_withheld_reason") or (
+            WITHHELD_LEGACY_UNKNOWN if raw_basis is None else None
+        )
+
+    step = payload.get("heat_flow_step")
+    if step is None:
+        step = payload.get("delta_cp")
+
     return GlassTransition(
         tg_midpoint=float(payload["tg_midpoint"]),
         tg_onset=float(payload["tg_onset"]),
         tg_endset=float(payload["tg_endset"]),
-        delta_cp=float(payload["delta_cp"]),
+        heat_flow_step=float(step) if step is not None else 0.0,
+        delta_cp_j_g_k=corrected,
+        delta_cp_basis=basis,
+        delta_cp_withheld_reason=withheld,
     )
 
 
@@ -930,6 +1025,7 @@ def serialize_dsc_result(
     """Serialize a stable DSC analysis record."""
     peaks = list(peaks)
     glass_transitions = list(glass_transitions or [])
+    working_unit = str((dataset.units or {}).get("signal") or "")
     rows = [
         {
             "peak_type": peak.peak_type,
@@ -937,8 +1033,16 @@ def serialize_dsc_result(
             "onset_temperature": _clean_scalar(peak.onset_temperature),
             "endset_temperature": _clean_scalar(peak.endset_temperature),
             "area": _clean_scalar(peak.area),
+            "area_units": area_units_label(working_unit),
             "fwhm": _clean_scalar(peak.fwhm),
             "height": _clean_scalar(peak.height),
+            "enthalpy_j_g": (
+                _clean_scalar(peak.enthalpy_j_g)
+                if getattr(peak, "enthalpy_basis", "") == BASIS_BETA_CORRECTED
+                else None
+            ),
+            "enthalpy_basis": getattr(peak, "enthalpy_basis", BASIS_LEGACY_UNKNOWN),
+            "enthalpy_withheld_reason": getattr(peak, "enthalpy_withheld_reason", None),
         }
         for peak in peaks
     ]
@@ -947,6 +1051,10 @@ def serialize_dsc_result(
         "sample_name": dataset.metadata.get("sample_name"),
         "sample_mass": dataset.metadata.get("sample_mass"),
         "heating_rate": dataset.metadata.get("heating_rate"),
+        "heating_rate_source": dataset.metadata.get("heating_rate_source"),
+        "source_signal_unit": working_unit,
+        "working_signal_unit": working_unit,
+        "area_units": area_units_label(working_unit),
         "glass_transition_count": len(glass_transitions),
         # PR-8 canon: unambiguous polarity provenance (declared raw
         # convention + whether the working signal was inverted).
@@ -954,12 +1062,26 @@ def serialize_dsc_result(
     }
     if glass_transitions:
         first_tg = glass_transitions[0]
+        tg_basis = getattr(first_tg, "delta_cp_basis", BASIS_LEGACY_UNKNOWN)
         summary.update(
             {
                 "tg_midpoint": _clean_scalar(first_tg.tg_midpoint),
                 "tg_onset": _clean_scalar(first_tg.tg_onset),
                 "tg_endset": _clean_scalar(first_tg.tg_endset),
-                "delta_cp": _clean_scalar(first_tg.delta_cp),
+                "heat_flow_step": _clean_scalar(
+                    getattr(first_tg, "heat_flow_step", None)
+                ),
+                "heat_flow_step_units": working_unit or None,
+                "delta_cp_basis": tg_basis,
+                "delta_cp_withheld_reason": getattr(
+                    first_tg, "delta_cp_withheld_reason", None
+                ),
+                # Only ever populated for a genuinely beta-corrected value.
+                "delta_cp": (
+                    _clean_scalar(first_tg.delta_cp_j_g_k)
+                    if tg_basis == BASIS_BETA_CORRECTED
+                    else None
+                ),
             }
         )
     return make_result_record(
