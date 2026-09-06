@@ -13,6 +13,14 @@ app. These tests pin that contract.
 from __future__ import annotations
 
 import json
+import os
+import socket
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -20,6 +28,25 @@ from fastapi.testclient import TestClient
 from starlette.routing import Mount
 
 from dash_app.server import create_combined_app
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def _wait_for_health(base_url: str, timeout_s: float = 15.0) -> None:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(f"{base_url}/health", timeout=1) as response:  # nosec B310
+                if response.status == 200:
+                    return
+        except (urllib.error.URLError, TimeoutError):
+            pass
+        time.sleep(0.1)
+    raise AssertionError("Combined Dash server did not become ready in time.")
 
 
 @pytest.fixture()
@@ -122,6 +149,64 @@ def test_real_dash_callback_post_reaches_dash_without_400(combined: tuple[FastAP
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["response"]["fastapi-backend-probe-output"]["children"] == "echo:native-fastapi"
+
+
+def test_combined_server_overrides_stale_api_url_for_colocated_callbacks():
+    """A real Dash callback may synchronously call the API on the same server.
+
+    This is the production topology used by project creation, page hydration,
+    and Confirm Import. The outer callback must complete while the nested API
+    request is being served, rather than timing out on the server's event loop.
+    """
+    port = _free_port()
+    base_url = f"http://127.0.0.1:{port}"
+    env = os.environ.copy()
+    # Desktop launches on a dynamically selected port. An inherited value from
+    # an earlier process must not make callbacks talk to that stale server.
+    env["MATERIALSCOPE_API_URL"] = "http://127.0.0.1:1"
+    process = subprocess.Popen(  # noqa: S603
+        [
+            sys.executable,
+            "-m",
+            "dash_app.server",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+        ],
+        cwd=str(Path(__file__).resolve().parents[1]),
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        _wait_for_health(base_url)
+        payload = json.dumps(
+            {
+                "output": "project-id.data",
+                "outputs": {"id": "project-id", "property": "data"},
+                "inputs": [{"id": "project-id", "property": "data", "value": None}],
+                "changedPropIds": ["project-id.data"],
+            }
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            f"{base_url}/_dash-update-component",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:  # nosec B310
+            body = json.loads(response.read().decode("utf-8"))
+
+        assert response.status == 200
+        assert body["response"]["project-id"]["data"]
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
 
 
 def test_proxy_absolute_form_callback_post_reaches_dash(combined: tuple[FastAPI, TestClient]):

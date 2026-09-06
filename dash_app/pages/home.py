@@ -1262,25 +1262,27 @@ def import_with_mapping(
         raise dash.exceptions.PreventUpdate
 
     if not project_id:
+        feedback = prereq_or_empty_help(
+            translate_ui(loc, "dash.home.prereq_workspace_import_body"),
+            title=translate_ui(loc, "dash.home.prereq_workspace_import_title"),
+            locale=loc,
+        )
         return (
-            prereq_or_empty_help(
-                translate_ui(loc, "dash.home.prereq_workspace_import_body"),
-                title=translate_ui(loc, "dash.home.prereq_workspace_import_title"),
-                locale=loc,
-            ),
-            dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+            feedback,
+            dash.no_update, dash.no_update, dash.no_update, dash.no_update, feedback,
             dash.no_update,
         )
 
     if not preview:
+        feedback = prereq_or_empty_help(
+            translate_ui(loc, "dash.home.prereq_preview_required_body"),
+            tone="secondary",
+            title=translate_ui(loc, "dash.home.prereq_preview_required_title"),
+            locale=loc,
+        )
         return (
-            prereq_or_empty_help(
-                translate_ui(loc, "dash.home.prereq_preview_required_body"),
-                tone="secondary",
-                title=translate_ui(loc, "dash.home.prereq_preview_required_title"),
-                locale=loc,
-            ),
-            dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update,
+            feedback,
+            dash.no_update, dash.no_update, dash.no_update, dash.no_update, feedback,
             dash.no_update,
         )
 

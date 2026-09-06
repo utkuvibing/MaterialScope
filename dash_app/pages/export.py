@@ -386,8 +386,10 @@ def remount_export_dropdowns(
     Input("report-refresh", "data"),
     Input("workspace-refresh", "data"),
     Input("ui-locale", "data"),
+    # The locale callback mounts the dropdowns targeted by this callback.
+    Input("export-workbench-slot", "children"),
 )
-def load_report_center(project_id, _refresh, _global_refresh, locale_data):
+def load_report_center(project_id, _refresh, _global_refresh, locale_data, _workbench=None):
     loc = _loc(locale_data)
     default_title = translate_ui(loc, "dash.export.default_report_title")
     if not project_id:
@@ -709,15 +711,18 @@ def reset_support_snapshot_store(_project_id, _refresh, _global_refresh):
     Output("prepare-result-export-btn", "disabled"),
     Output("prepare-report-export-btn", "disabled"),
     Output("save-branding-btn", "disabled"),
-    Output("prepare-support-snapshot-btn", "disabled"),
-    Output("download-support-snapshot-btn", "disabled"),
     Input("project-id", "data"),
     Input("report-refresh", "data"),
     Input("workspace-refresh", "data"),
     Input("ui-locale", "data"),
     Input("support-snapshot-bytes", "data"),
+    Input("export-workbench-slot", "children"),
+    Input("export-branding-slot", "children"),
 )
-def sync_export_read_only_and_controls(_project_id, _refresh, _global_refresh, locale_data, snapshot_b64):
+def sync_export_read_only_and_controls(
+    _project_id, _refresh, _global_refresh, locale_data, snapshot_b64,
+    _workbench=None, _branding=None,
+):
     loc = _loc(locale_data)
     write_ok = _write_enabled()
     read_only = commercial_mode_enabled() and not write_ok
@@ -727,8 +732,20 @@ def sync_export_read_only_and_controls(_project_id, _refresh, _global_refresh, l
         else ""
     )
     dis = not write_ok
-    dl_disabled = dis or not snapshot_b64
-    return banner, dis, dis, dis, dis, dis, dl_disabled
+    return banner, dis, dis, dis, dis
+
+
+@callback(
+    Output("prepare-support-snapshot-btn", "disabled"),
+    Output("download-support-snapshot-btn", "disabled"),
+    Input("support-snapshot-bytes", "data"),
+    Input("report-preview-panel", "children"),
+)
+def sync_support_snapshot_controls(snapshot_b64, _preview):
+    # These controls exist only after a successful report preview. Keeping their
+    # outputs together avoids targeting absent controls during loading/errors.
+    disabled = not _write_enabled()
+    return disabled, disabled or not snapshot_b64
 
 
 @callback(

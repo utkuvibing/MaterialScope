@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+
 import dash
 import dash_bootstrap_components as dbc
+import httpx
 from dash import Input, Output, State, callback, dcc, html
 
 from dash_app.i18n import SUPPORTED_LOCALES, normalize_locale, t
+
+logger = logging.getLogger(__name__)
 
 NAV_PRIMARY_DEF: list[tuple[str, str, str]] = [
     ("nav.import", "bi-folder2-open", "/"),
@@ -248,13 +253,20 @@ def ensure_project(current_id):
             resp = workspace_summary(current_id)
             if resp.get("project_id"):
                 return dash.no_update
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 404:
+                logger.exception("Workspace validation failed; retaining the current session")
+                return dash.no_update
+            # Only a confirmed missing workspace (e.g. restart) warrants replacement.
         except Exception:
-            pass  # project_id is stale (server restart) — fall through to create new
+            logger.exception("Workspace validation failed; retaining the current session")
+            return dash.no_update
 
     try:
         result = workspace_new()
         return result.get("project_id")
     except Exception:
+        logger.exception("Workspace initialization failed")
         return None
 
 
