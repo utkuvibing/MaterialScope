@@ -278,7 +278,12 @@ class TestDSCDeterministicRegressions:
         tg = result.glass_transitions[0]
         assert tg.tg_onset < tg.tg_midpoint < tg.tg_endset
         assert tg.tg_midpoint == pytest.approx(120.0, abs=8.0)
-        assert tg.delta_cp > 0.0
+        # PR-9: the measured step lives in heat_flow_step. Without a
+        # declared signal unit and verified beta, no corrected ΔCp exists.
+        assert tg.heat_flow_step > 0.0
+        assert tg.delta_cp_j_g_k is None
+        assert tg.delta_cp_basis != "beta_corrected"
+        assert tg.delta_cp_withheld_reason is not None
 
     def test_detects_crystallization_and_melting_like_peaks(self, temperature_range, dsc_melting_crystallization_signal):
         """Lock in dual-peak DSC behavior for one exotherm and one endotherm."""

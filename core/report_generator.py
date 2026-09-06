@@ -568,6 +568,8 @@ def _record_key_results(record: dict) -> dict[str, str]:
             "tg_onset",
             "tg_endset",
             "delta_cp",
+            "heat_flow_step",
+            "delta_cp_basis",
             "sample_name",
             "sample_mass",
             "heating_rate",
@@ -1642,10 +1644,23 @@ def _record_main_mini_table(record: dict) -> tuple[list[str], list[list[str]]] |
             ["Step Count", _format_value(summary.get("step_count"))],
         ]
     elif analysis == "DSC":
+        # PR-9: label from the recorded basis.  A legacy or uncorrected
+        # step is never presented with a J/(g·K) label.
+        basis = str(summary.get("delta_cp_basis") or "legacy_unknown")
+        step_units = summary.get("heat_flow_step_units")
+        if basis == "beta_corrected":
+            cp_row = ["Delta Cp (J/(g·K))", _format_number(summary.get("delta_cp"))]
+        elif basis == "legacy_unknown":
+            cp_row = ["Delta Cp (unknown basis — legacy result)", "--"]
+        else:
+            cp_row = [
+                f"Step height ({step_units or 'signal units'})",
+                _format_number(summary.get("heat_flow_step")),
+            ]
         payload = [
             ["Peak Count", _format_value(summary.get("peak_count"))],
             ["Tg Midpoint (°C)", _format_number(summary.get("tg_midpoint"))],
-            ["Delta Cp", _format_number(summary.get("delta_cp"))],
+            cp_row,
         ]
     elif analysis == "XRD":
         payload = [

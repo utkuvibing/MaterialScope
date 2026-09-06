@@ -24,6 +24,13 @@ from core.preprocessing import smooth_signal, compute_derivative, normalize_by_m
 from core.baseline import correct_baseline
 from core.peak_analysis import find_thermal_peaks, characterize_peaks, ThermalPeak
 from core.sign_convention import CANONICAL, SignConvention, parse_declared
+from core.units_dimensional import (
+    canonical_signal_unit,
+    heat_flow_step_to_delta_cp,
+    peak_area_to_enthalpy,
+    resolve_beta,
+    resolve_working_unit,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -37,7 +44,13 @@ class GlassTransition:
     tg_midpoint: float    # Midpoint temperature [degrees C or K]
     tg_onset: float       # Onset temperature
     tg_endset: float      # Endset temperature
-    delta_cp: float       # Step change in heat capacity [J/(g * degrees C)]
+    # --- PR-9 dimensional honesty -------------------------------------
+    # A raw heat-flow step is NOT ΔCp until it is β-corrected, so it must
+    # never live in a field named delta_cp.
+    heat_flow_step: float                   # Measured step in working signal units
+    delta_cp_j_g_k: Optional[float] = None  # ΔCp [J/(g·K)]; ONLY set when beta-corrected
+    delta_cp_basis: str = 'legacy_unknown'
+    delta_cp_withheld_reason: Optional[str] = None
 
 
 @dataclass
@@ -99,6 +112,8 @@ class DSCProcessor:
         sample_mass: Optional[float] = None,
         heating_rate: Optional[float] = None,
         sign_convention: Optional[str] = None,
+        signal_unit: Optional[str] = None,
+        heating_rate_source: Optional[str] = None,
     ) -> None:
         """
         Initialise with raw experimental data.
@@ -113,30 +128,83 @@ class DSCProcessor:
         sample_mass:
             Sample mass in milligrams.  Required for normalisation.
         heating_rate:
-            Heating rate in K/min.  Stored as metadata; not used in
-            computation unless explicitly requested by the caller.
+            Heating rate in K/min.
         sign_convention:
             Polarity frame of the passed signal (see
             ``core.sign_convention``).  ``None`` (default) means the
             canonical frame (exo-up); ``'unknown'`` withholds
             endo/exo labels instead of assuming polarity.
+        signal_unit:
+            Canonical unit of the incoming signal.  Drives dimensional
+            conversion (PR-9): without it, ΔCp/enthalpy in corrected
+            units are withheld rather than guessed.
+        heating_rate_source:
+            Provenance of ``heating_rate`` — ``'user'``, ``'parsed'``,
+            or ``None``/unknown.  Only ``user``/``parsed`` rates are
+            trusted for β-correction.
         """
         self._temperature: np.ndarray = np.asarray(temperature, dtype=float)
         self._raw_signal: np.ndarray = np.asarray(signal, dtype=float)
         self._signal: np.ndarray = self._raw_signal.copy()
         self._sample_mass: Optional[float] = sample_mass
         self._heating_rate: Optional[float] = heating_rate
+        self._heating_rate_source: Optional[str] = heating_rate_source
         self._sign_convention: SignConvention = parse_declared(sign_convention, default=CANONICAL)
+
+        self._source_signal_unit, source_class = canonical_signal_unit(signal_unit)
+        self._working_signal_unit: str = self._source_signal_unit
+        self._normalization_applied: bool = False
+        self._signal_unit_class = source_class
 
         # Pipeline state
         self._baseline: Optional[np.ndarray] = None
+        self._baseline_applied: bool = False
         self._peaks: List[ThermalPeak] = []
         self._glass_transitions: List[GlassTransition] = []
         self._metadata: Dict = {
             'sample_mass_mg': sample_mass,
             'heating_rate_K_min': heating_rate,
+            'heating_rate_source': heating_rate_source,
             'signal_convention': self._sign_convention.value,
+            'source_signal_unit': self._source_signal_unit,
+            'working_signal_unit': self._working_signal_unit,
+            'normalization_applied': self._normalization_applied,
             'steps': [],
+        }
+
+    # ------------------------------------------------------------------
+    # Unit provenance (PR-9)
+    # ------------------------------------------------------------------
+
+    @property
+    def source_signal_unit(self) -> str:
+        """Canonical unit of the signal as imported."""
+        return self._source_signal_unit
+
+    @property
+    def working_signal_unit(self) -> str:
+        """Canonical unit of the current working signal."""
+        return self._working_signal_unit
+
+    @property
+    def normalization_applied(self) -> bool:
+        """Whether ``normalize()`` actually divided the signal by mass."""
+        return self._normalization_applied
+
+    def _resolved_beta(self) -> Tuple[Optional[float], Optional[str]]:
+        """Validate the heating rate for dimensional conversion."""
+        return resolve_beta(self._heating_rate, self._heating_rate_source)
+
+    def _conversion_context(self) -> Dict[str, Optional[str]]:
+        """Provenance block recorded alongside every converted quantity."""
+        beta, reason = self._resolved_beta()
+        return {
+            'source_signal_unit': self._source_signal_unit,
+            'working_signal_unit': self._working_signal_unit,
+            'normalization_applied': self._normalization_applied,
+            'heating_rate_K_min': beta,
+            'heating_rate_source': self._heating_rate_source,
+            'conversion_withheld_reason': reason,
         }
 
     # ------------------------------------------------------------------
@@ -173,18 +241,48 @@ class DSCProcessor:
         -------
         self, for method chaining.
         """
-        if self._sample_mass is None:
-            warnings.warn(
-                "normalize() called but sample_mass was not provided.  "
-                "Skipping normalisation.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
+        # resolve_working_unit reads the *current* working unit and flag,
+        # so a second normalize() can never divide by mass twice.
+        working_unit, applied, reason = resolve_working_unit(
+            self._source_signal_unit,
+            self._sample_mass,
+            True,
+            working_unit=self._working_signal_unit,
+            normalization_applied=self._normalization_applied,
+        )
+
+        if not applied:
+            # An already-specific signal needs no mass and no warning; for
+            # anything else the reason normalization did not happen is the
+            # missing mass, whatever the unit provenance says.
+            already_specific = reason == "already_specific_power"
+            if not already_specific and (
+                reason in {"sample_mass_missing", "sample_mass_invalid"}
+                or self._sample_mass is None
+            ):
+                warnings.warn(
+                    "normalize() called but sample_mass was not provided.  "
+                    "Skipping normalisation.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            self._working_signal_unit = working_unit
+            self._metadata['working_signal_unit'] = working_unit
+            self._metadata['normalization_applied'] = False
             return self
 
         self._signal = normalize_by_mass(self._signal, sample_mass_mg=self._sample_mass)
+        self._working_signal_unit = working_unit
+        self._normalization_applied = True
+        self._metadata['working_signal_unit'] = working_unit
+        self._metadata['normalization_applied'] = True
         self._metadata['steps'].append(
-            {'step': 'normalize', 'mass_mg': self._sample_mass}
+            {
+                'step': 'normalize',
+                'mass_mg': self._sample_mass,
+                'from_unit': self._source_signal_unit,
+                'to_unit': working_unit,
+            }
         )
         return self
 
@@ -211,6 +309,7 @@ class DSCProcessor:
         )
         self._baseline = baseline
         self._signal = corrected
+        self._baseline_applied = True
         self._metadata['steps'].append(
             {'step': 'correct_baseline', 'method': method, **kwargs}
         )
@@ -236,14 +335,42 @@ class DSCProcessor:
             sign_convention=self._sign_convention,
             **kwargs,
         )
+        # self._signal is already baseline-corrected when correct_baseline()
+        # ran; passing the raw baseline here would subtract it a second time
+        # and corrupt area, height, and FWHM alike.
+        baseline_for_char = (
+            np.zeros_like(self._signal) if self._baseline_applied else None
+        )
         self._peaks = characterize_peaks(
             self._temperature,
             self._signal,
             raw_peaks,
-            baseline=self._baseline,
+            baseline=baseline_for_char,
         )
+        self._apply_peak_enthalpies()
         self._metadata['steps'].append({'step': 'find_peaks', **kwargs})
         return self
+
+    def _apply_peak_enthalpies(self) -> None:
+        """Attach β-aware enthalpy J/g to every characterised peak.
+
+        Reads the working unit only — never the sample mass — so a second
+        division is impossible.  Withholds when provenance is missing.
+        """
+        beta, reason = self._resolved_beta()
+        for peak in self._peaks:
+            conversion = peak_area_to_enthalpy(
+                peak.area,
+                working_signal_unit=self._working_signal_unit,
+                beta_k_min=beta,
+            )
+            peak.enthalpy_j_g = conversion.value
+            peak.enthalpy_basis = conversion.basis
+            # Root cause first: an unusable heating rate explains the
+            # withholding better than the resulting missing value.
+            peak.enthalpy_withheld_reason = (
+                reason or conversion.withheld_reason
+            )
 
     def detect_glass_transition(
         self,
@@ -335,7 +462,7 @@ class DSCProcessor:
         tg_endset = float(t_work[endset_local])
         tg_midpoint = float(t_work[infl_local])
 
-        # --- delta_cp from flat regions outside [onset, endset] -------------
+        # --- heat-flow step from flat regions outside [onset, endset] -------
         flat_width = max(5, m // 10)
 
         bl_start = max(0, onset_local - flat_width)
@@ -346,15 +473,26 @@ class DSCProcessor:
         if bl_end > bl_start and ar_end > ar_start:
             mean_before = float(np.mean(s_work[bl_start:bl_end]))
             mean_after = float(np.mean(s_work[ar_start:ar_end]))
-            delta_cp = mean_after - mean_before
+            heat_flow_step = mean_after - mean_before
         else:
-            delta_cp = 0.0
+            heat_flow_step = 0.0
+
+        # β-corrected ΔCp only when the working unit and β are trustworthy.
+        beta, beta_reason = self._resolved_beta()
+        conversion = heat_flow_step_to_delta_cp(
+            heat_flow_step,
+            working_signal_unit=self._working_signal_unit,
+            beta_k_min=beta,
+        )
 
         tg = GlassTransition(
             tg_midpoint=tg_midpoint,
             tg_onset=tg_onset,
             tg_endset=tg_endset,
-            delta_cp=delta_cp,
+            heat_flow_step=heat_flow_step,
+            delta_cp_j_g_k=conversion.value,
+            delta_cp_basis=conversion.basis,
+            delta_cp_withheld_reason=beta_reason or conversion.withheld_reason,
         )
         self._glass_transitions.append(tg)
         self._metadata['steps'].append(

@@ -1700,6 +1700,22 @@ TRANSLATIONS = {
     "dash.analysis.label.endset": {"tr": "Bitiş", "en": "Endset"},
     "dash.analysis.label.area": {"tr": "Alan", "en": "Area"},
     "dash.analysis.label.dcp": {"tr": "dCp", "en": "dCp"},
+    "dash.analysis.dsc.label.delta_cp_j_g_k": {
+        "tr": "ΔCp birimi: J/(g·K) (β ile düzeltilmiş)",
+        "en": "ΔCp units: J/(g·K) (β-corrected)",
+    },
+    "dash.analysis.dsc.label.delta_cp_legacy": {
+        "tr": "ΔCp: bilinmeyen temel — eski sonuç, J/(g·K) olarak gösterilemez",
+        "en": "ΔCp: unknown basis — legacy result, not shown as J/(g·K)",
+    },
+    "dash.analysis.dsc.label.step_height": {
+        "tr": "ΔCp düzeltilmedi; bu bir basamak yüksekliğidir ({unit})",
+        "en": "ΔCp not corrected; this is a step height ({unit})",
+    },
+    "dash.analysis.dsc.label.enthalpy_j_g": {
+        "tr": "Entalpi (J/g)",
+        "en": "Enthalpy (J/g)",
+    },
     "dash.analysis.label.fwhm": {"tr": "FWHM", "en": "FWHM"},
     "dash.analysis.label.height": {"tr": "Yükseklik", "en": "Height"},
     "dash.analysis.label.mass_loss": {"tr": "Kütle kaybı", "en": "Mass Loss"},

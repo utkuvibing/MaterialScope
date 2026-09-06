@@ -639,14 +639,20 @@ def render():
 
                     result: DTAResult = processor.get_result()
 
-                    # Run characterize_peaks to fill onset/endset/area/FWHM
+                    # Run characterize_peaks to fill onset/endset/area/FWHM.
+                    # working_for_peaks is already baseline-corrected when a
+                    # baseline is present; passing it would subtract twice.
                     baseline_arr = state.get("baseline")
                     if result.peaks:
                         result.peaks = characterize_peaks(
                             temperature,
                             working_for_peaks,
                             result.peaks,
-                            baseline=baseline_arr,
+                            baseline=(
+                                np.zeros_like(working_for_peaks)
+                                if baseline_arr is not None
+                                else None
+                            ),
                         )
 
                     push_analysis_undo_snapshot(state, tracked_keys)

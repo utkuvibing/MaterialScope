@@ -925,7 +925,6 @@ def _peak_card(row: dict, idx: int, loc: str) -> dbc.Card:
     pt = row.get("peak_temperature")
     onset = row.get("onset_temperature")
     endset = row.get("endset_temperature")
-    area = row.get("area")
     fwhm = row.get("fwhm")
     height = row.get("height")
     return dbc.Card(
@@ -962,8 +961,8 @@ def _peak_card(row: dict, idx: int, loc: str) -> dbc.Card:
                         ),
                         dbc.Col(
                             [
-                                html.Small(translate_ui(loc, "dash.analysis.label.area"), className="text-muted d-block"),
-                                html.Span(f"{area:.3f}" if area is not None else "--"),
+                                html.Small(_peak_area_label(row, loc), className="text-muted d-block"),
+                                html.Span(_peak_area_value(row)),
                             ],
                             md=3,
                         ),
@@ -2641,6 +2640,30 @@ def _format_numeric(value: float | None, *, digits: int = 3) -> str:
     return f"{value:.{digits}f}"
 
 
+def _peak_area_label(row: dict, loc: str) -> str:
+    """Label a peak area by what it actually is.
+
+    A β-corrected value is enthalpy in J/g; anything else is a
+    temperature-domain area in signal units × K.
+    """
+    if str(row.get("enthalpy_basis") or "") == "beta_corrected" and row.get(
+        "enthalpy_j_g"
+    ) is not None:
+        return translate_ui(loc, "dash.analysis.dsc.label.enthalpy_j_g")
+    area_units = str(row.get("area_units") or "")
+    base = translate_ui(loc, "dash.analysis.label.area")
+    return f"{base} ({area_units})" if area_units else base
+
+
+def _peak_area_value(row: dict) -> str:
+    """Render the peak area (or enthalpy) that matches ``_peak_area_label``."""
+    if str(row.get("enthalpy_basis") or "") == "beta_corrected" and row.get(
+        "enthalpy_j_g"
+    ) is not None:
+        return _format_numeric(_coerce_float(row.get("enthalpy_j_g")))
+    return _format_numeric(_coerce_float(row.get("area")))
+
+
 def _peak_type_label(peak_type: str | None, loc: str) -> str:
     token = str(peak_type or "").strip().lower()
     if token.startswith("endo"):
@@ -2719,6 +2742,8 @@ def _build_tg_summary(summary: dict, loc: str) -> html.Div:
     tg_onset = _coerce_float(summary.get("tg_onset"))
     tg_endset = _coerce_float(summary.get("tg_endset"))
     delta_cp = _coerce_float(summary.get("delta_cp"))
+    dcp_basis = str(summary.get("delta_cp_basis") or "legacy_unknown")
+    step_units = summary.get("heat_flow_step_units") or "signal units"
     tg_count = int(summary.get("glass_transition_count") or (1 if tg_mid is not None else 0) or 0)
 
     if tg_count == 0 or tg_mid is None:
@@ -2730,6 +2755,17 @@ def _build_tg_summary(summary: dict, loc: str) -> html.Div:
     onset_txt = f"{tg_onset:.1f}" if tg_onset is not None else "--"
     end_txt = f"{tg_endset:.1f}" if tg_endset is not None else "--"
     dcp_txt = f"{delta_cp:.4f}" if delta_cp is not None else "--"
+    if dcp_basis == "beta_corrected":
+        dcp_label = translate_ui(loc, "dash.analysis.dsc.label.delta_cp_j_g_k")
+    elif dcp_basis == "legacy_unknown":
+        dcp_label = translate_ui(loc, "dash.analysis.dsc.label.delta_cp_legacy")
+        dcp_txt = "--"
+    else:
+        dcp_label = translate_ui(
+            loc, "dash.analysis.dsc.label.step_height", unit=step_units
+        )
+        step_value = _coerce_float(summary.get("heat_flow_step"))
+        dcp_txt = f"{step_value:.4f}" if step_value is not None else "--"
     summary_line = translate_ui(loc, "dash.analysis.dsc.events.tg_one_liner").format(
         midpoint=f"{tg_mid:.1f}",
         onset=onset_txt,
@@ -2745,7 +2781,11 @@ def _build_tg_summary(summary: dict, loc: str) -> html.Div:
             )
         )
     return html.Div(
-        [html.P(summary_line, className="small mb-1"), *extra],
+        [
+            html.P(summary_line, className="small mb-1"),
+            html.P(dcp_label, className="text-muted small mb-0"),
+            *extra,
+        ],
         className="mb-3",
     )
 

@@ -59,7 +59,7 @@ def _make_dsc_result(thermal_dataset):
         tg_midpoint=120.0,
         tg_onset=115.0,
         tg_endset=125.0,
-        delta_cp=0.12,
+        heat_flow_step=0.12,
     )
     processing = ensure_processing_payload(
         analysis_type="DSC",

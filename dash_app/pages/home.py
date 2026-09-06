@@ -354,7 +354,9 @@ layout = html.Div(
                                     dbc.Col(
                                         [
                                             dbc.Label(id="mapping-rate-label", children="Heating Rate (°C/min)", className="mt-3"),
-                                            dbc.Input(id="mapping-heating-rate", type="number", value=10),
+                                            # PR-9: no fabricated default; an
+                                            # untouched control yields None.
+                                            dbc.Input(id="mapping-heating-rate", type="number", placeholder="e.g. 10"),
                                         ],
                                         md=4,
                                     ),
@@ -1311,6 +1313,14 @@ def import_with_mapping(
         "sample_name": sample_name or "Unknown",
         "sample_mass": float(sample_mass) if sample_mass not in (None, "", 0, 0.0) else None,
         "heating_rate": float(heating_rate) if data_type not in {"XRD", "FTIR", "RAMAN"} and heating_rate not in (None, "", 0, 0.0) else None,
+        # PR-9: provenance. Only an explicitly entered rate is trusted for
+        # dimensional conversion.
+        "heating_rate_source": (
+            "user"
+            if data_type not in {"XRD", "FTIR", "RAMAN"}
+            and heating_rate not in (None, "", 0, 0.0)
+            else "missing"
+        ),
         "xrd_wavelength_angstrom": float(xrd_wavelength) if data_type == "XRD" and xrd_wavelength not in (None, "", 0, 0.0) else None,
     }
     column_mapping = {

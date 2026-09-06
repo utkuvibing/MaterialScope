@@ -273,12 +273,22 @@ def test_execute_dsc_batch_template_honors_normalization_override(thermal_datase
 
     normalized_smoothed = np.asarray(normalized["state"]["smoothed"], dtype=float)
     raw_smoothed = np.asarray(raw["state"]["smoothed"], dtype=float)
-    np.testing.assert_allclose(
-        normalized_smoothed,
-        raw_smoothed / float(dataset.metadata["sample_mass"]),
-        rtol=1e-6,
-        atol=1e-9,
-    )
+
+    # PR-9: this fixture declares an already-specific unit (mW/mg), so
+    # normalization must be a no-op even when enabled — dividing again
+    # would be a double normalization.
+    if str((dataset.units or {}).get("signal") or "") in {"mW/mg", "W/g"}:
+        np.testing.assert_allclose(
+            normalized_smoothed, raw_smoothed, rtol=1e-6, atol=1e-9
+        )
+        assert normalized["record"]["summary"]["normalization_applied"] is False
+    else:
+        np.testing.assert_allclose(
+            normalized_smoothed,
+            raw_smoothed / float(dataset.metadata["sample_mass"]),
+            rtol=1e-6,
+            atol=1e-9,
+        )
 
 
 def test_execute_tga_batch_template_saves_normalized_record(temperature_range, tga_signal):

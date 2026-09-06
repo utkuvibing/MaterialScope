@@ -87,6 +87,39 @@ def _build_dsc_figure(selected_key, temperature, signal, state):
     return fig
 
 
+def _dcp_metric(tg, dataset):
+    """Build an honestly labelled ΔCp metric for a glass-transition event.
+
+    A corrected value shows J/(g·K); a legacy or uncorrected step is
+    labelled by what it actually is and never given a J/(g·K) label.
+    """
+    from core.units_dimensional import delta_cp_display
+
+    label, value = delta_cp_display(
+        getattr(tg, "delta_cp_j_g_k", None),
+        getattr(tg, "heat_flow_step", None),
+        getattr(tg, "delta_cp_basis", None),
+        (getattr(dataset, "units", None) or {}).get("signal"),
+    )
+    return label, "--" if value is None else f"{value:.3f}"
+
+
+def _area_metric(peak, dataset):
+    """Return ``(label, value)`` for a peak area display.
+
+    Only a β-corrected value is labelled J/g; otherwise the
+    temperature-domain area is shown with its real units.
+    """
+    from core.units_dimensional import enthalpy_display
+
+    return enthalpy_display(
+        getattr(peak, "enthalpy_j_g", None),
+        getattr(peak, "area", None),
+        getattr(peak, "enthalpy_basis", None),
+        (getattr(dataset, "units", None) or {}).get("signal"),
+    )
+
+
 def _select_dsc_reference_temperature(state):
     """Return the best available DSC event temperature for reference checking."""
     peaks = state.get("peaks") or []
@@ -613,7 +646,7 @@ def render():
                 c1.metric(f"Tg {index}", f"{tg.tg_midpoint:.1f} °C")
                 c2.metric(tx("Başlangıç", "Onset"), f"{tg.tg_onset:.1f} °C")
                 c3.metric(tx("Bitiş", "Endset"), f"{tg.tg_endset:.1f} °C")
-                c4.metric("ΔCp", f"{tg.delta_cp:.3f}")
+                c4.metric(*_dcp_metric(tg, dataset))
 
     with tab_peaks:
         st.subheader(tx("Pik Tespiti ve Karakterizasyonu", "Peak Detection & Characterization"))
@@ -718,6 +751,7 @@ def render():
 
             rows = []
             for i, peak in enumerate(state["peaks"]):
+                area_label, area_value = _area_metric(peak, dataset)
                 rows.append(
                     {
                         tx("Pik #", "Peak #"): i + 1,
@@ -725,7 +759,7 @@ def render():
                         tx("Pik T (°C)", "Peak T (°C)"): f"{peak.peak_temperature:.2f}",
                         tx("Başlangıç T (°C)", "Onset T (°C)"): f"{peak.onset_temperature:.2f}" if peak.onset_temperature is not None else tx("Yok", "N/A"),
                         tx("Bitiş T (°C)", "Endset T (°C)"): f"{peak.endset_temperature:.2f}" if peak.endset_temperature is not None else tx("Yok", "N/A"),
-                        tx("Alan (J/g)", "Area (J/g)"): f"{peak.area:.3f}" if peak.area is not None else tx("Yok", "N/A"),
+                        area_label: f"{area_value:.3f}" if area_value is not None else tx("Yok", "N/A"),
                         tx("FWHM (°C)", "FWHM (°C)"): f"{peak.fwhm:.2f}" if peak.fwhm is not None else tx("Yok", "N/A"),
                         tx("Yükseklik", "Height"): f"{peak.height:.4f}" if peak.height is not None else tx("Yok", "N/A"),
                     }
@@ -757,7 +791,7 @@ def render():
                 c1.metric(f"Tg {index}", f"{tg.tg_midpoint:.1f} °C")
                 c2.metric(tx("Başlangıç", "Onset"), f"{tg.tg_onset:.1f} °C")
                 c3.metric(tx("Bitiş", "Endset"), f"{tg.tg_endset:.1f} °C")
-                c4.metric("ΔCp", f"{tg.delta_cp:.3f}")
+                c4.metric(*_dcp_metric(tg, dataset))
             st.divider()
 
         if peaks:
@@ -767,7 +801,11 @@ def render():
                     c1, c2, c3, c4 = st.columns(4)
                     c1.metric(tx("Pik Sıcaklığı", "Peak Temp"), f"{peak.peak_temperature:.1f} °C")
                     c2.metric(tx("Başlangıç", "Onset"), f"{peak.onset_temperature:.1f} °C" if peak.onset_temperature is not None else tx("Yok", "N/A"))
-                    c3.metric(tx("Entalpi", "Enthalpy"), f"{peak.area:.2f} J/g" if peak.area is not None else tx("Yok", "N/A"))
+                    area_label, area_value = _area_metric(peak, dataset)
+                    c3.metric(
+                        area_label,
+                        f"{area_value:.2f}" if area_value is not None else tx("Yok", "N/A"),
+                    )
                     c4.metric("FWHM", f"{peak.fwhm:.1f} °C" if peak.fwhm is not None else tx("Yok", "N/A"))
                     ref_info = render_reference_comparison(peak.peak_temperature, "DSC")
                     if ref_info:
