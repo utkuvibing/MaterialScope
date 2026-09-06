@@ -112,7 +112,10 @@ def main() -> None:
         print(line, flush=True)
     for line in apply_combined_dash_server_library_env(listen_host=args.host, listen_port=args.port):
         print(line, flush=True)
-    os.environ.setdefault("MATERIALSCOPE_API_URL", f"http://127.0.0.1:{args.port}")
+    # This entrypoint always serves Dash and the API in one process. Override
+    # inherited values so callbacks cannot target a stale port from an earlier
+    # desktop/backend launch and silently turn API failures into no-op 200s.
+    os.environ["MATERIALSCOPE_API_URL"] = f"http://127.0.0.1:{args.port}"
     if args.token:
         os.environ["MATERIALSCOPE_API_TOKEN"] = args.token
 

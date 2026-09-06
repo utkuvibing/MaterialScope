@@ -2,9 +2,38 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
+
 import dash
 import dash_bootstrap_components as dbc
 from fastapi import FastAPI
+
+
+class MaterialScopeDash(dash.Dash):
+    def _execute_callback(self, func, args, outputs_list, g):
+        """Keep synchronous work off the co-located API's event loop.
+
+        Dash's native FastAPI HTTP dispatcher calls synchronous callbacks inline.
+        Our callbacks use a synchronous HTTP client to that same server, so inline
+        execution blocks the API until the client times out. Offload the complete
+        callback wrapper (including serialization); to_thread preserves request
+        and Dash ContextVars. Async callbacks, including Pages routing, stay on
+        the event loop. This private Dash seam is covered by live dispatch tests.
+        """
+        invoke = super()._execute_callback(func, args, outputs_list, g)
+        if not isinstance(self.server, FastAPI) or inspect.iscoroutinefunction(func):
+            return invoke
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            # WebSocket dispatch already runs sync callbacks in its own executor.
+            return invoke
+
+        async def invoke_in_thread():
+            return await asyncio.to_thread(invoke)
+
+        return invoke_in_thread
 
 
 def create_dash_app(
@@ -27,7 +56,7 @@ def create_dash_app(
         if isinstance(_key, str) and _key.startswith("dash_app.pages."):
             del _dash_pages.PAGE_REGISTRY[_key]
 
-    app = dash.Dash(
+    app = MaterialScopeDash(
         __name__,
         server=server if server is not None else True,
         use_pages=True,
