@@ -44,7 +44,7 @@ from typing import List, Optional
 from core.preprocessing import smooth_signal
 from core.baseline import correct_baseline
 from core.peak_analysis import find_thermal_peaks, ThermalPeak
-from core.sign_convention import CANONICAL, SignConvention, parse_declared
+from core.sign_convention import CANONICAL, SignConvention, direction_tag_from_label, parse_declared
 
 
 # ---------------------------------------------------------------------------
@@ -249,15 +249,17 @@ class DTAProcessor:
            Both passes operate on the SAME working signal — no inverted
            re-find — so each event is detected exactly once (PR-8 fix for
            the historical duplicate/contradictory-tag behaviour).
-        2. Detect positive-direction peaks (exothermic events in the
-           canonical exo-up frame) with ``direction='up'``.
-        3. Detect negative-direction peaks (endothermic events in the
-           canonical frame) with ``direction='down'``.
-        4. Tag each peak with a ``direction`` attribute (``'exo'`` or
-           ``'endo'``) derived from the recorded sign convention; for
-           ``'unknown'`` polarity frames every event is tagged ``'unknown'``
-           instead of being silently attributed.  Merge both lists,
-           sorting by temperature.
+        2. Detect exothermic events with a convention-aware search
+           direction: in the canonical exo-up frame they point up
+           (``direction='up'``); in an endo-up frame they point down
+           (``direction='down'``).
+        3. Detect endothermic events with the mirrored search direction
+           for the recorded convention.
+        4. Tag each peak with a ``direction`` attribute derived from the
+           SAME canon label as ``peak_type`` (``'exo'``/``'endo'``), so the
+           two fields cannot disagree; for ``'unknown'`` polarity frames
+           every event is tagged ``'unknown'`` instead of being silently
+           attributed.  Merge both lists, sorting by temperature.
 
         Parameters
         ----------
@@ -266,9 +268,12 @@ class DTAProcessor:
             adaptive default of 5 % of the signal's peak-to-peak range is
             used.
         detect_endothermic : bool, default True
-            Whether to detect peaks in the negative signal direction.
+            Whether to detect endothermic events.  The search direction
+            follows the recorded sign convention (endothermic peaks point
+            down in the canonical exo-up frame, up in an endo-up frame).
         detect_exothermic : bool, default True
-            Whether to detect peaks in the positive signal direction.
+            Whether to detect exothermic events.  The search direction
+            follows the recorded sign convention.
         min_peak_height : float, optional
             Absolute minimum peak height (positive value for exo, absolute
             value for endo).  Peaks smaller than this are filtered out.
@@ -296,40 +301,51 @@ class DTAProcessor:
             prominence = max(0.05 * signal_range, 1e-6)
 
         all_peaks: List[ThermalPeak] = []
-        polarity_known = self._sign_convention is not SignConvention.UNKNOWN
 
-        # --- Positive-direction pass (exothermic in the canonical frame) ---
+        # PR-8: event-family passes are convention-aware.  In the canonical
+        # exo-up frame exothermic events point up and endothermic events
+        # point down; in an endo-up frame the directions mirror.  UNKNOWN
+        # polarity has no physical mapping, so the passes stay mechanical
+        # sign-direction scans with tags withheld.
+        if self._sign_convention is SignConvention.ENDO_UP:
+            exo_search_direction = 'down'
+            endo_search_direction = 'up'
+        else:  # canonical exo-up frame, or UNKNOWN polarity (mechanical scan)
+            exo_search_direction = 'up'
+            endo_search_direction = 'down'
+
+        # --- Exothermic-event pass (convention-aware search direction) ---
         if detect_exothermic:
             exo_peaks: List[ThermalPeak] = find_thermal_peaks(
                 self._temperature,
                 working_signal,
                 prominence=prominence,
-                direction='up',
+                direction=exo_search_direction,
                 sign_convention=self._sign_convention,
                 **kwargs,
             )
             for peak in exo_peaks:
                 if min_peak_height is not None and peak.height < min_peak_height:
                     continue
-                # Tag the direction; ThermalPeak may support extra attributes
-                # or we store it in the existing direction field if available.
-                _tag_peak_direction(peak, "exo" if polarity_known else "unknown")
+                # Tag derived from the same canon label as peak_type, so
+                # direction and peak_type cannot disagree.
+                _tag_peak_direction(peak, direction_tag_from_label(peak.peak_type))
                 all_peaks.append(peak)
 
-        # --- Negative-direction pass (endothermic in the canonical frame) ---
+        # --- Endothermic-event pass (mirrored search direction) ---
         if detect_endothermic:
             endo_peaks: List[ThermalPeak] = find_thermal_peaks(
                 self._temperature,
                 working_signal,
                 prominence=prominence,
-                direction='down',
+                direction=endo_search_direction,
                 sign_convention=self._sign_convention,
                 **kwargs,
             )
             for peak in endo_peaks:
                 if min_peak_height is not None and peak.height < min_peak_height:
                     continue
-                _tag_peak_direction(peak, "endo" if polarity_known else "unknown")
+                _tag_peak_direction(peak, direction_tag_from_label(peak.peak_type))
                 all_peaks.append(peak)
 
         # Sort by temperature (ascending)

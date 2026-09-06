@@ -46,6 +46,7 @@ __all__ = [
     "inspect_header_hints",
     "apply_canonicalization",
     "label_from_direction",
+    "direction_tag_from_label",
     "canonical_frame_label",
     "provenance_record",
     "summarize_provenance",
@@ -220,6 +221,22 @@ def canonical_frame_label(convention: SignConvention) -> str:
     if is_declared(convention):
         return "Exotherm up / Endotherm down (canonical)"
     return "Unknown polarity (endo/exo labels withheld)"
+
+
+def direction_tag_from_label(label: str) -> str:
+    """Compact ``direction`` tag derived from a canon event label.
+
+    Returns ``'exo'`` / ``'endo'`` for canon-derived labels and
+    ``'unknown'`` otherwise.  Deriving the serialized ``direction``
+    attribute from the SAME label as ``peak_type`` makes the two fields
+    structurally incapable of disagreeing (PR-8 blocker fix).
+    """
+    label_token = str(label or "").strip().lower()
+    if label_token == "exotherm":
+        return "exo"
+    if label_token == "endotherm":
+        return "endo"
+    return "unknown"
 
 
 def summarize_provenance(metadata: Any) -> Dict[str, Any]:

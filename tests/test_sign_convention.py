@@ -28,6 +28,7 @@ from core.sign_convention import (
     CANONICAL_SIGNAL_CONVENTION,
     SignConvention,
     apply_canonicalization,
+    direction_tag_from_label,
     inspect_header_hints,
     is_declared,
     label_from_direction,
@@ -252,18 +253,80 @@ class TestDTAProcessorDirection:
         peaks = processor._peaks
         assert len(peaks) == 2  # historical bug produced 4 (each event twice)
         by_temp = {round(p.peak_temperature): p for p in peaks}
+        # Canonical exo-up frame: up event = exotherm, down event = endotherm.
+        assert by_temp[120].peak_type == "exotherm"
         assert by_temp[120].direction == "exo"
+        assert by_temp[220].peak_type == "endotherm"
         assert by_temp[220].direction == "endo"
+
+    def test_endo_up_convention_direction_matches_peak_type(self):
+        """Regression: direct DTAProcessor(sign_convention='endo_up') use.
+
+        In an endo-up frame the endothermic event points UP and the
+        exothermic event points DOWN.  The serialized ``direction`` tag is
+        derived from the same canon label as ``peak_type`` and must never
+        contradict it.
+        """
+        endo_up_signal = (
+            0.2
+            + 2.0 * np.exp(-0.5 * ((T - 120.0) / 5.0) ** 2)
+            - 1.5 * np.exp(-0.5 * ((T - 220.0) / 6.0) ** 2)
+        )
+        processor = DTAProcessor(T, endo_up_signal, sign_convention="endo_up")
+        processor.smooth(method="savgol", window_length=11, polyorder=2)
+        processor.find_peaks()
+
+        peaks = processor._peaks
+        assert len(peaks) == 2
+        by_temp = {round(p.peak_temperature): p for p in peaks}
+        up_peak = by_temp[120]
+        down_peak = by_temp[220]
+
+        # Upward event in an endo-up frame is endothermic.
+        assert up_peak.peak_type == "endotherm"
+        assert up_peak.direction == "endo"
+        # Downward event in an endo-up frame is exothermic.
+        assert down_peak.peak_type == "exotherm"
+        assert down_peak.direction == "exo"
+
+    def test_event_family_gating_follows_convention(self):
+        """detect_exothermic-only on endo-up data finds the DOWN event."""
+        endo_up_signal = (
+            0.2
+            + 2.0 * np.exp(-0.5 * ((T - 120.0) / 5.0) ** 2)  # endothermic in endo-up
+            - 1.5 * np.exp(-0.5 * ((T - 220.0) / 6.0) ** 2)  # exothermic in endo-up
+        )
+        processor = DTAProcessor(T, endo_up_signal, sign_convention="endo_up")
+        processor.smooth(method="savgol", window_length=11, polyorder=2)
+        processor.find_peaks(detect_exothermic=True, detect_endothermic=False)
+
+        assert len(processor._peaks) == 1
+        found = processor._peaks[0]
+        assert round(found.peak_temperature) == 220  # the exothermic (down) event
+        assert found.peak_type == "exotherm"
+        assert found.direction == "exo"
 
     def test_unknown_polarity_never_attributed(self):
         processor = self._processor("unknown")
         processor.find_peaks()
         assert {p.direction for p in processor._peaks} == {"unknown"}
+        assert {p.peak_type for p in processor._peaks} == {"unknown"}
 
     def test_detection_gating_unchanged(self):
         processor = self._processor(None)
         processor.find_peaks(detect_exothermic=True, detect_endothermic=False)
         assert [p.direction for p in processor._peaks] == ["exo"]
+
+
+class TestDirectionTagFromLabel:
+    def test_compact_tags_from_canon_labels(self):
+        assert direction_tag_from_label("exotherm") == "exo"
+        assert direction_tag_from_label("endotherm") == "endo"
+
+    def test_unknown_and_unknowable_labels(self):
+        assert direction_tag_from_label("unknown") == "unknown"
+        assert direction_tag_from_label("") == "unknown"
+        assert direction_tag_from_label("step") == "unknown"
 
 
 # ---------------------------------------------------------------------------
