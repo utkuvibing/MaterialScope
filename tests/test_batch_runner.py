@@ -236,7 +236,7 @@ def test_execute_dsc_batch_template_saves_normalized_record(thermal_dataset):
     assert outcome["record"]["processing"]["workflow_template_id"] == "dsc.polymer_tg"
     assert outcome["record"]["processing"]["workflow_template_version"] == 1
     assert outcome["record"]["processing"]["method_context"]["batch_run_id"] == "batch_dsc_demo"
-    assert outcome["record"]["processing"]["signal_pipeline"]["normalization"] == {"enabled": True}
+    assert outcome["record"]["processing"]["signal_pipeline"]["normalization"]["enabled"] is True
     assert outcome["record"]["provenance"]["batch_run_id"] == "batch_dsc_demo"
     assert outcome["record"]["review"]["batch_runner"] == "compare_workspace"
     assert outcome["validation"]["status"] in {"pass", "warn"}
@@ -268,8 +268,8 @@ def test_execute_dsc_batch_template_honors_normalization_override(thermal_datase
 
     assert normalized["status"] == "saved"
     assert raw["status"] == "saved"
-    assert normalized["record"]["processing"]["signal_pipeline"]["normalization"] == {"enabled": True}
-    assert raw["record"]["processing"]["signal_pipeline"]["normalization"] == {"enabled": False}
+    assert normalized["record"]["processing"]["signal_pipeline"]["normalization"]["enabled"] is True
+    assert raw["record"]["processing"]["signal_pipeline"]["normalization"]["enabled"] is False
 
     normalized_smoothed = np.asarray(normalized["state"]["smoothed"], dtype=float)
     raw_smoothed = np.asarray(raw["state"]["smoothed"], dtype=float)

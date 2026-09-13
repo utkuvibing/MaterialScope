@@ -25,6 +25,7 @@ from core.baseline import correct_baseline
 from core.peak_analysis import find_thermal_peaks, characterize_peaks, ThermalPeak
 from core.sign_convention import CANONICAL, SignConvention, parse_declared
 from core.units_dimensional import (
+    UnitClass,
     canonical_signal_unit,
     heat_flow_step_to_delta_cp,
     peak_area_to_enthalpy,
@@ -154,6 +155,7 @@ class DSCProcessor:
         self._source_signal_unit, source_class = canonical_signal_unit(signal_unit)
         self._working_signal_unit: str = self._source_signal_unit
         self._normalization_applied: bool = False
+        self._normalization_skip_reason: Optional[str] = None
         self._signal_unit_class = source_class
 
         # Pipeline state
@@ -169,6 +171,7 @@ class DSCProcessor:
             'source_signal_unit': self._source_signal_unit,
             'working_signal_unit': self._working_signal_unit,
             'normalization_applied': self._normalization_applied,
+            'normalization_skip_reason': None,
             'steps': [],
         }
 
@@ -190,6 +193,11 @@ class DSCProcessor:
     def normalization_applied(self) -> bool:
         """Whether ``normalize()`` actually divided the signal by mass."""
         return self._normalization_applied
+
+    @property
+    def normalization_skip_reason(self) -> Optional[str]:
+        """Why ``normalize()`` left the signal unchanged, or ``None``."""
+        return self._normalization_skip_reason
 
     def _resolved_beta(self) -> Tuple[Optional[float], Optional[str]]:
         """Validate the heating rate for dimensional conversion."""
@@ -231,11 +239,23 @@ class DSCProcessor:
         self._metadata['steps'].append({'step': 'smooth', 'method': method, **kwargs})
         return self
 
-    def normalize(self) -> 'DSCProcessor':
+    def normalize(self, force: bool = False) -> 'DSCProcessor':
         """
         Normalise the signal by sample mass (mW -> mW/mg or W -> W/g).
 
         Does nothing and emits a warning if sample_mass was not provided.
+        Skips silently when the source signal is already in specific-power
+        units unless ``force=True`` is passed as an explicit opt-in for a
+        signal whose specific-unit label is believed to be wrong.
+
+        Parameters
+        ----------
+        force:
+            Opt-in re-normalization override.  When True, an
+            already-specific source unit is treated as mislabeled raw power
+            and divided by sample mass anyway.  Never divides a signal
+            that was already normalized this session, and still requires a
+            valid sample mass.
 
         Returns
         -------
@@ -249,6 +269,7 @@ class DSCProcessor:
             True,
             working_unit=self._working_signal_unit,
             normalization_applied=self._normalization_applied,
+            force_renormalize=force,
         )
 
         if not applied:
@@ -267,23 +288,30 @@ class DSCProcessor:
                     stacklevel=2,
                 )
             self._working_signal_unit = working_unit
+            self._normalization_skip_reason = reason
             self._metadata['working_signal_unit'] = working_unit
             self._metadata['normalization_applied'] = False
+            self._metadata['normalization_skip_reason'] = reason
             return self
 
+        forced = force and self._signal_unit_class is UnitClass.SPECIFIC_POWER
         self._signal = normalize_by_mass(self._signal, sample_mass_mg=self._sample_mass)
         self._working_signal_unit = working_unit
         self._normalization_applied = True
+        self._normalization_skip_reason = None
         self._metadata['working_signal_unit'] = working_unit
         self._metadata['normalization_applied'] = True
-        self._metadata['steps'].append(
-            {
-                'step': 'normalize',
-                'mass_mg': self._sample_mass,
-                'from_unit': self._source_signal_unit,
-                'to_unit': working_unit,
-            }
-        )
+        self._metadata['normalization_skip_reason'] = None
+        step = {
+            'step': 'normalize',
+            'mass_mg': self._sample_mass,
+            'from_unit': self._source_signal_unit,
+            'to_unit': working_unit,
+        }
+        if forced:
+            step['forced'] = True
+            step['overrode'] = 'already_specific_power'
+        self._metadata['steps'].append(step)
         return self
 
     def correct_baseline(self, method: str = 'asls', **kwargs) -> 'DSCProcessor':
@@ -512,6 +540,8 @@ class DSCProcessor:
         self,
         smooth_method: str = 'savgol',
         baseline_method: str = 'asls',
+        *,
+        normalize_force: bool = False,
         **kwargs,
     ) -> DSCResult:
         """
@@ -520,7 +550,8 @@ class DSCProcessor:
         Pipeline order
         --------------
         1. smooth   - using smooth_method (default 'savgol')
-        2. normalize - skipped silently if sample_mass is None
+        2. normalize - skipped silently if sample_mass is None or the
+           source signal is already specific power (unless normalize_force)
         3. correct_baseline - using baseline_method (default 'asls')
         4. find_peaks - direction='both' unless overridden in kwargs
         5. detect_glass_transition - full temperature range
@@ -531,6 +562,10 @@ class DSCProcessor:
             Smoothing algorithm passed to smooth().
         baseline_method:
             Baseline algorithm passed to correct_baseline().
+        normalize_force:
+            Opt-in re-normalization override forwarded to normalize()
+            (see its docstring).  Off by default: an already-specific
+            signal is never silently divided by mass.
         **kwargs:
             Optional overrides forwarded to find_peaks()
             (e.g. prominence, distance, direction).
@@ -542,7 +577,7 @@ class DSCProcessor:
         return (
             self
             .smooth(method=smooth_method)
-            .normalize()
+            .normalize(force=normalize_force)
             .correct_baseline(method=baseline_method)
             .find_peaks(**kwargs)
             .detect_glass_transition()

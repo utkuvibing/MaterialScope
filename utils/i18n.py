@@ -1914,6 +1914,10 @@ TRANSLATIONS = {
         "en": "When enabled, the DSC signal is divided by sample mass. Defaulting to on preserves current analysis behavior.",
     },
     "dash.analysis.dsc.normalization.enable": {"tr": "Numune kütlesine göre normalize et", "en": "Normalize by sample mass"},
+    "dash.analysis.dsc.normalization.force": {
+        "tr": "Etiketli özgül birimi yine de yeniden normalize et (birimin yanlış olduğunu onaylıyorum)",
+        "en": "Re-normalize anyway (I confirm the labelled specific unit is wrong)",
+    },
     "dash.analysis.dsc.normalization": {"tr": "Kütle normalizasyonu: {detail}", "en": "Mass normalization: {detail}"},
     "dash.analysis.dsc.normalization.enabled": {"tr": "açık", "en": "enabled"},
     "dash.analysis.dsc.normalization.disabled": {"tr": "kapalı", "en": "disabled"},

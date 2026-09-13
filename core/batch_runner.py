@@ -392,10 +392,18 @@ def _execute_dsc_batch(
     peak_detection = copy.deepcopy((processing.get("analysis_steps") or {}).get("peak_detection") or {})
     glass_transition = copy.deepcopy((processing.get("analysis_steps") or {}).get("glass_transition") or {})
     normalization_enabled = bool(normalization.get("enabled", True))
+    # PR-12: explicit opt-in for re-normalizing an already-specific signal;
+    # the source value stays on the record so the run is reproducible.
+    normalization_force = bool(
+        normalization.get("force") or normalization.get("allow_renormalization")
+    )
     processing = update_processing_step(
         processing,
         "normalization",
-        {"enabled": normalization_enabled},
+        {
+            "enabled": normalization_enabled,
+            "force": normalization_force,
+        },
         analysis_type="DSC",
     )
     if peak_detection.get("prominence") in ("", 0, 0.0, None):
@@ -416,7 +424,20 @@ def _execute_dsc_batch(
     smooth_method = smoothing.pop("method", "savgol")
     processor.smooth(method=smooth_method, **smoothing)
     if normalization_enabled:
-        processor.normalize()
+        processor.normalize(force=normalization_force)
+    # Record the actual outcome (applied / skipped + reason) so the record
+    # states what happened rather than what was requested.
+    processing = update_processing_step(
+        processing,
+        "normalization",
+        {
+            "enabled": normalization_enabled,
+            "force": normalization_force,
+            "applied": bool(processor.normalization_applied),
+            "skip_reason": processor.normalization_skip_reason,
+        },
+        analysis_type="DSC",
+    )
     smoothed_signal = processor.get_result().smoothed_signal.copy()
 
     baseline_method = baseline.pop("method", "asls")
@@ -489,6 +510,15 @@ def _execute_dsc_batch(
             "source_signal_unit": processor.source_signal_unit,
             "working_signal_unit": processor.working_signal_unit,
             "normalization_applied": processor.normalization_applied,
+            "normalization_skip_reason": processor.normalization_skip_reason,
+            "renormalization_forced": bool(
+                normalization_force
+                and processor.normalization_applied
+                and any(
+                    step.get("forced") for step in (result.metadata.get("steps") or [])
+                    if isinstance(step, dict) and step.get("step") == "normalize"
+                )
+            ),
         }
     )
     state = {
