@@ -171,6 +171,9 @@ def summarize_dataset(dataset_key: str, dataset) -> DatasetSummary:
             if declared_raw in {"exo_up", "endo_up"}
             else None
         ),
+        import_warnings=[
+            str(item) for item in (metadata.get("import_warnings") or []) if item
+        ],
     )
 
 

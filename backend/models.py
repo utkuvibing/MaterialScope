@@ -238,6 +238,9 @@ class DatasetSummary(BaseModel):
     signal_convention: str | None = None
     raw_signal_convention: str | None = None
     signal_inverted_at_import: bool | None = None
+    # PR-13 import honesty: loader warnings (dropped rows, mojibake,
+    # sheet selection, ...) travel with the summary for UI surfacing.
+    import_warnings: list[str] = Field(default_factory=list)
 
 
 class DatasetsListResponse(BaseModel):
@@ -274,6 +277,8 @@ class DatasetImportRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     # PR-8 canon: explicit declaration only; header hints never choose.
     sign_convention: str | None = None
+    # PR-13: explicit worksheet choice for Excel sources.
+    sheet_name: str | None = None
 
 
 class ValidationSummary(BaseModel):
