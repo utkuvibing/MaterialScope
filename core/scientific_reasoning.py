@@ -48,6 +48,17 @@ def _claim(
     }
 
 
+def _temperature_unit_label(metadata: dict[str, Any] | None) -> str:
+    """Resolved temperature-scale label for prose.
+
+    PR-10: reasoning text must carry the dataset's recorded axis unit
+    (``metadata['temperature_unit']``) instead of hardcoding °C; the label
+    only falls back to °C when no unit was recorded at all.
+    """
+    unit = str((metadata or {}).get("temperature_unit") or "").strip()
+    return unit or "°C"
+
+
 def _build_tga_reasoning(
     summary: dict[str, Any],
     rows: list[dict[str, Any]],
@@ -136,7 +147,10 @@ def _build_tga_reasoning(
     if signals.get("lead_mass_loss_percent") is not None:
         evidence.append(f"Largest resolved event mass loss: {float(signals['lead_mass_loss_percent']):.2f}%.")
     if signals.get("lead_midpoint_temperature") is not None:
-        evidence.append(f"Largest event midpoint temperature: {float(signals['lead_midpoint_temperature']):.1f} °C.")
+        evidence.append(
+            f"Largest event midpoint temperature: {float(signals['lead_midpoint_temperature']):.1f} "
+            f"{_temperature_unit_label(metadata)}."
+        )
     if signals.get("minor_event_count"):
         evidence.append(f"Minor event count below significance threshold: {int(signals['minor_event_count'])}.")
     if signals.get("adjacent_event_pair_count"):
@@ -310,10 +324,11 @@ def _build_dsc_reasoning(
     cid = "C1"
     desc = "The DSC profile contains a simple thermal-event structure." if signals["complexity"] == "simple" else "The DSC profile contains multiple thermal events."
     evidence = [f"Detected peak count: {signals['peak_count']}."]
+    temp_unit = _temperature_unit_label(metadata)
     if signals["has_tg"]:
         tg = _safe_float(summary.get("tg_midpoint"))
         if tg is not None:
-            evidence.append(f"Resolved Tg midpoint: {tg:.2f} °C.")
+            evidence.append(f"Resolved Tg midpoint: {tg:.2f} {temp_unit}.")
     claims.append(_claim(cid, "descriptive", desc, evidence))
     evidence_map[cid] = evidence
 
@@ -326,10 +341,10 @@ def _build_dsc_reasoning(
                     cid,
                     "comparative",
                     "The detected Tg is consistent with a matrix-dominated transition in the measured temperature window.",
-                    [f"Tg midpoint: {tg:.2f} °C.", f"Event complexity class: {signals['complexity']}."],
+                    [f"Tg midpoint: {tg:.2f} {temp_unit}.", f"Event complexity class: {signals['complexity']}."],
                 )
             )
-            evidence_map[cid] = [f"Tg midpoint: {tg:.2f} °C.", f"Event complexity class: {signals['complexity']}."]
+            evidence_map[cid] = [f"Tg midpoint: {tg:.2f} {temp_unit}.", f"Event complexity class: {signals['complexity']}."]
 
     if gates["allow_mechanistic"] and signals["peak_count"] >= 2:
         cid = "C3"

@@ -170,12 +170,18 @@ def _attach_reasoning(
     metadata: dict[str, Any] | None,
     fit_quality: dict[str, Any] | None = None,
     validation: dict[str, Any] | None = None,
+    temperature_unit: str | None = None,
 ) -> dict[str, Any]:
+    reasoning_metadata = dict(metadata or {})
+    # PR-10: propagate the recorded axis unit so reasoning prose labels
+    # temperatures honestly instead of hardcoding °C.
+    if temperature_unit and not reasoning_metadata.get("temperature_unit"):
+        reasoning_metadata["temperature_unit"] = temperature_unit
     reasoning = build_scientific_reasoning(
         analysis_type=analysis_type,
         summary=summary or {},
         rows=rows or [],
-        metadata=metadata or {},
+        metadata=reasoning_metadata,
         fit_quality=fit_quality or {},
         validation=validation or {},
     )
@@ -191,6 +197,7 @@ def _build_dsc_scientific_context(
     metadata: dict[str, Any] | None = None,
     processing: dict[str, Any] | None = None,
     validation: dict[str, Any] | None = None,
+    temperature_unit: str | None = None,
 ) -> dict[str, Any]:
     methodology = {
         "analysis_family": "Differential Scanning Calorimetry",
@@ -275,6 +282,7 @@ def _build_dsc_scientific_context(
         metadata=metadata or {},
         fit_quality=(base_context or {}).get("fit_quality"),
         validation=validation,
+        temperature_unit=temperature_unit,
     )
 
 
@@ -285,6 +293,7 @@ def _build_tga_scientific_context(
     metadata: dict[str, Any] | None = None,
     processing: dict[str, Any] | None = None,
     validation: dict[str, Any] | None = None,
+    temperature_unit: str | None = None,
 ) -> dict[str, Any]:
     methodology = {
         "analysis_family": "Thermogravimetric Analysis",
@@ -340,6 +349,7 @@ def _build_tga_scientific_context(
         metadata=metadata or {},
         fit_quality=(base_context or {}).get("fit_quality"),
         validation=validation,
+        temperature_unit=temperature_unit,
     )
 
 
@@ -350,6 +360,7 @@ def _build_dta_scientific_context(
     metadata: dict[str, Any] | None = None,
     processing: dict[str, Any] | None = None,
     validation: dict[str, Any] | None = None,
+    temperature_unit: str | None = None,
 ) -> dict[str, Any]:
     methodology = {
         "analysis_family": "Differential Thermal Analysis",
@@ -401,6 +412,7 @@ def _build_dta_scientific_context(
         metadata=metadata or {},
         fit_quality=(base_context or {}).get("fit_quality"),
         validation=validation,
+        temperature_unit=temperature_unit,
     )
 
 
@@ -1104,6 +1116,7 @@ def serialize_dsc_result(
             metadata=dataset.metadata,
             processing=processing,
             validation=validation,
+            temperature_unit=(getattr(dataset, "units", None) or {}).get("temperature"),
         ),
     )
 
@@ -1159,6 +1172,7 @@ def serialize_tga_result(
             metadata=dataset.metadata,
             processing=processing,
             validation=validation,
+            temperature_unit=(getattr(dataset, "units", None) or {}).get("temperature"),
         ),
     )
 
@@ -1230,6 +1244,7 @@ def serialize_dta_result(
             metadata=dataset.metadata,
             processing=processing,
             validation=validation,
+            temperature_unit=(getattr(dataset, "units", None) or {}).get("temperature"),
         ),
     )
 

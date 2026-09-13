@@ -19,6 +19,12 @@ _SPECTRAL_ANALYSIS_TYPES = {"FTIR", "RAMAN"}
 TEMPERATURE_MIN_C = -200.0
 TEMPERATURE_MAX_C = 2000.0
 TEMPERATURE_UNITS = {"°C", "degC", "K"}
+# PR-10: temperature-scale plausibility gate. A thermal axis whose minimum
+# sits at/above ~150 while labelled °C is almost always a Kelvin axis
+# recorded under the wrong scale (a genuine °C run starts near ambient).
+KELVIN_SUSPECT_MIN_AXIS = 150.0
+KELVIN_IMPLAUSIBLE_MIN_K = 100.0
+_CELSIUS_LIKE_UNITS = {"°C", "degC"}
 _SPECTRAL_AXIS_UNITS = {"cm^-1", "1/cm", "nm", "eV"}
 XRD_AXIS_UNITS = {"degree_2theta", "deg", "2theta", "angstrom", "1/angstrom"}
 SIGNAL_UNITS_BY_TYPE = {
@@ -1135,6 +1141,49 @@ def validate_thermal_dataset(
     elif temperature_unit and temperature_unit not in TEMPERATURE_UNITS:
         warnings.append(f"Temperature unit '{temperature_unit}' is unusual; verify unit conversion before analysis.")
     checks["temperature_unit"] = temperature_unit or "unspecified"
+
+    # PR-10: K-vs-°C plausibility. The axis checks above only verify the
+    # recorded scale's numeric bounds; this gate catches the more dangerous
+    # case — a Kelvin-shaped axis silently labelled °C (or a °C axis
+    # mislabeled K). Unconfirmed suspects block stable analysis until the
+    # scale is declared or explicitly confirmed at import.
+    temperature_scale_confirmed = bool(metadata.get("temperature_scale_confirmed"))
+    checks["temperature_unit_source"] = metadata.get("temperature_unit_source") or "not recorded"
+    checks["temperature_scale_confirmed"] = temperature_scale_confirmed
+    temperature_scale_plausibility = "not_evaluated"
+    if normalized_analysis_type in _THERMAL_ANALYSIS_TYPES or normalized_analysis_type in {"UNKNOWN", "unknown"}:
+        axis_min = _coerce_float(checks.get("temperature_min"))
+        axis_max = _coerce_float(checks.get("temperature_max"))
+        if axis_min is not None and axis_max is not None:
+            if str(temperature_unit or "") == "K":
+                if axis_min < KELVIN_IMPLAUSIBLE_MIN_K:
+                    temperature_scale_plausibility = "kelvin_declared_implausible"
+                    review_flags.append(
+                        f"Temperature axis is declared Kelvin but starts at {axis_min:.1f} K; verify the scale declaration."
+                    )
+                    warnings.append(
+                        f"Declared Kelvin axis minimum {axis_min:.1f} K is implausibly low for routine thermal analysis."
+                    )
+                else:
+                    temperature_scale_plausibility = "kelvin_declared_plausible"
+            elif str(temperature_unit or "") in _CELSIUS_LIKE_UNITS:
+                if axis_min >= KELVIN_SUSPECT_MIN_AXIS:
+                    if temperature_scale_confirmed:
+                        temperature_scale_plausibility = "scale_confirmed_despite_kelvin_shape"
+                        warnings.append(
+                            f"Temperature axis range {axis_min:.1f}–{axis_max:.1f} {temperature_unit} is Kelvin-plausible; "
+                            "the recorded scale was explicitly confirmed at import."
+                        )
+                    else:
+                        temperature_scale_plausibility = "kelvin_axis_recorded_as_celsius"
+                        issues.append(
+                            f"Temperature axis range {axis_min:.1f}–{axis_max:.1f} {temperature_unit} is implausible "
+                            "for the recorded Celsius scale and resembles a Kelvin axis. Declare the temperature unit "
+                            "in the column header (e.g. 'Temperature (K)') or explicitly confirm the scale at import."
+                        )
+                else:
+                    temperature_scale_plausibility = "scale_plausible"
+    checks["temperature_scale_plausibility"] = temperature_scale_plausibility
 
     signal_unit = units.get("signal")
     recommended_signal_units = SIGNAL_UNITS_BY_TYPE.get(normalized_analysis_type, set())
