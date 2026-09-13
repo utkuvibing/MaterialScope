@@ -43,8 +43,28 @@ from typing import List, Optional
 
 from core.preprocessing import smooth_signal
 from core.baseline import correct_baseline
-from core.peak_analysis import find_thermal_peaks, ThermalPeak
+from core.peak_analysis import characterize_peaks, find_thermal_peaks, ThermalPeak
 from core.sign_convention import CANONICAL, SignConvention, direction_tag_from_label, parse_declared
+
+
+# Peak-detection kwargs accepted by DTAProcessor.find_peaks()/process() beyond
+# the explicit signature parameters.  ``min_width`` is the documented DTA-side
+# alias for find_thermal_peaks' ``width``; ``rel_height`` selects the height
+# fraction at which characterize_peaks measures peak width.  Anything else is
+# a contract violation and raises TypeError instead of crashing deep inside
+# scipy or silently mutating a different stage.
+_PEAK_DETECTION_KWARG_KEYS = frozenset({"height", "distance", "width", "min_width", "rel_height"})
+
+# Loose-kwarg routing tables used by DTAProcessor.process(): a key matching a
+# known stage option is forwarded to that stage only; an unknown key raises
+# TypeError instead of being forwarded to every stage at once (the historical
+# behaviour that made documented kwargs like ``min_width`` crash at the
+# peak-detection stage).
+_SMOOTH_KWARG_KEYS = frozenset({"window_length", "polyorder", "window", "sigma"})
+_BASELINE_KWARG_KEYS = frozenset({
+    "lam", "p", "poly_order", "max_half_window", "region",
+    "anchor_x", "anchor_y", "n_anchors",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -61,8 +81,10 @@ class DTAResult:
     peaks : list of ThermalPeak
         Detected thermal events (both exothermic and endothermic), ordered
         by peak temperature.  Each :class:`~core.peak_analysis.ThermalPeak`
-        carries temperature, height, area, and a ``direction`` flag
-        (``'exo'`` or ``'endo'``).
+        is characterised by :meth:`DTAProcessor.find_peaks` and carries
+        onset/endset temperatures, temperature-domain area, FWHM, height
+        above baseline, and a ``direction`` flag (``'exo'`` or ``'endo'``,
+        or ``'unknown'`` when polarity is unresolved).
     baseline : np.ndarray
         Estimated baseline signal as returned by
         :func:`~core.baseline.correct_baseline`.  Same length as the
@@ -231,11 +253,16 @@ class DTAProcessor:
         detect_endothermic: bool = True,
         detect_exothermic: bool = True,
         min_peak_height: Optional[float] = None,
+        height: Optional[float] = None,
+        distance: Optional[int] = None,
+        width: Optional[float] = None,
+        min_width: Optional[float] = None,
+        rel_height: Optional[float] = None,
         **kwargs,
     ) -> "DTAProcessor":
         """
         Locate thermal events (endothermic and exothermic peaks) in the DTA
-        signal.
+        signal and characterise them.
 
         Unlike DSC processing, no enthalpy calibration is performed.  The
         peak area in the DTA signal is proportional to the enthalpy change
@@ -260,6 +287,12 @@ class DTAProcessor:
            two fields cannot disagree; for ``'unknown'`` polarity frames
            every event is tagged ``'unknown'`` instead of being silently
            attributed.  Merge both lists, sorting by temperature.
+        5. Characterise every detected peak with
+           :func:`~core.peak_analysis.characterize_peaks` so onset,
+           endset, area, FWHM, and height are populated (PR-11).  Peaks
+           below ``min_peak_height`` are then filtered by absolute height
+           so endothermic events (negative height in the exo-up frame)
+           are not silently discarded.
 
         Parameters
         ----------
@@ -275,18 +308,46 @@ class DTAProcessor:
             Whether to detect exothermic events.  The search direction
             follows the recorded sign convention.
         min_peak_height : float, optional
-            Absolute minimum peak height (positive value for exo, absolute
-            value for endo).  Peaks smaller than this are filtered out.
+            Minimum absolute peak height above baseline.  Applied to the
+            characterised height magnitude, so endothermic events
+            (negative height in the canonical exo-up frame) compare by
+            ``abs(height)``.
+        height : float, optional
+            Minimum height threshold forwarded to
+            :func:`~core.peak_analysis.find_thermal_peaks`.
+        distance : int, optional
+            Minimum sample distance between neighbouring peaks, forwarded
+            to :func:`~core.peak_analysis.find_thermal_peaks`.
+        width : float, optional
+            Minimum peak width in samples, forwarded to
+            :func:`~core.peak_analysis.find_thermal_peaks`.
+        min_width : float, optional
+            Documented alias for ``width``.  Ignored when ``width`` is
+            also supplied.
+        rel_height : float, optional
+            Height fraction at which
+            :func:`~core.peak_analysis.characterize_peaks` measures peak
+            width (default 0.5 → classic FWHM).
         **kwargs
-            Additional keyword arguments forwarded to
-            :func:`~core.peak_analysis.find_thermal_peaks`
-            (e.g., ``min_width``, ``rel_height``).
+            No additional keywords are supported; any unknown keyword
+            raises :class:`TypeError` naming the offending key instead of
+            crashing inside scipy.
 
         Returns
         -------
         DTAProcessor
             ``self`` for method chaining.
         """
+        if kwargs:
+            unknown = ", ".join(sorted(kwargs))
+            raise TypeError(
+                f"DTAProcessor.find_peaks() got unsupported keyword argument(s): {unknown}. "
+                "Supported options: prominence, height, distance, width, min_width, "
+                "rel_height, min_peak_height, detect_endothermic, detect_exothermic."
+            )
+
+        effective_width = width if width is not None else min_width
+
         # Determine which signal to use for peak finding
         if self._baseline_corrected is not None:
             working_signal = self._baseline_corrected
@@ -320,13 +381,13 @@ class DTAProcessor:
                 self._temperature,
                 working_signal,
                 prominence=prominence,
+                height=height,
+                distance=distance,
+                width=effective_width,
                 direction=exo_search_direction,
                 sign_convention=self._sign_convention,
-                **kwargs,
             )
             for peak in exo_peaks:
-                if min_peak_height is not None and peak.height < min_peak_height:
-                    continue
                 # Tag derived from the same canon label as peak_type, so
                 # direction and peak_type cannot disagree.
                 _tag_peak_direction(peak, direction_tag_from_label(peak.peak_type))
@@ -338,15 +399,40 @@ class DTAProcessor:
                 self._temperature,
                 working_signal,
                 prominence=prominence,
+                height=height,
+                distance=distance,
+                width=effective_width,
                 direction=endo_search_direction,
                 sign_convention=self._sign_convention,
-                **kwargs,
             )
             for peak in endo_peaks:
-                if min_peak_height is not None and peak.height < min_peak_height:
-                    continue
                 _tag_peak_direction(peak, direction_tag_from_label(peak.peak_type))
                 all_peaks.append(peak)
+
+        # PR-11: characterise once, on the same working signal the peaks were
+        # detected in.  When baseline correction ran, the working signal is
+        # already net-of-baseline, so the characterisation baseline is zeros —
+        # passing the raw baseline would subtract it a second time (same
+        # convention as DSCProcessor.find_peaks).
+        baseline_for_char = (
+            np.zeros_like(working_signal)
+            if self._baseline_corrected is not None
+            else None
+        )
+        all_peaks = characterize_peaks(
+            self._temperature,
+            working_signal,
+            all_peaks,
+            baseline=baseline_for_char,
+            rel_height=rel_height if rel_height is not None else 0.5,
+        )
+
+        if min_peak_height is not None:
+            all_peaks = [
+                peak
+                for peak in all_peaks
+                if abs(float(peak.height or 0.0)) >= min_peak_height
+            ]
 
         # Sort by temperature (ascending)
         all_peaks.sort(key=lambda p: p.peak_temperature)
@@ -360,6 +446,13 @@ class DTAProcessor:
         prominence: Optional[float] = None,
         detect_endothermic: bool = True,
         detect_exothermic: bool = True,
+        min_peak_height: Optional[float] = None,
+        min_width: Optional[float] = None,
+        rel_height: Optional[float] = None,
+        *,
+        smooth_kwargs: Optional[dict] = None,
+        baseline_kwargs: Optional[dict] = None,
+        peak_kwargs: Optional[dict] = None,
         **kwargs,
     ) -> DTAResult:
         """
@@ -368,7 +461,8 @@ class DTAProcessor:
         Order of operations:
           1. :meth:`smooth`             - noise reduction
           2. :meth:`correct_baseline`   - baseline subtraction
-          3. :meth:`find_peaks`         - thermal event detection
+          3. :meth:`find_peaks`         - thermal event detection and
+                                        characterisation
 
         Parameters
         ----------
@@ -382,23 +476,66 @@ class DTAProcessor:
             Whether to detect endothermic peaks.
         detect_exothermic : bool, default True
             Whether to detect exothermic peaks.
+        min_peak_height : float, optional
+            Minimum absolute characterised peak height forwarded to
+            :meth:`find_peaks`.
+        min_width : float, optional
+            Minimum peak width in samples (alias for ``width``) forwarded
+            to :meth:`find_peaks`.
+        rel_height : float, optional
+            Height fraction for width measurement forwarded to
+            :meth:`find_peaks`.
+        smooth_kwargs : dict, optional
+            Explicit options forwarded to :meth:`smooth` only.
+        baseline_kwargs : dict, optional
+            Explicit options forwarded to :meth:`correct_baseline` only.
+        peak_kwargs : dict, optional
+            Explicit options forwarded to :meth:`find_peaks` only.
         **kwargs
-            Additional keyword arguments forwarded to each stage.  Keys that
-            are relevant only to a specific stage (e.g., ``window_length``,
-            ``polyorder``, ``lam``, ``p``) are passed transparently.
+            Loose stage options routed by name: recognised smoothing keys
+            (``window_length``, ``polyorder``, ``window``, ``sigma``) go to
+            :meth:`smooth`, recognised baseline keys (``lam``, ``p``,
+            ``poly_order``, ``max_half_window``, ``region``, ``anchor_x``,
+            ``anchor_y``, ``n_anchors``) go to :meth:`correct_baseline`,
+            recognised peak keys (``height``, ``distance``, ``width``,
+            ``min_width``, ``rel_height``) go to :meth:`find_peaks`.  An
+            unknown key raises :class:`TypeError` naming it — it is never
+            forwarded to every stage at once, which is what previously made
+            documented kwargs crash inside the wrong stage.
 
         Returns
         -------
         DTAResult
             Fully populated result dataclass.
         """
-        self.smooth(method=smooth_method, **kwargs)
-        self.correct_baseline(method=baseline_method, **kwargs)
+        smooth_kw = dict(smooth_kwargs or {})
+        baseline_kw = dict(baseline_kwargs or {})
+        peak_kw = dict(peak_kwargs or {})
+        for key, value in kwargs.items():
+            if key in _SMOOTH_KWARG_KEYS:
+                smooth_kw[key] = value
+            elif key in _BASELINE_KWARG_KEYS:
+                baseline_kw[key] = value
+            elif key in _PEAK_DETECTION_KWARG_KEYS:
+                peak_kw[key] = value
+            else:
+                raise TypeError(
+                    f"DTAProcessor.process() got an unsupported keyword argument '{key}'. "
+                    "Use smooth_kwargs/baseline_kwargs/peak_kwargs for stage-specific "
+                    f"options, or one of the recognised loose keys: "
+                    f"{sorted(_SMOOTH_KWARG_KEYS | _BASELINE_KWARG_KEYS | _PEAK_DETECTION_KWARG_KEYS)}."
+                )
+
+        self.smooth(method=smooth_method, **smooth_kw)
+        self.correct_baseline(method=baseline_method, **baseline_kw)
         self.find_peaks(
             prominence=prominence,
             detect_endothermic=detect_endothermic,
             detect_exothermic=detect_exothermic,
-            **kwargs,
+            min_peak_height=min_peak_height,
+            min_width=min_width,
+            rel_height=rel_height,
+            **peak_kw,
         )
         return self.get_result()
 
