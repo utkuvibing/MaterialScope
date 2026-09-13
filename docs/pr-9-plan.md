@@ -1,6 +1,6 @@
 # PR-9 — Dimensional honesty: ΔCp and peak area
 
-*Work-package plan (2026-09-06). Phase 1 of [roadmap.md](roadmap.md). Status: **planned, not implemented**.*
+*Work-package plan (2026-09-06). Phase 1 of [roadmap.md](roadmap.md). Status: **implemented — merged as [PR #37](https://github.com/utkuvibing/MaterialScope/pull/37)** (2026-09-07; main @ `32f41da`; 1374 passed / 11 skipped, ruff clean).*
 
 **Branch:** `pr9/dimensional-honesty`
 **Base:** NOT `72e734e` — see Branching below
