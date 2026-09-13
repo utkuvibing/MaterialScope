@@ -11,7 +11,6 @@ from scipy.signal import find_peaks, savgol_filter
 from core.dta_processor import DTAProcessor
 from core.dsc_processor import DSCProcessor
 from core.library_cloud_client import get_library_cloud_client
-from core.peak_analysis import characterize_peaks
 from core.preprocessing import compute_derivative
 from core.processing_schema import (
     ensure_processing_payload,
@@ -737,21 +736,6 @@ def _execute_dta_batch(
         **peak_detection,
     )
     result = processor.get_result()
-    if result.peaks:
-        # result.smoothed_signal is already baseline-corrected; pairing it
-        # with the raw baseline would subtract the baseline twice and
-        # distort area, height, and FWHM.
-        baseline_for_char = (
-            np.zeros_like(result.smoothed_signal)
-            if result.baseline is not None
-            else None
-        )
-        result.peaks = characterize_peaks(
-            temperature,
-            result.smoothed_signal,
-            list(result.peaks),
-            baseline=baseline_for_char,
-        )
 
     calibration_context = build_calibration_reference_context(
         dataset=dataset,

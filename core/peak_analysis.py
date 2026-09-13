@@ -405,13 +405,20 @@ def compute_fwhm(
     signal: np.ndarray,
     peak_idx: int,
     baseline_value: float = 0.0,
+    rel_height: float = 0.5,
 ) -> float:
     """
-    Compute the full width at half maximum (FWHM) of a peak relative to a
+    Compute the full width at ``rel_height`` of a peak relative to a
     baseline level.
 
-    The half-maximum level is defined as:
-        level = baseline_value + (signal[peak_idx] - baseline_value) / 2
+    The crossing level is defined as:
+        level = baseline_value + (signal[peak_idx] - baseline_value) * rel_height
+
+    ``rel_height=0.5`` reproduces the classic FWHM.  The crossing search is
+    direction-aware: for a peak whose apex lies *below* the baseline (an
+    endothermic event in the canonical exo-up frame) the level sits between
+    baseline and trough and the outward scans look for an upward crossing —
+    previously such peaks always collapsed to a degenerate zero width.
 
     Linear interpolation is used to find sub-sample crossing positions.
 
@@ -422,49 +429,56 @@ def compute_fwhm(
     signal:
         1-D signal array.
     peak_idx:
-        Index of the peak maximum.
+        Index of the peak extremum.
     baseline_value:
         Baseline signal level (default 0).
+    rel_height:
+        Height fraction (0, 1] at which the width is measured, matching the
+        scipy ``peak_widths`` convention.
 
     Returns
     -------
-    FWHM in the same units as temperature.  Returns 0.0 if the half-maximum
+    Peak width in the same units as temperature.  Returns 0.0 if the
     crossing cannot be determined.
     """
     temperature = np.asarray(temperature, dtype=float)
     signal = np.asarray(signal, dtype=float)
     n = len(signal)
 
+    if not (0.0 < float(rel_height) <= 1.0):
+        raise ValueError(f"rel_height must be in (0, 1], got {rel_height}.")
+
     peak_height = float(signal[peak_idx]) - baseline_value
     if peak_height == 0.0:
         return 0.0
 
-    half_level = baseline_value + peak_height / 2.0
+    level = baseline_value + peak_height * float(rel_height)
+    sign = 1.0 if peak_height > 0.0 else -1.0
 
     # --- left crossing -------------------------------------------------------
     t_left = float(temperature[0])
     for i in range(peak_idx, 0, -1):
-        if signal[i - 1] <= half_level <= signal[i]:
+        if sign * signal[i - 1] <= sign * level <= sign * signal[i]:
             # Linear interpolation
-            frac = (half_level - signal[i - 1]) / (signal[i] - signal[i - 1])
+            frac = (level - signal[i - 1]) / (signal[i] - signal[i - 1])
             t_left = float(temperature[i - 1]) + frac * (
                 float(temperature[i]) - float(temperature[i - 1])
             )
             break
-        if signal[i] < half_level:
+        if sign * signal[i] < sign * level:
             t_left = float(temperature[i])
             break
 
     # --- right crossing ------------------------------------------------------
     t_right = float(temperature[-1])
     for i in range(peak_idx, n - 1):
-        if signal[i + 1] <= half_level <= signal[i]:
-            frac = (signal[i] - half_level) / (signal[i] - signal[i + 1])
+        if sign * signal[i + 1] <= sign * level <= sign * signal[i]:
+            frac = (signal[i] - level) / (signal[i] - signal[i + 1])
             t_right = float(temperature[i]) + frac * (
                 float(temperature[i + 1]) - float(temperature[i])
             )
             break
-        if signal[i] < half_level:
+        if sign * signal[i] < sign * level:
             t_right = float(temperature[i])
             break
 
@@ -479,6 +493,7 @@ def characterize_peaks(
     signal: np.ndarray,
     peaks: List[ThermalPeak],
     baseline: Optional[np.ndarray] = None,
+    rel_height: float = 0.5,
 ) -> List[ThermalPeak]:
     """
     Augment each ThermalPeak with onset, endset, area, height, and FWHM.
@@ -498,6 +513,9 @@ def characterize_peaks(
         Optional 1-D baseline array.  When None a linear baseline is
         constructed for each peak individually by connecting the signal
         values at the left and right integration boundaries.
+    rel_height:
+        Height fraction at which peak width is measured (see
+        :func:`compute_fwhm`); defaults to 0.5 for the classic FWHM.
 
     Returns
     -------
@@ -539,7 +557,9 @@ def characterize_peaks(
         else:
             bl_at_peak = 0.0  # will be updated with local linear baseline below
 
-        pk.fwhm = compute_fwhm(temperature, signal, idx, baseline_value=bl_at_peak)
+        pk.fwhm = compute_fwhm(
+            temperature, signal, idx, baseline_value=bl_at_peak, rel_height=rel_height
+        )
 
         # --- integration window from FWHM ------------------------------------
         # Map FWHM (temperature units) to an approximate sample count
@@ -572,7 +592,7 @@ def characterize_peaks(
             # Recompute FWHM with the local baseline level at peak
             bl_at_peak = float(bl_for_integration[idx])
             pk.fwhm = compute_fwhm(
-                temperature, signal, idx, baseline_value=bl_at_peak
+                temperature, signal, idx, baseline_value=bl_at_peak, rel_height=rel_height
             )
 
         # --- area ------------------------------------------------------------
