@@ -757,6 +757,11 @@ TRANSLATIONS = {
         "tr": "Sonraki: durumu Proje Çalışma Alanı'nda doğrulayın.",
         "en": "Next: confirm workspace status in Project Workspace.",
     },
+    "dash.home.import_warnings_more": {
+        "tr": "…ve {n} uyarı daha",
+        "en": "…and {n} more warning(s)",
+    },
+    "dash.home.sheet_label": {"tr": "Çalışma sayfası", "en": "Worksheet"},
     "dash.home.sample_not_found": {"tr": "Örnek dosyası bulunamadı: {name}", "en": "Sample file not found: {name}"},
     "dash.home.sample_load_failed": {"tr": "Örnek yükleme başarısız: {error}", "en": "Sample load failed: {error}"},
     "dash.home.prereq_workspace_sample_body": {

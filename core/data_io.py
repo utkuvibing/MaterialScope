@@ -276,6 +276,49 @@ class ThermalDataset:
 # ---------------------------------------------------------------------------
 
 
+def _decode_source(
+    source: Union[str, Path, IO, object],
+) -> tuple[io.StringIO, str, Optional[str]]:
+    """Return a (StringIO, source_name, encoding) triple from any source.
+
+    ``encoding`` is the codec that successfully decoded the bytes, or
+    ``None`` when the source was already text (StringIO / str stream).
+    The fallback decode reports ``'utf-8 (with replacements)'`` so callers
+    can surface possible mojibake instead of hiding it.
+    """
+    source_name = ""
+
+    # --- filesystem path ---
+    if isinstance(source, (str, Path)):
+        source_name = str(source)
+        raw = Path(source).read_bytes()
+        text, encoding = _try_encodings(raw)
+        return io.StringIO(text), source_name, encoding
+
+    # --- already a StringIO ---
+    if isinstance(source, io.StringIO):
+        source_name = getattr(source, "name", "")
+        source.seek(0)
+        return source, source_name, None
+
+    # --- BytesIO or file-like with .read() ---
+    if hasattr(source, "read"):
+        # Preserve the name attribute if present (UploadedFile has .name)
+        source_name = getattr(source, "name", "")
+        if hasattr(source, "seek"):
+            source.seek(0)
+        raw = source.read()
+        if isinstance(raw, str):
+            return io.StringIO(raw), source_name, None
+        text, encoding = _try_encodings(raw)
+        return io.StringIO(text), source_name, encoding
+
+    raise TypeError(
+        f"Unsupported source type: {type(source)}. "
+        "Expected a file path, io.StringIO, io.BytesIO, or file-like object."
+    )
+
+
 def _to_readable_buffer(
     source: Union[str, Path, IO, object],
 ) -> tuple[io.StringIO, str]:
@@ -288,37 +331,8 @@ def _to_readable_buffer(
     - io.StringIO         : used directly
     - UploadedFile-like   : objects with a .read() method (Streamlit, etc.)
     """
-    source_name = ""
-
-    # --- filesystem path ---
-    if isinstance(source, (str, Path)):
-        source_name = str(source)
-        raw = Path(source).read_bytes()
-        text, _ = _try_encodings(raw)
-        return io.StringIO(text), source_name
-
-    # --- already a StringIO ---
-    if isinstance(source, io.StringIO):
-        source_name = getattr(source, "name", "")
-        source.seek(0)
-        return source, source_name
-
-    # --- BytesIO or file-like with .read() ---
-    if hasattr(source, "read"):
-        # Preserve the name attribute if present (UploadedFile has .name)
-        source_name = getattr(source, "name", "")
-        if hasattr(source, "seek"):
-            source.seek(0)
-        raw = source.read()
-        if isinstance(raw, str):
-            return io.StringIO(raw), source_name
-        text, _ = _try_encodings(raw)
-        return io.StringIO(text), source_name
-
-    raise TypeError(
-        f"Unsupported source type: {type(source)}. "
-        "Expected a file path, io.StringIO, io.BytesIO, or file-like object."
-    )
+    buf, source_name, _encoding = _decode_source(source)
+    return buf, source_name
 
 
 def _try_encodings(raw_bytes: bytes) -> tuple[str, str]:
@@ -366,6 +380,26 @@ def _detect_decimal_sep(sample: str) -> str:
     comma_decimal = len(re.findall(r"\d,\d", sample))
     dot_decimal = len(re.findall(r"\d\.\d", sample))
     return "," if comma_decimal > dot_decimal else "."
+
+
+def _detect_thousands_sep(sample: str, delimiter: Optional[str], decimal_sep: str) -> Optional[str]:
+    """Return the thousands separator to pass to read_csv, or None.
+
+    A character is only a plausible thousands separator when it is neither
+    the field delimiter nor the decimal separator, and when the sample
+    actually contains a grouped number like ``1,234`` or ``12.345,67``.
+    Files without grouped numbers get ``None`` so values are never
+    reinterpreted on speculation.
+    """
+    if decimal_sep == "," and delimiter != ".":
+        candidate = "."
+    elif decimal_sep == "." and delimiter != ",":
+        candidate = ","
+    else:
+        return None
+
+    grouped = re.search(rf"\d{re.escape(candidate)}\d{{3}}(\D|$)", sample)
+    return candidate if grouped else None
 
 
 def _count_pattern_hits(text: str, patterns: List[str]) -> int:
@@ -714,7 +748,7 @@ def detect_file_format(
 
     # --- text-based detection ---
     try:
-        string_buf, source_name = _to_readable_buffer(file_path_or_buffer)
+        string_buf, source_name, detected_encoding = _decode_source(file_path_or_buffer)
     except Exception as exc:
         raise ValueError(f"Cannot read source for format detection: {exc}") from exc
 
@@ -722,17 +756,19 @@ def detect_file_format(
     if not sample_text.strip():
         raise ValueError("Source appears to be empty.")
 
-    # Encoding (already resolved inside _to_readable_buffer; report best guess)
-    encoding = "utf-8"
-    if isinstance(file_path_or_buffer, (str, Path)):
-        raw_bytes = Path(file_path_or_buffer).read_bytes()
-        _, encoding = _try_encodings(raw_bytes)
+    # Encoding resolved inside _decode_source for every source kind;
+    # text sources that arrived pre-decoded report the utf-8 assumption.
+    encoding = detected_encoding or "utf-8"
 
     # Decimal separator
     decimal_sep = _detect_decimal_sep(sample_text)
 
     # Delimiter via csv.Sniffer
     delimiter = _sniff_delimiter(sample_text)
+
+    # Thousands separator — only enabled when the complementary pattern
+    # actually appears in the sample, so plain files are never altered.
+    thousands_sep = _detect_thousands_sep(sample_text, delimiter, decimal_sep)
 
     # Header row and data_start_row
     header_row, data_start_row = _find_header_and_data_rows(
@@ -745,6 +781,7 @@ def detect_file_format(
         "data_start_row": data_start_row,
         "encoding": encoding,
         "decimal_sep": decimal_sep,
+        "thousands_sep": thousands_sep,
         "is_xlsx": False,
     }
 
@@ -1328,6 +1365,7 @@ def read_thermal_data(
     data_type: Optional[str] = None,
     metadata: Optional[dict] = None,
     sign_convention: Optional[str] = None,
+    sheet_name: Optional[Union[str, int]] = None,
 ) -> ThermalDataset:
     """Load a thermal analysis file and return a standardised ThermalDataset.
 
@@ -1355,6 +1393,9 @@ def read_thermal_data(
         inspected separately and only ever produce warnings/provenance,
         never a convention choice.  Defaults are recorded as
         ``sign_convention_declared_by: 'import_default'``.
+    sheet_name : str or int, optional
+        Excel worksheet to read, by name or position.  ``None`` reads the
+        first sheet and records which one was used.
 
     Returns
     -------
@@ -1415,9 +1456,15 @@ def read_thermal_data(
     # Load into a raw DataFrame
     # ------------------------------------------------------------------
     if fmt["is_xlsx"]:
-        raw_df, source_name = _load_xlsx(source)
+        raw_df, source_name, load_stats = _load_xlsx(source, sheet_name=sheet_name)
+        load_stats.setdefault("bad_lines", 0)
+        load_stats.setdefault("encoding", None)
+        load_stats.setdefault("mojibake_chars", 0)
+        load_stats.setdefault("thousands_sep", None)
     else:
-        raw_df, source_name = _load_text(source, fmt)
+        raw_df, source_name, load_stats = _load_text(source, fmt)
+        load_stats.setdefault("sheet_name", None)
+        load_stats.setdefault("sheet_names", [])
 
     if raw_df.empty:
         raise ValueError("No data could be read from the source.")
@@ -1425,9 +1472,11 @@ def read_thermal_data(
     # Strip whitespace from column names
     raw_df.columns = [str(c).strip() for c in raw_df.columns]
 
-    # Drop completely empty rows
+    # Drop completely empty rows — counted, not silent.
+    rows_before_empty_drop = len(raw_df)
     raw_df.dropna(how="all", inplace=True)
     raw_df.reset_index(drop=True, inplace=True)
+    empty_rows_dropped = rows_before_empty_drop - len(raw_df)
 
     # ------------------------------------------------------------------
     # Column mapping
@@ -1452,6 +1501,44 @@ def read_thermal_data(
         inferred_analysis_type = "unknown"
         import_confidence = "medium"
         import_warnings.append("Column mapping was supplied manually; verify the selected data type and units.")
+
+    # ------------------------------------------------------------------
+    # Loader-level provenance (PR-13): malformed lines, decode problems,
+    # dropped rows, and implicit sheet selection are always recorded and
+    # surfaced — never silently absorbed.
+    # ------------------------------------------------------------------
+    bad_lines = int(load_stats.get("bad_lines") or 0)
+    if bad_lines:
+        import_warnings.append(
+            f"{bad_lines} malformed line(s) could not be parsed and were skipped at import."
+        )
+        import_confidence = _classify_import_confidence(import_confidence, "medium")
+    mojibake_chars = int(load_stats.get("mojibake_chars") or 0)
+    source_encoding = str(load_stats.get("encoding") or "")
+    # latin-1/cp1252 are only reached when UTF-8 decoding failed, so any
+    # non-ASCII byte is interpretation-dependent and may render as
+    # mojibake. U+FFFD chars additionally flag the last-resort decode.
+    non_utf8 = bool(source_encoding) and source_encoding not in {"utf-8", "utf-8-sig"}
+    if mojibake_chars or non_utf8:
+        detail = (
+            f"{mojibake_chars} undecodable character(s) were replaced"
+            if mojibake_chars
+            else f"file is not UTF-8; it was decoded as '{source_encoding}'"
+        )
+        import_warnings.append(
+            f"Encoding check: {detail}. Special characters (e.g. µ, °, ä) may "
+            "appear as mojibake if the source used a different charset — verify labels."
+        )
+        import_confidence = _classify_import_confidence(import_confidence, "medium")
+    sheet_names = [str(name) for name in (load_stats.get("sheet_names") or [])]
+    used_sheet = load_stats.get("sheet_name")
+    if len(sheet_names) > 1 and sheet_name is None:
+        import_warnings.append(
+            f"Workbook contains {len(sheet_names)} sheets {sheet_names}; sheet "
+            f"'{used_sheet}' was read by default. Select a sheet explicitly at import "
+            "if a different one holds the measurement."
+        )
+        import_confidence = _classify_import_confidence(import_confidence, "medium")
 
     # Validate required columns
     if "temperature" not in col_map:
@@ -1496,9 +1583,39 @@ def read_thermal_data(
         if std_col in out_df.columns:
             out_df[std_col] = pd.to_numeric(out_df[std_col], errors="coerce")
 
-    # Drop rows where temperature or signal is NaN
+    # Reject non-finite (±Inf) measurements outright — an Inf in a
+    # temperature or signal column is a parse artefact or instrument
+    # overflow, never a usable datum.
+    inf_rows_dropped = int(
+        (
+            np.isinf(out_df["temperature"].to_numpy(dtype=float))
+            | np.isinf(out_df["signal"].to_numpy(dtype=float))
+        ).sum()
+    )
+    if inf_rows_dropped:
+        keep_mask = ~(
+            np.isinf(out_df["temperature"].to_numpy(dtype=float))
+            | np.isinf(out_df["signal"].to_numpy(dtype=float))
+        )
+        out_df = out_df.loc[keep_mask].copy()
+
+    # Drop rows where temperature or signal is NaN — counted, not silent.
+    rows_before_nan_drop = len(out_df)
     out_df.dropna(subset=["temperature", "signal"], inplace=True)
     out_df.reset_index(drop=True, inplace=True)
+    nonnumeric_rows_dropped = rows_before_nan_drop - len(out_df)
+    if inf_rows_dropped:
+        import_warnings.append(
+            f"{inf_rows_dropped} row(s) contained non-finite (±Inf) values in the "
+            "temperature or signal column and were rejected at import."
+        )
+        import_confidence = _classify_import_confidence(import_confidence, "medium")
+    if nonnumeric_rows_dropped:
+        import_warnings.append(
+            f"{nonnumeric_rows_dropped} row(s) had non-numeric temperature or signal "
+            "values and were dropped at import."
+        )
+        import_confidence = _classify_import_confidence(import_confidence, "medium")
 
     if out_df.empty:
         raise ValueError(
@@ -1702,6 +1819,15 @@ def read_thermal_data(
         "import_format": "xlsx" if fmt["is_xlsx"] else "delimited_text",
         "import_delimiter": fmt.get("delimiter") or ("xlsx" if fmt["is_xlsx"] else ""),
         "import_decimal_sep": fmt.get("decimal_sep", "."),
+        "import_thousands_sep": load_stats.get("thousands_sep"),
+        "import_encoding": load_stats.get("encoding"),
+        "import_mojibake_chars": mojibake_chars,
+        "import_bad_lines": bad_lines,
+        "import_empty_rows_dropped": empty_rows_dropped,
+        "import_rows_dropped": nonnumeric_rows_dropped,
+        "import_inf_rows_dropped": inf_rows_dropped,
+        "import_sheet_name": used_sheet,
+        "import_sheet_names": sheet_names,
         "import_header_row": fmt.get("header_row", 0),
         "import_data_start_row": fmt.get("data_start_row", 1),
         "temperature_unit_source": (
@@ -1767,79 +1893,147 @@ def read_thermal_data(
 def _load_text(
     source: Union[str, Path, IO, object],
     fmt: dict,
-) -> tuple[pd.DataFrame, str]:
-    """Load a delimited text file into a raw DataFrame."""
-    string_buf, source_name = _to_readable_buffer(source)
+) -> tuple[pd.DataFrame, str, dict]:
+    """Load a delimited text file into a raw DataFrame.
+
+    Returns ``(df, source_name, stats)`` where ``stats`` carries import
+    provenance: ``bad_lines`` (malformed rows pandas skipped),
+    ``encoding``, ``mojibake_chars`` (U+FFFD replacement characters), and
+    ``thousands_sep``.
+    """
+    string_buf, source_name, encoding = _decode_source(source)
 
     delimiter = fmt["delimiter"] or ","
     header_row = fmt.get("header_row", 0)
     decimal_sep = fmt.get("decimal_sep", ".")
+    thousands_sep = fmt.get("thousands_sep")
+
+    stats = {
+        "bad_lines": 0,
+        "encoding": encoding or fmt.get("encoding") or "utf-8",
+        "mojibake_chars": 0,
+        "thousands_sep": thousands_sep,
+    }
+
+    def _parse(sep: str) -> tuple[pd.DataFrame, int]:
+        string_buf.seek(0)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            parsed = pd.read_csv(
+                string_buf,
+                sep=sep,
+                header=pd_header,
+                decimal=decimal_sep,
+                thousands=thousands_sep,
+                engine="python",
+                skip_blank_lines=True,
+                on_bad_lines="warn",
+            )
+        skipped = sum(
+            1
+            for w in caught
+            if issubclass(w.category, pd.errors.ParserWarning)
+            or "Skipping line" in str(w.message)
+        )
+        return parsed, skipped
 
     # pandas read_csv from StringIO
     try:
         # When header_row is None the file has no header row
         pd_header = header_row if header_row is not None else None
-        df = pd.read_csv(
-            string_buf,
-            sep=delimiter,
-            header=pd_header,
-            decimal=decimal_sep,
-            engine="python",
-            skip_blank_lines=True,
-            on_bad_lines="warn",
-        )
+        df, stats["bad_lines"] = _parse(delimiter)
 
         # If we get a single column the delimiter may be wrong; retry
         if len(df.columns) == 1 and delimiter != "\t":
-            string_buf.seek(0)
-            df_alt = pd.read_csv(
-                string_buf,
-                sep=r"\s+",
-                header=pd_header,
-                decimal=decimal_sep,
-                engine="python",
-                skip_blank_lines=True,
-                on_bad_lines="warn",
-            )
+            df_alt, alt_bad_lines = _parse(r"\s+")
             if len(df_alt.columns) > len(df.columns):
                 df = df_alt
+                stats["bad_lines"] = alt_bad_lines
 
     except Exception as exc:
         raise ValueError(f"Failed to parse text file: {exc}") from exc
+
+    # Count undecodable characters that survived the fallback decode;
+    # they are the measurable residue of a wrong-encoding read.
+    string_buf.seek(0)
+    stats["mojibake_chars"] = string_buf.getvalue().count("\ufffd")
 
     # Rename integer column indices to human-readable "Column N" names,
     # consistent with the import preview in the Dash UI.
     if all(isinstance(col, int) for col in df.columns):
         df.columns = [f"Column {index + 1}" for index in range(len(df.columns))]
 
-    return df, source_name
+    return df, source_name, stats
 
 
-def _load_xlsx(
-    source: Union[str, Path, IO, object],
-) -> tuple[pd.DataFrame, str]:
-    """Load the first sheet of an Excel workbook."""
+def _xlsx_source(source: Union[str, Path, IO, object]) -> tuple[Union[str, io.BytesIO], str]:
+    """Return ``(workbook_source, source_name)`` for Excel loaders."""
     source_name = ""
 
     if isinstance(source, (str, Path)):
         source_name = str(source)
-        wb_source: Union[str, io.BytesIO] = str(source)
-    elif hasattr(source, "read"):
+        return str(source), source_name
+    if hasattr(source, "read"):
         source_name = getattr(source, "name", "")
+        if hasattr(source, "seek"):
+            source.seek(0)
         raw = source.read()
-        wb_source = io.BytesIO(raw) if isinstance(raw, bytes) else io.BytesIO(raw.encode())
-    elif isinstance(source, io.BytesIO):
-        source.seek(0)
-        wb_source = source
-    else:
-        raise TypeError(f"Cannot load Excel from source of type {type(source)}.")
+        wb = io.BytesIO(raw) if isinstance(raw, bytes) else io.BytesIO(raw.encode())
+        return wb, source_name
+    raise TypeError(f"Cannot load Excel from source of type {type(source)}.")
+
+
+def list_excel_sheets(source: Union[str, Path, IO, object]) -> list[str]:
+    """Return the sheet names of an Excel workbook for a picker UI."""
+    wb_source, _ = _xlsx_source(source)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            with pd.ExcelFile(wb_source, engine="openpyxl") as xls:
+                return [str(name) for name in xls.sheet_names]
+    except ImportError:
+        if not isinstance(wb_source, str):
+            wb_source.seek(0)
+        with pd.ExcelFile(wb_source, engine="xlrd") as xls:
+            return [str(name) for name in xls.sheet_names]
+
+
+def _load_xlsx(
+    source: Union[str, Path, IO, object],
+    sheet_name: Optional[Union[str, int]] = None,
+) -> tuple[pd.DataFrame, str, dict]:
+    """Load one sheet of an Excel workbook.
+
+    ``sheet_name`` selects the sheet by name (or position); ``None``
+    defaults to the first sheet, matching historical behaviour.  Returns
+    ``(df, source_name, stats)`` where ``stats`` carries ``sheet_name``
+    (the sheet actually read) and ``sheet_names`` (all sheets present).
+    """
+    wb_source, source_name = _xlsx_source(source)
+
+    sheet_names: list[str] = []
+    try:
+        sheet_names = list_excel_sheets(wb_source)
+    except Exception:
+        sheet_names = []
+    if not isinstance(wb_source, str):
+        wb_source.seek(0)
+
+    selected: Union[str, int] = 0
+    if sheet_name is not None:
+        if isinstance(sheet_name, str) and sheet_names and sheet_name not in sheet_names:
+            raise ValueError(
+                f"Sheet '{sheet_name}' not found in workbook; "
+                f"available sheets: {sheet_names}."
+            )
+        selected = sheet_name
 
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             df = pd.read_excel(
                 wb_source,
-                sheet_name=0,
+                sheet_name=selected,
                 header=0,
                 engine="openpyxl",
             )
@@ -1850,7 +2044,7 @@ def _load_xlsx(
                 wb_source.seek(0)  # type: ignore[union-attr]
             df = pd.read_excel(
                 wb_source,
-                sheet_name=0,
+                sheet_name=selected,
                 header=0,
                 engine="xlrd",
             )
@@ -1862,7 +2056,15 @@ def _load_xlsx(
     except Exception as exc:
         raise ValueError(f"Failed to parse Excel file: {exc}") from exc
 
-    return df, source_name
+    used_sheet = selected
+    if isinstance(selected, int) and sheet_names and 0 <= selected < len(sheet_names):
+        used_sheet = sheet_names[selected]
+
+    stats = {
+        "sheet_name": used_sheet,
+        "sheet_names": sheet_names,
+    }
+    return df, source_name, stats
 
 
 # ---------------------------------------------------------------------------

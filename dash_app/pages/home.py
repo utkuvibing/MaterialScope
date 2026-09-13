@@ -313,6 +313,20 @@ layout = html.Div(
                                 [
                                     dbc.Col(
                                         [
+                                            dbc.Label(id="mapping-sheet-label", children="Worksheet", className="mt-3"),
+                                            dbc.Select(id="mapping-sheet-select"),
+                                        ],
+                                        md=4,
+                                    ),
+                                ],
+                                className="g-3",
+                                id="mapping-sheet-row",
+                                style={"display": "none"},
+                            ),
+                            dbc.Row(
+                                [
+                                    dbc.Col(
+                                        [
                                             dbc.Label(id="mapping-axis-label", children="Axis Column", className="mt-3"),
                                             dbc.Select(id="mapping-temp-select"),
                                         ],
@@ -734,6 +748,7 @@ def select_modality(_clicks, ids, locale_data):
     Output("mapping-axis-label", "children"),
     Output("mapping-signal-label", "children"),
     Output("mapping-rate-label", "children"),
+    Output("mapping-sheet-label", "children"),
     Input("import-wizard-step", "data"),
     Input("ui-locale", "data"),
     State("import-selected-modality", "data"),
@@ -762,6 +777,7 @@ def update_wizard_visibility(step, locale_data, modality):
         axis_label,
         signal_label,
         rate_label,
+        translate_ui(loc, "dash.home.sheet_label"),
     )
 
 
@@ -881,11 +897,12 @@ def pending_file_options(pending_files, locale_data):
     Output("xrd-wavelength-row", "style"),
     Input("pending-file-select", "value"),
     Input("import-selected-modality", "data"),
+    Input("mapping-sheet-select", "value"),
     State("pending-upload-files", "data"),
     State("ui-locale", "data"),
     prevent_initial_call=False,
 )
-def build_pending_preview(selected_file, modality, pending_files, locale_data):
+def build_pending_preview(selected_file, modality, selected_sheet, pending_files, locale_data):
     loc = _loc(locale_data)
     modality = modality or ""
     empty_options = _mapping_options([], loc)
@@ -901,7 +918,7 @@ def build_pending_preview(selected_file, modality, pending_files, locale_data):
         empty_options, _NONE_VALUE,
         empty_options, _NONE_VALUE,
         empty_options, _NONE_VALUE,
-        "", 0, 10, 1.5406,
+        "", None, None, 1.5406,
         {"display": "none"},
     )
 
@@ -917,6 +934,7 @@ def build_pending_preview(selected_file, modality, pending_files, locale_data):
             pending["file_name"],
             pending["file_base64"],
             modality=modality or None,
+            sheet_name=selected_sheet,
         )
     except Exception as exc:
         return (
@@ -926,7 +944,7 @@ def build_pending_preview(selected_file, modality, pending_files, locale_data):
             empty_options, _NONE_VALUE,
             empty_options, _NONE_VALUE,
             empty_options, _NONE_VALUE,
-            "", 0, 10, 1.5406,
+            "", None, None, 1.5406,
             {"display": "block" if modality == "XRD" else "none"},
         )
 
@@ -973,9 +991,28 @@ def build_pending_preview(selected_file, modality, pending_files, locale_data):
         options, _pick(guessed.get("temperature")),
         options, _pick(guessed.get("signal")),
         options, _pick(guessed.get("time")),
-        "", 0, 10, 1.5406,
+        # PR-9/PR-13: mass and heating rate stay empty until the user types
+        # them; a pre-filled value would be indistinguishable from a real
+        # declaration downstream (fabricated β / mass provenance).
+        "", None, None, 1.5406,
         xrd_style,
     )
+
+
+@callback(
+    Output("mapping-sheet-select", "options"),
+    Output("mapping-sheet-select", "value"),
+    Output("mapping-sheet-row", "style"),
+    Input("pending-import-preview", "data"),
+    prevent_initial_call=False,
+)
+def sync_sheet_picker(preview):
+    """Show the worksheet picker only when the workbook has >1 sheet."""
+    sheet_names = [str(name) for name in ((preview or {}).get("sheet_names") or [])]
+    options = [{"label": name, "value": name} for name in sheet_names]
+    value = (preview or {}).get("sheet_name")
+    style = {"display": "block"} if len(sheet_names) > 1 else {"display": "none"}
+    return options, value, style
 
 
 # ---------------------------------------------------------------------------
@@ -1263,6 +1300,7 @@ def build_validation_summary(step, review_data, locale_data):
     State("mapping-xrd-wavelength", "value"),
     State("mapping-sign-convention", "value"),
     State("mapping-temp-scale-confirmed", "value"),
+    State("mapping-sheet-select", "value"),
     State("home-refresh", "data"),
     State("ui-locale", "data"),
     prevent_initial_call=True,
@@ -1283,6 +1321,7 @@ def import_with_mapping(
     xrd_wavelength,
     sign_convention,
     temp_scale_confirmed,
+    sheet_name,
     refresh_value,
     locale_data,
 ):
@@ -1368,6 +1407,7 @@ def import_with_mapping(
             column_mapping=column_mapping,
             metadata=metadata,
             sign_convention=declared_sign_convention,
+            sheet_name=sheet_name or None,
         )
     except Exception as exc:
         exc_msg = str(exc)
@@ -1391,17 +1431,35 @@ def import_with_mapping(
     remaining = [item for item in (pending_files or []) if item["file_name"] != selected_file]
     next_selected = remaining[0]["file_name"] if remaining else None
     ds = result.get("dataset", {})
+    alert_children = [
+        translate_ui(
+            loc,
+            "dash.home.import_success",
+            name=ds.get("display_name", preview["file_name"]),
+            dtype=ds.get("data_type", "?"),
+        ),
+        " ",
+        translate_ui(loc, "dash.home.import_success_next"),
+    ]
+    # PR-13: import warnings (dropped rows, mojibake, default sheet, ...)
+    # are provenance the user must see, not a silent side channel.
+    import_warnings = [str(item) for item in (ds.get("import_warnings") or []) if str(item).strip()]
+    if import_warnings:
+        alert_children.append(
+            html.Ul(
+                [html.Li(item) for item in import_warnings[:5]],
+                className="mb-0 mt-2 small",
+            )
+        )
+        if len(import_warnings) > 5:
+            alert_children.append(
+                html.Small(
+                    translate_ui(loc, "dash.home.import_warnings_more", n=len(import_warnings) - 5),
+                    className="text-muted",
+                )
+            )
     success_alert = dbc.Alert(
-        [
-            translate_ui(
-                loc,
-                "dash.home.import_success",
-                name=ds.get("display_name", preview["file_name"]),
-                dtype=ds.get("data_type", "?"),
-            ),
-            " ",
-            translate_ui(loc, "dash.home.import_success_next"),
-        ],
+        alert_children,
         color="secondary",
         dismissable=True,
         className="ta-palette-alert",
