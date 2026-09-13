@@ -1281,6 +1281,36 @@ def _extract_unit(col_name: str, role: str) -> str:
     return unit_str
 
 
+_TEMPERATURE_SCALE_TOKENS = {
+    "c", "°c", "celsius",
+    "k", "°k", "kelvin",
+    "f", "°f", "fahrenheit",
+}
+
+# PR-10: temperature-scale plausibility gate. A thermal run that starts
+# above ~150 °C is exceptional; a Kelvin axis recorded as °C is not. The
+# same shape test catches the reverse case (a °C axis mislabeled K starts
+# implausibly low for Kelvin).
+KELVIN_SUSPECT_MIN_AXIS = 150.0
+KELVIN_IMPLAUSIBLE_MIN_K = 100.0
+
+
+def _extract_temperature_unit(col_name: str) -> tuple[str, bool]:
+    """Return ``(unit, declared)`` parsed from a temperature column name.
+
+    ``declared`` is True only when the header carried a recognised
+    temperature-scale token (°C/K/°F).  Any other token — including
+    spectral/diffraction axis units — means the °C label was silently
+    defaulted and must be treated as unconfirmed.
+    """
+    col_name = str(col_name)
+    m = _UNIT_RE.search(col_name)
+    unit_lower = (m.group(1).strip() if m else "").lower()
+    if unit_lower in _TEMPERATURE_SCALE_TOKENS:
+        return _TEMP_UNIT_MAP[unit_lower], True
+    return _TEMP_UNIT_MAP.get(unit_lower, "°C"), False
+
+
 def _hash_dataframe(df: pd.DataFrame) -> str:
     """Return a stable content hash for a standardized dataset DataFrame."""
     csv_bytes = df.to_csv(index=False).encode("utf-8")
@@ -1478,8 +1508,9 @@ def read_thermal_data(
     # ------------------------------------------------------------------
     # Units
     # ------------------------------------------------------------------
+    temperature_unit, temperature_unit_declared = _extract_temperature_unit(col_map["temperature"])
     units: Dict[str, str] = {
-        "temperature": _extract_unit(col_map["temperature"], "temperature"),
+        "temperature": temperature_unit,
         "signal": _extract_unit(col_map["signal"], "signal"),
     }
     if "time" in col_map:
@@ -1578,6 +1609,51 @@ def read_thermal_data(
         xrd_provenance_state, xrd_provenance_warning = ("complete", "")
 
     # ------------------------------------------------------------------
+    # Temperature-scale plausibility (PR-10)
+    # A Kelvin-shaped axis silently labelled °C — or the reverse — is a
+    # scale bug, not a thermal event.  Blocking happens in
+    # core.validation; here we record the evidence and surface review
+    # warnings so the scale declaration is never silent.
+    # ------------------------------------------------------------------
+    temperature_scale_plausibility = "not_evaluated"
+    temperature_scale_review_required = False
+    if resolved_type in {"DSC", "TGA", "DTA"}:
+        if not temperature_unit_declared:
+            import_warnings.append(
+                f"Temperature unit could not be confirmed from column '{col_map['temperature']}'; "
+                "assuming °C. Declare the scale in the column header (e.g. 'Temperature (K)') "
+                "or confirm it at import."
+            )
+            import_confidence = _classify_import_confidence(import_confidence, "medium")
+        temp_axis = out_df["temperature"].to_numpy(dtype=float)
+        temp_axis = temp_axis[np.isfinite(temp_axis)]
+        if temp_axis.size:
+            axis_min = float(temp_axis.min())
+            axis_max = float(temp_axis.max())
+            if temperature_unit == "K":
+                if axis_min < KELVIN_IMPLAUSIBLE_MIN_K:
+                    temperature_scale_plausibility = "kelvin_declared_implausible"
+                    temperature_scale_review_required = True
+                    import_warnings.append(
+                        f"Temperature axis is declared Kelvin but starts at {axis_min:g} K, which is "
+                        "implausibly low for routine thermal analysis; verify the scale declaration."
+                    )
+                    import_confidence = _classify_import_confidence(import_confidence, "review")
+                else:
+                    temperature_scale_plausibility = "kelvin_declared_plausible"
+            elif temperature_unit == "°C" and axis_min >= KELVIN_SUSPECT_MIN_AXIS:
+                temperature_scale_plausibility = "kelvin_axis_recorded_as_celsius"
+                temperature_scale_review_required = True
+                import_warnings.append(
+                    f"Temperature axis values {axis_min:g}–{axis_max:g} are implausible for °C and "
+                    "resemble a Kelvin axis; validation will block this dataset until the scale is "
+                    "declared (e.g. 'Temperature (K)') or explicitly confirmed."
+                )
+                import_confidence = _classify_import_confidence(import_confidence, "review")
+            else:
+                temperature_scale_plausibility = "scale_plausible"
+
+    # ------------------------------------------------------------------
     # Sign-convention declaration (PR-8 canon)
     # Header hints are evidence only: they may raise warnings, they can
     # never set, choose, or flip the declared convention.
@@ -1628,6 +1704,12 @@ def read_thermal_data(
         "import_decimal_sep": fmt.get("decimal_sep", "."),
         "import_header_row": fmt.get("header_row", 0),
         "import_data_start_row": fmt.get("data_start_row", 1),
+        "temperature_unit_source": (
+            "header" if temperature_unit_declared else "defaulted_celsius"
+        ),
+        "temperature_scale_plausibility": temperature_scale_plausibility,
+        "temperature_scale_review_required": temperature_scale_review_required,
+        "temperature_scale_confirmed": bool(metadata.get("temperature_scale_confirmed")),
     }
     if resolved_type in _SPECTRAL_ANALYSIS_TYPES:
         base_meta["spectral_axis_role"] = "wavenumber"

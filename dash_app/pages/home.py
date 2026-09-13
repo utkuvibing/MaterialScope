@@ -408,6 +408,31 @@ layout = html.Div(
                                 className="g-3",
                                 id="sign-convention-row",
                             ),
+                            dbc.Row(
+                                [
+                                    dbc.Col(
+                                        [
+                                            dbc.Checkbox(
+                                                id="mapping-temp-scale-confirmed",
+                                                label=(
+                                                    "Temperature axis really is in the recorded scale "
+                                                    "(confirm °C when values look like Kelvin)"
+                                                ),
+                                                value=False,
+                                                className="mt-3",
+                                            ),
+                                            html.Small(
+                                                "PR-10 gate: Kelvin-shaped data recorded as °C is blocked at import "
+                                                "until the scale is declared in the header or confirmed here.",
+                                                className="form-text text-muted d-block",
+                                            ),
+                                        ],
+                                        md=6,
+                                    ),
+                                ],
+                                className="g-3",
+                                id="temp-scale-confirm-row",
+                            ),
                         ]
                     ),
                     className="mb-4",
@@ -1237,6 +1262,7 @@ def build_validation_summary(step, review_data, locale_data):
     State("mapping-heating-rate", "value"),
     State("mapping-xrd-wavelength", "value"),
     State("mapping-sign-convention", "value"),
+    State("mapping-temp-scale-confirmed", "value"),
     State("home-refresh", "data"),
     State("ui-locale", "data"),
     prevent_initial_call=True,
@@ -1256,6 +1282,7 @@ def import_with_mapping(
     heating_rate,
     xrd_wavelength,
     sign_convention,
+    temp_scale_confirmed,
     refresh_value,
     locale_data,
 ):
@@ -1322,6 +1349,8 @@ def import_with_mapping(
             else "missing"
         ),
         "xrd_wavelength_angstrom": float(xrd_wavelength) if data_type == "XRD" and xrd_wavelength not in (None, "", 0, 0.0) else None,
+        # PR-10: explicit user confirmation releases the K-vs-°C scale gate.
+        "temperature_scale_confirmed": bool(temp_scale_confirmed),
     }
     column_mapping = {
         "temperature": temp_col,
@@ -1347,6 +1376,11 @@ def import_with_mapping(
             hint = translate_ui(loc, "dash.home.import_hint_wavenumber")
         elif "strictly increasing" in exc_msg:
             hint = translate_ui(loc, "dash.home.import_hint_monotonic")
+        elif "Kelvin" in exc_msg or "temperature unit" in exc_msg.lower():
+            hint = (
+                " If the values really are in the recorded scale, tick the "
+                "temperature-scale confirmation in the mapping step and import again."
+            )
         return (
             dbc.Alert(translate_ui(loc, "dash.home.import_failed", error=exc_msg) + hint, color="danger", dismissable=True),
             dash.no_update, dash.no_update, dash.no_update, dash.no_update,
