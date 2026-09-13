@@ -196,11 +196,18 @@ def resolve_working_unit(
     *,
     working_unit: Optional[str] = None,
     normalization_applied: bool = False,
+    force_renormalize: bool = False,
 ) -> Tuple[str, bool, Optional[str]]:
     """Decide the working unit for a normalization step.
 
     Reads the *current* ``working_unit`` / ``normalization_applied`` so a
     second ``normalize()`` is a structural no-op rather than an incident.
+
+    ``force_renormalize`` is the explicit opt-in escape hatch for a
+    source signal whose unit claims specific power (e.g. ``mW/mg``) but is
+    believed to be mislabeled raw power.  It bypasses only the
+    already-specific guard — an unusable unit stays unusable, and a signal
+    already normalized this session is never divided twice.
 
     Returns ``(working_unit, normalization_applied, reason)`` where
     ``reason`` is ``None`` on success and otherwise names why the signal
@@ -208,18 +215,20 @@ def resolve_working_unit(
     """
     resolved_source, unit_class = canonical_signal_unit(source_unit)
 
-    if unit_class is UnitClass.SPECIFIC_POWER:
-        return resolved_source, False, "already_specific_power"
-
     if unit_class is UnitClass.UNUSABLE:
         return (working_unit or resolved_source), False, WITHHELD_SIGNAL_UNIT_UNUSABLE
 
-    # Raw power from here on.
     if normalization_applied:
-        # Already divided by mass once; a second division is never correct.
+        # Already divided by mass once; a second division is never correct,
+        # even under an explicit re-normalization request.
         # ``applied`` is False so the caller performs no further division.
         return (working_unit or resolved_source), False, "already_normalized"
 
+    if unit_class is UnitClass.SPECIFIC_POWER and not force_renormalize:
+        return resolved_source, False, "already_specific_power"
+
+    # Raw power from here on — including a forced already-specific signal,
+    # which keeps its (now genuinely specific) unit label.
     if not normalize_requested:
         return resolved_source, False, "normalization_not_requested"
 
@@ -233,6 +242,12 @@ def resolve_working_unit(
 
     if not math.isfinite(mass) or mass <= 0.0:
         return resolved_source, False, "sample_mass_invalid"
+
+    if unit_class is UnitClass.SPECIFIC_POWER:
+        # Forced: the caller asserts the specific-unit label was wrong and
+        # the raw signal still needs mass division.  The resolved unit is
+        # already the correct specific-power label for the result.
+        return resolved_source, True, None
 
     return RAW_POWER_TO_WORKING[resolved_source], True, None
 

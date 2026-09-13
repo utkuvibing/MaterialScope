@@ -143,6 +143,7 @@ _DSC_GLASS_TRANSITION_DEFAULTS: dict = {
 }
 _DSC_NORMALIZATION_DEFAULTS: dict = {
     "enabled": True,
+    "force": False,
 }
 _DSC_USER_FACING_METADATA_KEYS: frozenset[str] = frozenset({
     "sample_name",
@@ -252,16 +253,21 @@ def _normalize_glass_transition_values(enabled, rmin, rmax) -> dict:
     return {"mode": "auto", "region": [lower, upper]}
 
 
-def _normalize_normalization_values(enabled) -> dict:
+def _normalize_normalization_values(enabled, force=None) -> dict:
+    if isinstance(force, str):
+        force = force.strip().lower() in {"1", "true", "on", "yes"}
+    force_flag = bool(force)
     if isinstance(enabled, str):
         token = enabled.strip().lower()
         if token in {"0", "false", "off", "no"}:
-            return {"enabled": False}
+            return {"enabled": False, "force": force_flag}
         if token in {"1", "true", "on", "yes"}:
-            return {"enabled": True}
+            return {"enabled": True, "force": force_flag}
     if enabled in (None, ""):
-        return copy.deepcopy(_DSC_NORMALIZATION_DEFAULTS)
-    return {"enabled": bool(enabled)}
+        defaults = copy.deepcopy(_DSC_NORMALIZATION_DEFAULTS)
+        defaults["force"] = force_flag
+        return defaults
+    return {"enabled": bool(enabled), "force": force_flag}
 
 
 def _normalize_dsc_processing_draft(draft: dict | None) -> dict:
@@ -300,7 +306,9 @@ def _normalize_dsc_processing_draft(draft: dict | None) -> dict:
         baseline = copy.deepcopy(_DSC_BASELINE_DEFAULTS["asls"])
 
     if isinstance(normalization, dict):
-        normalization = _normalize_normalization_values(normalization.get("enabled"))
+        normalization = _normalize_normalization_values(
+            normalization.get("enabled"), normalization.get("force")
+        )
     else:
         normalization = copy.deepcopy(_DSC_NORMALIZATION_DEFAULTS)
 
@@ -370,6 +378,7 @@ def _dsc_snapshots_equal(a: dict | None, b: dict | None) -> bool:
 
 def _dsc_draft_from_control_values(
     normalization_enabled,
+    normalization_force,
     sm_m,
     sm_w,
     sm_p,
@@ -392,7 +401,7 @@ def _dsc_draft_from_control_values(
 ) -> dict[str, Any]:
     return _normalize_dsc_processing_draft(
         {
-            "normalization": _normalize_normalization_values(normalization_enabled),
+            "normalization": _normalize_normalization_values(normalization_enabled, normalization_force),
             "smoothing": _normalize_smoothing_values(sm_m, sm_w, sm_p, sm_s),
             "baseline": _normalize_baseline_values(
                 bl_m,
@@ -536,6 +545,7 @@ def _normalization_setup_card() -> dbc.Card:
                 html.H5(id="dsc-normalization-card-title", className="card-title mb-2"),
                 html.P(id="dsc-normalization-card-hint", className="small text-muted mb-2"),
                 dbc.Checkbox(id="dsc-normalization-enabled", value=True, label=" "),
+                dbc.Checkbox(id="dsc-normalization-force", value=False, label=" "),
             ]
         ),
         className="mb-3",
@@ -1226,6 +1236,7 @@ def render_dsc_processing_history_chrome(locale_data):
     Output("dsc-normalization-card-title", "children"),
     Output("dsc-normalization-card-hint", "children"),
     Output("dsc-normalization-enabled", "label"),
+    Output("dsc-normalization-force", "label"),
     Input("ui-locale", "data"),
 )
 def render_dsc_normalization_chrome(locale_data):
@@ -1234,6 +1245,7 @@ def render_dsc_normalization_chrome(locale_data):
         translate_ui(loc, "dash.analysis.dsc.normalization.title"),
         translate_ui(loc, "dash.analysis.dsc.normalization.hint"),
         translate_ui(loc, "dash.analysis.dsc.normalization.enable"),
+        translate_ui(loc, "dash.analysis.dsc.normalization.force"),
     )
 
 
@@ -1636,6 +1648,7 @@ def render_dsc_preset_loaded_line(name, locale_data):
     Input("ui-locale", "data"),
     Input("dsc-template-select", "value"),
     Input("dsc-normalization-enabled", "value"),
+    Input("dsc-normalization-force", "value"),
     Input("dsc-smooth-method", "value"),
     Input("dsc-smooth-window", "value"),
     Input("dsc-smooth-polyorder", "value"),
@@ -1661,6 +1674,7 @@ def render_dsc_preset_dirty_flag(
     locale_data,
     template_id,
     normalization_enabled,
+    normalization_force,
     sm_m,
     sm_w,
     sm_p,
@@ -1689,6 +1703,7 @@ def render_dsc_preset_dirty_flag(
         template_id,
         _dsc_draft_from_control_values(
             normalization_enabled,
+            normalization_force,
             sm_m,
             sm_w,
             sm_p,
@@ -1812,14 +1827,15 @@ def render_dsc_baseline_region_chrome(locale_data):
     Output("dsc-processing-undo", "data", allow_duplicate=True),
     Output("dsc-processing-redo", "data", allow_duplicate=True),
     Input("dsc-normalization-enabled", "value"),
+    Input("dsc-normalization-force", "value"),
     State("dsc-processing-draft", "data"),
     State("dsc-processing-undo", "data"),
     prevent_initial_call=True,
 )
-def sync_dsc_normalization_from_setup(enabled, draft, undo):
+def sync_dsc_normalization_from_setup(enabled, force, draft, undo):
     current = _normalize_dsc_processing_draft(draft)
     next_draft = copy.deepcopy(current)
-    next_draft["normalization"] = _normalize_normalization_values(enabled)
+    next_draft["normalization"] = _normalize_normalization_values(enabled, force)
     if next_draft == current:
         raise dash.exceptions.PreventUpdate
     return next_draft, _push_undo(undo, current), []
@@ -2040,11 +2056,12 @@ def _tg_status_text(draft: dict | None, loc: str) -> str:
 
 @callback(
     Output("dsc-normalization-enabled", "value"),
+    Output("dsc-normalization-force", "value"),
     Input("dsc-processing-draft", "data"),
 )
 def sync_normalization_control(draft):
     values = _normalize_dsc_processing_draft(draft).get("normalization") or {}
-    return bool(values.get("enabled", True))
+    return bool(values.get("enabled", True)), bool(values.get("force", False))
 
 
 @callback(

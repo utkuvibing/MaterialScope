@@ -111,7 +111,7 @@ def test_default_processing_draft_has_all_sections():
     assert defaults["smoothing"]["method"] == "savgol"
     assert defaults["baseline"]["method"] == "asls"
     assert defaults["baseline"].get("region") is None
-    assert defaults["normalization"] == {"enabled": True}
+    assert defaults["normalization"] == {"enabled": True, "force": False}
     assert defaults["peak_detection"]["direction"] == "both"
     assert defaults["peak_detection"]["prominence"] is None
     assert defaults["peak_detection"]["distance"] is None
@@ -121,10 +121,10 @@ def test_default_processing_draft_has_all_sections():
 def test_normalize_normalization_values_defaults_to_enabled():
     mod = _import_dsc_page()
 
-    assert mod._normalize_normalization_values(None) == {"enabled": True}
-    assert mod._normalize_normalization_values(True) == {"enabled": True}
-    assert mod._normalize_normalization_values(False) == {"enabled": False}
-    assert mod._normalize_normalization_values("off") == {"enabled": False}
+    assert mod._normalize_normalization_values(None) == {"enabled": True, "force": False}
+    assert mod._normalize_normalization_values(True) == {"enabled": True, "force": False}
+    assert mod._normalize_normalization_values(False) == {"enabled": False, "force": False}
+    assert mod._normalize_normalization_values("off") == {"enabled": False, "force": False}
 
 
 def test_normalize_peak_detection_values_sanitizes_direction_and_distance():
@@ -164,12 +164,12 @@ def test_sync_dsc_normalization_from_setup_updates_draft_and_undo():
     mod = _import_dsc_page()
     defaults = mod._default_processing_draft()
 
-    next_draft, undo, redo = mod.sync_dsc_normalization_from_setup(False, defaults, [])
+    next_draft, undo, redo = mod.sync_dsc_normalization_from_setup(False, False, defaults, [])
 
-    assert next_draft["normalization"] == {"enabled": False}
+    assert next_draft["normalization"] == {"enabled": False, "force": False}
     assert undo == [defaults]
     assert redo == []
-    assert mod.sync_normalization_control(next_draft) is False
+    assert mod.sync_normalization_control(next_draft) == (False, False)
 
 
 def test_overrides_from_draft_includes_all_user_sections():
@@ -188,7 +188,7 @@ def test_overrides_from_draft_includes_all_user_sections():
 
     assert set(overrides.keys()) == {"smoothing", "baseline", "normalization", "peak_detection", "glass_transition"}
     assert overrides["baseline"]["region"] == [40.0, 200.0]
-    assert overrides["normalization"] == {"enabled": False}
+    assert overrides["normalization"] == {"enabled": False, "force": False}
 
 
 def test_normalize_baseline_values_optional_region():
@@ -288,7 +288,7 @@ def test_apply_dsc_preset_loads_normalization_from_processing(monkeypatch):
         "en",
     )
 
-    assert next_draft["normalization"] == {"enabled": False}
+    assert next_draft["normalization"] == {"enabled": False, "force": False}
     assert next_draft["smoothing"]["window_length"] == 17
     assert undo == [defaults]
     assert redo == []
@@ -307,6 +307,7 @@ def test_dsc_preset_dirty_flag_renders_clean_when_snapshot_matches():
         "en",
         "dsc.general",
         True,
+        False,
         "savgol",
         11,
         3,
@@ -339,6 +340,7 @@ def test_dsc_preset_dirty_flag_renders_dirty_when_controls_differ():
         "en",
         "dsc.general",
         True,
+        False,
         "gaussian",
         11,
         3,
@@ -369,6 +371,7 @@ def test_dsc_preset_dirty_flag_renders_no_baseline_without_snapshot():
         "en",
         "dsc.general",
         True,
+        False,
         "savgol",
         11,
         3,

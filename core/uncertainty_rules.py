@@ -46,11 +46,14 @@ def fit_quality_band(
 
     score = mean_r2 if mean_r2 is not None else r2
     if score is None and analysis in {"TGA", "DSC", "DTA"}:
-        band = "moderate"
-        reason = "No formal fit statistic was reported; confidence is based on summary-level processing checks."
+        # PR-12: a thermal trace with no fit statistic has no measured fit
+        # quality; defaulting to "moderate" fabricated confidence the data
+        # never produced.
+        band = "low"
+        reason = "No formal fit statistic was reported; fit confidence is unassessed rather than assumed."
     elif score is None:
-        band = "moderate"
-        reason = "Fit statistics are incomplete."
+        band = "low"
+        reason = "Fit statistics are incomplete; confidence is unassessed rather than assumed."
     elif score >= 0.98:
         band = "high"
         reason = f"Fit statistics are strong (R^2 about {score:.3f})."
