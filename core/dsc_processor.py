@@ -45,7 +45,7 @@ from core.units_dimensional import (
 # |first derivative| (the inflection of a step is where |d1| peaks); each is
 # accepted only when every gate passes.
 
-_TG_CANDIDATE_FRACTION = 0.02    # |d1| candidate floor vs global max
+_TG_CANDIDATE_MAD = 1.5          # |d1| candidate floor = median + K*MAD (noise-relative)
 _TG_ONSET_FRACTION = 0.15        # onset/endset walk threshold vs candidate |d1|
 _TG_MIN_STEP_FRACTION = 0.60     # plateau shift vs total local excursion
 _TG_MIN_PLATEAU_SNR = 3.0        # plateau shift vs detrended plateau roughness
@@ -673,8 +673,13 @@ class DSCProcessor:
         kernel = np.ones(smooth_w) / smooth_w
         d1_smooth = np.convolve(d1_abs, kernel, mode='same')
 
+        # Candidate floor is noise-relative, not global-max-relative: a sharp
+        # unrelated peak elsewhere must not price a legitimate small step out
+        # of candidacy.  Median + 1.5*MAD is a robust "above noise" bar that
+        # ignores large outlier excursions.
         noise_level = float(np.median(d1_smooth))
-        cand_floor = _TG_CANDIDATE_FRACTION * float(d1_smooth.max())
+        noise_mad = 1.4826 * float(np.median(np.abs(d1_smooth - noise_level)))
+        cand_floor = noise_level + _TG_CANDIDATE_MAD * noise_mad
         flat_width = max(5, m // 10)
 
         # Candidate *selection* stays region-restricted, but morphology is

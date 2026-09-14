@@ -149,7 +149,8 @@ _XRD_SOURCE_HINTS = ("xrd", "diffract", "2theta", "2_theta", "zenodo_xrd")
 # Vendor evidence is tiered.  Strong tokens are vendor-specific identifiers
 # (software, model, or brand names); a single one justifies the inference.
 # Weak tokens are generic header/unit conventions that several vendors share
-# (e.g. "DSC/(mW/mg)"); they only identify a vendor in combination.
+# (e.g. "DSC/(mW/mg)"); they are review provenance only and can never, alone
+# or in combination, identify a vendor.
 _VENDOR_STRONG_TOKENS = {
     "NETZSCH": (
         "netzsch",
@@ -1267,8 +1268,10 @@ def detect_vendor_info(source_name: str = "", columns: list[str] | None = None) 
 
     Evidence tiers: a single *strong* token (vendor-specific software, model
     or brand name) identifies the vendor; *weak* tokens are generic
-    header/unit conventions and must appear at least twice independently.
-    A lone generic header such as ``DSC/(mW/mg)`` never labels a vendor.
+    header/unit conventions shared across instruments. Weak-only evidence
+    never identifies a vendor — generic headers such as ``DSC/(mW/mg)`` or
+    ``Temperature (°C)`` report ``Generic`` with a review warning, and the
+    matched weak tokens are kept as provenance.
     """
     source_name = (source_name or "").lower()
     column_text = " ".join(str(col).lower() for col in (columns or []))
@@ -1286,8 +1289,12 @@ def detect_vendor_info(source_name: str = "", columns: list[str] | None = None) 
             "weak": len(weak),
         }
 
+    # Vendors with strong evidence always outrank weak-only candidates; score
+    # breaks ties between vendors that both hold vendor-specific identifiers.
     ranked = sorted(
-        scores.items(), key=lambda item: (item[1]["score"], item[0]), reverse=True
+        scores.items(),
+        key=lambda item: (item[1]["strong"] > 0, item[1]["score"], item[0]),
+        reverse=True,
     )
     warnings_list: list[str] = []
     best_vendor, best = ranked[0]
@@ -1303,8 +1310,9 @@ def detect_vendor_info(source_name: str = "", columns: list[str] | None = None) 
             "matched_tokens": [],
         }
 
-    if best["strong"] == 0 and best["weak"] < 2:
+    if best["strong"] == 0:
         # Only generic conventions matched: honest answer is "Generic".
+        # Multiple weak tokens raise review evidence but can never name a vendor.
         warnings_list.append(
             f"Only generic thermal header conventions matched {matched_tokens}; "
             "no vendor-specific identifier found, so vendor detection remained generic."
@@ -1316,16 +1324,18 @@ def detect_vendor_info(source_name: str = "", columns: list[str] | None = None) 
             "matched_tokens": matched_tokens,
         }
 
-    confidence = "high" if best["strong"] >= 1 else "medium"
-    if len(ranked) > 1 and ranked[1][1]["score"] >= best_score - 1 and ranked[1][1]["score"] > 0:
+    confidence = "high"
+    # Ambiguity only matters between competing strong identifiers; a
+    # weak-only runner-up is generic convention noise, not counter-evidence.
+    if (
+        len(ranked) > 1
+        and int(ranked[1][1]["strong"]) > 0
+        and ranked[1][1]["score"] >= best_score - 1
+    ):
         warnings_list.append(
             f"Vendor inference is close between {best_vendor} and {ranked[1][0]}; review the source file naming and column headers."
         )
         confidence = "review"
-    elif best["strong"] == 0:
-        warnings_list.append(
-            f"Vendor '{best_vendor}' was inferred from header conventions {matched_tokens} without a vendor-specific identifier; review before relying on vendor conventions."
-        )
 
     return {
         "vendor": best_vendor,

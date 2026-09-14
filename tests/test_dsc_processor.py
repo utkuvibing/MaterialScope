@@ -412,6 +412,33 @@ class TestTgMorphologyGate:
         assert transitions[0].tg_midpoint == pytest.approx(140.0, abs=12.0)
         assert transitions[0].heat_flow_step > 0.0
 
+    def test_step_survives_beside_peak_50x_stronger_derivative(self):
+        """An unrelated spike >50x the step's |d1| must not price out the Tg.
+
+        The candidate floor is noise-relative (median + k*MAD of the smoothed
+        |d1|), not a fraction of the global max: a needle-sharp peak elsewhere
+        raises neither the noise floor nor the bar for a clean local step.
+        The spike itself must still fail step morphology — the winner is
+        picked by |d1| strength, so a midpoint near the true step proves the
+        spike's candidacy was rejected, not merely outranked.
+        """
+        t = np.linspace(30.0, 300.0, 2000)
+        rng = np.random.default_rng(101)
+
+        step = 0.1 * (1.0 + np.tanh((t - 120.0) / 4.0))
+        spike = 2.0 * np.exp(-0.5 * ((t - 240.0) / 0.8) ** 2)
+        signal = 0.0004 * (t - 30.0) + step + spike + rng.normal(0.0, 0.0015, len(t))
+
+        # Sanity-check the >50x premise on the smoothed |d1| used internally.
+        d1s = np.abs(np.gradient(0.1 * (1.0 + np.tanh((t - 120.0) / 4.0)), t))
+        spike_d1 = np.abs(np.gradient(spike, t)).max()
+        assert spike_d1 > 50.0 * d1s.max()
+
+        transitions = self._detect(t, signal)
+        assert len(transitions) == 1
+        assert transitions[0].tg_midpoint == pytest.approx(120.0, abs=8.0)
+        assert transitions[0].heat_flow_step > 0.0
+
     def test_rejection_recorded_in_metadata(self):
         """A rejected scan leaves an honest trail, not a silent pass."""
         t = np.linspace(30.0, 300.0, 500)
