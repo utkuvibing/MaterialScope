@@ -359,6 +359,11 @@ class DSCProcessor:
         # Pipeline state
         self._baseline: Optional[np.ndarray] = None
         self._baseline_applied: bool = False
+        # Signal as it was just before peak baseline correction.  Tg is a
+        # baseline/heat-capacity step, so it must be characterised on this
+        # pre-baseline signal: baseline correction is designed to absorb
+        # exactly that slowly-varying structure.
+        self._pre_baseline_signal: Optional[np.ndarray] = None
         self._peaks: List[ThermalPeak] = []
         self._glass_transitions: List[GlassTransition] = []
         self._metadata: Dict = {
@@ -434,6 +439,9 @@ class DSCProcessor:
         self, for method chaining.
         """
         self._signal = smooth_signal(self._signal, method=method, **kwargs)
+        # Any stored pre-baseline snapshot no longer matches the working
+        # signal's provenance; drop it rather than silently mix stages.
+        self._pre_baseline_signal = None
         self._metadata['steps'].append({'step': 'smooth', 'method': method, **kwargs})
         return self
 
@@ -493,6 +501,7 @@ class DSCProcessor:
             return self
 
         forced = force and self._signal_unit_class is UnitClass.SPECIFIC_POWER
+        self._pre_baseline_signal = None
         self._signal = normalize_by_mass(self._signal, sample_mass_mg=self._sample_mass)
         self._working_signal_unit = working_unit
         self._normalization_applied = True
@@ -533,6 +542,9 @@ class DSCProcessor:
         corrected, baseline = correct_baseline(
             self._temperature, self._signal, method=method, **kwargs
         )
+        # Keep the pre-correction signal: Tg detection measures the baseline
+        # step that this correction is designed to remove.
+        self._pre_baseline_signal = self._signal
         self._baseline = baseline
         self._signal = corrected
         self._baseline_applied = True
@@ -609,8 +621,13 @@ class DSCProcessor:
         ---------
         1. If a temperature region (T_low, T_high) is given, restrict analysis
            to that window; otherwise use the full temperature range.
-        2. Compute the first derivative of the (smoothed/corrected) signal and
-           lightly smooth its magnitude.
+        2. Compute the first derivative of the (smoothed, pre-baseline)
+           signal and lightly smooth its magnitude.  A glass transition is a
+           baseline/heat-capacity step: when ``correct_baseline()`` has run,
+           its snapshot of the pre-correction signal is used, because peak
+           baseline correction is designed to absorb exactly that
+           slowly-varying structure.  Without a baseline step the current
+           working signal is used.
         3. Every local maximum of smoothed |d1| above a small floor is a Tg
            *candidate* - the inflection of a genuine baseline step sits at a
            |d1| maximum, while the largest |d2| feature alone is not
@@ -639,7 +656,12 @@ class DSCProcessor:
         self, for method chaining.
         """
         temperature = self._temperature
-        signal = self._signal
+        signal = (
+            self._pre_baseline_signal
+            if self._pre_baseline_signal is not None
+            else self._signal
+        )
+        signal_source = "pre_baseline" if self._pre_baseline_signal is not None else "working"
         n = len(temperature)
 
         # --- restrict to region if requested ---------------------------------
@@ -722,6 +744,7 @@ class DSCProcessor:
                 {
                     'step': 'detect_glass_transition',
                     'region': region,
+                    'signal': signal_source,
                     'tg_midpoint': None,
                     'outcome': 'no_step_morphology',
                 }
@@ -757,6 +780,7 @@ class DSCProcessor:
             {
                 'step': 'detect_glass_transition',
                 'region': region,
+                'signal': signal_source,
                 'tg_midpoint': tg_midpoint,
             }
         )
@@ -782,9 +806,12 @@ class DSCProcessor:
         1. smooth   - using smooth_method (default 'savgol')
         2. normalize - skipped silently if sample_mass is None or the
            source signal is already specific power (unless normalize_force)
-        3. correct_baseline - using baseline_method (default 'asls')
+        3. correct_baseline - using baseline_method (default 'asls');
+           peaks are characterised on the corrected signal
         4. find_peaks - direction='both' unless overridden in kwargs
-        5. detect_glass_transition - full temperature range
+        5. detect_glass_transition - full temperature range, on the
+           pre-baseline signal (a Tg is a baseline step; peak baseline
+           correction would absorb it)
 
         Parameters
         ----------

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from backend.library_cloud_service import ManagedLibraryCloudService
 from core.batch_runner import (
@@ -1429,3 +1430,167 @@ def test_ftir_retains_multiple_visible_peaks_wide_axis():
     diag = outcome["state"]["diagnostics"]
     assert "plot_normalized_primary_axis" in diag
     assert "normalized_axis_ratio_vs_corrected" in diag
+
+
+# ---------------------------------------------------------------------------
+# Post-merge integration regression: Tg must survive the default pipeline
+# ---------------------------------------------------------------------------
+
+def _make_tg_dsc_dataset(temperature, signal):
+    """DSC dataset shaped like the Dash-imported polymer-like Tg CSV."""
+    return ThermalDataset(
+        data=pd.DataFrame({"temperature": temperature, "signal": signal}),
+        metadata={
+            "sample_name": "SyntheticDSC-Tg",
+            "sample_mass": 5.0,
+            "heating_rate": 10.0,
+            "instrument": "TestInstrument",
+            "source_data_hash": "synthetic-dsc-tg-hash",
+            "raw_signal_convention": "exo_up",
+            "canonical_signal_convention": "exo_up",
+        },
+        data_type="DSC",
+        units={"temperature": "degC", "signal": "mW/mg"},
+        original_columns={"temperature": "temperature", "signal": "signal"},
+        file_path="",
+    )
+
+
+def _polymer_tg_signal(temperature_range):
+    """Deterministic polymer-like signal: linear baseline + tanh Tg step ~120 C."""
+    rng = np.random.default_rng(101)
+    return (
+        0.0004 * (temperature_range - 30.0)
+        + 0.08 * np.tanh((temperature_range - 120.0) / 4.0)
+        + rng.normal(0.0, 0.0015, len(temperature_range))
+    )
+
+
+def _caox_like_signal():
+    """Decomposition-only run: sharp peaks, no baseline step (PR #44 fixture)."""
+    t = np.linspace(100.0, 900.0, 3000)
+    rng = np.random.default_rng(7)
+    signal = (
+        0.5 + 0.0004 * (t - 30.0)
+        - _gaussian(t, 180.0, 8.0, 0.9)
+        - _gaussian(t, 480.0, 6.0, 0.7)
+        - _gaussian(t, 756.0, 7.0, 1.2)
+        + rng.normal(0.0, 0.002, len(t))
+    )
+    return t, signal
+
+
+class TestDscTgPipelineIntegration:
+    """The default DSC pipeline must not destroy the step Tg is measured from.
+
+    Peak baseline correction (ASLS) is designed to absorb slowly-varying
+    structure — which is exactly what a glass transition is.  These tests run
+    the real ``execute_batch_template`` path used by the Dash workflow and
+    assert the known Tg survives end to end into the saved record.
+    """
+
+    def test_known_tg_survives_general_template_pipeline(self, temperature_range):
+        dataset = _make_tg_dsc_dataset(temperature_range, _polymer_tg_signal(temperature_range))
+
+        outcome = execute_batch_template(
+            dataset_key="synthetic_dsc_tg",
+            dataset=dataset,
+            analysis_type="DSC",
+            workflow_template_id="dsc.general",
+            batch_run_id="batch_dsc_tg",
+        )
+
+        assert outcome["status"] == "saved"
+        transitions = outcome["state"]["glass_transitions"]
+        assert len(transitions) == 1
+        tg = transitions[0]
+        assert tg.tg_onset < tg.tg_midpoint < tg.tg_endset
+        assert tg.tg_midpoint == pytest.approx(120.0, abs=8.0)
+        assert tg.heat_flow_step > 0.0
+
+        # The detected Tg must survive serialization into the saved record.
+        summary = outcome["record"]["summary"]
+        assert summary["glass_transition_count"] == 1
+        assert summary["tg_midpoint"] == pytest.approx(120.0, abs=8.0)
+        assert summary["tg_onset"] < summary["tg_midpoint"] < summary["tg_endset"]
+
+        # Provenance: Tg is a baseline step measured on the pre-baseline
+        # signal; peaks still use the baseline-corrected signal.
+        tg_step = outcome["record"]["processing"]["analysis_steps"]["glass_transition"]
+        assert tg_step["event_count"] == 1
+        assert tg_step["signal"] == "pre_baseline"
+
+    def test_known_tg_survives_polymer_tg_template(self, temperature_range):
+        dataset = _make_tg_dsc_dataset(temperature_range, _polymer_tg_signal(temperature_range))
+
+        outcome = execute_batch_template(
+            dataset_key="synthetic_dsc_tg_polymer",
+            dataset=dataset,
+            analysis_type="DSC",
+            workflow_template_id="dsc.polymer_tg",
+            batch_run_id="batch_dsc_tg_polymer",
+        )
+
+        assert outcome["status"] == "saved"
+        transitions = outcome["state"]["glass_transitions"]
+        assert len(transitions) == 1
+        assert transitions[0].tg_midpoint == pytest.approx(120.0, abs=8.0)
+
+    def test_caox_like_decomposition_yields_no_tg_through_pipeline(self):
+        """The PR #44 false-positive must not return via the pipeline fix."""
+        t, signal = _caox_like_signal()
+        dataset = _make_tg_dsc_dataset(t, signal)
+
+        outcome = execute_batch_template(
+            dataset_key="synthetic_dsc_caox",
+            dataset=dataset,
+            analysis_type="DSC",
+            workflow_template_id="dsc.general",
+            batch_run_id="batch_dsc_caox",
+        )
+
+        assert outcome["status"] == "saved"
+        assert outcome["state"]["glass_transitions"] == []
+        assert outcome["record"]["summary"]["glass_transition_count"] == 0
+        # Decomposition events remain valid peaks.
+        assert len(outcome["state"]["peaks"]) > 0
+
+    def test_peak_characterization_still_uses_corrected_signal(self, temperature_range):
+        """Fixing Tg must not sacrifice normal peak analysis."""
+        rng = np.random.default_rng(202)
+        signal = (
+            0.0002 * (temperature_range - 30.0)
+            + _gaussian(temperature_range, 125.0, 7.0, 1.2)
+            - _gaussian(temperature_range, 215.0, 9.0, 1.6)
+            + rng.normal(0.0, 0.002, len(temperature_range))
+        )
+        dataset = _make_tg_dsc_dataset(temperature_range, signal)
+
+        outcome = execute_batch_template(
+            dataset_key="synthetic_dsc_melt",
+            dataset=dataset,
+            analysis_type="DSC",
+            workflow_template_id="dsc.polymer_melting_crystallization",
+            batch_run_id="batch_dsc_melt",
+        )
+
+        assert outcome["status"] == "saved"
+        peak_temps = [p.peak_temperature for p in outcome["state"]["peaks"]]
+        assert any(abs(tp - 125.0) < 10.0 for tp in peak_temps)
+        assert any(abs(tp - 215.0) < 10.0 for tp in peak_temps)
+
+    def test_specific_signal_is_not_renormalized_for_tg(self, temperature_range):
+        """mW/mg is already specific: normalization must stay a no-op."""
+        dataset = _make_tg_dsc_dataset(temperature_range, _polymer_tg_signal(temperature_range))
+
+        outcome = execute_batch_template(
+            dataset_key="synthetic_dsc_tg_norm",
+            dataset=dataset,
+            analysis_type="DSC",
+            workflow_template_id="dsc.general",
+        )
+
+        assert outcome["record"]["summary"]["normalization_applied"] is False
+        assert outcome["record"]["summary"]["normalization_skip_reason"] == "already_specific_power"
+        assert outcome["record"]["summary"]["working_signal_unit"] == "mW/mg"
+        assert len(outcome["state"]["glass_transitions"]) == 1

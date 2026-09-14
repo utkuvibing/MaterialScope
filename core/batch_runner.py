@@ -458,6 +458,28 @@ def _execute_dsc_batch(
     tg_region = glass_transition.get("region")
     processor.detect_glass_transition(region=tuple(tg_region) if isinstance(tg_region, (list, tuple)) and len(tg_region) == 2 else None)
     result = processor.get_result()
+    # Record which signal Tg was measured on: a glass transition is a
+    # baseline step, so detection uses the pre-baseline signal whenever peak
+    # baseline correction ran; peaks still use the corrected signal.
+    tg_step_meta = next(
+        (
+            step
+            for step in reversed(result.metadata.get("steps") or [])
+            if isinstance(step, dict) and step.get("step") == "detect_glass_transition"
+        ),
+        {},
+    )
+    processing = update_processing_step(
+        processing,
+        "glass_transition",
+        {
+            "mode": glass_transition.get("mode", "auto"),
+            "region": tg_region,
+            "event_count": len(result.glass_transitions),
+            "signal": tg_step_meta.get("signal"),
+        },
+        analysis_type="DSC",
+    )
 
     calibration_context = build_calibration_reference_context(
         dataset=dataset,
