@@ -60,7 +60,6 @@ build/reference_library_*/
 /sample_data/
 /test_data/
 /rag/
-/cloudflare/
 
 # Runtime output (reports, exports, playwright captures) is generated content.
 output/
