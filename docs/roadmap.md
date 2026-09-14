@@ -48,16 +48,31 @@ Objective: deepen the science on the corrected core — richer DSC enthalpy/Tg, 
 
 | WP | Scope | Status | Notes |
 |---|---|---|---|
-| **PR-15** | DSC enthalpy done right: configurable integration bounds with snap-to-onset/endset; β-aware J/g path; ± uncertainty estimate | ⬜ Not started | Checkpoint: known-β + snapped-bounds golden test green; enthalpy rendered as J/g with an explicit ± and the bounds used; withheld reason when β is untraceable (reuses PR-9's gating) |
+| **PR-15** | DSC integration depth: user-configurable integration bounds; optional snap-to-characterized onset/endset; recomputation through the existing PR-9 β-aware J/g enthalpy path; an explicit integration-sensitivity estimate | ⬜ Not started | Checkpoint: known-β enthalpy still flows through the existing PR-9 path with its gating/provenance unchanged; snapped or manually set bounds are the bounds actually used for integration; sensitivity is reported as an explicitly labeled `estimated integration sensitivity ± … J/g` derived from documented analysis assumptions (bound/baseline perturbation) — **not** a metrological or instrument uncertainty, since the repo holds no calibration/error model; enthalpy stays withheld with an explicit reason when β provenance is insufficient |
 | **PR-16** | ISO-style Tg construction: two-tangent / Cp-offset method alongside the existing detector; multi-transition scan | ⬜ Not started | Checkpoint: ISO construction matches a reference fixture; existing detector unchanged; more than one transition reported from a single scan |
-| **PR-17** | TGA depth: residual mass at a target temperature; DTG %/min toggle; smoothing window expressed in °C instead of points | ⬜ Not started | Checkpoint: residual mass correct on a known fixture; %/min and a °C-based smoothing window honored through processing and reports |
-| **PR-18** | FTIR/Raman: region integration; transmittance→absorbance; nm↔cm⁻¹ conversion; annotated peak-table export | ⬜ Not started | Checkpoint: unit conversion round-trips exactly; region area correct on a known spectrum; exported peak table carries annotations |
-| **PR-19** | XRD: wavelength enforcement *before* matching; implement-or-remove fabricated baselines; optional Scherrer with explicit caveats | ⬜ Not started | Checkpoint: mismatched wavelength is blocked before matching; every fake baseline is either implemented or removed; Scherrer output states its assumptions |
-| **PR-20** | Kinetics: Ea confidence intervals; intercept semantics fixed | ⬜ Not started | Checkpoint: Ea reported with CIs from a known-kinetics fixture; intercept definition documented and covered by a regression |
+| **PR-17** | TGA depth: residual mass at a target temperature; DTG `%/min` toggle (honesty-gated on a traceable heating rate); smoothing window expressed in °C instead of points | ⬜ Not started | Checkpoint: residual mass correct on a known fixture; `%/min` is produced only when a traceable heating rate is available and is otherwise withheld with an explicit reason — no fabricated/default heating rate (do not reintroduce what PR-13 removed); a °C-based smoothing window is honored through processing and reports |
+| **PR-18** | FTIR/Raman: region integration; transmittance→absorbance; annotated peak-table export; FTIR absolute wavelength ↔ wavenumber conversion; Raman wavelength ↔ Raman shift only when the excitation laser wavelength is explicitly declared/traceable | ⬜ Not started | Checkpoint: conversions meet a defined numerical tolerance appropriate for floating-point arithmetic (not exact equality); FTIR absolute-wavenumber conversion and Raman shift are treated as distinct conversions — Raman shift is never derived from wavelength without an explicit excitation wavelength; region area correct on a known spectrum; exported peak table carries annotations |
+| **PR-19** | XRD: wavelength enforcement *before* matching; implement-or-remove fabricated baselines; optional Scherrer with explicit caveats | ⬜ Not started | Checkpoint: mismatched wavelength is blocked before matching; every fake baseline is either implemented or removed; Scherrer output records the assumptions required for interpretation — wavelength used, shape factor K, FWHM definition/units, θ vs 2θ handling, and whether instrumental broadening was corrected (an uncorrected-broadening limitation must be explicit). Does not expand into Rietveld or Kα2 stripping |
+| **PR-20** | Kinetics: Ea confidence intervals at a defined confidence level; intercept semantics fixed | ⬜ Not started | Checkpoint: Ea reported with CIs at an explicitly defined confidence level; the CI method is documented and regression-tested; validated against a known-kinetics fixture. This roadmap does not pick the statistical method — selection and justification happen in the work package |
 
 Dependencies: Phase 0 CI plus the Phase 1 canonical sign/unit frame (PR-8…PR-12) and the honest import surface (PR-13).
 
 Out of scope: Rietveld, Kα2 stripping (documented limitation instead).
+
+## Phase 3 — Reproducibility & reporting
+
+- **Archive v2**: raw bytes + SHA-256 verification on load + `app_version` gate + migration hooks; curve-in-CSV option.
+- **Analysis recipes**: ordered parameterized pipeline recorded per result; replay; run-diff view.
+- **Report overhaul**: significant-figure policy per unit; UTC+local timestamps; software version on cover.
+- **Portable presets**: JSON export/import; travel inside project archives.
+
+## Phase 4 — Productization
+
+- Execute Streamlit retirement per PR-6 inventory (port kinetics/deconvolution to Dash or formally cut).
+- One desktop channel decision (Electron vs installer-Dash); build reproduced in CI.
+- Page decomposition: extract shared processing panels from 2–3k-line pages; slim i18n monolith.
+- Browser E2E smoke (Playwright; chromium already in Docker image) covering import→analysis→export per modality.
+- Deployment guide + branding cleanup (ThermoAnalyzer → MaterialScope in health payload/installer names).
 
 ---
 
@@ -106,3 +121,4 @@ Out of scope: Rietveld, Kα2 stripping (documented limitation instead).
 | 2026-09-14 | **No Phase 1 PR-15 work package exists**: Phase 1 is defined as PR-8…PR-14 and no fifteenth package appears in docs, planning dirs, git history, branches, or GitHub issues. Nothing was invented for it; a new package needs a defined scope first. (This describes the Phase 1 roadmap numbering only — it says nothing about the existence of any historical GitHub pull request number.) |
 | 2026-09-14 | **Phase 1 complete**: merge order #38 → #41 → #39 → #40 → #42, all squash-merged onto main @ `3025471`; required checks (`tests 3.11`, `tests 3.12`, `ruff`) green on every merge |
 | 2026-09-14 | **Phase 2 scoped**: PR-15 DSC enthalpy → PR-20 kinetics, one PR per scientific-depth item. Removed the per-PR implementation-plan prose for Phases 0/1, retaining only their WP tables and completion records here. Phase 2 not started |
+| 2026-09-14 | **Phase 2 corrective follow-up (docs-only, PR #49 branch)**: restored the Phase 3 — Reproducibility & reporting and Phase 4 — Productization sections inadvertently dropped with the Phase 0/1 prose cleanup, preserving their original scope and ordering. Tightened Phase 2: PR-15 is integration depth over the existing PR-9 β-aware path with an explicit integration-sensitivity estimate (not metrological/instrument uncertainty); PR-17 gates DTG `%/min` on a traceable heating rate; PR-18 separates FTIR absolute-wavenumber conversion from Raman shift (which needs a declared excitation wavelength) and requires a numerical tolerance rather than exact equality; PR-19 requires Scherrer assumptions incl. instrumental-broadening correction status; PR-20 requires a defined confidence level with a documented, tested CI method. The removed Phase 0/1 implementation-plan prose stays removed; no code, tests, or dependencies touched |
