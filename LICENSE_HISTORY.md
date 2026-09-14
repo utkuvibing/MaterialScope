@@ -7,9 +7,9 @@ the transition honestly.
 
 Earlier public revisions of MaterialScope were published under the MIT
 License (see commit `7820794`, "Add MIT license and open-source README
-updates"). Those revisions remain under the MIT License: the rights
-already granted to anyone who received the software under those terms
-are not revoked and cannot be revoked retroactively. If you obtained
+updates"). Those revisions remain under the MIT License: this license
+transition does not revoke the permissions already granted under MIT for
+revisions distributed under that license. If you obtained
 MaterialScope while it was MIT-licensed, you may continue to use, copy,
 modify, merge, publish, distribute, sublicense, and/or sell that
 revision under the MIT terms.

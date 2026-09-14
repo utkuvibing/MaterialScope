@@ -3,11 +3,10 @@
 The public MaterialScope repository is available under the GNU Affero
 General Public License v3.0 only (AGPL-3.0-only); see [LICENSE](LICENSE).
 
-The AGPL does not forbid commercial use. You may use MaterialScope
-commercially, charge for it, and build on it, provided you comply with
-the AGPL's obligations — including making the corresponding source code
-of the software (and your modifications) available to users who receive
-copies or interact with the software over a network.
+AGPL-3.0-only permits commercial use. Depending on how MaterialScope is
+modified, conveyed, combined, or made available over a network, AGPL
+copyleft and corresponding-source obligations may apply. The
+[LICENSE](LICENSE) file is controlling.
 
 Some organizations prefer not to operate under AGPL copyleft and
 source-sharing obligations — for example, when embedding MaterialScope

@@ -46,7 +46,9 @@ Files under `sample_data/` and `test_data/` fall into two groups:
 - **Externally sourced datasets (filename-indicated, unverified).** The
   following tracked files are named after public data repositories
   (Mendeley Data, Figshare, Zenodo), but this repository does not record
-  their exact source records, authors, or license terms:
+  their exact source records, authors, or license terms. No
+  redistribution permission is asserted for the unverified files listed
+  below until their source license is confirmed:
 
   - `sample_data/dta_tnaa_5c_mendeley.csv`,
     `sample_data/dta_tnaa_10c_mendeley.csv`
@@ -64,9 +66,11 @@ Files under `sample_data/` and `test_data/` fall into two groups:
 
   These files are **not** relicensed under the AGPL. Their redistribution
   terms are unverified inside this repository and must be confirmed
-  against the original source records before public release. Until then
-  they are treated as third-party material retained for test/sample use,
-  not as project-owned content.
+  against the original source records; this is a current
+  public-repository cleanup blocker and a release blocker. Their
+  presence in Git history does not make them safely redistributable.
+  Until then they are treated as third-party material retained for
+  test/sample use, not as project-owned content.
 
 - `test_data/CaCO3 decomposition.csv` is not produced by
   `generate_test_data.py`; its provenance is likewise unrecorded and is
