@@ -903,3 +903,82 @@ def test_render_dsc_processing_history_chrome_uses_dsc_namespace(monkeypatch):
     result = mod.render_dsc_processing_history_chrome("en")
     for output in result:
         assert "dash.analysis.dsc.processing." in output, f"Leaked key: {output}"
+
+
+def test_build_figure_annotates_pipeline_detected_tg(monkeypatch):
+    """Close the smoke-test gap: render a Tg the real pipeline detected.
+
+    Previously the default pipeline returned Tg=0 on the known polymer-like
+    fixture, so the Tg annotation path could not be exercised end to end.
+    """
+    import numpy as np
+    import pandas as pd
+    from core.batch_runner import execute_batch_template
+    from core.data_io import ThermalDataset
+
+    mod = _import_dsc_page()
+
+    temperature = np.linspace(30.0, 300.0, 500)
+    rng = np.random.default_rng(101)
+    signal = (
+        0.0004 * (temperature - 30.0)
+        + 0.08 * np.tanh((temperature - 120.0) / 4.0)
+        + rng.normal(0.0, 0.0015, len(temperature))
+    )
+    dataset = ThermalDataset(
+        data=pd.DataFrame({"temperature": temperature, "signal": signal}),
+        metadata={
+            "sample_name": "SyntheticDSC-Tg",
+            "sample_mass": 5.0,
+            "heating_rate": 10.0,
+            "source_data_hash": "synthetic-dsc-tg-hash",
+            "raw_signal_convention": "exo_up",
+            "canonical_signal_convention": "exo_up",
+        },
+        data_type="DSC",
+        units={"temperature": "degC", "signal": "mW/mg"},
+        original_columns={"temperature": "temperature", "signal": "signal"},
+        file_path="",
+    )
+    outcome = execute_batch_template(
+        dataset_key="synthetic_dsc_tg",
+        dataset=dataset,
+        analysis_type="DSC",
+        workflow_template_id="dsc.general",
+    )
+    assert outcome["record"]["summary"]["glass_transition_count"] == 1
+
+    state = outcome["state"]
+    import dash_app.api_client as api_client
+
+    monkeypatch.setattr(
+        api_client,
+        "analysis_state_curves",
+        lambda _p, _t, _k: {
+            "temperature": state["temperature"],
+            "raw_signal": signal.tolist(),
+            "smoothed": np.asarray(state["smoothed"]).tolist(),
+            "baseline": np.asarray(state["baseline"]).tolist(),
+            "corrected": np.asarray(state["corrected"]).tolist(),
+        },
+    )
+
+    fig = mod._build_dsc_go_figure(
+        "proj-1",
+        "synthetic_dsc_tg",
+        outcome["record"]["summary"],
+        outcome["record"]["rows"],
+        "light",
+        "en",
+    )
+
+    assert fig is not None
+    texts = [(a.text or "") for a in fig.layout.annotations]
+    joined = " | ".join(texts)
+    # Tg midpoint, onset and endset must all render; nothing is dropped.
+    assert "Tg" in joined
+    assert "On " in joined
+    assert "End " in joined
+    label_annotations = [a for a in fig.layout.annotations if (a.text or "").strip()]
+    positions = {(a.x, a.y, a.yshift) for a in label_annotations}
+    assert len(positions) == len(label_annotations)
