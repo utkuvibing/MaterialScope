@@ -156,7 +156,39 @@ _DSC_USER_FACING_METADATA_KEYS: frozenset[str] = frozenset({
     "source_data_hash",
 })
 _UNDO_STACK_LIMIT = 32
+# Minimum temperature separation for two labels to share an annotation lane.
 _ANNOTATION_MIN_SEP = 15.0
+# Vertical pixel offset applied per lane so crowded labels stack instead of
+# overlapping; vline labels anchor at the figure top and move down, peak
+# labels anchor at the marker and move up.
+_ANNOTATION_VLINE_LANE_PX = 18
+_ANNOTATION_PEAK_LANE_PX = 15
+
+
+def _assign_annotation_lanes(
+    temperatures: list[float],
+    min_sep: float = _ANNOTATION_MIN_SEP,
+) -> list[int]:
+    """
+    Assign each annotation a vertical lane deterministically.
+
+    Labels are processed in increasing temperature order.  A label reuses
+    the lowest lane whose most recent label is at least ``min_sep`` away;
+    otherwise it opens a new lane.  Same input -> same lanes, every render.
+    """
+    order = sorted(range(len(temperatures)), key=lambda i: temperatures[i])
+    lanes = [0] * len(temperatures)
+    lane_last: list[float] = []
+    for i in order:
+        for lane, last in enumerate(lane_last):
+            if temperatures[i] - last >= min_sep:
+                lane_last[lane] = temperatures[i]
+                lanes[i] = lane
+                break
+        else:
+            lane_last.append(temperatures[i])
+            lanes[i] = len(lane_last) - 1
+    return lanes
 
 
 def _default_processing_draft() -> dict:
@@ -3167,34 +3199,40 @@ def _build_dsc_go_figure(
             )
         )
 
-    annotated_temps: list[float] = []
+    # Collect every labelled event first, then assign deterministic vertical
+    # lanes so dense regions (Tg/onset/endset/peaks a few °C apart) stay
+    # readable instead of overlapping or being dropped outright.
+    annotation_events: list[dict] = []
     tg_midpoint = _coerce_float(summary.get("tg_midpoint"))
     tg_onset = _coerce_float(summary.get("tg_onset"))
     tg_endset = _coerce_float(summary.get("tg_endset"))
     if tg_midpoint is not None:
-        fig.add_vline(
-            x=tg_midpoint,
-            line=dict(color="#EF4444", width=2, dash="dash"),
-            annotation_text=translate_ui(loc, "dash.analysis.figure.annot_tg", v=f"{tg_midpoint:.1f}"),
-            annotation_position="top left",
+        annotation_events.append(
+            {
+                "kind": "vline",
+                "temperature": tg_midpoint,
+                "line": dict(color="#EF4444", width=2, dash="dash"),
+                "text": translate_ui(loc, "dash.analysis.figure.annot_tg", v=f"{tg_midpoint:.1f}"),
+            }
         )
-        annotated_temps.append(tg_midpoint)
-    if tg_onset is not None and all(abs(tg_onset - value) >= _ANNOTATION_MIN_SEP for value in annotated_temps):
-        fig.add_vline(
-            x=tg_onset,
-            line=dict(color="#F59E0B", width=1, dash="dot"),
-            annotation_text=translate_ui(loc, "dash.analysis.figure.annot_on", v=f"{tg_onset:.1f}"),
-            annotation_position="top left",
+    if tg_onset is not None:
+        annotation_events.append(
+            {
+                "kind": "vline",
+                "temperature": tg_onset,
+                "line": dict(color="#F59E0B", width=1, dash="dot"),
+                "text": translate_ui(loc, "dash.analysis.figure.annot_on", v=f"{tg_onset:.1f}"),
+            }
         )
-        annotated_temps.append(tg_onset)
-    if tg_endset is not None and all(abs(tg_endset - value) >= _ANNOTATION_MIN_SEP for value in annotated_temps):
-        fig.add_vline(
-            x=tg_endset,
-            line=dict(color="#F59E0B", width=1, dash="dot"),
-            annotation_text=translate_ui(loc, "dash.analysis.figure.annot_end", v=f"{tg_endset:.1f}"),
-            annotation_position="top left",
+    if tg_endset is not None:
+        annotation_events.append(
+            {
+                "kind": "vline",
+                "temperature": tg_endset,
+                "line": dict(color="#F59E0B", width=1, dash="dot"),
+                "text": translate_ui(loc, "dash.analysis.figure.annot_end", v=f"{tg_endset:.1f}"),
+            }
         )
-        annotated_temps.append(tg_endset)
 
     for row in _sort_events_by_temperature(peak_rows):
         peak_temperature = _coerce_float(row.get("peak_temperature"))
@@ -3203,24 +3241,51 @@ def _build_dsc_go_figure(
         idx = min(range(len(temperature)), key=lambda i: abs(temperature[i] - peak_temperature))
         peak_type = str(row.get("peak_type", "unknown")).strip().lower()
         color = _PEAK_TYPE_COLORS.get(peak_type, "#B45309")
-        too_close = any(abs(peak_temperature - value) < _ANNOTATION_MIN_SEP for value in annotated_temps)
-        label = "" if too_close else f"{peak_temperature:.1f}°C"
-        fig.add_trace(
-            go.Scatter(
-                x=[temperature[idx]],
-                y=[primary_signal[idx]],
-                mode="markers+text",
-                marker=dict(size=8, color=color, symbol="diamond", line=dict(color="white", width=1.0)),
-                text=[label],
-                textposition="top center",
-                textfont=dict(size=8, color=color),
-                name=f"{_peak_type_label(peak_type, loc)} {_format_temp_c(peak_temperature)}",
-                showlegend=False,
-                hovertemplate=_event_hover_html(row, _coerce_float(primary_signal[idx]), loc),
-            )
+        annotation_events.append(
+            {
+                "kind": "peak",
+                "temperature": peak_temperature,
+                "x": temperature[idx],
+                "y": primary_signal[idx],
+                "color": color,
+                "text": f"{peak_temperature:.1f}°C",
+                "name": f"{_peak_type_label(peak_type, loc)} {_format_temp_c(peak_temperature)}",
+                "hovertemplate": _event_hover_html(row, _coerce_float(primary_signal[idx]), loc),
+            }
         )
-        if label:
-            annotated_temps.append(peak_temperature)
+
+    lanes = _assign_annotation_lanes([event["temperature"] for event in annotation_events])
+    for event, lane in zip(annotation_events, lanes):
+        if event["kind"] == "vline":
+            fig.add_vline(
+                x=event["temperature"],
+                line=event["line"],
+                annotation_text=event["text"],
+                annotation_position="top left",
+                annotation_yshift=-lane * _ANNOTATION_VLINE_LANE_PX,
+            )
+        else:
+            fig.add_trace(
+                go.Scatter(
+                    x=[event["x"]],
+                    y=[event["y"]],
+                    mode="markers",
+                    marker=dict(size=8, color=event["color"], symbol="diamond", line=dict(color="white", width=1.0)),
+                    name=event["name"],
+                    showlegend=False,
+                    hovertemplate=event["hovertemplate"],
+                )
+            )
+            fig.add_annotation(
+                x=event["x"],
+                y=event["y"],
+                text=event["text"],
+                showarrow=False,
+                xanchor="center",
+                yanchor="bottom",
+                yshift=6 + lane * _ANNOTATION_PEAK_LANE_PX,
+                font=dict(size=8, color=event["color"]),
+            )
 
     sample_name = resolve_sample_name(summary, {"dataset_key": dataset_key}, fallback_display_name=dataset_key, locale_data=loc)
     y_grid_color = "rgba(61, 59, 56, 0.34)" if is_dark else "rgba(224, 221, 214, 0.52)"

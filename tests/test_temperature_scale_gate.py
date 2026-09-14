@@ -129,6 +129,42 @@ class TestValidationScaleGate:
         assert any("Kelvin" in warning for warning in summary["warnings"])
         assert summary["checks"]["temperature_scale_confirmed"] is True
 
+    def test_import_confirmed_scale_keeps_no_stale_blocking_warning(self):
+        """After explicit confirmation, import warnings must not still claim
+        the dataset is awaiting confirmation."""
+        dataset = read_thermal_data(
+            _thermal_csv("Temperature", "Heat Flow (mW)", _kelvin_axis(), _flat_signal()),
+            data_type="DSC",
+            sign_convention="exo_up",
+            metadata={"temperature_scale_confirmed": True},
+        )
+
+        assert dataset.metadata["temperature_scale_confirmed"] is True
+        assert dataset.metadata["temperature_scale_plausibility"] == "scale_confirmed_despite_kelvin_shape"
+        assert dataset.metadata["temperature_scale_review_required"] is False
+        stale = [
+            warning
+            for warning in dataset.metadata["import_warnings"]
+            if "will block" in warning or "until the scale" in warning
+        ]
+        assert stale == []
+        # The caution is preserved as provenance, phrased as applied.
+        assert any(
+            "explicitly confirmed at import" in warning
+            for warning in dataset.metadata["import_warnings"]
+        )
+
+    def test_import_unconfirmed_scale_still_warns_of_block(self):
+        dataset = read_thermal_data(
+            _thermal_csv("Temperature", "Heat Flow (mW)", _kelvin_axis(), _flat_signal()),
+            data_type="DSC",
+            sign_convention="exo_up",
+        )
+
+        assert dataset.metadata["temperature_scale_plausibility"] == "kelvin_axis_recorded_as_celsius"
+        assert dataset.metadata["temperature_scale_review_required"] is True
+        assert any("will block" in warning for warning in dataset.metadata["import_warnings"])
+
     def test_kelvin_declared_axis_passes_with_kelvin_label(self):
         summary = validate_thermal_dataset(self._dataset(_kelvin_axis(), "K"))
 

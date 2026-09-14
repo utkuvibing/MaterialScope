@@ -162,6 +162,27 @@ class TestGuessColumns:
         assert info["confidence"] == "review"
         assert info["warnings"]
 
+    def test_detect_vendor_single_generic_dsc_header_is_not_netzsch(self):
+        """A generic DSC unit header alone must not identify a vendor."""
+        info = detect_vendor_info("run_2024_03.csv", ["Temp/°C", "DSC/(mW/mg)"])
+
+        assert info["vendor"] == "Generic"
+        assert info["confidence"] == "review"
+        # Provenance is preserved: the weak match is still reported.
+        assert "dsc/(mw" in info["matched_tokens"]
+
+    def test_detect_vendor_two_generic_conventions_still_infer(self):
+        """Two independent NETZSCH-typical header conventions suffice."""
+        info = detect_vendor_info("", ["Temp./°C", "DSC/(mW/mg)"])
+
+        assert info["vendor"] == "NETZSCH"
+        assert info["confidence"] in {"medium", "high"}
+
+    def test_detect_vendor_strong_identifier_in_headers(self):
+        """A vendor-specific software/model name in headers is strong evidence."""
+        assert detect_vendor("", ["Proteus Export Temp/°C", "DSC/(mW/mg)"]) == "NETZSCH"
+        assert detect_vendor("", ["TRIOS Temperature (°C)", "Heat Flow (W/g)"]) == "TA"
+
     def test_guess_columns_ambiguous_signal_column_warns_and_leaves_type_unknown(self):
         df = pd.DataFrame(
             {
@@ -373,6 +394,56 @@ class TestReadCSV:
         assert ds.metadata["vendor"] == "NETZSCH"
         assert ds.metadata["vendor_detection_confidence"] in {"high", "medium"}
         assert ds.metadata["import_delimiter"] == "\t"
+
+    def test_read_slash_temperature_header_declares_celsius(self):
+        """'Temp/°C' is an explicit scale declaration, not a default."""
+        buf = io.StringIO(
+            "Temp/°C,DSC/(mW/mg)\n"
+            "30.0,0.10\n"
+            "50.0,0.50\n"
+            "70.0,0.15\n"
+        )
+
+        ds = read_thermal_data(buf)
+
+        assert ds.units["temperature"] == "°C"
+        assert ds.metadata["temperature_unit_source"] == "header"
+        assert not any(
+            "could not be confirmed" in warning
+            for warning in ds.metadata["import_warnings"]
+        )
+
+    def test_read_slash_temperature_header_declares_kelvin(self):
+        buf = io.StringIO(
+            "Temperature/K,DSC/(mW/mg)\n"
+            "300.0,0.10\n"
+            "350.0,0.50\n"
+            "400.0,0.15\n"
+        )
+
+        ds = read_thermal_data(buf)
+
+        assert ds.units["temperature"] == "K"
+        assert ds.metadata["temperature_unit_source"] == "header"
+        assert ds.metadata["temperature_scale_plausibility"] == "kelvin_declared_plausible"
+
+    def test_read_unitless_temperature_axis_still_undeclared(self):
+        """An ambiguous unitless axis must stay unconfirmed."""
+        buf = io.StringIO(
+            "Temperature,DSC/(mW/mg)\n"
+            "30.0,0.10\n"
+            "50.0,0.50\n"
+            "70.0,0.15\n"
+        )
+
+        ds = read_thermal_data(buf)
+
+        assert ds.units["temperature"] == "°C"
+        assert ds.metadata["temperature_unit_source"] == "defaulted_celsius"
+        assert any(
+            "could not be confirmed" in warning
+            for warning in ds.metadata["import_warnings"]
+        )
 
     def test_read_ta_like_export_sets_inferred_vendor_and_type(self):
         buf = io.StringIO(

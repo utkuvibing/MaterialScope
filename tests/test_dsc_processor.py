@@ -302,6 +302,127 @@ class TestDSCDeterministicRegressions:
         assert {"exotherm", "endotherm"} <= peak_types
 
 
+class TestTgMorphologyGate:
+    """
+    Post-Phase-1 QA: the automatic Tg detector must only report a Tg when
+    the local morphology is a persistent baseline step.  The old detector
+    picked the largest |d2| feature, so sharp decomposition peaks (e.g. a
+    calcium-oxalate-style run) were reported as implausible Tg values.
+    """
+
+    @staticmethod
+    def _detect(temperature, signal, region=None):
+        result = (
+            DSCProcessor(temperature, signal)
+            .detect_glass_transition(region=region)
+            .get_result()
+        )
+        return result.glass_transitions
+
+    def test_rejects_sharp_decomposition_like_run(self):
+        """Sharp high-temperature peaks must not be labelled Tg.
+
+        Mirrors the manual-QA failure: a run whose only features are narrow
+        decomposition-like peaks near 180/480/756 C produced a Tg ~756 C.
+        """
+        t = np.linspace(30.0, 900.0, 4000)
+        rng = np.random.default_rng(7)
+
+        def peak(c, w, a):
+            return a * np.exp(-0.5 * ((t - c) / w) ** 2)
+
+        signal = (
+            0.5 + 0.0004 * (t - 30.0)
+            + peak(180.0, 8.0, -0.9)
+            + peak(480.0, 6.0, -0.7)
+            + peak(756.0, 7.0, -1.2)
+            + rng.normal(0.0, 0.002, len(t))
+        )
+        assert self._detect(t, signal) == []
+
+    def test_rejects_isolated_peak_as_tg(self):
+        """A lone sharp peak has high curvature but no persistent step."""
+        t = np.linspace(30.0, 300.0, 500)
+        rng = np.random.default_rng(3)
+        signal = 2.0 * np.exp(-0.5 * ((t - 200.0) / 8.0) ** 2)
+        signal += rng.normal(0.0, 0.005, len(t))
+        assert self._detect(t, signal) == []
+
+    def test_rejects_peak_inside_user_region(self):
+        """A user-constrained region is not permission to fabricate a Tg.
+
+        Framing a single peak flank in a tight window makes it look like a
+        step locally; the plateau levels do not persist just outside the
+        region, so the candidate must be rejected on full-signal context.
+        """
+        t = np.linspace(30.0, 300.0, 500)
+        rng = np.random.default_rng(3)
+        signal = 2.0 * np.exp(-0.5 * ((t - 200.0) / 8.0) ** 2)
+        signal += rng.normal(0.0, 0.005, len(t))
+        assert self._detect(t, signal, region=(190.0, 230.0)) == []
+
+    def test_detects_real_step_inside_user_region_on_raw_signal(self):
+        """A region restricts where candidates live, not what they see.
+
+        The region's own derivative median is inflated by the transition
+        itself, so a region-local onset walk stalls on the foot and the
+        plateau windows would land inside the transition.  Onset/endset
+        are therefore refined on full-signal context: a genuine step in a
+        noisy region must still be found.
+        """
+        t = np.linspace(30.0, 300.0, 2000)
+        rng = np.random.default_rng(101)
+        signal = (
+            0.0004 * (t - 30.0)
+            + 0.04 * (1.0 + np.tanh((t - 120.0) / 4.0))
+            + rng.normal(0.0, 0.0015, len(t))
+        )
+        transitions = self._detect(t, signal, region=(100.0, 150.0))
+        assert len(transitions) == 1
+        assert transitions[0].tg_midpoint == pytest.approx(120.0, abs=8.0)
+        assert transitions[0].tg_onset < transitions[0].tg_midpoint < transitions[0].tg_endset
+
+    def test_rejects_flat_noise(self):
+        """No credible step at all -> no Tg rather than a fabricated one."""
+        t = np.linspace(30.0, 300.0, 500)
+        rng = np.random.default_rng(11)
+        signal = rng.normal(0.0, 0.005, len(t))
+        assert self._detect(t, signal) == []
+
+    def test_keeps_step_when_large_peak_present(self):
+        """A real low-temperature step survives beside a huge sharp peak.
+
+        Candidate ranking must not be driven by the global |d2|/|d1| max:
+        the small-but-step-shaped feature still qualifies.
+        """
+        t = np.linspace(30.0, 900.0, 4000)
+        rng = np.random.default_rng(13)
+
+        def peak(c, w, a):
+            return a * np.exp(-0.5 * ((t - c) / w) ** 2)
+
+        signal = (
+            0.5
+            + 0.08 * np.tanh((t - 140.0) / 6.0)
+            + peak(756.0, 7.0, -1.2)
+            + rng.normal(0.0, 0.002, len(t))
+        )
+        transitions = self._detect(t, signal)
+        assert len(transitions) == 1
+        assert transitions[0].tg_midpoint == pytest.approx(140.0, abs=12.0)
+        assert transitions[0].heat_flow_step > 0.0
+
+    def test_rejection_recorded_in_metadata(self):
+        """A rejected scan leaves an honest trail, not a silent pass."""
+        t = np.linspace(30.0, 300.0, 500)
+        rng = np.random.default_rng(11)
+        signal = rng.normal(0.0, 0.005, len(t))
+        result = DSCProcessor(t, signal).detect_glass_transition().get_result()
+        entries = [s for s in result.metadata["steps"]
+                   if s.get("step") == "detect_glass_transition"]
+        assert entries and entries[-1].get("tg_midpoint") is None
+
+
 # ---------------------------------------------------------------------------
 # DSCResult structure validation
 # ---------------------------------------------------------------------------
