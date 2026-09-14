@@ -15,7 +15,6 @@ import io
 import os
 import sys
 import tempfile
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -204,13 +203,15 @@ class TestGuessColumns:
         assert detect_vendor("mettler_toledo_export.csv", ["Temperature (°C)", "Heat Flow (mW)"]) == "METTLER"
         assert detect_vendor("", ["STARe Temperature (°C)", "Heat Flow (mW)"]) == "METTLER"
 
-    def test_tracked_generic_dsc_sample_does_not_infer_ta(self):
-        """The tracked polymer-melting sample uses generic DSC headers only.
+    def test_synthetic_generic_dsc_sample_does_not_infer_ta(self):
+        """The generated polymer-melting sample uses generic DSC headers only.
 
         ``Temperature (°C)`` + ``Heat Flow (mW/mg)`` are conventions shared by
         many instruments; they must not be attributed to TA Instruments.
         """
-        sample = Path(__file__).resolve().parent.parent / "sample_data" / "dsc_polymer_melting.csv"
+        from synthetic_samples import sample_for
+
+        sample, _ = sample_for("DSC")
         ds = read_thermal_data(sample)
 
         assert ds.metadata["vendor"] == "Generic"
@@ -798,11 +799,10 @@ class TestReadCSV:
         with pytest.raises(ValueError, match="exactly one data_ block"):
             read_thermal_data(buf)
 
-    def test_read_academic_dta_sample_with_explicit_type(self):
-        sample_path = os.path.join(_ROOT, "sample_data", "dta_tnaa_5c_mendeley.csv")
-        if not os.path.exists(sample_path):
-            pytest.skip("Academic DTA sample not present in this checkout.")
+    def test_read_synthetic_dta_sample_with_explicit_type(self):
+        from synthetic_samples import sample_for
 
+        sample_path, _ = sample_for("DTA")
         ds = read_thermal_data(sample_path, data_type="DTA")
 
         assert ds.data_type == "DTA"
@@ -810,11 +810,10 @@ class TestReadCSV:
         assert "temperature" in ds.data.columns
         assert "signal" in ds.data.columns
 
-    def test_read_academic_xrd_sample_with_explicit_type(self):
-        sample_path = os.path.join(_ROOT, "sample_data", "xrd_2024_0304_zenodo.csv")
-        if not os.path.exists(sample_path):
-            pytest.skip("Academic XRD sample not present in this checkout.")
+    def test_read_synthetic_xrd_sample_with_explicit_type(self):
+        from synthetic_samples import sample_for
 
+        sample_path, _ = sample_for("XRD")
         ds = read_thermal_data(sample_path, data_type="XRD")
 
         assert ds.data_type == "XRD"
@@ -822,22 +821,20 @@ class TestReadCSV:
         assert ds.metadata["xrd_axis_role"] == "two_theta"
         assert ds.units["temperature"] == "degree_2theta"
 
-    def test_read_academic_ftir_sample_with_explicit_type(self):
-        sample_path = os.path.join(_ROOT, "sample_data", "ftir_particleboard_50g_figshare.csv")
-        if not os.path.exists(sample_path):
-            pytest.skip("Academic FTIR sample not present in this checkout.")
+    def test_read_synthetic_ftir_sample_with_explicit_type(self):
+        from synthetic_samples import sample_for
 
+        sample_path, _ = sample_for("FTIR")
         ds = read_thermal_data(sample_path, data_type="FTIR")
 
         assert ds.data_type == "FTIR"
         assert len(ds.data) > 1000
         assert ds.units["temperature"] == "cm^-1"
 
-    def test_read_academic_raman_sample_with_explicit_type(self):
-        sample_path = os.path.join(_ROOT, "sample_data", "raman_cnt_figshare.csv")
-        if not os.path.exists(sample_path):
-            pytest.skip("Academic Raman sample not present in this checkout.")
+    def test_read_synthetic_raman_sample_with_explicit_type(self):
+        from synthetic_samples import sample_for
 
+        sample_path, _ = sample_for("RAMAN")
         ds = read_thermal_data(sample_path, data_type="RAMAN")
 
         assert ds.data_type == "RAMAN"

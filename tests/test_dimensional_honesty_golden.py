@@ -21,7 +21,7 @@ TEMPERATURES = np.arange(40.0, 200.5, 0.5)
 def _gaussian_peak(enthalpy_j_g: float, beta: float, sigma: float = 7.0, center: float = 130.0):
     """Peak whose analytic area equals ``enthalpy_j_g`` at the given rate.
 
-    Mirrors generate_test_data.py: A = H * beta / 60 / (sigma * sqrt(2pi)).
+    Analytic relation: A = H * beta / 60 / (sigma * sqrt(2pi)).
     """
     amplitude = (enthalpy_j_g * beta / 60.0) / (sigma * np.sqrt(2.0 * np.pi))
     return amplitude * np.exp(-0.5 * ((TEMPERATURES - center) / sigma) ** 2)

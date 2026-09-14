@@ -36,14 +36,14 @@ async (page) => {
   }
 
   const samples = [
-    ['DSC', 'dsc_polymer_melting.csv'], ['TGA', 'tga_calcium_oxalate.csv'],
-    ['DTA', 'dta_tnaa_5c_mendeley.csv'], ['FTIR', 'ftir_particleboard_50g_figshare.csv'],
-    ['RAMAN', 'raman_cnt_figshare.csv'], ['XRD', 'xrd_2024_0304_zenodo.csv'],
+    ['DSC', 'synthetic_dsc_polymer_melting.csv'], ['TGA', 'synthetic_tga_calcium_oxalate.csv'],
+    ['DTA', 'synthetic_dta_events_5c.csv'], ['FTIR', 'synthetic_ftir_absorbance.csv'],
+    ['RAMAN', 'synthetic_raman_bands.csv'], ['XRD', 'synthetic_xrd_powder.csv'],
   ];
   const imported = [];
   for (const [modality, filename] of samples) {
     await page.locator('#wizard-step-1').getByRole('button', {name: new RegExp('^' + modality + ' ')}).click();
-    await page.locator('#file-upload input[type=file]').setInputFiles('sample_data/' + filename);
+    await page.locator('#file-upload input[type=file]').setInputFiles('pytest_temp/synthetic_samples/' + filename);
     await page.locator('#mapping-preview-status').getByText(/Preview ready:/).waitFor({state: 'attached'});
     await page.getByRole('button', {name: 'Next: Preview', exact: true}).click();
     await page.getByRole('button', {name: 'Next: Map Columns', exact: true}).click();

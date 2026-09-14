@@ -8,7 +8,7 @@ import io
 import pytest
 from fastapi.testclient import TestClient
 
-from dash_app.sample_data import resolve_sample_request
+from synthetic_samples import sample_for
 from dash_app.server import create_combined_app
 
 
@@ -19,7 +19,7 @@ def client() -> TestClient:
 
 def test_get_result_figure_png_returns_bytes_after_register(client: TestClient):
     project_id = client.post("/workspace/new").json()["project_id"]
-    sample_path, _ = resolve_sample_request("load-sample-dsc")
+    sample_path, _ = sample_for("DSC")
     payload = base64.b64encode(sample_path.read_bytes()).decode("ascii")
     imported = client.post(
         "/dataset/import",
@@ -68,7 +68,7 @@ def test_get_result_figure_png_downscales_with_max_edge(client: TestClient):
     from PIL import Image
 
     project_id = client.post("/workspace/new").json()["project_id"]
-    sample_path, _ = resolve_sample_request("load-sample-dsc")
+    sample_path, _ = sample_for("DSC")
     payload = base64.b64encode(sample_path.read_bytes()).decode("ascii")
     imported = client.post(
         "/dataset/import",
@@ -126,7 +126,7 @@ def test_get_result_figure_png_downscales_with_max_edge(client: TestClient):
 
 def test_get_result_figure_png_rejects_unknown_key(client: TestClient):
     project_id = client.post("/workspace/new").json()["project_id"]
-    sample_path, _ = resolve_sample_request("load-sample-dsc")
+    sample_path, _ = sample_for("DSC")
     payload = base64.b64encode(sample_path.read_bytes()).decode("ascii")
     imported = client.post(
         "/dataset/import",

@@ -11,7 +11,7 @@ import numpy as np
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SEED_LIBRARY_PATH = PROJECT_ROOT / "sample_data" / "reference_library_seed.json"
+SEED_LIBRARY_PATH = PROJECT_ROOT / "resources" / "reference_library_seed.json"
 
 
 def _float_array(values: Any) -> np.ndarray | None:

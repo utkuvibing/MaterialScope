@@ -17,7 +17,7 @@ from core.reference_library import build_reference_library_package
 from tools.library_ingest.common import iter_normalized_packages, normalized_package_dirs
 
 
-DEFAULT_LEGACY_SOURCE = Path("sample_data") / "reference_library_seed.json"
+DEFAULT_LEGACY_SOURCE = Path("resources") / "reference_library_seed.json"
 DEFAULT_NORMALIZED_ROOT = Path("build") / "reference_library_ingest"
 DEFAULT_OUTPUT_ROOT = Path("build") / "reference_library_mirror"
 

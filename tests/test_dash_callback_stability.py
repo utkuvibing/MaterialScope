@@ -12,7 +12,7 @@ import time
 import httpx
 import pytest
 
-from dash_app.sample_data import resolve_sample_request
+from synthetic_samples import ensure_all_samples, sample_for
 
 
 @pytest.fixture(scope="module")
@@ -88,7 +88,7 @@ def _invoke_registered(client, input_id, values):
 @pytest.mark.parametrize("modality", ["DSC", "TGA", "DTA", "FTIR", "RAMAN", "XRD"])
 def test_confirm_import_creates_dataset_through_live_callback(live_dash, modality):
     project = live_dash.post("/workspace/new").json()["project_id"]
-    path, _ = resolve_sample_request(f"load-sample-{modality.lower()}")
+    path, _ = sample_for(modality)
     pending = [{"file_name": path.name, "file_base64": base64.b64encode(path.read_bytes()).decode("ascii")}]
     values = {
         "project-id": project, "ui-locale": "en", "home-refresh": 0,
@@ -140,6 +140,7 @@ def test_browser_navigation_and_confirm_import(live_dash):
     session = f"stability-{os.getpid()}"
     command = [npx, "--yes", "--package", "@playwright/cli", "playwright-cli", f"-s={session}"]
     root = Path(__file__).resolve().parents[1]
+    ensure_all_samples()
 
     def run(*args):
         result = subprocess.run(command + list(args), cwd=root, capture_output=True, text=True, encoding="utf-8", timeout=180)

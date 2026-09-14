@@ -9,7 +9,7 @@ from typing import Any, Mapping
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SEED_LIBRARY_PATH = PROJECT_ROOT / "sample_data" / "reference_library_seed.json"
+SEED_LIBRARY_PATH = PROJECT_ROOT / "resources" / "reference_library_seed.json"
 
 
 def _normalize_peak_rows(peaks: Any) -> list[dict[str, float]]:

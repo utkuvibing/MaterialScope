@@ -57,7 +57,7 @@ Tarayıcıdan [http://127.0.0.1:8050](http://127.0.0.1:8050) adresini açın.
 
 Bu komut, Dash arayüzünü ve FastAPI API'sini aynı portta sunan tek bir süreç başlatır. Dash için ikinci bir arka uç başlatmanız gerekmez.
 
-Örnek verilerle deneme adımları ve geri bildirim yönergeleri için [erken test rehberine](docs/early-tester-guide.md) bakın (İngilizce).
+Kendi ölçüm dosyalarınızla deneme adımları ve geri bildirim yönergeleri için [erken test rehberine](docs/early-tester-guide.md) bakın (İngilizce).
 
 ## Veri ve çalıştırma modeli
 

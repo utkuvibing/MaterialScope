@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import base64
-
 import dash
 import dash_bootstrap_components as dbc
 from dash import ALL, Input, Output, State, callback, clientside_callback, dcc, html
@@ -25,7 +23,6 @@ from dash_app.components.page_guidance import (
 )
 from dash_app.components.stepper import stepper_indicator
 from dash_app.import_preview import build_import_preview
-from dash_app.sample_data import list_sample_specs, resolve_sample_request
 from utils.i18n import TRANSLATIONS, normalize_ui_locale, translate_ui
 
 dash.register_page(__name__, path="/", title="Import - MaterialScope")
@@ -109,24 +106,6 @@ def _build_metrics(datasets: list[dict], loc: str) -> dbc.Row:
         ],
         className="g-3 mb-4",
     )
-
-
-def _sample_buttons() -> list[dbc.Col]:
-    cols: list[dbc.Col] = []
-    for spec in list_sample_specs():
-        cols.append(
-            dbc.Col(
-                dbc.Button(
-                    spec["label"],
-                    id={"type": "sample-load", "sample_id": spec["id"]},
-                    color="secondary",
-                    className="w-100",
-                ),
-                md=6,
-                className="mb-2",
-            )
-        )
-    return cols
 
 
 def _modality_select_buttons() -> html.Div:
@@ -214,7 +193,7 @@ layout = html.Div(
         ),
 
         # =============================================
-        # STEP 2: File Upload + Sample Data
+        # STEP 2: File Upload
         # =============================================
         html.Div(
             id="wizard-step-2",
@@ -239,11 +218,6 @@ layout = html.Div(
                             html.Div(id="upload-status", className="mt-3"),
                             dbc.Select(id="pending-file-select", className="mt-3"),
                             html.Div(id="pending-file-help", className="small text-muted mt-2"),
-                            html.Hr(className="my-4"),
-                            html.H5(id="home-sample-title", children="", className="mb-3"),
-                            html.P(id="home-sample-intro", children="", className="text-muted"),
-                            dbc.Row(_sample_buttons()),
-                            html.Div(id="sample-status", className="mt-3"),
                         ]
                     ),
                     className="mb-4",
@@ -610,8 +584,6 @@ layout = html.Div(
     Output("home-step1-intro", "children"),
     Output("step2-title", "children"),
     Output("home-upload-caption", "children"),
-    Output("home-sample-title", "children"),
-    Output("home-sample-intro", "children"),
     Output("step2-prev-btn", "children"),
     Output("step2-next-btn", "children"),
     Output("home-step3-title", "children"),
@@ -663,8 +635,6 @@ def render_home_locale_chrome(locale_data):
         translate_ui(loc, "dash.home.step1_intro"),
         translate_ui(loc, "dash.home.step2_title"),
         upload_caption,
-        translate_ui(loc, "dash.home.sample_section_title"),
-        translate_ui(loc, "dash.home.sample_section_intro"),
         translate_ui(loc, "dash.home.btn_back"),
         translate_ui(loc, "dash.home.btn_next_preview"),
         translate_ui(loc, "dash.home.step3_title"),
@@ -1472,67 +1442,6 @@ def import_with_mapping(
         0,  # Reset wizard to step 0
         success_alert,
         success_alert,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Sample Data
-# ---------------------------------------------------------------------------
-
-@callback(
-    Output("sample-status", "children"),
-    Output("home-refresh", "data", allow_duplicate=True),
-    Input({"type": "sample-load", "sample_id": ALL}, "n_clicks"),
-    State({"type": "sample-load", "sample_id": ALL}, "id"),
-    State("project-id", "data"),
-    State("home-refresh", "data"),
-    State("ui-locale", "data"),
-    prevent_initial_call=True,
-)
-def load_sample(_clicks, ids, project_id, refresh_value, locale_data):
-    loc = _loc(locale_data)
-    if not project_id:
-        return (
-            prereq_or_empty_help(
-                translate_ui(loc, "dash.home.prereq_workspace_sample_body"),
-                title=translate_ui(loc, "dash.home.prereq_workspace_import_title"),
-                locale=loc,
-            ),
-            dash.no_update,
-        )
-    ctx = dash.callback_context
-    triggered = ctx.triggered_id
-    if not triggered:
-        raise dash.exceptions.PreventUpdate
-
-    button_id = triggered.get("sample_id") if isinstance(triggered, dict) else None
-    sample_path, dtype = resolve_sample_request(button_id or "")
-    if sample_path is None or dtype is None:
-        raise dash.exceptions.PreventUpdate
-
-    if not sample_path.exists():
-        return dbc.Alert(translate_ui(loc, "dash.home.sample_not_found", name=sample_path.name), color="warning"), dash.no_update
-
-    from dash_app.api_client import dataset_import
-
-    try:
-        result = dataset_import(
-            project_id,
-            sample_path.name,
-            base64.b64encode(sample_path.read_bytes()).decode("ascii"),
-            data_type=dtype,
-        )
-    except Exception as exc:
-        return dbc.Alert(translate_ui(loc, "dash.home.sample_load_failed", error=str(exc)), color="danger"), dash.no_update
-
-    dataset = result.get("dataset", {})
-    return (
-        dbc.Alert(
-            translate_ui(loc, "dash.home.sample_loaded", name=dataset.get("display_name", sample_path.name)),
-            color="success",
-            dismissable=True,
-        ),
-        int(refresh_value or 0) + 1,
     )
 
 
