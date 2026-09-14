@@ -193,7 +193,7 @@ layout = html.Div(
         ),
 
         # =============================================
-        # STEP 2: File Upload + Sample Data
+        # STEP 2: File Upload
         # =============================================
         html.Div(
             id="wizard-step-2",
