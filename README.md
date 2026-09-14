@@ -87,6 +87,8 @@ MaterialScope is an evolving research and engineering project. Its analysis outp
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MaterialScope is licensed under the GNU Affero General Public License v3.0 only (AGPL-3.0-only) — see [LICENSE](LICENSE). Commercial use is permitted under the AGPL as long as its terms are followed. Organizations that want to use, modify, distribute, embed, or offer MaterialScope without the AGPL's copyleft and source-sharing obligations can ask the copyright holder about a separate proprietary/commercial license — see [COMMERCIAL-LICENSING.md](COMMERCIAL-LICENSING.md). Revisions released before the license transition were published under the MIT License and remain usable under the license that applied to those revisions — see [LICENSE_HISTORY.md](LICENSE_HISTORY.md). The MaterialScope name and logo are not licensed for uses that imply official status — see [TRADEMARKS.md](TRADEMARKS.md).
 
-The optional commercial-license gate is separate from the API token. Its HMAC demo secret is public, so anyone with it can forge license keys. Commercial deployments must supply `MATERIALSCOPE_LICENSE_SECRET` externally; rotating it invalidates existing signed licenses and requires re-issuance. A client-held shared secret still cannot provide secure distributable licensing. Asymmetric signing is future work.
+The software copyright license is a separate concept from the application's optional runtime license-key mechanism (`MATERIALSCOPE_LICENSE_SECRET`, HMAC-signed keys). That mechanism is a deployment feature flag only: it does not change, replace, or add to the copyright license, and setting the environment variable does not relicense the software in either direction.
+
+The optional commercial-license gate is also separate from the API token. Its HMAC demo secret is public, so anyone with it can forge license keys. Commercial deployments must supply `MATERIALSCOPE_LICENSE_SECRET` externally; rotating it invalidates existing signed licenses and requires re-issuance. A client-held shared secret still cannot provide secure distributable licensing. Asymmetric signing is future work.
