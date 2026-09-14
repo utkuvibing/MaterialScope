@@ -225,9 +225,9 @@ class TestAutoProminenceAmplitudeFloor:
         assert not any(abs(tp - 185.0) < 5 for tp in temps)  # below 0.5 floor
 
 
-class TestTrackedSampleAutoDetection:
-    """Regression on the tracked mendeley DTA samples: auto detection must
-    not report sub-1 %-amplitude shoulder dips as thermal events."""
+class TestSyntheticSampleAutoDetection:
+    """Regression on generated DTA samples: auto detection must not report
+    sub-1 %-amplitude shoulder dips as thermal events."""
 
     @staticmethod
     def _run_sample(path):
@@ -244,15 +244,19 @@ class TestTrackedSampleAutoDetection:
             .get_result()
         )
 
-    def test_tnaa_5c_reports_only_strong_events(self):
-        result = self._run_sample("sample_data/dta_tnaa_5c_mendeley.csv")
+    def test_dta_5c_reports_only_strong_events(self):
+        from synthetic_samples import dta_events_path
+
+        result = self._run_sample(dta_events_path("5c"))
         heights = [abs(p.height) for p in result.peaks]
         assert len(result.peaks) == 6
         assert min(heights) > 0.015
         assert all(p.direction == "exo" for p in result.peaks)
 
-    def test_tnaa_10c_reports_only_strong_events(self):
-        result = self._run_sample("sample_data/dta_tnaa_10c_mendeley.csv")
+    def test_dta_10c_reports_only_strong_events(self):
+        from synthetic_samples import dta_events_path
+
+        result = self._run_sample(dta_events_path("10c"))
         heights = [abs(p.height) for p in result.peaks]
         assert len(result.peaks) == 5
         assert min(heights) > 0.02

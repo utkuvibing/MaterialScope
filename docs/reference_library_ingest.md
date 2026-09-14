@@ -95,7 +95,7 @@ The legacy seed path still works when the normalized root is empty:
 
 ```bash
 python tools/build_reference_library_mirror.py \
-  --source sample_data/reference_library_seed.json \
+  --source resources/reference_library_seed.json \
   --output build/reference_library_mirror
 ```
 

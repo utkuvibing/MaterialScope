@@ -599,8 +599,8 @@ def test_xrd_dash_page_import_and_run_via_server():
 
     from fastapi.testclient import TestClient
 
-    from dash_app.sample_data import resolve_sample_request
     from dash_app.server import create_combined_app
+    from synthetic_samples import sample_for
 
     app = create_combined_app()
     client = TestClient(app)
@@ -609,8 +609,7 @@ def test_xrd_dash_page_import_and_run_via_server():
     assert workspace.status_code == 200
     project_id = workspace.json()["project_id"]
 
-    sample_path, sample_type = resolve_sample_request("load-sample-xrd")
-    assert sample_path is not None
+    sample_path, sample_type = sample_for("XRD")
     assert sample_type == "XRD"
 
     payload = base64.b64encode(sample_path.read_bytes()).decode("ascii")

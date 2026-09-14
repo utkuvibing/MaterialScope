@@ -54,8 +54,13 @@ python3
 
 # Generated/reference-library artifacts: keep source fixtures small and reviewed.
 build/reference_library_*/
-sample_data/reference_library_mirror/
-sample_data/reference_library_ingest_cloud_dev/
+
+# Retired local-data directories: private experiments may live here but must
+# never be recommitted to the public tree.
+/sample_data/
+/test_data/
+/rag/
+/cloudflare/
 
 # Runtime output (reports, exports, playwright captures) is generated content.
 output/

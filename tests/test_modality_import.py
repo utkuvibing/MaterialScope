@@ -521,11 +521,10 @@ class TestBackendModalityImport:
         from backend.store import ProjectStore
         from fastapi.testclient import TestClient
         import base64
-        from pathlib import Path
 
-        sample_path = Path(_ROOT) / "sample_data" / "dsc_polymer_melting.csv"
-        if not sample_path.exists():
-            pytest.skip("Sample data file not found")
+        from synthetic_samples import sample_for
+
+        sample_path, _ = sample_for("DSC")
 
         app = create_app(store=ProjectStore())
         client = TestClient(app)

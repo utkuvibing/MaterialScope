@@ -420,7 +420,7 @@ class FixtureLiteratureProvider:
 
     def __init__(self, fixture_path: str | Path | None = None) -> None:
         self.fixture_path = Path(fixture_path) if fixture_path else (
-            Path(__file__).resolve().parents[1] / "sample_data" / "literature_fixture_sources.json"
+            Path(__file__).resolve().parents[1] / "resources" / "literature_fixture_sources.json"
         )
         raw_payload = json.loads(self.fixture_path.read_text(encoding="utf-8"))
         self._sources = normalize_literature_sources(raw_payload.get("sources") or [])

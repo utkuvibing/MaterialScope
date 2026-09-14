@@ -43,8 +43,8 @@ def test_pick_best_series_prefers_corrected_then_smoothed_then_raw():
 def test_workspace_batch_run_persists_compare_workspace_combined_app():
     from fastapi.testclient import TestClient
 
-    from dash_app.sample_data import resolve_sample_request
     from dash_app.server import create_combined_app
+    from synthetic_samples import sample_for
 
     app = create_combined_app()
     client = TestClient(app)
@@ -53,8 +53,7 @@ def test_workspace_batch_run_persists_compare_workspace_combined_app():
     assert ws.status_code == 200
     project_id = ws.json()["project_id"]
 
-    sample_path, _ = resolve_sample_request("load-sample-dsc")
-    assert sample_path is not None
+    sample_path, _ = sample_for("DSC")
     raw = sample_path.read_bytes()
     b64 = base64.b64encode(raw).decode("ascii")
 
@@ -109,13 +108,13 @@ def test_two_dsc_runs_expose_analysis_state_for_best_overlay():
     from fastapi.testclient import TestClient
 
     from dash_app.compare_curve_utils import pick_best_series
-    from dash_app.sample_data import resolve_sample_request
     from dash_app.server import create_combined_app
+    from synthetic_samples import sample_for
 
     client = TestClient(create_combined_app())
     ws = client.post("/workspace/new")
     project_id = ws.json()["project_id"]
-    sample_path, _ = resolve_sample_request("load-sample-dsc")
+    sample_path, _ = sample_for("DSC")
     b64 = base64.b64encode(sample_path.read_bytes()).decode("ascii")
 
     def _import(name: str) -> str:

@@ -13,17 +13,17 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from dash_app.sample_data import resolve_sample_request
 from dash_app.server import create_combined_app
+from synthetic_samples import sample_for
 
-# (sample_button_id, analysis_type, workflow_template_id)
+# (modality, analysis_type, workflow_template_id)
 _MODALITY_MATRIX: list[tuple[str, str, str]] = [
-    ("load-sample-dsc", "DSC", "dsc.general"),
-    ("load-sample-tga", "TGA", "tga.general"),
-    ("load-sample-dta", "DTA", "dta.general"),
-    ("load-sample-ftir", "FTIR", "ftir.general"),
-    ("load-sample-raman", "RAMAN", "raman.general"),
-    ("load-sample-xrd", "XRD", "xrd.general"),
+    ("DSC", "DSC", "dsc.general"),
+    ("TGA", "TGA", "tga.general"),
+    ("DTA", "DTA", "dta.general"),
+    ("FTIR", "FTIR", "ftir.general"),
+    ("RAMAN", "RAMAN", "raman.general"),
+    ("XRD", "XRD", "xrd.general"),
 ]
 
 
@@ -31,9 +31,8 @@ def _client() -> TestClient:
     return TestClient(create_combined_app())
 
 
-def _b64_file(button_id: str) -> tuple[bytes, str, str]:
-    path, data_type = resolve_sample_request(button_id)
-    assert path is not None and data_type is not None
+def _b64_file(modality: str) -> tuple[bytes, str, str]:
+    path, data_type = sample_for(modality)
     return path.read_bytes(), path.name, data_type
 
 
@@ -127,9 +126,9 @@ def _assert_analysis_state_curves(curves: dict[str, Any]) -> None:
     ), curves.keys()
 
 
-@pytest.mark.parametrize("button_id,analysis_type,template_id", _MODALITY_MATRIX)
+@pytest.mark.parametrize("modality,analysis_type,template_id", _MODALITY_MATRIX)
 def test_modality_import_run_result_detail_and_analysis_state(
-    button_id: str,
+    modality: str,
     analysis_type: str,
     template_id: str,
 ):
@@ -138,7 +137,7 @@ def test_modality_import_run_result_detail_and_analysis_state(
     assert ws.status_code == 200
     project_id = ws.json()["project_id"]
 
-    raw, name, data_type = _b64_file(button_id)
+    raw, name, data_type = _b64_file(modality)
     key = _import_dataset(client, project_id, file_bytes=raw, file_name=name, data_type=data_type)
 
     run_payload = _run_analysis(client, project_id, key, analysis_type, template_id)
@@ -163,7 +162,7 @@ def test_downstream_workspace_export_compare_after_two_dsc_runs():
     assert ws.status_code == 200
     project_id = ws.json()["project_id"]
 
-    raw, _, _ = _b64_file("load-sample-dsc")
+    raw, _, _ = _b64_file("DSC")
     key_a = _import_dataset(client, project_id, file_bytes=raw, file_name="regression_dsc_a.csv", data_type="DSC")
     key_b = _import_dataset(client, project_id, file_bytes=raw, file_name="regression_dsc_b.csv", data_type="DSC")
 
@@ -232,7 +231,7 @@ def test_export_results_csv_smoke_combined_app():
     client = _client()
     ws = client.post("/workspace/new")
     project_id = ws.json()["project_id"]
-    raw, name, dt = _b64_file("load-sample-dsc")
+    raw, name, dt = _b64_file("DSC")
     key = _import_dataset(client, project_id, file_bytes=raw, file_name=name, data_type=dt)
     run = _run_analysis(client, project_id, key, "DSC", "dsc.general")
     rid = run["result_id"]
@@ -254,7 +253,7 @@ def test_project_save_load_preserves_results_and_compare():
     ws = client.post("/workspace/new")
     project_id = ws.json()["project_id"]
 
-    raw, _, _ = _b64_file("load-sample-dsc")
+    raw, _, _ = _b64_file("DSC")
     key_a = _import_dataset(client, project_id, file_bytes=raw, file_name="roundtrip_a.csv", data_type="DSC")
     key_b = _import_dataset(client, project_id, file_bytes=raw, file_name="roundtrip_b.csv", data_type="DSC")
     run = _run_analysis(client, project_id, key_a, "DSC", "dsc.general")
@@ -292,7 +291,7 @@ def test_project_roundtrip_preserves_registered_result_figure():
     ws = client.post("/workspace/new")
     project_id = ws.json()["project_id"]
 
-    raw, name, dt = _b64_file("load-sample-dsc")
+    raw, name, dt = _b64_file("DSC")
     dataset_key = _import_dataset(client, project_id, file_bytes=raw, file_name=name, data_type=dt)
     run = _run_analysis(client, project_id, dataset_key, "DSC", "dsc.general")
     result_id = run["result_id"]

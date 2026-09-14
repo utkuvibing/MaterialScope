@@ -76,7 +76,9 @@ def test_xrd_result_plotly_graph_has_visible_browser_box():
         pytest.skip(f"MaterialScope server is not reachable at {BASE_URL}.")
 
     project = _post_json("/workspace/new")["project_id"]
-    sample = REPO_ROOT / "sample_data" / "xrd_2024_0304_zenodo.csv"
+    from synthetic_samples import sample_for
+
+    sample, _ = sample_for("XRD")
     imported = _post_json(
         "/dataset/import",
         {

@@ -115,12 +115,7 @@ def render():
         m2.metric("D / T / DTA / F / R / X", f"{dsc_count} / {tga_count} / {dta_count} / {ftir_count} / {raman_count} / {xrd_count}")
         m3.metric(tx("Vendor Sayısı", "Vendors"), str(len(vendors)))
 
-    upload_tab, sample_tab = st.tabs(
-        [
-            tx("Dosya Yükle", "Upload File"),
-            tx("Örnek Veri Yükle", "Load Sample Data"),
-        ]
-    )
+    (upload_tab,) = st.tabs([tx("Dosya Yükle", "Upload File")])
 
     with upload_tab:
         uploaded_files = st.file_uploader(
@@ -319,102 +314,6 @@ def render():
                                 "Dosya ayrıştırılamadı: {error}",
                                 "Could not parse file: {error}",
                                 error=f"{fallback_error} (Error ID: {error_id})",
-                            )
-                        )
-
-    with sample_tab:
-        st.markdown(tx("Test için örnek veriyi yükleyin:", "Load built-in sample data for testing:"))
-
-        sample_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "sample_data")
-
-        sample_files = {
-            tx("DSC - Polimer Erime", "DSC - Polymer Melting"): {
-                "filename": "dsc_polymer_melting.csv",
-                "data_type": "DSC",
-            },
-            tx("TGA - Kalsiyum Oksalat", "TGA - Calcium Oxalate"): {
-                "filename": "tga_calcium_oxalate.csv",
-                "data_type": "TGA",
-            },
-            tx("DSC - Çoklu Isıtma Hızı Kissinger", "DSC - Multi-Rate Kissinger"): {
-                "filename": "dsc_multirate_kissinger.csv",
-                "data_type": "DSC",
-            },
-            tx("DTA - TNAA (5 °C/dk, Mendeley)", "DTA - TNAA (5 °C/min, Mendeley)"): {
-                "filename": "dta_tnaa_5c_mendeley.csv",
-                "data_type": "DTA",
-            },
-            tx("FTIR - Particleboard (50 g, Figshare)", "FTIR - Particleboard (50 g, Figshare)"): {
-                "filename": "ftir_particleboard_50g_figshare.csv",
-                "data_type": "FTIR",
-            },
-            tx("Raman - CNT Spectrum (Figshare)", "Raman - CNT Spectrum (Figshare)"): {
-                "filename": "raman_cnt_figshare.csv",
-                "data_type": "RAMAN",
-            },
-            tx("XRD - 2024-0304 (Zenodo)", "XRD - 2024-0304 (Zenodo)"): {
-                "filename": "xrd_2024_0304_zenodo.csv",
-                "data_type": "XRD",
-            },
-        }
-
-        for label, spec in sample_files.items():
-            filename = spec["filename"]
-            forced_data_type = spec.get("data_type")
-            filepath = os.path.join(sample_dir, filename)
-            if os.path.exists(filepath):
-                if st.button(f"{tx('Yükle', 'Load')}: {label}", key=f"sample_{filename}"):
-                    try:
-                        dataset = read_thermal_data(filepath, data_type=forced_data_type)
-                        validation = _validate_import_stage(dataset)
-                        if validation["status"] == "fail":
-                            st.error(
-                                tx(
-                                    "Örnek veri kararlı iş akışına alınmadı: {issues}",
-                                    "Sample dataset was blocked from the stable workflow: {issues}",
-                                    issues="; ".join(validation["issues"]),
-                                )
-                            )
-                            continue
-                        dataset.metadata["file_name"] = filename
-                        dataset.metadata.setdefault("display_name", filename)
-                        st.session_state.datasets[filename] = dataset
-                        st.session_state.active_dataset = filename
-                        _log_event(
-                            tx("Veri Yüklendi", "Data Loaded"),
-                            f"{label} ({dataset.data_type}, {dataset.metadata.get('vendor', 'Generic')}, {len(dataset.data)} pts)",
-                            t("home.title"),
-                            dataset_key=filename,
-                            parameters={"validation_status": validation["status"]},
-                        )
-                        st.success(tx("**{label}** yüklendi.", "Loaded **{label}**.", label=label))
-                        st.caption(
-                            tx(
-                                "İçe aktarım güveni: {confidence}",
-                                "Import confidence: {confidence}",
-                                confidence=str(dataset.metadata.get("import_confidence", "n/a")).upper(),
-                            )
-                        )
-                        emitted_warnings = []
-                        for warning in (dataset.metadata.get("import_warnings", []) or []) + (validation["warnings"] or []):
-                            if warning and warning not in emitted_warnings:
-                                emitted_warnings.append(warning)
-                                st.warning(warning)
-                        st.rerun()
-                    except Exception as error:
-                        error_id = record_exception(
-                            st.session_state,
-                            area="import",
-                            action="sample_import",
-                            message="Built-in sample import failed.",
-                            context={"file_name": filename},
-                            exception=error,
-                        )
-                        st.error(
-                            tx(
-                                "Örnek veri yüklenemedi: {error}",
-                                "Error loading sample: {error}",
-                                error=f"{error} (Error ID: {error_id})",
                             )
                         )
 

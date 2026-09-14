@@ -57,7 +57,7 @@ Open [http://127.0.0.1:8050](http://127.0.0.1:8050) in your browser.
 
 This command starts one process serving both Dash and the FastAPI API on the same port. You do not need to start a second backend for Dash.
 
-For a sample-data walkthrough and feedback instructions, see the [early-tester guide](docs/early-tester-guide.md).
+For a testing walkthrough using your own measurement files and feedback instructions, see the [early-tester guide](docs/early-tester-guide.md).
 
 ## Data and deployment
 

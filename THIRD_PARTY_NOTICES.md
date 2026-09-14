@@ -19,7 +19,7 @@ identifiers live in `tools/library_ingest/provider_sources.json`:
 | ROD (Raman Open Database) | Raman/JCAMP-DX records | CC0-1.0 |
 
 These records are fetched on demand; their own terms follow the data.
-`sample_data/reference_library_seed.json` is a starter seed of
+`resources/reference_library_seed.json` is a starter seed of
 normalized reference entries that declares per-package license labels
 from the same providers.
 
@@ -32,23 +32,24 @@ provider data.
 
 ## Sample and test datasets
 
-Files under `sample_data/` and `test_data/` fall into two groups:
+The `sample_data/` and `test_data/` directories have been retired. The
+current repository tree no longer distributes any bundled sample or
+root-level test datasets; users import their own measurement files.
 
-- **Project-generated synthetic data.** Most `test_data/` files are
-  produced by `generate_test_data.py` from literature-typical values
-  (for example `dsc_PET_amorphous_10Kmin.csv`,
-  `dsc_Nylon6_PA6_NETZSCH.txt`, `tga_polymers_comparison.xlsx`).
-  `sample_data/dsc_polymer_melting.csv`,
-  `sample_data/dsc_multirate_kissinger.csv`, and
-  `sample_data/tga_calcium_oxalate.csv` are likewise synthetic fixtures
-  authored for the project.
+- **Project-generated synthetic data.** Formerly shipped synthetic
+  fixtures (for example `dsc_PET_amorphous_10Kmin.csv`,
+  `dsc_Nylon6_PA6_NETZSCH.txt`, `tga_polymers_comparison.xlsx`,
+  `dsc_polymer_melting.csv`, `dsc_multirate_kissinger.csv`,
+  `tga_calcium_oxalate.csv`) are no longer part of the tree. Tests now
+  generate equivalent deterministic data in memory at run time
+  (`tests/synthetic_samples.py`, `tests/conftest.py`).
 
 - **Externally sourced datasets (filename-indicated, unverified).** The
-  following tracked files are named after public data repositories
-  (Mendeley Data, Figshare, Zenodo), but this repository does not record
-  their exact source records, authors, or license terms. No
-  redistribution permission is asserted for the unverified files listed
-  below until their source license is confirmed:
+  following files were previously tracked and are named after public
+  data repositories (Mendeley Data, Figshare, Zenodo), but this
+  repository never recorded their exact source records, authors, or
+  license terms. They have been **removed from the current tree** and
+  are no longer distributed:
 
   - `sample_data/dta_tnaa_5c_mendeley.csv`,
     `sample_data/dta_tnaa_10c_mendeley.csv`
@@ -63,18 +64,14 @@ Files under `sample_data/` and `test_data/` fall into two groups:
   - `test_data/xrd_2024_0303_zenodo.csv`,
     `test_data/xrd_2024_1784_zenodo.csv`,
     `test_data/xrd_2024_2097_zenodo.csv`
+  - `test_data/CaCO3 decomposition.csv`
 
-  These files are **not** relicensed under the AGPL. Their redistribution
-  terms are unverified inside this repository and must be confirmed
-  against the original source records; this is a current
-  public-repository cleanup blocker and a release blocker. Their
-  presence in Git history does not make them safely redistributable.
-  Until then they are treated as third-party material retained for
-  test/sample use, not as project-owned content.
-
-- `test_data/CaCO3 decomposition.csv` is not produced by
-  `generate_test_data.py`; its provenance is likewise unrecorded and is
-  grouped with the unverified items above.
+  No redistribution permission is asserted for these files. Git history
+  was **not** rewritten: historical copies may still exist in earlier
+  commits, but their presence in history does not make them safely
+  redistributable, and they were never relicensed under the AGPL.
+  Anyone needing these datasets should obtain them from the original
+  source records under the terms declared there.
 
 ## Other third-party material
 

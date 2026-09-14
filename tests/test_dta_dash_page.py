@@ -755,7 +755,7 @@ def test_dta_dash_page_import_and_run_via_server():
     import base64
 
     from fastapi.testclient import TestClient
-    from dash_app.sample_data import resolve_sample_request
+    from synthetic_samples import sample_for
     from dash_app.server import create_combined_app
 
     app = create_combined_app()
@@ -770,7 +770,7 @@ def test_dta_dash_page_import_and_run_via_server():
 
     # Import a DSC file as DTA (DSC data is valid DTA input in the real
     # processor -- both are thermal differential signals)
-    sample_path, _ = resolve_sample_request("load-sample-dsc")
+    sample_path, _ = sample_for("DSC")
     assert sample_path is not None
     payload = base64.b64encode(sample_path.read_bytes()).decode("ascii")
 
@@ -828,7 +828,7 @@ def test_dta_analysis_state_curves_sorted_temperature():
     import base64
 
     from fastapi.testclient import TestClient
-    from dash_app.sample_data import resolve_sample_request
+    from synthetic_samples import sample_for
     from dash_app.server import create_combined_app
 
     app = create_combined_app()
@@ -837,7 +837,7 @@ def test_dta_analysis_state_curves_sorted_temperature():
     workspace = client.post("/workspace/new")
     project_id = workspace.json()["project_id"]
 
-    sample_path, _ = resolve_sample_request("load-sample-dsc")
+    sample_path, _ = sample_for("DSC")
     payload = base64.b64encode(sample_path.read_bytes()).decode("ascii")
 
     imported = client.post(
@@ -1005,7 +1005,7 @@ def test_dta_analysis_run_honors_smoothing_overrides():
     import base64
 
     from fastapi.testclient import TestClient
-    from dash_app.sample_data import resolve_sample_request
+    from synthetic_samples import sample_for
     from dash_app.server import create_combined_app
 
     app = create_combined_app()
@@ -1014,7 +1014,7 @@ def test_dta_analysis_run_honors_smoothing_overrides():
     workspace = client.post("/workspace/new")
     project_id = workspace.json()["project_id"]
 
-    sample_path, _ = resolve_sample_request("load-sample-dsc")
+    sample_path, _ = sample_for("DSC")
     payload = base64.b64encode(sample_path.read_bytes()).decode("ascii")
 
     imported = client.post(
@@ -1056,7 +1056,7 @@ def test_dta_analysis_run_rejects_unsupported_override_section():
     import base64
 
     from fastapi.testclient import TestClient
-    from dash_app.sample_data import resolve_sample_request
+    from synthetic_samples import sample_for
     from dash_app.server import create_combined_app
 
     app = create_combined_app()
@@ -1065,7 +1065,7 @@ def test_dta_analysis_run_rejects_unsupported_override_section():
     workspace = client.post("/workspace/new")
     project_id = workspace.json()["project_id"]
 
-    sample_path, _ = resolve_sample_request("load-sample-dsc")
+    sample_path, _ = sample_for("DSC")
     payload = base64.b64encode(sample_path.read_bytes()).decode("ascii")
 
     imported = client.post(
@@ -1352,7 +1352,7 @@ def test_dta_analysis_run_honors_baseline_and_peak_overrides():
     import base64
 
     from fastapi.testclient import TestClient
-    from dash_app.sample_data import resolve_sample_request
+    from synthetic_samples import sample_for
     from dash_app.server import create_combined_app
 
     app = create_combined_app()
@@ -1361,7 +1361,7 @@ def test_dta_analysis_run_honors_baseline_and_peak_overrides():
     workspace = client.post("/workspace/new")
     project_id = workspace.json()["project_id"]
 
-    sample_path, _ = resolve_sample_request("load-sample-dsc")
+    sample_path, _ = sample_for("DSC")
     payload = base64.b64encode(sample_path.read_bytes()).decode("ascii")
 
     imported = client.post(
@@ -1594,14 +1594,14 @@ def test_backend_register_figure_writes_state_and_artifacts():
     import base64 as _b64
 
     from fastapi.testclient import TestClient
-    from dash_app.sample_data import resolve_sample_request
+    from synthetic_samples import sample_for
     from dash_app.server import create_combined_app
 
     app = create_combined_app()
     client = TestClient(app)
 
     project_id = client.post("/workspace/new").json()["project_id"]
-    sample_path, _ = resolve_sample_request("load-sample-dsc")
+    sample_path, _ = sample_for("DSC")
     payload = _b64.b64encode(sample_path.read_bytes()).decode("ascii")
     imported = client.post(
         "/dataset/import",
@@ -1682,7 +1682,7 @@ def test_backend_register_figure_rejects_invalid_inputs():
     import base64 as _b64
 
     from fastapi.testclient import TestClient
-    from dash_app.sample_data import resolve_sample_request
+    from synthetic_samples import sample_for
     from dash_app.server import create_combined_app
 
     client = TestClient(create_combined_app())
@@ -1695,7 +1695,7 @@ def test_backend_register_figure_rejects_invalid_inputs():
     assert unknown.status_code == 404, unknown.text
 
     # Build a valid saved result to exercise 400 paths against a real rid.
-    sample_path, _ = resolve_sample_request("load-sample-dsc")
+    sample_path, _ = sample_for("DSC")
     payload = _b64.b64encode(sample_path.read_bytes()).decode("ascii")
     imported = client.post(
         "/dataset/import",

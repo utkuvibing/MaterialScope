@@ -70,11 +70,11 @@ MaterialScope aims to bring these steps into a cleaner and more reproducible wor
 
 ## Suggested 10-minute testing flow
 
-1. Open the Dash app after setup. On the import/home page, load the DSC polymer-melting sample, or upload [dsc_polymer_melting.csv](../sample_data/dsc_polymer_melting.csv).
+1. Open the Dash app after setup. On the import/home page, upload one of your own DSC measurement files (CSV/TXT exports from your instrument software work best).
 2. Review the detected DSC modality, temperature/signal columns, units, and import warnings.
 3. Open DSC, run the analysis, inspect the plot and detected features, and save the result to the workspace.
-4. Import a second DSC dataset, such as [dsc_HDPE_melting_10Kmin.csv](../test_data/dsc_HDPE_melting_10Kmin.csv), then inspect its metadata and run/save its analysis too.
-5. Open Compare, choose DSC, select both datasets, inspect the overlay, and save the comparison workspace. These example files use different heat-flow units (mW/mg versus mW); use this step to assess the interface, not to compare amplitudes quantitatively. Scientific comparisons require compatible units and processing choices.
+4. Import a second DSC dataset, then inspect its metadata and run/save its analysis too.
+5. Open Compare, choose DSC, select both datasets, inspect the overlay, and save the comparison workspace. Use this step to assess the interface; scientific comparisons require compatible units and processing choices.
 6. Open Export, select saved results, and download a data export or report. Check that the output contains the intended results and labels.
 7. On Project, download a `.scopezip` archive and keep it on disk before stopping the server. A result saved inside the running workspace is not a disk backup.
 8. Note confusing controls, missing features, failed downloads, or questionable scientific results, including the sample filename and steps to reproduce.
