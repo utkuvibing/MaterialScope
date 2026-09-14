@@ -146,17 +146,18 @@ _TYPE_PATTERN_KEYS = {
 }
 _SPECTRAL_ANALYSIS_TYPES = {"FTIR", "RAMAN"}
 _XRD_SOURCE_HINTS = ("xrd", "diffract", "2theta", "2_theta", "zenodo_xrd")
-_VENDOR_TOKEN_SETS = {
+# Vendor evidence is tiered.  Strong tokens are vendor-specific identifiers
+# (software, model, or brand names); a single one justifies the inference.
+# Weak tokens are generic header/unit conventions that several vendors share
+# (e.g. "DSC/(mW/mg)"); they are review provenance only and can never, alone
+# or in combination, identify a vendor.
+_VENDOR_STRONG_TOKENS = {
     "NETZSCH": (
         "netzsch",
         "proteus",
         "sta 449",
         "sta449",
         "sta 2500",
-        "temp./°c",
-        "dsc/(mw",
-        "tg/%",
-        "dtg/(%/",
     ),
     "TA": (
         "ta instruments",
@@ -165,10 +166,6 @@ _VENDOR_TOKEN_SETS = {
         "q200",
         "q50",
         "q500",
-        "temperature (°c)",
-        "heat flow (",
-        "weight (%)",
-        "derivative weight",
     ),
     "METTLER": (
         "mettler",
@@ -176,6 +173,26 @@ _VENDOR_TOKEN_SETS = {
         "stare",
         "toledo",
     ),
+}
+_VENDOR_WEAK_TOKENS = {
+    "NETZSCH": (
+        "temp./°c",
+        "dsc/(mw",
+        "tg/%",
+        "dtg/(%/",
+    ),
+    "TA": (
+        "temperature (°c)",
+        "heat flow (",
+        "weight (%)",
+        "derivative weight",
+    ),
+    "METTLER": (),
+}
+# Backwards-compatible union view (strong + weak) for any external consumer.
+_VENDOR_TOKEN_SETS = {
+    vendor: strong + _VENDOR_WEAK_TOKENS.get(vendor, ())
+    for vendor, strong in _VENDOR_STRONG_TOKENS.items()
 }
 _JCAMP_EXTENSIONS = (".jdx", ".dx", ".jcamp", ".dxj")
 _JCAMP_UNSUPPORTED_TAGS = {"NTUPLES", "VAR_NAME", "SYMBOL", "CLASS", "XYPOINTS", "PEAK TABLE"}
@@ -1224,9 +1241,9 @@ _UNIT_RE = re.compile(
 )
 
 _TEMP_UNIT_MAP = {
-    "c": "°C", "°c": "°C", "celsius": "°C",
-    "k": "K",  "°k": "K", "kelvin": "K",
-    "f": "°F", "°f": "°F", "fahrenheit": "°F",
+    "c": "°C", "°c": "°C", "celsius": "°C", "degc": "°C",
+    "k": "K",  "°k": "K", "kelvin": "K", "degk": "K",
+    "f": "°F", "°f": "°F", "fahrenheit": "°F", "degf": "°F",
     "cm-1": "cm^-1", "cm^-1": "cm^-1", "1/cm": "cm^-1", "cm−1": "cm^-1",
 }
 
@@ -1247,22 +1264,44 @@ _TIME_UNIT_MAP = {"min": "min", "s": "s", "sec": "s", "h": "h"}
 
 
 def detect_vendor_info(source_name: str = "", columns: list[str] | None = None) -> dict[str, object]:
-    """Return vendor inference details for common thermal-analysis exports."""
+    """Return vendor inference details for common thermal-analysis exports.
+
+    Evidence tiers: a single *strong* token (vendor-specific software, model
+    or brand name) identifies the vendor; *weak* tokens are generic
+    header/unit conventions shared across instruments. Weak-only evidence
+    never identifies a vendor — generic headers such as ``DSC/(mW/mg)`` or
+    ``Temperature (°C)`` report ``Generic`` with a review warning, and the
+    matched weak tokens are kept as provenance.
+    """
     source_name = (source_name or "").lower()
     column_text = " ".join(str(col).lower() for col in (columns or []))
     combined = f"{source_name} {column_text}"
 
-    scores: dict[str, tuple[int, list[str]]] = {}
-    for vendor, tokens in _VENDOR_TOKEN_SETS.items():
-        matched = [token for token in tokens if token in combined]
-        score = 0
-        for token in matched:
-            score += 3 if token in source_name else 2
-        scores[vendor] = (score, matched)
+    scores: dict[str, dict[str, object]] = {}
+    for vendor in _VENDOR_STRONG_TOKENS:
+        strong = [t for t in _VENDOR_STRONG_TOKENS[vendor] if t in combined]
+        weak = [t for t in _VENDOR_WEAK_TOKENS.get(vendor, ()) if t in combined]
+        score = sum(3 if t in source_name else 2 for t in strong) + len(weak)
+        scores[vendor] = {
+            "score": score,
+            "matched": strong + weak,
+            "strong": len(strong),
+            "weak": len(weak),
+        }
 
-    ranked = sorted(scores.items(), key=lambda item: (item[1][0], item[0]), reverse=True)
+    # Vendors with strong evidence always outrank weak-only candidates; score
+    # breaks ties between vendors that both hold vendor-specific identifiers.
+    ranked = sorted(
+        scores.items(),
+        key=lambda item: (item[1]["strong"] > 0, item[1]["score"], item[0]),
+        reverse=True,
+    )
     warnings_list: list[str] = []
-    if not ranked or ranked[0][1][0] <= 0:
+    best_vendor, best = ranked[0]
+    best_score = int(best["score"])
+    matched_tokens = list(best["matched"])
+
+    if best_score <= 0:
         warnings_list.append("Vendor detection remained generic; confirm the export source if vendor-specific conventions matter.")
         return {
             "vendor": "Generic",
@@ -1271,17 +1310,32 @@ def detect_vendor_info(source_name: str = "", columns: list[str] | None = None) 
             "matched_tokens": [],
         }
 
-    best_vendor, (best_score, matched_tokens) = ranked[0]
-    confidence = "high" if best_score >= 4 else "medium"
-    if len(ranked) > 1 and ranked[1][1][0] >= best_score - 1 and ranked[1][1][0] > 0:
+    if best["strong"] == 0:
+        # Only generic conventions matched: honest answer is "Generic".
+        # Multiple weak tokens raise review evidence but can never name a vendor.
+        warnings_list.append(
+            f"Only generic thermal header conventions matched {matched_tokens}; "
+            "no vendor-specific identifier found, so vendor detection remained generic."
+        )
+        return {
+            "vendor": "Generic",
+            "confidence": "review",
+            "warnings": warnings_list,
+            "matched_tokens": matched_tokens,
+        }
+
+    confidence = "high"
+    # Ambiguity only matters between competing strong identifiers; a
+    # weak-only runner-up is generic convention noise, not counter-evidence.
+    if (
+        len(ranked) > 1
+        and int(ranked[1][1]["strong"]) > 0
+        and ranked[1][1]["score"] >= best_score - 1
+    ):
         warnings_list.append(
             f"Vendor inference is close between {best_vendor} and {ranked[1][0]}; review the source file naming and column headers."
         )
         confidence = "review"
-    elif confidence == "medium":
-        warnings_list.append(
-            f"Vendor '{best_vendor}' was inferred from limited header/file-name evidence; review before relying on vendor conventions."
-        )
 
     return {
         "vendor": best_vendor,
@@ -1319,9 +1373,9 @@ def _extract_unit(col_name: str, role: str) -> str:
 
 
 _TEMPERATURE_SCALE_TOKENS = {
-    "c", "°c", "celsius",
-    "k", "°k", "kelvin",
-    "f", "°f", "fahrenheit",
+    "c", "°c", "celsius", "degc",
+    "k", "°k", "kelvin", "degk",
+    "f", "°f", "fahrenheit", "degf",
 }
 
 # PR-10: temperature-scale plausibility gate. A thermal run that starts
@@ -1343,6 +1397,12 @@ def _extract_temperature_unit(col_name: str) -> tuple[str, bool]:
     col_name = str(col_name)
     m = _UNIT_RE.search(col_name)
     unit_lower = (m.group(1).strip() if m else "").lower()
+    if unit_lower not in _TEMPERATURE_SCALE_TOKENS and "/" in col_name:
+        # Slash-style headers ("Temp/°C", "Temperature/K") place the scale
+        # token after the final '/'.  The generic trailing-token regex can
+        # swallow the whole name because '/' is itself a unit character, so
+        # re-check the last segment before treating the unit as undeclared.
+        unit_lower = col_name.rsplit("/", 1)[-1].strip().strip("()").strip().lower()
     if unit_lower in _TEMPERATURE_SCALE_TOKENS:
         return _TEMP_UNIT_MAP[unit_lower], True
     return _TEMP_UNIT_MAP.get(unit_lower, "°C"), False
@@ -1734,13 +1794,20 @@ def read_thermal_data(
     # ------------------------------------------------------------------
     temperature_scale_plausibility = "not_evaluated"
     temperature_scale_review_required = False
+    temperature_scale_confirmed = bool(metadata.get("temperature_scale_confirmed"))
     if resolved_type in {"DSC", "TGA", "DTA"}:
         if not temperature_unit_declared:
-            import_warnings.append(
-                f"Temperature unit could not be confirmed from column '{col_map['temperature']}'; "
-                "assuming °C. Declare the scale in the column header (e.g. 'Temperature (K)') "
-                "or confirm it at import."
-            )
+            if temperature_scale_confirmed:
+                import_warnings.append(
+                    f"Temperature unit was not declared in column '{col_map['temperature']}'; "
+                    "recorded as °C and the scale was explicitly confirmed at import."
+                )
+            else:
+                import_warnings.append(
+                    f"Temperature unit could not be confirmed from column '{col_map['temperature']}'; "
+                    "assuming °C. Declare the scale in the column header (e.g. 'Temperature (K)') "
+                    "or confirm it at import."
+                )
             import_confidence = _classify_import_confidence(import_confidence, "medium")
         temp_axis = out_df["temperature"].to_numpy(dtype=float)
         temp_axis = temp_axis[np.isfinite(temp_axis)]
@@ -1759,14 +1826,26 @@ def read_thermal_data(
                 else:
                     temperature_scale_plausibility = "kelvin_declared_plausible"
             elif temperature_unit == "°C" and axis_min >= KELVIN_SUSPECT_MIN_AXIS:
-                temperature_scale_plausibility = "kelvin_axis_recorded_as_celsius"
-                temperature_scale_review_required = True
-                import_warnings.append(
-                    f"Temperature axis values {axis_min:g}–{axis_max:g} are implausible for °C and "
-                    "resemble a Kelvin axis; validation will block this dataset until the scale is "
-                    "declared (e.g. 'Temperature (K)') or explicitly confirmed."
-                )
-                import_confidence = _classify_import_confidence(import_confidence, "review")
+                if temperature_scale_confirmed:
+                    # The gate already ran: the user explicitly confirmed the
+                    # recorded scale at import.  Keep the caution as
+                    # provenance, but do not claim confirmation is still
+                    # pending - it has been applied.
+                    temperature_scale_plausibility = "scale_confirmed_despite_kelvin_shape"
+                    import_warnings.append(
+                        f"Temperature axis values {axis_min:g}–{axis_max:g} resemble a Kelvin axis; "
+                        "the recorded °C scale was explicitly confirmed at import."
+                    )
+                    import_confidence = _classify_import_confidence(import_confidence, "medium")
+                else:
+                    temperature_scale_plausibility = "kelvin_axis_recorded_as_celsius"
+                    temperature_scale_review_required = True
+                    import_warnings.append(
+                        f"Temperature axis values {axis_min:g}–{axis_max:g} are implausible for °C and "
+                        "resemble a Kelvin axis; validation will block this dataset until the scale is "
+                        "declared (e.g. 'Temperature (K)') or explicitly confirmed."
+                    )
+                    import_confidence = _classify_import_confidence(import_confidence, "review")
             else:
                 temperature_scale_plausibility = "scale_plausible"
 
@@ -1835,7 +1914,7 @@ def read_thermal_data(
         ),
         "temperature_scale_plausibility": temperature_scale_plausibility,
         "temperature_scale_review_required": temperature_scale_review_required,
-        "temperature_scale_confirmed": bool(metadata.get("temperature_scale_confirmed")),
+        "temperature_scale_confirmed": temperature_scale_confirmed,
     }
     if resolved_type in _SPECTRAL_ANALYSIS_TYPES:
         base_meta["spectral_axis_role"] = "wavenumber"

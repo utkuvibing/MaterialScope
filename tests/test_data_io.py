@@ -15,6 +15,7 @@ import io
 import os
 import sys
 import tempfile
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -161,6 +162,64 @@ class TestGuessColumns:
         assert info["vendor"] == "Generic"
         assert info["confidence"] == "review"
         assert info["warnings"]
+
+    def test_detect_vendor_single_generic_dsc_header_is_not_netzsch(self):
+        """A generic DSC unit header alone must not identify a vendor."""
+        info = detect_vendor_info("run_2024_03.csv", ["Temp/°C", "DSC/(mW/mg)"])
+
+        assert info["vendor"] == "Generic"
+        assert info["confidence"] == "review"
+        # Provenance is preserved: the weak match is still reported.
+        assert "dsc/(mw" in info["matched_tokens"]
+
+    def test_detect_vendor_multiple_generic_conventions_stay_generic(self):
+        """Weak-only evidence can never name a vendor, even in combination.
+
+        NETZSCH-typical and TA-typical generic header conventions are provenance
+        for review, not vendor identity: without a vendor-specific identifier the
+        honest answer stays ``Generic``.
+        """
+        for columns, weak_tokens in (
+            (["Temp./°C", "DSC/(mW/mg)"], ["temp./°c", "dsc/(mw"]),
+            (["Temperature (°C)", "Heat Flow (mW/mg)"], ["temperature (°c)", "heat flow ("]),
+        ):
+            info = detect_vendor_info("", columns)
+
+            assert info["vendor"] == "Generic"
+            assert info["confidence"] == "review"
+            for token in weak_tokens:
+                assert token in info["matched_tokens"]
+            assert any(
+                "no vendor-specific identifier" in warning.lower()
+                for warning in info["warnings"]
+            )
+
+    def test_detect_vendor_strong_identifier_in_headers(self):
+        """A vendor-specific software/model name in headers is strong evidence."""
+        assert detect_vendor("", ["Proteus Export Temp/°C", "DSC/(mW/mg)"]) == "NETZSCH"
+        assert detect_vendor("", ["TRIOS Temperature (°C)", "Heat Flow (W/g)"]) == "TA"
+
+    def test_detect_vendor_strong_mettler_identifier(self):
+        """Mettler-Toledo / STARe identifiers are vendor-specific evidence."""
+        assert detect_vendor("mettler_toledo_export.csv", ["Temperature (°C)", "Heat Flow (mW)"]) == "METTLER"
+        assert detect_vendor("", ["STARe Temperature (°C)", "Heat Flow (mW)"]) == "METTLER"
+
+    def test_tracked_generic_dsc_sample_does_not_infer_ta(self):
+        """The tracked polymer-melting sample uses generic DSC headers only.
+
+        ``Temperature (°C)`` + ``Heat Flow (mW/mg)`` are conventions shared by
+        many instruments; they must not be attributed to TA Instruments.
+        """
+        sample = Path(__file__).resolve().parent.parent / "sample_data" / "dsc_polymer_melting.csv"
+        ds = read_thermal_data(sample)
+
+        assert ds.metadata["vendor"] == "Generic"
+        assert ds.metadata["inferred_vendor"] == "Generic"
+        assert ds.metadata["vendor_detection_confidence"] == "review"
+        assert any(
+            "no vendor-specific identifier" in warning.lower()
+            for warning in ds.metadata["import_warnings"]
+        )
 
     def test_guess_columns_ambiguous_signal_column_warns_and_leaves_type_unknown(self):
         df = pd.DataFrame(
@@ -358,7 +417,8 @@ class TestReadCSV:
         assert ds.metadata["import_confidence"] == "review"
         assert ds.metadata["import_review_required"] is True
 
-    def test_read_tab_delimited_netzsch_like_export_is_unambiguous(self):
+    def test_read_tab_delimited_netzsch_like_export_stays_generic(self):
+        """NETZSCH-typical generic headers alone never name the vendor."""
         buf = io.StringIO(
             "Temp./°C\tDSC/(mW/mg)\n"
             "30.0\t0.10\n"
@@ -370,11 +430,62 @@ class TestReadCSV:
 
         assert ds.data_type == "DSC"
         assert ds.units["signal"] == "mW/mg"
-        assert ds.metadata["vendor"] == "NETZSCH"
-        assert ds.metadata["vendor_detection_confidence"] in {"high", "medium"}
+        assert ds.metadata["vendor"] == "Generic"
+        assert ds.metadata["vendor_detection_confidence"] == "review"
         assert ds.metadata["import_delimiter"] == "\t"
 
-    def test_read_ta_like_export_sets_inferred_vendor_and_type(self):
+    def test_read_slash_temperature_header_declares_celsius(self):
+        """'Temp/°C' is an explicit scale declaration, not a default."""
+        buf = io.StringIO(
+            "Temp/°C,DSC/(mW/mg)\n"
+            "30.0,0.10\n"
+            "50.0,0.50\n"
+            "70.0,0.15\n"
+        )
+
+        ds = read_thermal_data(buf)
+
+        assert ds.units["temperature"] == "°C"
+        assert ds.metadata["temperature_unit_source"] == "header"
+        assert not any(
+            "could not be confirmed" in warning
+            for warning in ds.metadata["import_warnings"]
+        )
+
+    def test_read_slash_temperature_header_declares_kelvin(self):
+        buf = io.StringIO(
+            "Temperature/K,DSC/(mW/mg)\n"
+            "300.0,0.10\n"
+            "350.0,0.50\n"
+            "400.0,0.15\n"
+        )
+
+        ds = read_thermal_data(buf)
+
+        assert ds.units["temperature"] == "K"
+        assert ds.metadata["temperature_unit_source"] == "header"
+        assert ds.metadata["temperature_scale_plausibility"] == "kelvin_declared_plausible"
+
+    def test_read_unitless_temperature_axis_still_undeclared(self):
+        """An ambiguous unitless axis must stay unconfirmed."""
+        buf = io.StringIO(
+            "Temperature,DSC/(mW/mg)\n"
+            "30.0,0.10\n"
+            "50.0,0.50\n"
+            "70.0,0.15\n"
+        )
+
+        ds = read_thermal_data(buf)
+
+        assert ds.units["temperature"] == "°C"
+        assert ds.metadata["temperature_unit_source"] == "defaulted_celsius"
+        assert any(
+            "could not be confirmed" in warning
+            for warning in ds.metadata["import_warnings"]
+        )
+
+    def test_read_ta_like_export_stays_generic_without_identifier(self):
+        """TA-typical generic headers are provenance, not vendor identity."""
         buf = io.StringIO(
             "Temperature (°C),Heat Flow (W/g)\n"
             "30.0,0.10\n"
@@ -386,9 +497,9 @@ class TestReadCSV:
 
         assert ds.data_type == "DSC"
         assert ds.units["signal"] == "W/g"
-        assert ds.metadata["vendor"] == "TA"
-        assert ds.metadata["inferred_vendor"] == "TA"
-        assert ds.metadata["import_confidence"] in {"high", "medium"}
+        assert ds.metadata["vendor"] == "Generic"
+        assert ds.metadata["inferred_vendor"] == "Generic"
+        assert ds.metadata["vendor_detection_confidence"] == "review"
 
     def test_read_ambiguous_weight_column_requires_review(self):
         buf = io.StringIO(

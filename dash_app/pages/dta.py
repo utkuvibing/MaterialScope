@@ -158,7 +158,8 @@ _DTA_BASELINE_DEFAULTS: dict[str, dict] = {
 }
 # Peak-detection defaults mirror core/batch_runner._DTA_TEMPLATE_DEFAULTS["dta.general"]["peak_detection"]
 # with two UI-visible knobs added (prominence, distance) that core/dta_processor.find_peaks already
-# accepts (prominence=None -> adaptive 5% of p-p range; distance forwarded to find_thermal_peaks kwargs).
+# accepts (prominence=None -> adaptive 5% of p-p range plus a matching automatic amplitude floor;
+# distance forwarded to find_thermal_peaks kwargs).
 # prominence == 0.0 is the sentinel "auto / adaptive".
 _DTA_PEAK_DETECTION_DEFAULTS: dict = {
     "detect_endothermic": True,
@@ -1031,8 +1032,10 @@ def _peak_controls_card() -> dbc.Card:
 
     Endo/exo checkboxes mirror ``core.dta_processor.find_peaks`` kwargs.
     ``prominence == 0`` is the adaptive-threshold sentinel (find_peaks derives
-    5 % of the signal peak-to-peak range when prominence is falsy). ``distance``
-    is forwarded to ``find_thermal_peaks`` via ``**kwargs``.
+    5 % of the signal peak-to-peak range when prominence is falsy, and applies
+    a matching automatic minimum-amplitude floor so negligible shoulder
+    ripples are not reported). ``distance`` is forwarded to
+    ``find_thermal_peaks`` via ``**kwargs``.
     """
     return dbc.Card(
         dbc.CardBody(
@@ -2900,7 +2903,7 @@ def render_dta_peak_chrome(locale_data):
         ),
         _t(
             "dash.analysis.dta.peaks.help.prominence",
-            "Minimum relative height a peak must stand above its surroundings. 0 = auto-threshold (~5% of signal range). Raise to ignore noise; lower to catch subtle events.",
+            "Minimum relative height a peak must stand above its surroundings. 0 = auto-threshold (~5% of signal range, plus a matching minimum-amplitude floor). Raise to ignore noise; lower to catch subtle events.",
         ),
         _t(
             "dash.analysis.dta.peaks.help.distance",

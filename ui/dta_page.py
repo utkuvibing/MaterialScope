@@ -600,8 +600,8 @@ def render():
                 format="%.4f",
                 key="dta_peak_prom",
                 help=tx(
-                    "Minimum pik belirginliği. Sinyal tepe-tepe aralığının %5'i kadar uyarlamalı varsayılan eşik için 0 kullanın.",
-                    "Minimum peak prominence. Set to 0 to use an adaptive default of 5% of the signal peak-to-peak range.",
+                    "Minimum pik belirginliği. Sinyal tepe-tepe aralığının %5'i kadar uyarlamalı varsayılan eşik (ve eşleşen bir minimum genlik tabanı) için 0 kullanın.",
+                    "Minimum peak prominence. Set to 0 to use an adaptive default of 5% of the signal peak-to-peak range, plus a matching minimum-amplitude floor.",
                 ),
             )
             min_distance = st.number_input(

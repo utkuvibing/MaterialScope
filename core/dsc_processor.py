@@ -35,6 +35,204 @@ from core.units_dimensional import (
 
 
 # ---------------------------------------------------------------------------
+# Glass-transition morphology gates
+# ---------------------------------------------------------------------------
+# A glass transition is a *persistent baseline step*: the signal settles on
+# one level, transitions through an inflection, then settles on a different
+# level.  Sharp peaks, decomposition spikes, edge artefacts and generic
+# high-curvature features all produce large |d2| but fail the step
+# morphology checks below.  Candidates are local maxima of the smoothed
+# |first derivative| (the inflection of a step is where |d1| peaks); each is
+# accepted only when every gate passes.
+
+_TG_CANDIDATE_MAD = 1.5          # |d1| candidate floor = median + K*MAD (noise-relative)
+_TG_ONSET_FRACTION = 0.15        # onset/endset walk threshold vs candidate |d1|
+_TG_MIN_STEP_FRACTION = 0.60     # plateau shift vs total local excursion
+_TG_MIN_PLATEAU_SNR = 3.0        # plateau shift vs detrended plateau roughness
+_TG_MAX_PLATEAU_EXCURSION = 0.35  # plateau-window peak-to-peak vs shift
+_TG_TRANSITION_RANGE = (0.5, 1.5)  # in-transition change vs plateau shift
+_TG_PERSISTENCE_TOL = 0.50       # far-window step agreement tolerance
+
+
+def _detrended_std(x: np.ndarray, y: np.ndarray) -> float:
+    """Standard deviation of ``y`` after removing its best-fit line."""
+    if y.size < 3 or np.ptp(x) <= 0:
+        return float(np.std(y)) if y.size else 0.0
+    coeffs = np.polyfit(x, y, 1)
+    return float(np.std(y - np.polyval(coeffs, x)))
+
+
+def _tg_step_evidence(
+    t_full: np.ndarray,
+    s_full: np.ndarray,
+    infl: int,
+    d1_smooth: np.ndarray,
+    noise_level: float,
+    flat_width: int,
+    strict_context: bool,
+) -> Optional[Tuple[int, int, float]]:
+    """
+    Evaluate whether the |d1| local maximum at ``infl`` is a baseline step.
+
+    ``infl`` indexes the FULL signal, and ``d1_smooth`` is the smoothed
+    |d1| of the full signal: the onset/endset walk and all plateau and
+    persistence windows run on full-signal context so that a
+    user-supplied region cannot hide context — a peak flank looks like a
+    step inside a tight window, but the levels do not persist just
+    outside it, and the walk must be able to descend past the transition
+    foot even when the region boundary sits on it.
+
+    Returns ``(onset_idx, endset_idx, heat_flow_step)`` when the candidate
+    passes every morphology gate, else ``None``.  The gates are:
+
+    * plateaus must exist on both sides (rejects edge artefacts);
+    * the plateau level shift must dominate the local excursion
+      (rejects features smaller than their own surroundings);
+    * the shift must exceed detrended plateau roughness (SNR gate);
+    * each plateau window must be flat relative to the shift
+      (rejects peak flanks, which keep rising/falling through the window);
+    * the signal change *within* [onset, endset] must match the plateau
+      shift (rejects ramp/peak fragments whose apparent levels are set by
+      windows far from a tiny transition);
+    * the shift must persist: re-measuring it in far plateau windows must
+      agree within tolerance (rejects broad-peak flanks and ramps that
+      never settle).
+    """
+    n_full = len(t_full)
+    threshold = max(_TG_ONSET_FRACTION * float(d1_smooth[infl]), noise_level)
+
+    onset = infl
+    for i in range(infl, -1, -1):
+        if d1_smooth[i] <= threshold:
+            onset = i
+            break
+    endset = infl
+    for i in range(infl, n_full):
+        if d1_smooth[i] <= threshold:
+            endset = i
+            break
+
+    # Plateau windows in temperature space on the full signal.  The
+    # derivative walk stops where the foot slope decays below the noise
+    # floor, i.e. inside the true transition extent — so plateau windows
+    # are pushed a half-transition-width clear of the measured
+    # [onset, endset] to sit on genuinely flat signal.
+    d_t = float(np.median(np.diff(t_full))) if n_full > 1 else 0.0
+    flat_t = flat_width * abs(d_t) if d_t else 0.0
+    if flat_t <= 0:
+        return None
+
+    def _plateau_levels(t_on: float, t_en: float):
+        gap = max(0.5 * (t_en - t_on), 0.5 * flat_t)
+        pre_edge, post_edge = t_on - gap, t_en + gap
+        pre = (t_full >= pre_edge - flat_t) & (t_full < pre_edge)
+        post = (t_full >= post_edge) & (t_full < post_edge + flat_t)
+        if int(pre.sum()) < 3 or int(post.sum()) < 3:
+            return None
+        return pre_edge, post_edge, pre, post
+
+    first = _plateau_levels(float(t_full[onset]), float(t_full[endset]))
+    if first is None:
+        return None
+    pre_edge, post_edge, pre_mask, post_mask = first
+    mean_before = float(np.mean(s_full[pre_mask]))
+    mean_after = float(np.mean(s_full[post_mask]))
+    step = mean_after - mean_before
+    if not np.isfinite(step) or abs(step) < 1e-12:
+        return None
+
+    # Refine [onset, endset] by level crossing against the plateau means:
+    # the transition edges are where the (lightly smoothed) signal leaves
+    # the before level / reaches the after level — the analogue of the
+    # tangent-intersection construction, and robust where the derivative
+    # walk stalls inside the noise floor.
+    s_sm = np.convolve(s_full, np.ones(5) / 5.0, mode='same')
+    lev_lo = mean_before + 0.15 * step
+    lev_hi = mean_after - 0.15 * step
+    if step > 0:
+        o2, e2 = onset, endset
+        while o2 > 0 and s_sm[o2] > lev_lo:
+            o2 -= 1
+        while e2 < n_full - 1 and s_sm[e2] < lev_hi:
+            e2 += 1
+    else:
+        o2, e2 = onset, endset
+        while o2 > 0 and s_sm[o2] < lev_lo:
+            o2 -= 1
+        while e2 < n_full - 1 and s_sm[e2] > lev_hi:
+            e2 += 1
+    if e2 > o2 and (o2 != onset or e2 != endset):
+        # The refined inflection must still sit inside the transition
+        # body — a noise bump just ahead of a real step inherits the
+        # step's plateau levels without being part of the transition.
+        width = e2 - o2
+        margin = 0.15 * width
+        if not (o2 + margin < infl < e2 - margin):
+            return None
+        second = _plateau_levels(float(t_full[o2]), float(t_full[e2]))
+        if second is None:
+            return None
+        onset, endset = o2, e2
+        pre_edge, post_edge, pre_mask, post_mask = second
+        mean_before = float(np.mean(s_full[pre_mask]))
+        mean_after = float(np.mean(s_full[post_mask]))
+        step = mean_after - mean_before
+        if not np.isfinite(step) or abs(step) < 1e-12:
+            return None
+
+    pre_t, pre_s = t_full[pre_mask], s_full[pre_mask]
+    post_t, post_s = t_full[post_mask], s_full[post_mask]
+    t_onset, t_endset = float(t_full[onset]), float(t_full[endset])
+
+    excursion = float(max(
+        np.ptp(s_full[max(0, onset - flat_width): min(n_full, endset + flat_width)]),
+        np.ptp(pre_s), np.ptp(post_s), abs(step),
+    ))
+    if abs(step) < _TG_MIN_STEP_FRACTION * excursion:
+        return None
+
+    roughness = max(_detrended_std(pre_t, pre_s), _detrended_std(post_t, post_s))
+    if abs(step) < _TG_MIN_PLATEAU_SNR * max(roughness, 1e-12):
+        return None
+
+    plateau_excursion = max(float(np.ptp(pre_s)), float(np.ptp(post_s)))
+    if plateau_excursion > _TG_MAX_PLATEAU_EXCURSION * abs(step):
+        return None
+
+    s_on = float(np.mean(s_full[max(0, onset - 2): onset + 3]))
+    s_en = float(np.mean(s_full[max(0, endset - 2): endset + 3]))
+    transition_ratio = (s_en - s_on) / step
+    if not (_TG_TRANSITION_RANGE[0] <= transition_ratio <= _TG_TRANSITION_RANGE[1]):
+        return None
+
+    far_pre = (t_full >= pre_edge - 2 * flat_t) & (t_full < pre_edge - flat_t)
+    far_post = (t_full >= post_edge + flat_t) & (t_full < post_edge + 2 * flat_t)
+    if int(far_pre.sum()) >= 3 and int(far_post.sum()) >= 3:
+        step_far = float(np.mean(s_full[far_post])) - float(np.mean(s_full[far_pre]))
+        if abs(step_far - step) > _TG_PERSISTENCE_TOL * abs(step):
+            return None
+
+    # Deep persistence (constrained searches only): each plateau level must
+    # still hold at a reach beyond the transition width itself.  This rejects
+    # narrow-window framings of a peak flank, where the "before" level is
+    # actually the peak shoulder.  Full-range searches skip it: adjacent
+    # windows already see mid-range context, and a deep reach would
+    # penalise a genuine Tg followed closely by a melting peak.
+    if strict_context:
+        reach = max(2.0 * flat_t, t_endset - t_onset)
+        deep_pre = (t_full >= pre_edge - reach - flat_t) & (t_full < pre_edge - reach)
+        deep_post = (t_full >= post_edge + reach) & (t_full < post_edge + reach + flat_t)
+        if int(deep_pre.sum()) >= 3:
+            if abs(float(np.mean(s_full[deep_pre])) - mean_before) > _TG_PERSISTENCE_TOL * abs(step):
+                return None
+        if int(deep_post.sum()) >= 3:
+            if abs(float(np.mean(s_full[deep_post])) - mean_after) > _TG_PERSISTENCE_TOL * abs(step):
+                return None
+
+    return onset, endset, step
+
+
+# ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
 
@@ -411,13 +609,24 @@ class DSCProcessor:
         ---------
         1. If a temperature region (T_low, T_high) is given, restrict analysis
            to that window; otherwise use the full temperature range.
-        2. Compute the second derivative of the (smoothed/corrected) signal.
-        3. Locate the index where the magnitude of the second derivative is
-           maximum - this is the inflection of the step.
-        4. Define onset and endset as the points on either side of the
-           inflection where the first derivative drops to 10 % of its
-           maximum magnitude.
-        5. Compute delta_cp from the difference in the mean signal level in
+        2. Compute the first derivative of the (smoothed/corrected) signal and
+           lightly smooth its magnitude.
+        3. Every local maximum of smoothed |d1| above a small floor is a Tg
+           *candidate* - the inflection of a genuine baseline step sits at a
+           |d1| maximum, while the largest |d2| feature alone is not
+           evidence of a step (sharp peaks and decomposition spikes have
+           higher curvature than any Tg).
+        4. Each candidate must pass the morphology gates in
+           ``_tg_step_evidence``: bounded flat plateaus on both sides, a
+           persistent plateau level shift that dominates the local
+           excursion, and an in-transition signal change consistent with
+           that shift.  Candidates that fail - peaks, edge artefacts,
+           ramp-like features - are not Tg; a user-supplied region does not
+           bypass the gates.
+        5. Among passing candidates the sharpest inflection (largest
+           smoothed |d1|) wins.  Onset/endset are where smoothed |d1| falls
+           to a fraction of the candidate peak or to the noise level.
+        6. Compute delta_cp from the difference in the mean signal level in
            flat regions just outside [onset, endset].
 
         Parameters
@@ -458,52 +667,73 @@ class DSCProcessor:
         if m < 10:
             return self
 
-        # --- first and second derivatives ------------------------------------
-        d1 = np.gradient(s_work, t_work)
-        d2 = np.gradient(d1, t_work)
+        # --- smoothed |d1|: step inflections are its local maxima -------------
+        d1_abs = np.abs(np.gradient(s_work, t_work))
+        smooth_w = max(3, int(round(m * 0.005)) | 1)
+        kernel = np.ones(smooth_w) / smooth_w
+        d1_smooth = np.convolve(d1_abs, kernel, mode='same')
 
-        # Smooth derivatives lightly with a simple moving average (3-point)
-        kernel = np.ones(3) / 3.0
-        d2_smooth = np.convolve(np.abs(d2), kernel, mode='same')
-
-        # --- locate inflection (max |d2|) ------------------------------------
-        infl_local = int(np.argmax(d2_smooth))
-
-        # --- onset: where |d1| drops to 10 % of max on the left -------------
-        d1_abs = np.abs(d1)
-        d1_max = float(np.max(d1_abs[max(0, infl_local - m // 4): infl_local + 1]))
-        threshold = 0.10 * d1_max if d1_max > 0 else 0.0
-
-        onset_local = infl_local
-        for i in range(infl_local, -1, -1):
-            if d1_abs[i] <= threshold:
-                onset_local = i
-                break
-
-        endset_local = infl_local
-        for i in range(infl_local, m):
-            if d1_abs[i] <= threshold:
-                endset_local = i
-                break
-
-        tg_onset = float(t_work[onset_local])
-        tg_endset = float(t_work[endset_local])
-        tg_midpoint = float(t_work[infl_local])
-
-        # --- heat-flow step from flat regions outside [onset, endset] -------
+        # Candidate floor is noise-relative, not global-max-relative: a sharp
+        # unrelated peak elsewhere must not price a legitimate small step out
+        # of candidacy.  Median + 1.5*MAD is a robust "above noise" bar that
+        # ignores large outlier excursions.
+        noise_level = float(np.median(d1_smooth))
+        noise_mad = 1.4826 * float(np.median(np.abs(d1_smooth - noise_level)))
+        cand_floor = noise_level + _TG_CANDIDATE_MAD * noise_mad
         flat_width = max(5, m // 10)
 
-        bl_start = max(0, onset_local - flat_width)
-        bl_end = onset_local
-        ar_start = endset_local
-        ar_end = min(m - 1, endset_local + flat_width)
-
-        if bl_end > bl_start and ar_end > ar_start:
-            mean_before = float(np.mean(s_work[bl_start:bl_end]))
-            mean_after = float(np.mean(s_work[ar_start:ar_end]))
-            heat_flow_step = mean_after - mean_before
+        # Candidate *selection* stays region-restricted, but morphology is
+        # judged on full-signal context: a constrained window must not be
+        # able to hide what lies just outside it.
+        if region is not None:
+            d1_ctx = np.convolve(
+                np.abs(np.gradient(signal, temperature)),
+                np.ones(max(3, int(round(n * 0.005)) | 1))
+                / max(3, int(round(n * 0.005)) | 1),
+                mode='same',
+            )
+            noise_ctx = float(np.median(d1_ctx))
         else:
-            heat_flow_step = 0.0
+            d1_ctx, noise_ctx = d1_smooth, noise_level
+
+        best = None  # (d1_smooth value, infl, onset, endset, step)
+        for infl in range(1, m - 1):
+            if d1_smooth[infl] < cand_floor:
+                continue
+            if not (
+                d1_smooth[infl] >= d1_smooth[infl - 1]
+                and d1_smooth[infl] > d1_smooth[infl + 1]
+            ):
+                continue
+            evidence = _tg_step_evidence(
+                temperature, signal,
+                infl + offset, d1_ctx, noise_ctx, flat_width,
+                strict_context=region is not None,
+            )
+            if evidence is None:
+                continue
+            if best is None or d1_smooth[infl] > best[0]:
+                best = (float(d1_smooth[infl]), infl) + evidence
+
+        if best is None:
+            # No candidate showed baseline-step morphology.  Reporting no Tg
+            # is the honest outcome - do not fabricate one from curvature.
+            self._metadata['steps'].append(
+                {
+                    'step': 'detect_glass_transition',
+                    'region': region,
+                    'tg_midpoint': None,
+                    'outcome': 'no_step_morphology',
+                }
+            )
+            return self
+
+        _, infl_local, onset, endset, heat_flow_step = best
+        # onset/endset are full-signal indices (the morphology gates run on
+        # full context); infl_local indexes the working arrays.
+        tg_onset = float(temperature[onset])
+        tg_endset = float(temperature[endset])
+        tg_midpoint = float(t_work[infl_local])
 
         # β-corrected ΔCp only when the working unit and β are trustworthy.
         beta, beta_reason = self._resolved_beta()

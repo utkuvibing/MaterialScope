@@ -299,7 +299,9 @@ class DTAProcessor:
         prominence : float, optional
             Minimum peak prominence in delta-T units.  If ``None``, an
             adaptive default of 5 % of the signal's peak-to-peak range is
-            used.
+            used, and ``min_peak_height`` defaults to the same scale so
+            the automatic mode does not report negligible-amplitude
+            shoulder ripples that happen to inherit a large prominence.
         detect_endothermic : bool, default True
             Whether to detect endothermic events.  The search direction
             follows the recorded sign convention (endothermic peaks point
@@ -311,7 +313,10 @@ class DTAProcessor:
             Minimum absolute peak height above baseline.  Applied to the
             characterised height magnitude, so endothermic events
             (negative height in the canonical exo-up frame) compare by
-            ``abs(height)``.
+            ``abs(height)``.  When ``prominence`` is ``None`` (automatic
+            mode) and no explicit value is supplied, this defaults to 5 %
+            of the signal's peak-to-peak range; supplying an explicit
+            ``prominence`` leaves it disabled unless set here.
         height : float, optional
             Minimum height threshold forwarded to
             :func:`~core.peak_analysis.find_thermal_peaks`.
@@ -356,10 +361,21 @@ class DTAProcessor:
         else:
             working_signal = self._raw_signal
 
-        # Adaptive prominence
+        # Adaptive prominence.  Prominence alone cannot reject shoulder
+        # ripples: a shallow dip sitting between large excursions inherits
+        # a large prominence from the surrounding high ground even though
+        # its own amplitude is negligible (observed prominences up to ~63 %
+        # of the signal range for dips whose |height| was < 5 % of it).
+        # Auto mode therefore also derives a minimum amplitude floor on the
+        # same signal scale so features that barely move the corrected
+        # signal are suppressed while events comparable to the real peaks
+        # are retained.  Explicit prominence or min_peak_height values keep
+        # their previous semantics unchanged.
         signal_range = working_signal.max() - working_signal.min()
         if prominence is None:
             prominence = max(0.05 * signal_range, 1e-6)
+            if min_peak_height is None:
+                min_peak_height = max(0.05 * signal_range, 1e-6)
 
         all_peaks: List[ThermalPeak] = []
 

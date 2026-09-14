@@ -139,6 +139,125 @@ class TestDocumentedKwargs:
         assert len(result.peaks) == 2
 
 
+def _dta_shoulder_ripple_signal():
+    """Two broad exotherms, one small separated event, three flank dips.
+
+    The dips sit on the flanks of the large peaks, so their prominence is
+    large (deep key cols on both sides) while their own amplitude is
+    < 3 % of the signal range.  This mirrors the tracked mendeley DTA
+    samples where auto detection reported ~12 events, half of them
+    sub-1 %-amplitude shoulder ripples.
+    """
+    t = np.linspace(20.0, 210.0, 4000)
+    signal = (
+        0.9 * np.exp(-0.5 * ((t - 60.0) / 8.0) ** 2)
+        + 0.7 * np.exp(-0.5 * ((t - 140.0) / 9.0) ** 2)
+        + 0.07 * np.exp(-0.5 * ((t - 185.0) / 4.0) ** 2)   # small real event
+        - 0.02 * np.exp(-0.5 * ((t - 78.0) / 2.0) ** 2)    # flank dip
+        - 0.015 * np.exp(-0.5 * ((t - 115.0) / 2.5) ** 2)  # flank dip
+        - 0.012 * np.exp(-0.5 * ((t - 160.0) / 2.0) ** 2)  # flank dip
+    )
+    return t, signal
+
+
+class TestAutoProminenceAmplitudeFloor:
+    """Auto mode (prominence=None) derives a scale-relative amplitude floor.
+
+    Prominence alone cannot reject dips between large excursions — their
+    key cols reach deep, so a dip of |height| ~ 1 % of the range can carry
+    > 50 % of the range in prominence.  The automatic floor filters on
+    characterised amplitude instead.
+    """
+
+    def test_auto_mode_suppresses_shoulder_ripples(self):
+        t, s = _dta_shoulder_ripple_signal()
+        result = (
+            DTAProcessor(t, s)
+            .smooth()
+            .find_peaks(prominence=None, distance=1)
+            .get_result()
+        )
+        temps = [p.peak_temperature for p in result.peaks]
+        # Three real events retained; none of the ~2 %-scale dips
+        # (they surface near ~113.5 and ~172.5 under sensitive settings).
+        assert any(abs(tp - 60.0) < 5 for tp in temps)
+        assert any(abs(tp - 140.0) < 5 for tp in temps)
+        assert any(abs(tp - 185.0) < 5 for tp in temps)
+        assert not any(abs(tp - 113.5) < 4 for tp in temps)
+        assert not any(abs(tp - 172.5) < 4 for tp in temps)
+
+    def test_auto_mode_keeps_small_real_event(self):
+        t, s = _dta_shoulder_ripple_signal()
+        result = (
+            DTAProcessor(t, s)
+            .smooth()
+            .find_peaks(prominence=None, distance=1)
+            .get_result()
+        )
+        small = [p for p in result.peaks if abs(p.peak_temperature - 185.0) < 5]
+        assert len(small) == 1
+        assert abs(small[0].height) > 0.04
+
+    def test_explicit_prominence_keeps_legacy_sensitivity(self):
+        """Explicit prominence with no min_peak_height preserves the
+        previous behaviour — the user asked for sensitive detection."""
+        t, s = _dta_shoulder_ripple_signal()
+        result = (
+            DTAProcessor(t, s)
+            .smooth()
+            .find_peaks(prominence=0.005, distance=1)
+            .get_result()
+        )
+        temps = [p.peak_temperature for p in result.peaks]
+        assert any(abs(tp - 113.5) < 4 for tp in temps)
+
+    def test_explicit_min_peak_height_overrides_auto_floor(self):
+        t, s = _dta_shoulder_ripple_signal()
+        result = (
+            DTAProcessor(t, s)
+            .smooth()
+            .find_peaks(prominence=None, min_peak_height=0.5, distance=1)
+            .get_result()
+        )
+        temps = [p.peak_temperature for p in result.peaks]
+        assert any(abs(tp - 60.0) < 5 for tp in temps)
+        assert any(abs(tp - 140.0) < 5 for tp in temps)
+        assert not any(abs(tp - 185.0) < 5 for tp in temps)  # below 0.5 floor
+
+
+class TestTrackedSampleAutoDetection:
+    """Regression on the tracked mendeley DTA samples: auto detection must
+    not report sub-1 %-amplitude shoulder dips as thermal events."""
+
+    @staticmethod
+    def _run_sample(path):
+        from core.data_io import read_thermal_data
+
+        ds = read_thermal_data(path)
+        t = np.asarray(ds.data["temperature"], dtype=float)
+        s = np.asarray(ds.data["signal"], dtype=float)
+        return (
+            DTAProcessor(t, s)
+            .smooth()
+            .correct_baseline()
+            .find_peaks(prominence=None, distance=1)
+            .get_result()
+        )
+
+    def test_tnaa_5c_reports_only_strong_events(self):
+        result = self._run_sample("sample_data/dta_tnaa_5c_mendeley.csv")
+        heights = [abs(p.height) for p in result.peaks]
+        assert len(result.peaks) == 6
+        assert min(heights) > 0.015
+        assert all(p.direction == "exo" for p in result.peaks)
+
+    def test_tnaa_10c_reports_only_strong_events(self):
+        result = self._run_sample("sample_data/dta_tnaa_10c_mendeley.csv")
+        heights = [abs(p.height) for p in result.peaks]
+        assert len(result.peaks) == 5
+        assert min(heights) > 0.02
+
+
 class TestSignConventionPreserved:
     def test_canonical_exo_up_direction_tags(self):
         t, s = _dta_signal()

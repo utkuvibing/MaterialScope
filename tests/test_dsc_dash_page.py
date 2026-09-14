@@ -468,6 +468,91 @@ def test_dsc_graph_config_exposes_png_export_options():
     assert cfg["toImageButtonOptions"]["scale"] == 2
 
 
+def test_assign_annotation_lanes_is_deterministic_and_stacks_close_labels():
+    mod = _import_dsc_page()
+
+    temps = [150.0, 148.0, 152.0, 149.0, 151.0, 230.0]
+    lanes_a = mod._assign_annotation_lanes(temps)
+    lanes_b = mod._assign_annotation_lanes(temps)
+
+    assert lanes_a == lanes_b
+    # Events 1-4 C apart can never share a lane.
+    close = [lane for lane, t in zip(lanes_a, temps) if t < 160.0]
+    assert sorted(close) == list(range(5))
+    # A far-away label falls back to lane 0 (reuses freed space).
+    assert lanes_a[temps.index(230.0)] == 0
+
+
+def test_assign_annotation_lanes_reuses_lane_after_gap():
+    mod = _import_dsc_page()
+
+    lanes = mod._assign_annotation_lanes([100.0, 108.0, 140.0])
+    assert lanes == [0, 1, 0]
+
+
+def test_build_figure_stacks_dense_event_labels(monkeypatch):
+    """Tg/onset/endset/peak labels a few degrees apart must all be drawn."""
+    mod = _import_dsc_page()
+    import dash_app.api_client as api_client
+
+    monkeypatch.setattr(
+        api_client,
+        "analysis_state_curves",
+        lambda _p, _t, _k: {
+            "temperature": [100.0, 130.0, 148.0, 149.0, 150.0, 151.0, 152.0, 190.0],
+            "raw_signal": [0.0, 0.4, 0.8, 0.85, 0.9, 0.85, 0.8, 0.4],
+            "smoothed": [0.0, 0.4, 0.8, 0.85, 0.9, 0.85, 0.8, 0.4],
+        },
+    )
+
+    fig = mod._build_dsc_go_figure(
+        "proj-1",
+        "dataset-1",
+        {"tg_midpoint": 150.0, "tg_onset": 148.0, "tg_endset": 152.0},
+        [
+            {"peak_type": "exotherm", "peak_temperature": 149.0},
+            {"peak_type": "endotherm", "peak_temperature": 151.0},
+        ],
+        "light",
+        "en",
+    )
+
+    assert fig is not None
+    annotations = [a for a in fig.layout.annotations if (a.text or "").strip()]
+    # Nothing is dropped: all five labels render.
+    assert len(annotations) == 5
+    # No two labels share the exact same anchor + offset -> no collisions.
+    positions = {(a.x, a.y, a.yshift) for a in annotations}
+    assert len(positions) == 5
+    # The close event cluster uses more than one lane.
+    assert len({a.yshift for a in annotations}) >= 3
+
+
+def test_build_figure_dense_labels_deterministic(monkeypatch):
+    mod = _import_dsc_page()
+    import dash_app.api_client as api_client
+
+    monkeypatch.setattr(
+        api_client,
+        "analysis_state_curves",
+        lambda _p, _t, _k: {
+            "temperature": [140.0, 148.0, 150.0, 152.0, 160.0],
+            "smoothed": [0.1, 0.5, 0.9, 0.5, 0.1],
+        },
+    )
+    kwargs = dict(
+        summary={"tg_midpoint": 150.0, "tg_onset": 148.0, "tg_endset": 152.0},
+        peak_rows=[{"peak_type": "exotherm", "peak_temperature": 149.0}],
+        ui_theme="light",
+        loc="en",
+    )
+    fig_a = mod._build_dsc_go_figure("p", "d", **kwargs)
+    fig_b = mod._build_dsc_go_figure("p", "d", **kwargs)
+    sig_a = [(a.text, a.x, a.yshift) for a in fig_a.layout.annotations]
+    sig_b = [(a.text, a.x, a.yshift) for a in fig_b.layout.annotations]
+    assert sig_a == sig_b
+
+
 def test_run_dsc_analysis_forwards_draft_overrides_and_refreshes(monkeypatch):
     mod = _import_dsc_page()
     import dash_app.api_client as api_client
