@@ -94,19 +94,20 @@ def integrate_peak_bounds(
     if not (hi > lo):
         return 0.0
 
-    mask = (temperature >= lo) & (temperature <= hi)
-    idxs = np.where(mask)[0]
-    if len(idxs) < 2:
-        return 0.0
-    t_seg = temperature[idxs]
-    s_seg = signal[idxs]
+    # The requested effective bounds are part of the integration domain even
+    # when they fall between measured samples.  Keep only strictly interior
+    # samples, then insert signal values interpolated at both endpoints.  This
+    # also permits valid windows narrower than the native sample spacing.
+    interior = (temperature > lo) & (temperature < hi)
+    t_seg = np.concatenate(([lo], temperature[interior], [hi]))
+    s_lo = float(np.interp(lo, temperature, signal))
+    s_hi = float(np.interp(hi, temperature, signal))
+    s_seg = np.concatenate(([s_lo], signal[interior], [s_hi]))
 
     if baseline_mode == 'zero':
         base_seg = np.zeros_like(s_seg)
     else:
         # Linear baseline between the bound endpoints (interpolated).
-        s_lo = float(np.interp(lo, temperature, signal))
-        s_hi = float(np.interp(hi, temperature, signal))
         base_seg = s_lo + (s_hi - s_lo) * (t_seg - lo) / (hi - lo)
 
     try:

@@ -638,11 +638,13 @@ class DSCProcessor:
             Peaks without finite characterised bounds keep their default
             FWHM-window area and record ``integration_mode='fwhm_window'``.
         ``bounds=(T_low, T_high)``
-            Only peaks whose apex lies inside the window are re-integrated
-            over it (``integration_mode='custom'``); peaks outside keep
-            their default window.  This matches the "draw a region around
-            one event" interaction and never lets a single window be
-            double-counted across peaks.
+            One peak whose apex lies inside the window is re-integrated over
+            it (``integration_mode='custom'``); peaks outside and other
+            enclosed peaks keep their default window.  The selected peak is
+            the apex closest to the window midpoint, with ties resolved to
+            the lower-temperature apex.  This deterministic policy matches
+            the "draw a region around one event" interaction and never lets
+            a single window be double-counted across peaks.
         ``snap_to_characterized=True`` with ``bounds``
             The window *selects* the peak, then the actual integration
             bounds snap to the peak's characterised onset/endset
@@ -724,13 +726,32 @@ class DSCProcessor:
             custom_bounds = (t_low, t_high)
         step_record['bounds'] = list(custom_bounds) if custom_bounds else None
 
+        custom_target = None
+        if custom_bounds is not None:
+            midpoint = (custom_bounds[0] + custom_bounds[1]) / 2.0
+            candidates = [
+                peak for peak in self._peaks
+                if custom_bounds[0] <= peak.peak_temperature <= custom_bounds[1]
+            ]
+            if candidates:
+                custom_target = min(
+                    candidates,
+                    key=lambda peak: (
+                        abs(peak.peak_temperature - midpoint),
+                        peak.peak_temperature,
+                    ),
+                )
+                step_record['custom_target_temperature'] = float(
+                    custom_target.peak_temperature
+                )
+
         n_integrated = 0
         for peak in self._peaks:
             mode: Optional[str] = None
             effective: Optional[Tuple[float, float]] = None
             if custom_bounds is not None:
-                if not (custom_bounds[0] <= peak.peak_temperature <= custom_bounds[1]):
-                    continue  # outside the configured window: keep FWHM area
+                if peak is not custom_target:
+                    continue  # one custom region targets exactly one event
                 char_bounds = (
                     peak.onset_temperature, peak.endset_temperature
                 )

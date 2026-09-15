@@ -52,6 +52,26 @@ def _processor(signal, *, beta=10.0, source="W/g", beta_source="user", mass=None
 # ---------------------------------------------------------------------------
 
 class TestIntegratePeakBounds:
+    @pytest.mark.parametrize(
+        ("low", "high", "expected"),
+        [
+            (0.25, 2.75, 3.75),  # both bounds off-grid
+            (0.0, 2.5, 3.125),  # one bound off-grid
+            (1.2, 1.7, 0.725),  # narrower than native spacing
+            (-1.0, 1.5, 1.125),  # partial overlap clamps to measured range
+        ],
+    )
+    def test_zero_baseline_uses_exact_effective_bounds(self, low, high, expected):
+        """Integral of y=x uses interpolated bounds, not contained samples."""
+        temperature = np.array([0.0, 1.0, 2.0, 3.0])
+        signal = temperature.copy()
+
+        area = integrate_peak_bounds(
+            temperature, signal, low, high, baseline_mode="zero"
+        )
+
+        assert area == pytest.approx(expected)
+
     def test_gaussian_area_matches_analytic(self):
         """Windowed integration over +/-4 sigma recovers ~99.99% of the area."""
         signal = _gaussian(25.0, 10.0)
@@ -112,6 +132,20 @@ class TestIntegratePeaks:
         assert left.integration_mode == "custom"
         assert left.integration_bounds == (95.0, 135.0)
         # The right peak apex is outside the window: untouched defaults.
+        assert right.integration_mode is None
+        assert right.integration_bounds is None
+
+    def test_custom_window_with_two_apices_integrates_one_target(self):
+        """One drawn region is assigned only to the apex nearest its centre."""
+        proc = _processor(_two_peaks())
+        proc.find_peaks(direction="up")
+        proc.integrate_peaks(bounds=(90.0, 190.0))
+
+        left, right = sorted(proc.get_result().peaks, key=lambda p: p.peak_temperature)
+        assert left.peak_temperature == pytest.approx(110.0, abs=0.5)
+        assert right.peak_temperature == pytest.approx(175.0, abs=0.5)
+        assert left.integration_mode == "custom"
+        assert left.integration_bounds == (90.0, 190.0)
         assert right.integration_mode is None
         assert right.integration_bounds is None
 
