@@ -229,6 +229,17 @@ class TestBaselineHonesty:
 
 
 class TestWavelengthGate:
+    class _RecordingCloudClient:
+        configured = True
+        last_error = ""
+
+        def __init__(self):
+            self.search_calls = []
+
+        def search(self, **kwargs):
+            self.search_calls.append(kwargs)
+            return None
+
     def test_reference_without_wavelength_keeps_raw_positions_only(self):
         entry = {
             "candidate_id": "no_lambda",
@@ -281,6 +292,51 @@ class TestWavelengthGate:
         assert summary["reference_candidate_count"] >= 1
         mc = outcome["record"]["processing"]["method_context"]
         assert mc["xrd_matching_blocked_reason"] == "xrd_two_theta_matching_requires_observed_wavelength"
+
+    def test_wavelength_gate_blocks_cloud_search_before_matching(self, monkeypatch):
+        cloud_client = self._RecordingCloudClient()
+        monkeypatch.setattr(
+            "core.batch_runner.get_library_cloud_client", lambda: cloud_client
+        )
+        dataset = _make_xrd_dataset()
+        dataset.metadata.pop("xrd_wavelength_angstrom", None)
+
+        outcome = execute_batch_template(
+            dataset_key="xrd_missing_lambda_cloud_gate",
+            dataset=dataset,
+            analysis_type="XRD",
+            workflow_template_id="xrd.general",
+        )
+
+        summary = outcome["record"]["summary"]
+        assert cloud_client.search_calls == []
+        assert summary["match_status"] == "not_run"
+        assert summary["confidence_band"] == "not_run"
+        assert summary["matching_blocked_reason"] == (
+            "xrd_two_theta_matching_requires_observed_wavelength"
+        )
+        assert summary["caution_code"] == "xrd_matching_blocked_missing_wavelength"
+
+    def test_cloud_search_runs_with_valid_wavelength_provenance(self, monkeypatch):
+        cloud_client = self._RecordingCloudClient()
+        monkeypatch.setattr(
+            "core.batch_runner.get_library_cloud_client", lambda: cloud_client
+        )
+        dataset = _make_xrd_dataset()
+
+        outcome = execute_batch_template(
+            dataset_key="xrd_valid_lambda_cloud_search",
+            dataset=dataset,
+            analysis_type="XRD",
+            workflow_template_id="xrd.general",
+        )
+
+        assert outcome["status"] == "saved"
+        assert len(cloud_client.search_calls) == 1
+        assert cloud_client.search_calls[0]["payload"][
+            "xrd_wavelength_angstrom"
+        ] == pytest.approx(1.5406)
+        assert outcome["record"]["summary"]["matching_blocked_reason"] == ""
 
     def test_position_only_reference_candidate_excluded_by_gate(self):
         dataset = _make_xrd_dataset()

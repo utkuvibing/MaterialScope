@@ -3036,7 +3036,8 @@ def _execute_xrd_batch(
     # PR-19 wavelength gate: 2theta-space matching against reference peaks is
     # only physically defined when the observed radiation wavelength is known.
     # Without it there is no way to establish observed/reference wavelength
-    # compatibility, so local matching is blocked before any comparison runs.
+    # compatibility, so both local and cloud matching are blocked before any
+    # comparison or search request runs.
     matching_blocked_reason = ""
     if observed_space == "two_theta" and wavelength_angstrom is None:
         matching_blocked_reason = "xrd_two_theta_matching_requires_observed_wavelength"
@@ -3055,7 +3056,7 @@ def _execute_xrd_batch(
     cloud_coverage_warning_code = ""
     cloud_coverage_warning_message = ""
 
-    if cloud_client.configured:
+    if cloud_client.configured and not matching_blocked_reason:
         cloud_candidate_payload = cloud_client.search(
             analysis_type="XRD",
             payload={
