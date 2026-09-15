@@ -115,7 +115,7 @@ def test_default_processing_draft_has_all_sections():
     assert defaults["peak_detection"]["direction"] == "both"
     assert defaults["peak_detection"]["prominence"] is None
     assert defaults["peak_detection"]["distance"] is None
-    assert defaults["glass_transition"] == {"mode": "auto", "region": None}
+    assert defaults["glass_transition"] == {"mode": "auto", "region": None, "method": "step"}
     assert defaults["integration"] == {"enabled": False, "bounds": None, "snap_to_characterized": False}
 
 
@@ -329,6 +329,7 @@ def test_dsc_preset_dirty_flag_renders_clean_when_snapshot_matches():
         False,
         None,
         None,
+        "step",
         False,
         None,
         None,
@@ -366,6 +367,7 @@ def test_dsc_preset_dirty_flag_renders_dirty_when_controls_differ():
         False,
         None,
         None,
+        "step",
         False,
         None,
         None,
@@ -401,6 +403,7 @@ def test_dsc_preset_dirty_flag_renders_no_baseline_without_snapshot():
         False,
         None,
         None,
+        "step",
         False,
         None,
         None,
