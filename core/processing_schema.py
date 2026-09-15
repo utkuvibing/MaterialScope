@@ -25,7 +25,7 @@ _SIGNAL_PIPELINE_SECTIONS = {
 }
 _ANALYSIS_STEP_SECTIONS = {
     "DSC": ("glass_transition", "peak_detection", "integration"),
-    "TGA": ("step_detection",),
+    "TGA": ("step_detection", "residual_mass", "dtg_per_min"),
     "DTA": ("peak_detection",),
     "FTIR": ("peak_detection", "similarity_matching"),
     "RAMAN": ("peak_detection", "similarity_matching"),

@@ -16,6 +16,7 @@ import base64
 import copy
 import json
 import math
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -133,12 +134,25 @@ _TGA_STEP_DETECTION_DEFAULTS: dict[str, Any] = {
     "min_mass_loss": 0.5,
     "search_half_width": 80,
 }
+# PR-17: residual mass at declared target temperatures — off until the
+# analyst declares at least one target.
+_TGA_RESIDUAL_MASS_DEFAULTS: dict[str, Any] = {
+    "enabled": False,
+    "targets": [],
+}
+# PR-17: DTG %/min is attempted by default; the core gate withholds the
+# curve with an explicit reason unless the heating rate is traceable.
+_TGA_DTG_PER_MIN_DEFAULTS: dict[str, Any] = {
+    "enabled": True,
+}
 
 
 def _default_tga_processing_draft() -> dict[str, Any]:
     return {
         "smoothing": copy.deepcopy(_TGA_SMOOTHING_DEFAULTS["savgol"]),
         "step_detection": copy.deepcopy(_TGA_STEP_DETECTION_DEFAULTS),
+        "residual_mass": copy.deepcopy(_TGA_RESIDUAL_MASS_DEFAULTS),
+        "dtg_per_min": copy.deepcopy(_TGA_DTG_PER_MIN_DEFAULTS),
     }
 
 
@@ -171,20 +185,34 @@ def _normalize_tga_smoothing_section(smoothing: dict[str, Any]) -> dict[str, Any
     method = str(smoothing.get("method") or "savgol").strip().lower()
     if method not in _TGA_SMOOTH_METHODS:
         method = "savgol"
+    # PR-17: optional °C-domain width keys ride alongside the point-based
+    # parameters; when set they take precedence inside TGAProcessor.smooth.
+    def _celsius_key(name: str) -> dict[str, Any]:
+        raw = smoothing.get(name)
+        if raw in (None, ""):
+            return {}
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return {}
+        if not math.isfinite(value) or value <= 0:
+            return {}
+        return {name: value}
+
     if method == "savgol":
         wl = _coerce_int_positive(smoothing.get("window_length"), default=11, minimum=5)
         if wl % 2 == 0:
             wl += 1
         po = _coerce_int_positive(smoothing.get("polyorder"), default=3, minimum=1)
         po = min(po, max(wl - 2, 1))
-        return {"method": "savgol", "window_length": wl, "polyorder": po}
+        return {"method": "savgol", "window_length": wl, "polyorder": po, **_celsius_key("window_celsius")}
     if method == "moving_average":
         wl = _coerce_int_positive(smoothing.get("window_length"), default=11, minimum=3)
         if wl % 2 == 0:
             wl += 1
-        return {"method": "moving_average", "window_length": wl}
+        return {"method": "moving_average", "window_length": wl, **_celsius_key("window_celsius")}
     sigma = _coerce_float_positive(smoothing.get("sigma"), default=2.0, minimum=0.1)
-    return {"method": "gaussian", "sigma": sigma}
+    return {"method": "gaussian", "sigma": sigma, **_celsius_key("sigma_celsius")}
 
 
 def _normalize_tga_step_section(step: dict[str, Any]) -> dict[str, Any]:
@@ -211,13 +239,49 @@ def _normalize_tga_step_section(step: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _normalize_tga_residual_mass_section(section: dict[str, Any]) -> dict[str, Any]:
+    enabled = bool(section.get("enabled"))
+    raw_targets = section.get("targets")
+    targets: list[float] = []
+    if isinstance(raw_targets, (list, tuple)):
+        for item in raw_targets:
+            try:
+                value = float(item)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(value):
+                targets.append(value)
+    return {"enabled": enabled, "targets": targets}
+
+
+def _merge_tga_residual_mass_defaults(values: dict | None) -> dict[str, Any]:
+    base = copy.deepcopy(_TGA_RESIDUAL_MASS_DEFAULTS)
+    if isinstance(values, dict):
+        if values.get("enabled") is not None:
+            base["enabled"] = bool(values.get("enabled"))
+        if values.get("targets") is not None:
+            base["targets"] = copy.deepcopy(values.get("targets"))
+    return _normalize_tga_residual_mass_section(base)
+
+
+def _merge_tga_dtg_per_min_defaults(values: dict | None) -> dict[str, Any]:
+    base = copy.deepcopy(_TGA_DTG_PER_MIN_DEFAULTS)
+    if isinstance(values, dict) and values.get("enabled") is not None:
+        base["enabled"] = bool(values.get("enabled"))
+    return base
+
+
 def _normalize_tga_processing_draft(draft: dict | None) -> dict[str, Any]:
     d = dict(draft or {})
     sm = d.get("smoothing")
     st = d.get("step_detection")
+    rm = d.get("residual_mass")
+    dpm = d.get("dtg_per_min")
     return {
         "smoothing": _merge_tga_smoothing_defaults(sm if isinstance(sm, dict) else None),
         "step_detection": _merge_tga_step_defaults(st if isinstance(st, dict) else None),
+        "residual_mass": _merge_tga_residual_mass_defaults(rm if isinstance(rm, dict) else None),
+        "dtg_per_min": _merge_tga_dtg_per_min_defaults(dpm if isinstance(dpm, dict) else None),
     }
 
 
@@ -226,6 +290,8 @@ def _tga_overrides_from_draft(draft: dict | None) -> dict[str, Any]:
     return {
         "smoothing": copy.deepcopy(norm["smoothing"]),
         "step_detection": copy.deepcopy(norm["step_detection"]),
+        "residual_mass": copy.deepcopy(norm["residual_mass"]),
+        "dtg_per_min": copy.deepcopy(norm["dtg_per_min"]),
     }
 
 
@@ -236,6 +302,8 @@ def _tga_draft_and_unit_from_loaded_processing(processing: dict | None) -> tuple
     ast = processing.get("analysis_steps") or {}
     sm = sp.get("smoothing") if isinstance(sp.get("smoothing"), dict) else processing.get("smoothing")
     st = ast.get("step_detection") if isinstance(ast.get("step_detection"), dict) else processing.get("step_detection")
+    rm = ast.get("residual_mass") if isinstance(ast.get("residual_mass"), dict) else processing.get("residual_mass")
+    dpm = ast.get("dtg_per_min") if isinstance(ast.get("dtg_per_min"), dict) else processing.get("dtg_per_min")
     mc = processing.get("method_context") if isinstance(processing.get("method_context"), dict) else {}
     unit = str(mc.get("tga_unit_mode_declared") or "auto").strip().lower()
     if unit not in _TGA_UNIT_MODE_IDS:
@@ -243,6 +311,8 @@ def _tga_draft_and_unit_from_loaded_processing(processing: dict | None) -> tuple
     draft = {
         "smoothing": _merge_tga_smoothing_defaults(sm if isinstance(sm, dict) else None),
         "step_detection": _merge_tga_step_defaults(st if isinstance(st, dict) else None),
+        "residual_mass": _merge_tga_residual_mass_defaults(rm if isinstance(rm, dict) else None),
+        "dtg_per_min": _merge_tga_dtg_per_min_defaults(dpm if isinstance(dpm, dict) else None),
     }
     return draft, unit
 
@@ -259,6 +329,8 @@ def _tga_preset_processing_body_for_save(draft: dict | None, unit_mode: str | No
     return {
         "smoothing": copy.deepcopy(norm["smoothing"]),
         "step_detection": copy.deepcopy(norm["step_detection"]),
+        "residual_mass": copy.deepcopy(norm["residual_mass"]),
+        "dtg_per_min": copy.deepcopy(norm["dtg_per_min"]),
         "method_context": {
             "tga_unit_mode_declared": mode,
             "tga_unit_mode_label": label,
@@ -275,6 +347,8 @@ def _tga_ui_snapshot_dict(template_id: str | None, unit_mode: str | None, draft:
         "unit_mode": u,
         "smoothing": norm["smoothing"],
         "step_detection": norm["step_detection"],
+        "residual_mass": norm["residual_mass"],
+        "dtg_per_min": norm["dtg_per_min"],
     }
 
 
@@ -501,6 +575,70 @@ def _tga_smoothing_controls_card() -> dbc.Card:
                     ],
                     className="g-2",
                 ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="tga-smooth-window-c-label", html_for="tga-smooth-window-c", className="mb-1"),
+                                dbc.Input(
+                                    id="tga-smooth-window-c",
+                                    type="number",
+                                    min=0.1,
+                                    step=0.5,
+                                    value=None,
+                                    placeholder="",
+                                ),
+                                html.P(id="tga-smooth-window-c-hint", className="small text-muted mb-0 mt-1"),
+                            ],
+                            md=12,
+                        ),
+                    ],
+                    className="g-2 mt-1",
+                ),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
+def _tga_depth_card() -> dbc.Card:
+    """PR-17 depth controls: DTG %/min toggle + residual mass at targets."""
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H5(id="tga-depth-card-title", className="card-title mb-2"),
+                html.P(id="tga-depth-card-hint", className="small text-muted mb-3"),
+                dbc.Checklist(
+                    id="tga-depth-dtg-per-min",
+                    options=[{"label": "", "value": "enabled"}],
+                    value=["enabled"],
+                    switch=True,
+                ),
+                html.P(id="tga-depth-dtg-per-min-hint", className="small text-muted mb-3"),
+                dbc.Checklist(
+                    id="tga-depth-residual-enabled",
+                    options=[{"label": "", "value": "enabled"}],
+                    value=[],
+                    switch=True,
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="tga-depth-residual-targets-label", html_for="tga-depth-residual-targets", className="mb-1"),
+                                dbc.Input(
+                                    id="tga-depth-residual-targets",
+                                    type="text",
+                                    value="",
+                                    placeholder="",
+                                ),
+                                html.P(id="tga-depth-residual-targets-hint", className="small text-muted mb-0 mt-1"),
+                            ],
+                            md=12,
+                        ),
+                    ],
+                    className="g-2 mt-1",
+                ),
             ]
         ),
         className="mb-3",
@@ -573,6 +711,7 @@ def _tga_left_column_tabs() -> dbc.Tabs:
                     _tga_preset_card(),
                     _tga_smoothing_controls_card(),
                     _tga_step_detection_card(),
+                    _tga_depth_card(),
                 ],
                 tab_id="tga-tab-processing",
                 label_class_name="ta-tab-label",
@@ -716,6 +855,27 @@ def update_tga_unit_mode_description(locale_data, unit_mode):
     return text
 
 
+def _parse_tga_residual_targets(raw: Any) -> list[float]:
+    """Parse a comma/semicolon-separated target-temperature list."""
+    if raw in (None, ""):
+        return []
+    if isinstance(raw, (list, tuple)):
+        items = raw
+    else:
+        items = re.split(r"[,\s;]+", str(raw).strip())
+    targets: list[float] = []
+    for item in items:
+        if item in (None, ""):
+            continue
+        try:
+            value = float(item)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value):
+            targets.append(value)
+    return targets
+
+
 def _tga_draft_from_control_values(
     smooth_method,
     smooth_window,
@@ -724,6 +884,10 @@ def _tga_draft_from_control_values(
     step_prominence,
     step_min_mass,
     step_half_width,
+    smooth_window_c=None,
+    depth_dtg_per_min=None,
+    depth_residual_enabled=None,
+    depth_residual_targets=None,
 ) -> dict[str, Any]:
     token = str(smooth_method or "savgol").strip().lower()
     if token not in _TGA_SMOOTH_METHODS:
@@ -732,17 +896,42 @@ def _tga_draft_from_control_values(
     if token == "savgol":
         smooth["window_length"] = smooth_window
         smooth["polyorder"] = smooth_poly
+        if smooth_window_c not in (None, ""):
+            smooth["window_celsius"] = smooth_window_c
     elif token == "moving_average":
         smooth["window_length"] = smooth_window
+        if smooth_window_c not in (None, ""):
+            smooth["window_celsius"] = smooth_window_c
     else:
         smooth["sigma"] = smooth_sigma
+        if smooth_window_c not in (None, ""):
+            smooth["sigma_celsius"] = smooth_window_c
     step: dict[str, Any] = {
         "method": "dtg_peaks",
         "prominence": step_prominence,
         "min_mass_loss": step_min_mass,
         "search_half_width": step_half_width,
     }
-    return _normalize_tga_processing_draft({"smoothing": smooth, "step_detection": step})
+    residual: dict[str, Any] = {
+        "enabled": "enabled" in (depth_residual_enabled or []),
+        "targets": _parse_tga_residual_targets(depth_residual_targets),
+    }
+    dtg_per_min: dict[str, Any] = {
+        # None means "control not yet hydrated" — keep the section default.
+        "enabled": (
+            _TGA_DTG_PER_MIN_DEFAULTS["enabled"]
+            if depth_dtg_per_min is None
+            else "enabled" in (depth_dtg_per_min or [])
+        ),
+    }
+    return _normalize_tga_processing_draft(
+        {
+            "smoothing": smooth,
+            "step_detection": step,
+            "residual_mass": residual,
+            "dtg_per_min": dtg_per_min,
+        }
+    )
 
 
 @callback(
@@ -788,6 +977,16 @@ def render_tga_preset_chrome(locale_data):
     Output("tga-step-min-mass-label", "children"),
     Output("tga-step-half-width-label", "children"),
     Output("tga-smooth-method", "options"),
+    Output("tga-smooth-window-c-label", "children"),
+    Output("tga-smooth-window-c-hint", "children"),
+    Output("tga-depth-card-title", "children"),
+    Output("tga-depth-card-hint", "children"),
+    Output("tga-depth-dtg-per-min", "options"),
+    Output("tga-depth-dtg-per-min-hint", "children"),
+    Output("tga-depth-residual-enabled", "options"),
+    Output("tga-depth-residual-targets-label", "children"),
+    Output("tga-depth-residual-targets", "placeholder"),
+    Output("tga-depth-residual-targets-hint", "children"),
     Input("ui-locale", "data"),
 )
 def render_tga_processing_chrome(locale_data):
@@ -797,6 +996,8 @@ def render_tga_processing_chrome(locale_data):
         {"label": translate_ui(loc, "dash.analysis.tga.processing.smooth.moving_average"), "value": "moving_average"},
         {"label": translate_ui(loc, "dash.analysis.tga.processing.smooth.gaussian"), "value": "gaussian"},
     ]
+    dpm_opts = [{"label": translate_ui(loc, "dash.analysis.tga.depth.dtg_per_min"), "value": "enabled"}]
+    rm_opts = [{"label": translate_ui(loc, "dash.analysis.tga.depth.residual_enabled"), "value": "enabled"}]
     return (
         translate_ui(loc, "dash.analysis.tga.processing.smoothing_card_title"),
         translate_ui(loc, "dash.analysis.tga.processing.smoothing_card_hint"),
@@ -811,6 +1012,16 @@ def render_tga_processing_chrome(locale_data):
         translate_ui(loc, "dash.analysis.tga.processing.step.min_mass"),
         translate_ui(loc, "dash.analysis.tga.processing.step.half_width"),
         smooth_opts,
+        translate_ui(loc, "dash.analysis.tga.processing.smooth.window_c"),
+        translate_ui(loc, "dash.analysis.tga.processing.smooth.window_c_hint"),
+        translate_ui(loc, "dash.analysis.tga.depth.card_title"),
+        translate_ui(loc, "dash.analysis.tga.depth.card_hint"),
+        dpm_opts,
+        translate_ui(loc, "dash.analysis.tga.depth.dtg_per_min_hint"),
+        rm_opts,
+        translate_ui(loc, "dash.analysis.tga.depth.residual_targets"),
+        translate_ui(loc, "dash.analysis.tga.depth.residual_targets_ph"),
+        translate_ui(loc, "dash.analysis.tga.depth.residual_targets_hint"),
     )
 
 
@@ -1055,6 +1266,10 @@ def delete_tga_preset(n_clicks, selected_name, loaded_name, refresh_token, local
     Output("tga-step-prominence", "value"),
     Output("tga-step-min-mass", "value"),
     Output("tga-step-half-width", "value"),
+    Output("tga-smooth-window-c", "value"),
+    Output("tga-depth-dtg-per-min", "value"),
+    Output("tga-depth-residual-enabled", "value"),
+    Output("tga-depth-residual-targets", "value"),
     Input("tga-preset-hydrate", "data"),
     Input("tga-history-hydrate", "data"),
     State("tga-processing-draft", "data"),
@@ -1063,6 +1278,8 @@ def hydrate_tga_processing_controls(_preset_hydrate, _history_hydrate, draft):
     d = _normalize_tga_processing_draft(draft)
     sm = d["smoothing"]
     st = d["step_detection"]
+    rm = d["residual_mass"]
+    dpm = d["dtg_per_min"]
     method = str(sm.get("method") or "savgol")
     wl = int(sm.get("window_length", 11))
     po = int(sm.get("polyorder", 3))
@@ -1071,7 +1288,11 @@ def hydrate_tga_processing_controls(_preset_hydrate, _history_hydrate, draft):
     prom_s = "" if prom in (None, "") else str(prom)
     min_ml = float(st.get("min_mass_loss", 0.5))
     half = int(st.get("search_half_width", 80))
-    return method, wl, po, sigma, prom_s, min_ml, half
+    window_c = sm.get("window_celsius") if method != "gaussian" else sm.get("sigma_celsius")
+    dpm_value = ["enabled"] if dpm.get("enabled") else []
+    rm_value = ["enabled"] if rm.get("enabled") else []
+    rm_targets = ", ".join(f"{t:g}" for t in rm.get("targets") or [])
+    return method, wl, po, sigma, prom_s, min_ml, half, window_c, dpm_value, rm_value, rm_targets
 
 
 @callback(
@@ -1085,13 +1306,26 @@ def hydrate_tga_processing_controls(_preset_hydrate, _history_hydrate, draft):
     Input("tga-step-prominence", "value"),
     Input("tga-step-min-mass", "value"),
     Input("tga-step-half-width", "value"),
+    Input("tga-smooth-window-c", "value"),
+    Input("tga-depth-dtg-per-min", "value"),
+    Input("tga-depth-residual-enabled", "value"),
+    Input("tga-depth-residual-targets", "value"),
     State("tga-processing-draft", "data"),
     State("tga-processing-undo-stack", "data"),
     State("tga-processing-redo-stack", "data"),
     prevent_initial_call="initial_duplicate",
 )
-def sync_tga_processing_draft_from_controls(sm_m, sm_w, sm_p, sm_s, st_pr, st_min, st_half, prev_draft, undo_stack, redo_stack):
-    new_draft = _tga_draft_from_control_values(sm_m, sm_w, sm_p, sm_s, st_pr, st_min, st_half)
+def sync_tga_processing_draft_from_controls(
+    sm_m, sm_w, sm_p, sm_s, st_pr, st_min, st_half, sm_wc, dpm, rm_en, rm_tg,
+    prev_draft, undo_stack, redo_stack,
+):
+    new_draft = _tga_draft_from_control_values(
+        sm_m, sm_w, sm_p, sm_s, st_pr, st_min, st_half,
+        smooth_window_c=sm_wc,
+        depth_dtg_per_min=dpm,
+        depth_residual_enabled=rm_en,
+        depth_residual_targets=rm_tg,
+    )
     old_norm = _normalize_tga_processing_draft(prev_draft)
     new_norm = _normalize_tga_processing_draft(new_draft)
     past2, fut2 = append_undo_after_edit(undo_stack, redo_stack, old_norm, new_norm)
@@ -1300,16 +1534,29 @@ def render_tga_preset_loaded_line(loaded_name, locale_data):
     Input("tga-step-prominence", "value"),
     Input("tga-step-min-mass", "value"),
     Input("tga-step-half-width", "value"),
+    Input("tga-smooth-window-c", "value"),
+    Input("tga-depth-dtg-per-min", "value"),
+    Input("tga-depth-residual-enabled", "value"),
+    Input("tga-depth-residual-targets", "value"),
     State("tga-preset-snapshot", "data"),
 )
-def render_tga_preset_dirty_flag(locale_data, template_id, unit_mode, sm_m, sm_w, sm_p, sm_s, st_pr, st_min, st_half, snapshot):
+def render_tga_preset_dirty_flag(
+    locale_data, template_id, unit_mode, sm_m, sm_w, sm_p, sm_s, st_pr, st_min, st_half,
+    sm_wc, dpm, rm_en, rm_tg, snapshot,
+):
     loc = _loc(locale_data)
     if not isinstance(snapshot, dict):
         return html.Span(translate_ui(loc, "dash.analysis.tga.presets.dirty_no_baseline"), className="text-muted")
     current = _tga_ui_snapshot_dict(
         template_id,
         unit_mode,
-        _tga_draft_from_control_values(sm_m, sm_w, sm_p, sm_s, st_pr, st_min, st_half),
+        _tga_draft_from_control_values(
+            sm_m, sm_w, sm_p, sm_s, st_pr, st_min, st_half,
+            smooth_window_c=sm_wc,
+            depth_dtg_per_min=dpm,
+            depth_residual_enabled=rm_en,
+            depth_residual_targets=rm_tg,
+        ),
     )
     if _tga_snapshots_equal(snapshot, current):
         return html.Span(translate_ui(loc, "dash.analysis.tga.presets.clean"), className="text-success")
@@ -1502,6 +1749,8 @@ def display_result(result_id, _refresh, ui_theme, locale_data, project_id):
         processing,
         extra_lines=[
             html.P(translate_ui(loc, "dash.analysis.tga.step_detection", detail=processing.get("analysis_steps", {}).get("step_detection", {}))),
+            html.P(translate_ui(loc, "dash.analysis.tga.residual_mass", detail=processing.get("analysis_steps", {}).get("residual_mass", {}))),
+            html.P(translate_ui(loc, "dash.analysis.tga.dtg_per_min", detail=processing.get("analysis_steps", {}).get("dtg_per_min", {}))),
         ],
         locale_data=locale_data,
     )
@@ -1895,6 +2144,55 @@ def _build_tga_analysis_summary(
                 html.Dd(_meta_value(atmosphere), className="col-sm-8 ms-meta-def"),
             ]
         )
+
+    # PR-17: residual mass at declared target temperatures.  Each point is
+    # labeled with its target; withheld points show the explicit reason
+    # instead of a fabricated value.
+    residual_points = (summary or {}).get("residual_mass_points") or []
+    if residual_points:
+        rendered: list[str] = []
+        for point in residual_points:
+            if not isinstance(point, dict):
+                continue
+            target = point.get("target_temperature")
+            target_s = f"{target:g}" if isinstance(target, (int, float)) else str(target)
+            if point.get("withheld_reason"):
+                rendered.append(
+                    translate_ui(loc, "dash.analysis.tga.summary.residual_withheld_item").format(
+                        target=target_s, reason=point["withheld_reason"]
+                    )
+                )
+            else:
+                pct = point.get("residual_mass_percent")
+                pct_s = f"{pct:.2f} %" if isinstance(pct, (int, float)) else na
+                rendered.append(
+                    translate_ui(loc, "dash.analysis.tga.summary.residual_item").format(
+                        target=target_s, value=pct_s
+                    )
+                )
+        if rendered:
+            dl_rows.extend(
+                [
+                    html.Dt(translate_ui(loc, "dash.analysis.tga.summary.residual_label"), className="col-sm-4 text-muted ms-meta-term"),
+                    html.Dd(_meta_value("; ".join(rendered)), className="col-sm-8 ms-meta-def"),
+                ]
+            )
+
+    # PR-17: DTG %/min basis — shown as traceable or withheld-with-reason.
+    dpm_basis = (summary or {}).get("dtg_per_min_basis")
+    if dpm_basis and dpm_basis != "not_computed":
+        if dpm_basis == "beta_traceable":
+            dpm_label = translate_ui(loc, "dash.analysis.tga.summary.dtg_per_min_traceable")
+        else:
+            dpm_label = translate_ui(loc, "dash.analysis.tga.summary.dtg_per_min_withheld").format(
+                reason=(summary or {}).get("dtg_per_min_withheld_reason") or "unknown"
+            )
+        dl_rows.extend(
+            [
+                html.Dt(translate_ui(loc, "dash.analysis.tga.summary.dtg_per_min_label"), className="col-sm-4 text-muted ms-meta-term"),
+                html.Dd(_meta_value(dpm_label), className="col-sm-8 ms-meta-def"),
+            ]
+        )
     return html.Div(
         [
             html.H5(translate_ui(loc, "dash.analysis.tga.summary.card_title"), className="mb-3"),
@@ -2179,6 +2477,18 @@ def _build_tga_dtg_panel(
     if len(temperature) < 3:
         return html.Div()
 
+    # PR-17: when a traceable heating rate was available the backend also
+    # stores the DTG in %/min; it rides a secondary y-axis so the %/°C curve
+    # keeps its honest native unit.
+    raw_dtg_pm = curves.get("dtg_per_min") or []
+    dtg_pm: list[float] = []
+    if raw_dtg_pm and len(raw_dtg_pm) == len(raw_temperature):
+        for tx, dx in zip(raw_temperature, raw_dtg_pm):
+            pair = _coerce_float_pair(tx, dx)
+            dtg_pm.append(pair[1] if pair is not None else float("nan"))
+    else:
+        dtg_pm = []
+
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -2189,6 +2499,24 @@ def _build_tga_dtg_panel(
             line=dict(color="#DC2626", width=1.8),
         )
     )
+    layout_kwargs: dict[str, Any] = {}
+    if dtg_pm:
+        fig.add_trace(
+            go.Scatter(
+                x=temperature,
+                y=dtg_pm,
+                mode="lines",
+                name=translate_ui(_ld, "dash.analysis.tga.dtg.trace_name_per_min"),
+                line=dict(color="#7C3AED", width=1.4, dash="dot"),
+                yaxis="y2",
+            )
+        )
+        layout_kwargs["yaxis2"] = dict(
+            title="%/min",
+            overlaying="y",
+            side="right",
+            showgrid=False,
+        )
     fig.update_layout(
         title=dict(
             text=translate_ui(_ld, "dash.analysis.tga.dtg.title"),
@@ -2205,7 +2533,8 @@ def _build_tga_dtg_panel(
         ),
         height=280,
         margin=dict(l=56, r=18, t=48, b=44),
-        showlegend=False,
+        showlegend=bool(dtg_pm),
+        **layout_kwargs,
     )
     apply_figure_theme(fig, ui_theme)
     graph = dcc.Graph(

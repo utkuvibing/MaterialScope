@@ -441,7 +441,7 @@ def test_tga_processing_draft_defaults_and_overrides():
     assert d0["smoothing"]["method"] == "savgol"
     assert d0["step_detection"]["search_half_width"] == 80
     ov = mod._tga_overrides_from_draft(d0)
-    assert set(ov.keys()) == {"smoothing", "step_detection"}
+    assert set(ov.keys()) == {"smoothing", "step_detection", "residual_mass", "dtg_per_min"}
     assert ov["smoothing"]["window_length"] == 11
 
 

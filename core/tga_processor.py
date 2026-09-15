@@ -16,9 +16,17 @@ TGA measures the change in mass of a sample as a function of temperature
 Pipeline
 --------
     raw data
-        -> smooth()         : noise reduction (Savitzky-Golay by default)
+        -> smooth()         : noise reduction (Savitzky-Golay by default);
+                              PR-17 windows may be declared in degC and are
+                              converted to points via the median sample spacing
         -> compute_dtg()    : numerical differentiation to obtain DTG
+        -> measure_residual_mass() : PR-17 optional residual mass at declared
+                              target temperatures (interpolated; out-of-range
+                              targets withheld, never extrapolated)
         -> detect_steps()   : locate decomposition steps via DTG peak finding
+        -> compute_dtg_per_min()   : PR-17 optional DTG in %/min — emitted only
+                              with a traceable heating rate (resolve_beta
+                              provenance gate), otherwise withheld
         -> TGAResult        : structured output dataclass
 
 Usage example
@@ -43,6 +51,7 @@ from typing import List, Optional
 from core.preprocessing import smooth_signal, compute_derivative
 from core.baseline import correct_baseline
 from core.peak_analysis import find_thermal_peaks, ThermalPeak
+from core.units_dimensional import resolve_beta
 
 
 TGA_UNIT_AUTO_THRESHOLD = 105.0
@@ -180,6 +189,35 @@ class MassLossStep:
 
 
 @dataclass
+class ResidualMassPoint:
+    """
+    Residual mass evaluated at a declared target temperature (PR-17).
+
+    The value is interpolated on the *smoothed* mass-% curve.  Targets
+    outside the measured range are withheld with an explicit reason rather
+    than extrapolated.
+
+    Attributes
+    ----------
+    target_temperature : float
+        The requested temperature (same unit as the measurement axis).
+    residual_mass_percent : float or None
+        Interpolated remaining mass in % of initial mass.  None when
+        withheld.
+    residual_mass_mg : float or None
+        Remaining mass in mg — only when ``initial_mass_mg`` is known.
+    withheld_reason : str or None
+        Why the value was withheld (e.g. ``target_outside_measured_range``,
+        ``target_not_finite``).
+    """
+
+    target_temperature: float
+    residual_mass_percent: Optional[float] = None
+    residual_mass_mg: Optional[float] = None
+    withheld_reason: Optional[str] = None
+
+
+@dataclass
 class TGAResult:
     """
     Full results of a TGA processing run.
@@ -214,6 +252,17 @@ class TGAResult:
     total_mass_loss_percent: float
     residue_percent: float
     metadata: dict = field(default_factory=dict)
+    # --- PR-17 depth fields ------------------------------------------------
+    # Residual-mass evaluations at declared target temperatures.
+    residual_mass_points: List[ResidualMassPoint] = field(default_factory=list)
+    # DTG expressed in %/min: dtg_per_min = dtg (%/degC) * beta (K/min).
+    # Emitted ONLY when the heating rate is present and traceable
+    # ('user'/'parsed' provenance); otherwise withheld with a reason and
+    # this stays None — no %/min is ever synthesised from an index
+    # derivative or a fabricated default rate.
+    dtg_per_min: Optional[np.ndarray] = None
+    dtg_per_min_basis: str = "not_computed"   # 'beta_traceable' | 'withheld' | 'not_computed'
+    dtg_per_min_withheld_reason: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +373,27 @@ def _find_onset_endset_tangent(
     return onset_temp, endset_temp
 
 
+def _celsius_to_points(temperature: np.ndarray, width_celsius: float) -> int:
+    """Convert a temperature-domain width (degC) to a sample count (PR-17).
+
+    Uses the median sample spacing so the window has the same physical
+    width regardless of acquisition rate.  The result is at least 3 and
+    is clamped to the data length.
+    """
+    t = np.asarray(temperature, dtype=float)
+    n = len(t)
+    if n < 2:
+        return 3
+    d_t = float(np.median(np.abs(np.diff(t))))
+    if not np.isfinite(d_t) or d_t <= 0:
+        raise ValueError(
+            "Cannot express a degC smoothing window on a non-increasing or "
+            "degenerate temperature axis."
+        )
+    points = int(round(float(width_celsius) / d_t))
+    return max(3, min(points, n if n % 2 else n - 1))
+
+
 # ---------------------------------------------------------------------------
 # TGAProcessor
 # ---------------------------------------------------------------------------
@@ -389,6 +459,15 @@ class TGAProcessor:
         self._dtg_peaks: Optional[List[ThermalPeak]] = None
         self._steps: Optional[List[MassLossStep]] = None
         self._result: Optional[TGAResult] = None
+        # PR-17 depth state
+        self._residual_mass_points: List[ResidualMassPoint] = []
+        self._dtg_per_min: Optional[np.ndarray] = None
+        self._dtg_per_min_basis: str = "not_computed"
+        self._dtg_per_min_withheld_reason: Optional[str] = None
+        # Pipeline-step records live here (NOT inside the caller's metadata
+        # dict — that object is shared with the dataset) and are merged
+        # into the result's metadata copy in get_result().
+        self._pipeline_steps: List[dict] = []
 
     # ------------------------------------------------------------------
     # Pipeline stages
@@ -398,7 +477,14 @@ class TGAProcessor:
         """Return the resolved unit-interpretation context for this run."""
         return dict(self._unit_context)
 
-    def smooth(self, method: str = "savgol", **kwargs) -> "TGAProcessor":
+    def smooth(
+        self,
+        method: str = "savgol",
+        *,
+        window_celsius: Optional[float] = None,
+        sigma_celsius: Optional[float] = None,
+        **kwargs,
+    ) -> "TGAProcessor":
         """
         Smooth the TGA mass-% signal.
 
@@ -408,6 +494,14 @@ class TGAProcessor:
             Smoothing algorithm forwarded to
             :func:`~core.preprocessing.smooth_signal`.
             Options: ``'savgol'``, ``'moving_average'``, ``'gaussian'``.
+        window_celsius : float, optional
+            PR-17: smoothing window expressed in degrees Celsius rather
+            than points (savgol / moving_average only).  Converted to a
+            sample count via the median temperature spacing and forced odd;
+            takes precedence over ``window_length`` when given.
+        sigma_celsius : float, optional
+            PR-17: Gaussian sigma expressed in degrees Celsius
+            (``method='gaussian'`` only); converted to samples the same way.
         **kwargs
             Additional keyword arguments forwarded to the smoothing function
             (e.g., ``window_length``, ``polyorder`` for Savitzky-Golay).
@@ -417,10 +511,40 @@ class TGAProcessor:
         TGAProcessor
             ``self`` for method chaining.
         """
+        record = {"step": "smooth", "method": method}
+        if window_celsius is not None:
+            if method == "gaussian":
+                raise ValueError(
+                    "window_celsius applies to windowed smoothing methods "
+                    "(savgol, moving_average); use sigma_celsius for gaussian."
+                )
+            points = _celsius_to_points(self._temperature, float(window_celsius))
+            if points % 2 == 0:
+                points += 1
+            kwargs["window_length"] = points
+            record["window_celsius"] = float(window_celsius)
+            record["window_length_effective"] = points
+        if sigma_celsius is not None:
+            if method != "gaussian":
+                raise ValueError(
+                    "sigma_celsius applies to gaussian smoothing only; use "
+                    "window_celsius for windowed methods."
+                )
+            d_t = float(np.median(np.abs(np.diff(self._temperature))))
+            kwargs["sigma"] = float(sigma_celsius) / d_t
+            record["sigma_celsius"] = float(sigma_celsius)
+            record["sigma_effective"] = kwargs["sigma"]
         self._smoothed = smooth_signal(self._mass_percent, method=method, **kwargs)
+        self._pipeline_steps.append(record)
         return self
 
-    def compute_dtg(self, smooth_dtg: bool = True, **kwargs) -> "TGAProcessor":
+    def compute_dtg(
+        self,
+        smooth_dtg: bool = True,
+        *,
+        window_celsius: Optional[float] = None,
+        **kwargs,
+    ) -> "TGAProcessor":
         """
         Compute the DTG curve (dm/dT) by numerical differentiation.
 
@@ -432,6 +556,10 @@ class TGAProcessor:
         smooth_dtg : bool, default True
             Apply an additional Savitzky-Golay pass to the DTG curve to
             suppress differentiation-induced noise.
+        window_celsius : float, optional
+            PR-17: the DTG smoothing window in degrees Celsius (converted
+            to points via the median temperature spacing); takes precedence
+            over ``window_length``.
         **kwargs
             Keyword arguments forwarded to :func:`~core.preprocessing.smooth_signal`
             when ``smooth_dtg=True`` (e.g., ``window_length``, ``polyorder``).
@@ -461,11 +589,154 @@ class TGAProcessor:
         )
 
         if smooth_dtg:
-            window_length = kwargs.get("window_length", 11)
+            if window_celsius is not None:
+                window_length = _celsius_to_points(self._temperature, float(window_celsius))
+                if window_length % 2 == 0:
+                    window_length += 1
+            else:
+                window_length = kwargs.get("window_length", 11)
             polyorder = kwargs.get("polyorder", 3)
             dtg = smooth_signal(dtg, method="savgol", window_length=window_length, polyorder=polyorder)
 
         self._dtg = dtg
+        return self
+
+    def measure_residual_mass(self, temperatures) -> "TGAProcessor":
+        """
+        Evaluate the residual mass at declared target temperatures (PR-17).
+
+        For each target, the residual mass is interpolated on the smoothed
+        mass-% curve.  Targets outside the measured range — or non-finite
+        values — are withheld with an explicit reason rather than
+        extrapolated or dropped silently.
+
+        Parameters
+        ----------
+        temperatures : iterable of float
+            Target temperatures in the measurement axis unit.
+
+        Returns
+        -------
+        TGAProcessor
+            ``self`` for method chaining.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`smooth` has not been called before this method.
+        """
+        if self._smoothed is None:
+            raise RuntimeError(
+                "Call smooth() before measure_residual_mass(), or use "
+                "process() for the full pipeline."
+            )
+
+        t_min = float(self._temperature[0])
+        t_max = float(self._temperature[-1])
+        points: List[ResidualMassPoint] = []
+        for raw in temperatures or []:
+            try:
+                target = float(raw)
+            except (TypeError, ValueError):
+                points.append(
+                    ResidualMassPoint(
+                        target_temperature=float("nan"),
+                        withheld_reason="target_not_finite",
+                    )
+                )
+                continue
+            if not np.isfinite(target):
+                points.append(
+                    ResidualMassPoint(
+                        target_temperature=target,
+                        withheld_reason="target_not_finite",
+                    )
+                )
+                continue
+            if target < t_min or target > t_max:
+                points.append(
+                    ResidualMassPoint(
+                        target_temperature=target,
+                        withheld_reason="target_outside_measured_range",
+                    )
+                )
+                continue
+            pct = float(np.interp(target, self._temperature, self._smoothed))
+            mg = (
+                pct / 100.0 * self._initial_mass_mg
+                if self._initial_mass_mg is not None
+                else None
+            )
+            points.append(
+                ResidualMassPoint(
+                    target_temperature=target,
+                    residual_mass_percent=pct,
+                    residual_mass_mg=mg,
+                )
+            )
+
+        self._residual_mass_points = points
+        self._pipeline_steps.append(
+            {
+                "step": "measure_residual_mass",
+                "targets": [p.target_temperature for p in points],
+                "evaluated": sum(1 for p in points if p.withheld_reason is None),
+                "withheld": sum(1 for p in points if p.withheld_reason is not None),
+            }
+        )
+        return self
+
+    def compute_dtg_per_min(self) -> "TGAProcessor":
+        """
+        Express the DTG curve in %/min (PR-17).
+
+        ``%/min = (%/degC) * beta`` where beta is the heating rate in
+        K/min (equivalently degC/min).  The conversion is emitted ONLY when
+        the heating rate is present and traceable — ``resolve_beta``
+        applies the same 'user'/'parsed' provenance gate used for DSC
+        beta-correction.  When the gate fails the array stays ``None`` and
+        ``dtg_per_min_withheld_reason`` carries the explicit reason; no
+        %/min is ever derived from sample-index spacing or a fabricated
+        default rate.
+
+        Returns
+        -------
+        TGAProcessor
+            ``self`` for method chaining.
+
+        Raises
+        ------
+        RuntimeError
+            If :meth:`compute_dtg` has not been called before this method.
+        """
+        if self._dtg is None:
+            raise RuntimeError(
+                "Call compute_dtg() before compute_dtg_per_min(), or use "
+                "process() for the full pipeline."
+            )
+
+        beta, reason = resolve_beta(
+            self._metadata.get("heating_rate"),
+            self._metadata.get("heating_rate_source"),
+        )
+        if beta is None:
+            self._dtg_per_min = None
+            self._dtg_per_min_basis = "withheld"
+            self._dtg_per_min_withheld_reason = reason
+        else:
+            self._dtg_per_min = self._dtg * float(beta)
+            self._dtg_per_min_basis = "beta_traceable"
+            self._dtg_per_min_withheld_reason = None
+        self._pipeline_steps.append(
+            {
+                "step": "compute_dtg_per_min",
+                "basis": self._dtg_per_min_basis,
+                "withheld_reason": self._dtg_per_min_withheld_reason,
+                "heating_rate_k_min": (
+                    float(beta) if beta is not None else None
+                ),
+            }
+        )
         return self
 
     def detect_steps(
@@ -604,6 +875,8 @@ class TGAProcessor:
         smooth_dtg: bool = True,
         prominence: Optional[float] = None,
         min_mass_loss: float = 0.5,
+        residual_mass_targets=None,
+        dtg_per_min: bool = False,
         **kwargs,
     ) -> TGAResult:
         """
@@ -622,6 +895,13 @@ class TGAProcessor:
             DTG peak prominence threshold forwarded to :meth:`detect_steps`.
         min_mass_loss : float, default 0.5
             Minimum mass-loss filter forwarded to :meth:`detect_steps`.
+        residual_mass_targets : iterable of float, optional
+            PR-17: when given, evaluate residual mass at these target
+            temperatures via :meth:`measure_residual_mass`.
+        dtg_per_min : bool, default False
+            PR-17: when True, attempt the DTG %/min conversion via
+            :meth:`compute_dtg_per_min` (withheld unless the heating rate
+            is traceable).
         **kwargs
             Additional keyword arguments forwarded to :meth:`smooth` and
             :meth:`detect_steps`.
@@ -633,7 +913,11 @@ class TGAProcessor:
         """
         self.smooth(method=smooth_method, **kwargs)
         self.compute_dtg(smooth_dtg=smooth_dtg, **kwargs)
+        if residual_mass_targets:
+            self.measure_residual_mass(residual_mass_targets)
         self.detect_steps(prominence=prominence, min_mass_loss=min_mass_loss, **kwargs)
+        if dtg_per_min:
+            self.compute_dtg_per_min()
         return self.get_result()
 
     def get_result(self) -> TGAResult:
@@ -660,6 +944,10 @@ class TGAProcessor:
         total_mass_loss = float(smoothed[0] - smoothed[-1])
         residue = float(smoothed[-1])
 
+        result_metadata = dict(self._metadata)
+        if self._pipeline_steps:
+            result_metadata["steps"] = list(self._pipeline_steps)
+
         self._result = TGAResult(
             steps=self._steps or [],
             dtg_peaks=self._dtg_peaks or [],
@@ -667,6 +955,12 @@ class TGAProcessor:
             smoothed_signal=smoothed,
             total_mass_loss_percent=total_mass_loss,
             residue_percent=residue,
-            metadata=self._metadata,
+            metadata=result_metadata,
+            residual_mass_points=list(self._residual_mass_points),
+            dtg_per_min=(
+                self._dtg_per_min.copy() if self._dtg_per_min is not None else None
+            ),
+            dtg_per_min_basis=self._dtg_per_min_basis,
+            dtg_per_min_withheld_reason=self._dtg_per_min_withheld_reason,
         )
         return self._result

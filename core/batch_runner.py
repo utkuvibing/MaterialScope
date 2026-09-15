@@ -81,16 +81,22 @@ _DSC_TEMPLATE_DEFAULTS = {
 
 _TGA_TEMPLATE_DEFAULTS = {
     "tga.general": {
-        "smoothing": {"method": "savgol", "window_length": 11, "polyorder": 3},
+        "smoothing": {"method": "savgol", "window_length": 11, "polyorder": 3, "window_celsius": None, "sigma_celsius": None},
         "step_detection": {"method": "dtg_peaks", "prominence": None, "min_mass_loss": 0.5, "search_half_width": 80},
+        "residual_mass": {"enabled": False, "targets": []},
+        "dtg_per_min": {"enabled": True},
     },
     "tga.single_step_decomposition": {
-        "smoothing": {"method": "savgol", "window_length": 11, "polyorder": 3},
+        "smoothing": {"method": "savgol", "window_length": 11, "polyorder": 3, "window_celsius": None, "sigma_celsius": None},
         "step_detection": {"method": "dtg_peaks", "prominence": None, "min_mass_loss": 0.5, "search_half_width": 80},
+        "residual_mass": {"enabled": False, "targets": []},
+        "dtg_per_min": {"enabled": True},
     },
     "tga.multi_step_decomposition": {
-        "smoothing": {"method": "savgol", "window_length": 15, "polyorder": 3},
+        "smoothing": {"method": "savgol", "window_length": 15, "polyorder": 3, "window_celsius": None, "sigma_celsius": None},
         "step_detection": {"method": "dtg_peaks", "prominence": None, "min_mass_loss": 0.3, "search_half_width": 100},
+        "residual_mass": {"enabled": False, "targets": []},
+        "dtg_per_min": {"enabled": True},
     },
 }
 _DTA_TEMPLATE_DEFAULTS = {
@@ -667,7 +673,10 @@ def _execute_tga_batch(
     processing, unit_context = _resolve_batch_tga_processing(processing, dataset)
 
     smoothing = copy.deepcopy((processing.get("signal_pipeline") or {}).get("smoothing") or {})
-    step_detection = copy.deepcopy((processing.get("analysis_steps") or {}).get("step_detection") or {})
+    analysis_steps = processing.get("analysis_steps") or {}
+    step_detection = copy.deepcopy(analysis_steps.get("step_detection") or {})
+    residual_mass_cfg = copy.deepcopy(analysis_steps.get("residual_mass") or {})
+    dtg_per_min_cfg = copy.deepcopy(analysis_steps.get("dtg_per_min") or {})
 
     processor = TGAProcessor(
         temperature,
@@ -684,7 +693,14 @@ def _execute_tga_batch(
         smooth_dtg=True,
         window_length=smoothing.get("window_length", 11),
         polyorder=smoothing.get("polyorder", 3),
+        window_celsius=smoothing.get("window_celsius"),
     )
+    # PR-17: residual mass at declared target temperatures.  Only run when
+    # the section is enabled AND at least one target is declared — a
+    # residual at no declared target would be a meaningless no-op record.
+    residual_targets = residual_mass_cfg.get("targets")
+    if residual_mass_cfg.get("enabled") and isinstance(residual_targets, (list, tuple)) and residual_targets:
+        processor.measure_residual_mass(residual_targets)
     step_detection.pop("method", None)
     processor.detect_steps(
         prominence=step_detection.pop("prominence", None),
@@ -692,6 +708,11 @@ def _execute_tga_batch(
         search_half_width=step_detection.pop("search_half_width", 80),
         **step_detection,
     )
+    # PR-17: DTG %/min is attempted when enabled; the result is withheld
+    # with an explicit reason unless the heating rate is traceable
+    # (resolve_beta inside compute_dtg_per_min).
+    if dtg_per_min_cfg.get("enabled"):
+        processor.compute_dtg_per_min()
     result = processor.get_result()
 
     calibration_context = build_calibration_reference_context(
@@ -732,6 +753,7 @@ def _execute_tga_batch(
         "temperature": axis_list,
         "smoothed": result.smoothed_signal,
         "dtg": result.dtg_signal,
+        "dtg_per_min": result.dtg_per_min,
         "tga_result": result,
         "processing": processing,
     }

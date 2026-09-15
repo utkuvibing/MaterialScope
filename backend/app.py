@@ -1001,6 +1001,7 @@ def create_app(
         corrected = _to_list(analysis_state.get("corrected"))
         normalized = _to_list(analysis_state.get("normalized"))
         dtg = _to_list(analysis_state.get("dtg"))
+        dtg_per_min = _to_list(analysis_state.get("dtg_per_min"))
         raw_peaks = analysis_state.get("peaks") or []
         if not isinstance(raw_peaks, list):
             raw_peaks = []
@@ -1079,12 +1080,14 @@ def create_app(
             corrected=corrected,
             normalized=normalized,
             dtg=dtg,
+            dtg_per_min=dtg_per_min,
             peaks=peaks,
             has_smoothed=bool(smoothed),
             has_baseline=bool(baseline),
             has_corrected=bool(corrected),
             has_normalized=bool(normalized),
             has_dtg=bool(dtg),
+            has_dtg_per_min=bool(dtg_per_min),
             has_peaks=bool(peaks),
             diagnostics=diagnostics,
         )
