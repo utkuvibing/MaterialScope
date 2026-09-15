@@ -533,3 +533,132 @@ def test_tga_analysis_summary_uses_tga_namespace(monkeypatch):
     assert "dash.analysis.dsc.summary." not in text
     assert "dash.analysis.dsc.quality." not in text
     assert "dash.analysis.dsc.raw_metadata." not in text
+
+
+def _find_component_by_id(node, target_id):
+    if getattr(node, "id", None) == target_id:
+        return node
+    children = getattr(node, "children", None)
+    if isinstance(children, (list, tuple)):
+        for child in children:
+            found = _find_component_by_id(child, target_id)
+            if found is not None:
+                return found
+    elif children is not None:
+        return _find_component_by_id(children, target_id)
+    return None
+
+
+def _number_input_passes_checkvalidity(comp, value):
+    """Emulate HTML5 checkValidity() for a type="number" input.
+
+    dash-bootstrap-components Input only calls setProps when the typed value
+    passes checkValidity(); a failed validity is coerced to NaN, compares
+    equal to the empty prop, and is silently dropped — the exact mechanism
+    behind the manual-QA window_celsius regression.
+    """
+    v = float(value)
+    min_v = getattr(comp, "min", None)
+    max_v = getattr(comp, "max", None)
+    step = getattr(comp, "step", None)
+    if min_v is not None and v < float(min_v):
+        return False
+    if max_v is not None and v > float(max_v):
+        return False
+    if step in (None, "", "any"):
+        return True
+    base = float(min_v) if min_v is not None else 0.0
+    steps = (v - base) / float(step)
+    return abs(steps - round(steps)) < 1e-9
+
+
+def test_tga_smooth_window_c_input_dispatches_arbitrary_numeric_values():
+    """Regression guard for the manual-QA bug: typing 5 into the optional
+    °C smoothing field must reach the Dash store.  With min=0.1/step=0.5 the
+    input failed HTML5 checkValidity() (stepMismatch), dbc.Input coerced the
+    value to NaN, and nothing was ever dispatched — the field showed 5 while
+    the draft store kept null."""
+    mod = _import_tga_page()
+    comp = _find_component_by_id(mod.layout, "tga-smooth-window-c")
+    assert comp is not None, "tga-smooth-window-c missing from layout"
+    assert getattr(comp, "type", None) == "number"
+    for value in (5.0, 2.5, 0.33, 100.0):
+        assert _number_input_passes_checkvalidity(comp, value), (
+            f"tga-smooth-window-c checkValidity() fails for {value}: "
+            "dbc.Input would swallow the typed value as NaN and the draft "
+            "store would never see it"
+        )
+
+
+def test_tga_window_celsius_reaches_effective_processing_record():
+    """End-to-end regression for the manual QA path: a typed value of 5 in
+    tga-smooth-window-c must land as window_celsius: 5.0 in the effective
+    (template-merged) processing payload — not None."""
+    from core.batch_runner import _build_processing_payload
+    from core.processing_schema import ensure_processing_payload, update_processing_step
+
+    mod = _import_tga_page()
+    draft, _past, _fut = mod.sync_tga_processing_draft_from_controls(
+        "savgol", 11, 3, 2.0, "", 0.5, 80,
+        5,  # tga-smooth-window-c.value
+        [], [], "",  # dtg-per-min, residual-enabled, residual-targets
+        None, [], [],  # prev draft, undo stack, redo stack
+    )
+    overrides = mod._tga_overrides_from_draft(draft)
+    assert overrides["smoothing"]["window_celsius"] == 5.0
+
+    processing = ensure_processing_payload(
+        None, analysis_type="TGA", workflow_template="tga.general",
+    )
+    for section, values in overrides.items():
+        processing = update_processing_step(
+            processing, section, values, analysis_type="TGA",
+        )
+    effective = _build_processing_payload(
+        analysis_type="TGA",
+        workflow_template_id="tga.general",
+        existing_processing=processing,
+        batch_run_id=None,
+    )
+    smoothing = effective["signal_pipeline"]["smoothing"]
+    assert smoothing["window_celsius"] == 5.0
+    assert smoothing["window_length"] == 11
+
+
+def test_tga_celsius_field_maps_per_smoothing_method():
+    mod = _import_tga_page()
+    d = mod._tga_draft_from_control_values(
+        "moving_average", 11, 3, 2.0, "", 0.5, 80, smooth_window_c=7,
+    )
+    assert d["smoothing"]["window_celsius"] == 7.0
+    assert "sigma_celsius" not in d["smoothing"]
+
+    d = mod._tga_draft_from_control_values(
+        "gaussian", 11, 3, 2.0, "", 0.5, 80, smooth_window_c=4,
+    )
+    assert d["smoothing"]["sigma_celsius"] == 4.0
+    assert "window_celsius" not in d["smoothing"]
+
+    d = mod._tga_draft_from_control_values(
+        "savgol", 11, 3, 2.0, "", 0.5, 80, smooth_window_c="",
+    )
+    assert "window_celsius" not in d["smoothing"]
+    assert d["smoothing"]["window_length"] == 11
+
+
+def test_tga_window_celsius_takes_precedence_over_window_length():
+    """Processor-level guard: once the °C width reaches the effective payload
+    it overrides the point-based window_length in the recorded smooth step."""
+    import numpy as np
+
+    from core.tga_processor import TGAProcessor
+
+    # 0.1 °C spacing → 5 °C = 50 points → forced odd → 51, distinct from the
+    # point-based window_length of 11 carried alongside in the config.
+    temp = np.linspace(25.0, 625.0, 6001)
+    mass = 100.0 - 0.05 * (temp - 25.0)
+    proc = TGAProcessor(temp, mass, unit_mode="percent")
+    proc.smooth(method="savgol", window_length=11, polyorder=3, window_celsius=5.0)
+    record = proc._pipeline_steps[-1]
+    assert record["window_celsius"] == 5.0
+    assert record["window_length_effective"] == 51
