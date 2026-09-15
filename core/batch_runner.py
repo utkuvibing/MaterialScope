@@ -43,6 +43,18 @@ from core.result_serialization import (
 from core.tga_processor import TGAProcessor, resolve_tga_unit_interpretation
 from core.validation import enrich_spectral_result_validation, enrich_xrd_result_validation, validate_thermal_dataset
 from core.spectral_demo_references import load_demo_spectral_references
+from core.spectral_depth import (
+    RAMAN_SHIFT_CM1,
+    WAVELENGTH_NM,
+    WAVELENGTH_UM,
+    WAVENUMBER_CM1,
+    RegionIntegral,
+    annotate_peak_table,
+    convert_spectral_axis,
+    integrate_regions,
+    normalize_spectral_axis_unit,
+    transmittance_to_absorbance,
+)
 from core.xrd_display import xrd_candidate_display_payload
 from core.xrd_demo_references import load_demo_xrd_references
 from core.xrd_depth import analyze_xrd_scherrer, scherrer_median_nm
@@ -122,6 +134,11 @@ _DTA_TEMPLATE_DEFAULTS = {
         },
     },
 }
+_SPECTRAL_DEPTH_DEFAULTS = {
+    "axis_conversion": {"enabled": False, "target": "", "source_unit": None, "laser_wavelength_nm": None},
+    "signal_conversion": {"enabled": False},
+    "region_integration": {"enabled": False, "regions": []},
+}
 _FTIR_TEMPLATE_DEFAULTS = {
     "ftir.general": {
         "smoothing": {"method": "moving_average", "window_length": 11},
@@ -129,6 +146,7 @@ _FTIR_TEMPLATE_DEFAULTS = {
         "normalization": {"method": "vector"},
         "peak_detection": {"prominence": 0.035, "min_distance": 5, "max_peaks": 14},
         "similarity_matching": {"metric": "cosine", "top_n": 3, "minimum_score": 0.45},
+        **_SPECTRAL_DEPTH_DEFAULTS,
     },
     "ftir.functional_groups": {
         "smoothing": {"method": "moving_average", "window_length": 9},
@@ -136,6 +154,7 @@ _FTIR_TEMPLATE_DEFAULTS = {
         "normalization": {"method": "vector"},
         "peak_detection": {"prominence": 0.04, "min_distance": 5, "max_peaks": 16},
         "similarity_matching": {"metric": "cosine", "top_n": 5, "minimum_score": 0.42},
+        **_SPECTRAL_DEPTH_DEFAULTS,
     },
 }
 _RAMAN_TEMPLATE_DEFAULTS = {
@@ -145,6 +164,7 @@ _RAMAN_TEMPLATE_DEFAULTS = {
         "normalization": {"method": "snv"},
         "peak_detection": {"prominence": 0.04, "min_distance": 5, "max_peaks": 14},
         "similarity_matching": {"metric": "cosine", "top_n": 3, "minimum_score": 0.45},
+        **_SPECTRAL_DEPTH_DEFAULTS,
     },
     "raman.polymorph_screening": {
         "smoothing": {"method": "moving_average", "window_length": 7},
@@ -152,6 +172,7 @@ _RAMAN_TEMPLATE_DEFAULTS = {
         "normalization": {"method": "snv"},
         "peak_detection": {"prominence": 0.03, "min_distance": 4, "max_peaks": 18},
         "similarity_matching": {"metric": "pearson", "top_n": 5, "minimum_score": 0.4},
+        **_SPECTRAL_DEPTH_DEFAULTS,
     },
 }
 _XRD_TEMPLATE_DEFAULTS = {
@@ -1537,16 +1558,75 @@ def _execute_spectral_batch(
 ) -> dict[str, Any]:
     axis = np.asarray(dataset.data["temperature"], dtype=float)
     signal = np.asarray(dataset.data["signal"], dtype=float)
-    axis, signal = _sorted_axis_signal(axis, signal)
 
-    smoothing = copy.deepcopy((processing.get("signal_pipeline") or {}).get("smoothing") or {})
-    baseline = copy.deepcopy((processing.get("signal_pipeline") or {}).get("baseline") or {})
-    normalization = copy.deepcopy((processing.get("signal_pipeline") or {}).get("normalization") or {})
-    peak_detection = copy.deepcopy((processing.get("analysis_steps") or {}).get("peak_detection") or {})
-    similarity_matching = copy.deepcopy((processing.get("analysis_steps") or {}).get("similarity_matching") or {})
+    signal_pipeline = processing.get("signal_pipeline") or {}
+    analysis_steps = processing.get("analysis_steps") or {}
+    smoothing = copy.deepcopy(signal_pipeline.get("smoothing") or {})
+    baseline = copy.deepcopy(signal_pipeline.get("baseline") or {})
+    normalization = copy.deepcopy(signal_pipeline.get("normalization") or {})
+    axis_conversion = copy.deepcopy(signal_pipeline.get("axis_conversion") or {})
+    signal_conversion = copy.deepcopy(signal_pipeline.get("signal_conversion") or {})
+    peak_detection = copy.deepcopy(analysis_steps.get("peak_detection") or {})
+    similarity_matching = copy.deepcopy(analysis_steps.get("similarity_matching") or {})
+    region_integration = copy.deepcopy(analysis_steps.get("region_integration") or {})
+
+    # PR-18: optional axis conversion (FTIR wavelength<->wavenumber; Raman
+    # nm<->shift gated on a declared excitation wavelength).  Applied before
+    # sorting so every downstream stage sees the converted axis.
+    axis_unit_declared = axis_conversion.get("source_unit") or (dataset.units or {}).get("temperature")
+    axis_conv = None
+    axis_unit_effective = axis_unit_declared
+    if axis_conversion.get("enabled") and axis_conversion.get("target"):
+        axis_conv = convert_spectral_axis(
+            axis,
+            analysis_type=analysis_type,
+            source_unit=axis_unit_declared,
+            target_unit=axis_conversion.get("target"),
+            laser_wavelength_nm=axis_conversion.get("laser_wavelength_nm"),
+            dataset_metadata=dataset.metadata,
+        )
+        if axis_conv.applied and axis_conv.axis is not None:
+            axis = axis_conv.axis
+            axis_unit_effective = axis_conv.target_unit
+
+    # Effective axis role/display unit for honest downstream labeling.  The
+    # Raman-shift token is physically a cm^-1 quantity — the display unit is
+    # cm-1 while the role distinguishes shift from absolute wavenumber.
+    _unit_tok = normalize_spectral_axis_unit(axis_unit_effective)
+    if _unit_tok in {WAVELENGTH_UM, WAVELENGTH_NM}:
+        axis_role_effective = "wavelength"
+    elif _unit_tok == RAMAN_SHIFT_CM1:
+        axis_role_effective = "raman_shift"
+    elif analysis_type == "RAMAN":
+        axis_role_effective = str(dataset.metadata.get("spectral_axis_role") or "raman_shift")
+    else:
+        axis_role_effective = str(dataset.metadata.get("spectral_axis_role") or "wavenumber")
+    axis_unit_display = WAVENUMBER_CM1 if _unit_tok == RAMAN_SHIFT_CM1 else _unit_tok
+
+    axis, signal = _sorted_axis_signal(axis, signal)
+    finite_mask = np.isfinite(axis) & np.isfinite(signal)
+    if not finite_mask.all():
+        axis, signal = axis[finite_mask], signal[finite_mask]
 
     signal_role = _infer_spectral_signal_role(dataset)
-    working_signal, was_inverted = _maybe_invert_spectral_signal(signal, signal_role)
+    # PR-18: when enabled and the signal is transmittance, convert to true
+    # absorbance (A = -log10 T) instead of the crude max-min inversion.
+    converted_to_absorbance = False
+    absorbance_clipped_points = 0
+    absorbance_conversion_reason = ""
+    if signal_conversion.get("enabled") and signal_role == "transmittance":
+        conv = transmittance_to_absorbance(signal, signal_unit=(dataset.units or {}).get("signal"))
+        if conv.basis == "converted" and conv.absorbance is not None:
+            working_signal = conv.absorbance
+            was_inverted = False
+            converted_to_absorbance = True
+            absorbance_clipped_points = conv.clipped_points
+            signal_role = "absorbance"
+        else:
+            absorbance_conversion_reason = conv.withheld_reason or "conversion_failed"
+            working_signal, was_inverted = _maybe_invert_spectral_signal(signal, "transmittance")
+    else:
+        working_signal, was_inverted = _maybe_invert_spectral_signal(signal, signal_role)
 
     smoothed = _apply_spectral_smoothing(working_signal, smoothing)
     baseline_curve = _estimate_spectral_baseline(axis, smoothed, baseline)
@@ -1563,6 +1643,32 @@ def _execute_spectral_batch(
 
     peak_basis = normalized_signal if norm_informative else corrected
     observed_peaks, peak_fallback, peak_reason = _detect_spectral_peaks(axis, peak_basis, peak_detection)
+
+    # PR-18: region (band-area) integration on the baseline-corrected,
+    # pre-normalization signal — normalization would destroy the physical
+    # area.  When the baseline was suppressed, the smoothed signal is the
+    # honest basis.
+    region_integrals: list[RegionIntegral] = []
+    region_basis = "corrected" if not baseline_suppressed else "smoothed"
+    if region_integration.get("enabled"):
+        region_integrals = integrate_regions(
+            axis,
+            corrected if not baseline_suppressed else smoothed,
+            region_integration.get("regions") or [],
+        )
+
+    # PR-18: annotated peak table — detection values plus axis unit, the
+    # signal basis peaks were measured on, and integration-region labels.
+    peak_signal_basis = "normalized" if norm_informative else "corrected"
+    if converted_to_absorbance:
+        peak_signal_basis = f"{peak_signal_basis}_absorbance"
+    peak_table = annotate_peak_table(
+        observed_peaks,
+        axis_unit=axis_unit_effective,
+        signal_basis=peak_signal_basis,
+        regions=region_integrals,
+        analysis_type=analysis_type,
+    )
 
     match_basis = normalized_signal if norm_informative else corrected
 
@@ -1725,6 +1831,17 @@ def _execute_spectral_batch(
             "ftir_inverted_for_transmittance": was_inverted,
             "raman_signal_role": signal_role if analysis_type == "RAMAN" else "",
             "raman_inverted_for_transmittance": was_inverted if analysis_type == "RAMAN" else False,
+            # PR-18 depth provenance
+            "spectral_axis_unit_effective": axis_unit_effective or "",
+            "spectral_axis_role_effective": axis_role_effective,
+            "spectral_axis_conversion_basis": (axis_conv.basis if axis_conv else "not_requested"),
+            "spectral_axis_conversion_withheld_reason": (
+                axis_conv.withheld_reason if axis_conv else None
+            ),
+            "laser_wavelength_nm": (axis_conv.laser_wavelength_nm if axis_conv else None),
+            "laser_wavelength_source": (axis_conv.laser_wavelength_source if axis_conv else None),
+            "converted_to_absorbance": converted_to_absorbance,
+            "absorbance_clipped_points": absorbance_clipped_points,
         },
         analysis_type=analysis_type,
     )
@@ -1738,6 +1855,37 @@ def _execute_spectral_batch(
         spectral_warnings.append(
             f"{modality_label} signal was interpreted as transmittance and inverted for analysis; peak positions are accurate but intensities are on an inverted scale."
         )
+    if converted_to_absorbance:
+        spectral_warnings.append(
+            f"{modality_label} transmittance was converted to absorbance (A = -log10 T)"
+            + (
+                f"; {absorbance_clipped_points} non-positive sample(s) clipped to the absorbance ceiling."
+                if absorbance_clipped_points
+                else "."
+            )
+        )
+    if absorbance_conversion_reason:
+        spectral_warnings.append(
+            f"{modality_label} transmittance→absorbance conversion was withheld ({absorbance_conversion_reason}); the inversion fallback was used."
+        )
+    if axis_conv is not None and axis_conv.basis == "withheld":
+        spectral_warnings.append(
+            f"{modality_label} axis conversion to '{axis_conversion.get('target')}' was withheld ({axis_conv.withheld_reason}); the declared axis was used unchanged."
+        )
+    elif axis_conv is not None and axis_conv.applied:
+        spectral_warnings.append(
+            f"{modality_label} axis converted {axis_conv.source_unit} → {axis_conv.target_unit}"
+            + (
+                f" using declared excitation λ={axis_conv.laser_wavelength_nm:g} nm ({axis_conv.laser_wavelength_source})."
+                if axis_conv.laser_wavelength_nm
+                else "."
+            )
+        )
+    for region in region_integrals:
+        if region.withheld_reason:
+            spectral_warnings.append(
+                f"{modality_label} region integration [{region.lo:g}, {region.hi:g}] withheld: {region.withheld_reason}."
+            )
     if baseline_suppressed:
         spectral_warnings.append(f"{modality_label} baseline estimation was suppressed because the fit was implausible: {baseline_reason}")
     if normalization_skipped:
@@ -1799,6 +1947,27 @@ def _execute_spectral_batch(
         "library_result_source": library_result_source,
         "library_provider_scope": library_provider_scope,
         "library_offline_limited_mode": bool(library_offline_limited_mode),
+        # PR-18: region integrals + annotated peak table (additive).
+        "region_integrals": [
+            {
+                "lo": r.lo,
+                "hi": r.hi,
+                "label": r.label,
+                "area": r.area,
+                "n_points": r.n_points,
+                "basis": region_basis,
+                "withheld_reason": r.withheld_reason,
+            }
+            for r in region_integrals
+        ],
+        "peak_table": peak_table,
+        "spectral_axis_unit_effective": axis_unit_effective or None,
+        "spectral_axis_role_effective": axis_role_effective,
+        "spectral_axis_conversion_basis": (axis_conv.basis if axis_conv else "not_requested"),
+        "spectral_axis_conversion_withheld_reason": (
+            axis_conv.withheld_reason if axis_conv else None
+        ),
+        "converted_to_absorbance": converted_to_absorbance,
     }
     rows = [
         {
@@ -1847,6 +2016,22 @@ def _execute_spectral_batch(
         "signal_role": signal_role,
         "inverted_for_transmittance": was_inverted,
     }
+    if axis_conv is not None:
+        diagnostics["axis_conversion"] = {
+            "basis": axis_conv.basis,
+            "source_unit": axis_conv.source_unit,
+            "target_unit": axis_conv.target_unit,
+            "withheld_reason": axis_conv.withheld_reason,
+            "laser_wavelength_nm": axis_conv.laser_wavelength_nm,
+            "laser_wavelength_source": axis_conv.laser_wavelength_source,
+            "notes": axis_conv.notes,
+        }
+    if converted_to_absorbance or absorbance_conversion_reason:
+        diagnostics["absorbance_conversion"] = {
+            "converted": converted_to_absorbance,
+            "clipped_points": absorbance_clipped_points,
+            "withheld_reason": absorbance_conversion_reason or None,
+        }
     if baseline_suppressed:
         diagnostics["baseline_suppressed"] = True
         diagnostics["baseline_suppression_reason"] = baseline_reason
@@ -1868,11 +2053,14 @@ def _execute_spectral_batch(
 
     state = {
         "axis": axis.tolist(),
+        "axis_unit": axis_unit_display,
+        "axis_role": axis_role_effective,
         "smoothed": smoothed.tolist(),
         "baseline": baseline_curve.tolist() if not baseline_suppressed else [],
         "corrected": corrected.tolist() if not baseline_suppressed else [],
         "normalized": normalized_signal.tolist() if norm_informative else [],
         "peaks": observed_peaks,
+        "peak_table": peak_table,
         "matches": ranked_matches,
         "processing": processing,
         "diagnostics": diagnostics,

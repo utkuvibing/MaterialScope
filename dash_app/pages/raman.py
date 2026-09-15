@@ -177,6 +177,29 @@ _RAMAN_SIMILARITY_MATCHING_DEFAULTS: dict[str, Any] = {
     "minimum_score": 0.45,
 }
 
+_RAMAN_AXIS_TARGET_TOKENS = {
+    "as_is": "as_is",
+    "as-is": "as_is",
+    "asis": "as_is",
+    "raman_shift": "raman_shift",
+    "raman-shift": "raman_shift",
+    "raman_shift_cm1": "raman_shift",
+    "wavenumber": "wavenumber",
+    "wavenumber_cm1": "wavenumber",
+    "cm-1": "wavenumber",
+    "nm": "nm",
+    "wavelength_nm": "nm",
+}
+_RAMAN_AXIS_SOURCE_UNITS = frozenset({"auto", "raman_shift", "cm-1", "nm"})
+_RAMAN_AXIS_CONVERSION_DEFAULTS: dict[str, Any] = {
+    "enabled": False,
+    "target": "as_is",
+    "source_unit": None,
+    "laser_wavelength_nm": None,
+}
+_RAMAN_SIGNAL_CONVERSION_DEFAULTS: dict[str, Any] = {"enabled": False}
+_RAMAN_REGION_INTEGRATION_DEFAULTS: dict[str, Any] = {"enabled": False, "regions": []}
+
 _RAMAN_MAX_PEAK_CARDS = 8
 _RAMAN_TRUNCATE_PEAK_CARDS_WHEN = 9
 
@@ -206,6 +229,9 @@ def _default_raman_processing_draft(template_id: str | None = None) -> dict[str,
             **copy.deepcopy(_RAMAN_SIMILARITY_MATCHING_DEFAULTS),
             "metric": _default_raman_similarity_metric(template_id),
         },
+        "axis_conversion": copy.deepcopy(_RAMAN_AXIS_CONVERSION_DEFAULTS),
+        "signal_conversion": copy.deepcopy(_RAMAN_SIGNAL_CONVERSION_DEFAULTS),
+        "region_integration": copy.deepcopy(_RAMAN_REGION_INTEGRATION_DEFAULTS),
     }
 
 
@@ -278,6 +304,79 @@ def _normalize_similarity_matching_values(metric, top_n, minimum_score, *, templ
     return {"metric": metric_token, "top_n": tn, "minimum_score": ms}
 
 
+def _normalize_axis_conversion_values(target, source_unit, laser_wavelength_nm) -> dict[str, Any]:
+    token = _RAMAN_AXIS_TARGET_TOKENS.get(str(target or "as_is").strip().lower(), "as_is")
+    source = str(source_unit or "auto").strip().lower()
+    if source not in _RAMAN_AXIS_SOURCE_UNITS:
+        source = "auto"
+    laser = None
+    try:
+        parsed = float(laser_wavelength_nm)
+        if math.isfinite(parsed) and parsed > 0:
+            laser = parsed
+    except (TypeError, ValueError):
+        laser = None
+    return {
+        "enabled": token != "as_is",
+        "target": token,
+        # None = use the dataset's declared unit; "auto" is not a unit.
+        "source_unit": None if source == "auto" else source,
+        "laser_wavelength_nm": laser,
+    }
+
+
+def _parse_region_definitions(text) -> list[dict[str, Any]]:
+    """Parse ``lo hi label`` lines into region dicts (axis units)."""
+    regions: list[dict[str, Any]] = []
+    for line in str(text or "").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        parts = stripped.split(None, 2)
+        if len(parts) < 2:
+            continue
+        try:
+            lo = float(parts[0])
+            hi = float(parts[1])
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(lo) or not math.isfinite(hi):
+            continue
+        regions.append({"lo": lo, "hi": hi, "label": parts[2].strip() if len(parts) > 2 else ""})
+    return regions
+
+
+def _regions_to_text(regions) -> str:
+    lines: list[str] = []
+    for region in regions or []:
+        if not isinstance(region, dict):
+            continue
+        try:
+            lo = float(region.get("lo"))
+            hi = float(region.get("hi"))
+        except (TypeError, ValueError):
+            continue
+        label = str(region.get("label") or "").strip()
+        lines.append(f"{lo:g} {hi:g} {label}".rstrip())
+    return "\n".join(lines)
+
+
+def _normalize_region_integration_values(enabled, regions) -> dict[str, Any]:
+    out: list[dict[str, Any]] = []
+    for region in regions or []:
+        if not isinstance(region, dict):
+            continue
+        try:
+            lo = float(region.get("lo"))
+            hi = float(region.get("hi"))
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(lo) or not math.isfinite(hi):
+            continue
+        out.append({"lo": lo, "hi": hi, "label": str(region.get("label") or "")})
+    return {"enabled": bool(enabled) and bool(out), "regions": out}
+
+
 def _normalize_raman_processing_draft(draft: dict | None, *, template_id: str | None = None) -> dict[str, Any]:
     d = dict(draft or {})
     sm = d.get("smoothing")
@@ -316,12 +415,27 @@ def _normalize_raman_processing_draft(draft: dict | None, *, template_id: str | 
     else:
         sim = _normalize_similarity_matching_values(None, None, None, template_id=template_id)
 
+    ax = d.get("axis_conversion")
+    if isinstance(ax, dict):
+        ax = _normalize_axis_conversion_values(ax.get("target"), ax.get("source_unit"), ax.get("laser_wavelength_nm"))
+    else:
+        ax = copy.deepcopy(_RAMAN_AXIS_CONVERSION_DEFAULTS)
+
+    ri = d.get("region_integration")
+    if isinstance(ri, dict):
+        ri = _normalize_region_integration_values(ri.get("enabled"), ri.get("regions"))
+    else:
+        ri = copy.deepcopy(_RAMAN_REGION_INTEGRATION_DEFAULTS)
+
     return {
         "smoothing": sm,
         "baseline": bl,
         "normalization": nm,
         "peak_detection": pk,
         "similarity_matching": sim,
+        "axis_conversion": ax,
+        "signal_conversion": copy.deepcopy(_RAMAN_SIGNAL_CONVERSION_DEFAULTS),
+        "region_integration": ri,
     }
 
 
@@ -343,9 +457,14 @@ def _raman_draft_from_control_values(
     sim_metric,
     sim_top_n,
     sim_minimum_score,
+    axis_target=None,
+    axis_source_unit=None,
+    laser_wavelength_nm=None,
+    regions_text=None,
     *,
     template_id: str | None = None,
 ) -> dict[str, Any]:
+    regions = _parse_region_definitions(regions_text)
     return {
         "smoothing": _normalize_smoothing_values(smooth_method, smooth_window, smooth_poly, smooth_sigma),
         "baseline": _normalize_baseline_values(baseline_method, baseline_lam, baseline_p, baseline_region_enabled, baseline_region_min, baseline_region_max),
@@ -357,6 +476,9 @@ def _raman_draft_from_control_values(
             sim_minimum_score,
             template_id=template_id,
         ),
+        "axis_conversion": _normalize_axis_conversion_values(axis_target, axis_source_unit, laser_wavelength_nm),
+        "signal_conversion": copy.deepcopy(_RAMAN_SIGNAL_CONVERSION_DEFAULTS),
+        "region_integration": _normalize_region_integration_values(True, regions),
     }
 
 
@@ -368,6 +490,9 @@ def _raman_overrides_from_draft(draft: dict | None, *, template_id: str | None =
         "normalization": copy.deepcopy(norm["normalization"]),
         "peak_detection": copy.deepcopy(norm["peak_detection"]),
         "similarity_matching": copy.deepcopy(norm["similarity_matching"]),
+        "axis_conversion": copy.deepcopy(norm["axis_conversion"]),
+        "signal_conversion": copy.deepcopy(norm["signal_conversion"]),
+        "region_integration": copy.deepcopy(norm["region_integration"]),
     }
 
 
@@ -380,8 +505,10 @@ def _raman_draft_from_loaded_processing(processing: dict | None) -> dict[str, An
     sm = sp.get("smoothing") if isinstance(sp.get("smoothing"), dict) else processing.get("smoothing")
     bl = sp.get("baseline") if isinstance(sp.get("baseline"), dict) else processing.get("baseline")
     nm = sp.get("normalization") if isinstance(sp.get("normalization"), dict) else processing.get("normalization")
+    ax = sp.get("axis_conversion") if isinstance(sp.get("axis_conversion"), dict) else processing.get("axis_conversion")
     pk = ast.get("peak_detection") if isinstance(ast.get("peak_detection"), dict) else processing.get("peak_detection")
     sim = ast.get("similarity_matching") if isinstance(ast.get("similarity_matching"), dict) else processing.get("similarity_matching")
+    ri = ast.get("region_integration") if isinstance(ast.get("region_integration"), dict) else processing.get("region_integration")
     return _normalize_raman_processing_draft(
         {
             "smoothing": sm,
@@ -389,6 +516,8 @@ def _raman_draft_from_loaded_processing(processing: dict | None) -> dict[str, An
             "normalization": nm,
             "peak_detection": pk,
             "similarity_matching": sim,
+            "axis_conversion": ax,
+            "region_integration": ri,
         },
         template_id=template_id,
     )
@@ -402,6 +531,9 @@ def _raman_preset_processing_body_for_save(draft: dict | None, *, template_id: s
         "normalization": copy.deepcopy(norm["normalization"]),
         "peak_detection": copy.deepcopy(norm["peak_detection"]),
         "similarity_matching": copy.deepcopy(norm["similarity_matching"]),
+        "axis_conversion": copy.deepcopy(norm["axis_conversion"]),
+        "signal_conversion": copy.deepcopy(norm["signal_conversion"]),
+        "region_integration": copy.deepcopy(norm["region_integration"]),
     }
 
 
@@ -416,6 +548,9 @@ def _raman_ui_snapshot_dict(template_id: str | None, draft: dict | None) -> dict
         "normalization": norm["normalization"],
         "peak_detection": norm["peak_detection"],
         "similarity_matching": norm["similarity_matching"],
+        "axis_conversion": norm["axis_conversion"],
+        "signal_conversion": norm["signal_conversion"],
+        "region_integration": norm["region_integration"],
     }
 
 
@@ -759,6 +894,57 @@ def _raman_similarity_matching_controls_card() -> dbc.Card:
     )
 
 
+def _raman_depth_controls_card() -> dbc.Card:
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H5(id="raman-depth-card-title", className="card-title mb-2"),
+                html.P(id="raman-depth-card-hint", className="small text-muted mb-3"),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="raman-axis-target-label", html_for="raman-axis-target", className="mb-1"),
+                                dbc.Select(id="raman-axis-target", options=[], value="as_is"),
+                            ],
+                            md=6,
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Label(id="raman-axis-source-label", html_for="raman-axis-source-unit", className="mb-1"),
+                                dbc.Select(id="raman-axis-source-unit", options=[], value="auto"),
+                            ],
+                            md=6,
+                        ),
+                    ],
+                    className="g-3 mb-2",
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="raman-laser-wavelength-label", html_for="raman-laser-wavelength", className="mb-1"),
+                                dbc.Input(id="raman-laser-wavelength", type="number", min=1, step=0.1, placeholder="532.0"),
+                            ],
+                            md=6,
+                        ),
+                    ],
+                    className="g-3 mb-2",
+                ),
+                dbc.Label(id="raman-regions-label", html_for="raman-regions-input", className="mb-1"),
+                dbc.Textarea(
+                    id="raman-regions-input",
+                    rows=3,
+                    placeholder="1250 1450 D-band",
+                    className="font-monospace small",
+                ),
+                html.P(id="raman-regions-hint", className="small text-muted mt-1 mb-0"),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Left-column tabs
 # ---------------------------------------------------------------------------
@@ -793,6 +979,7 @@ def _raman_left_column_tabs() -> dbc.Tabs:
                     _raman_normalization_controls_card(),
                     _raman_peak_detection_controls_card(),
                     _raman_similarity_matching_controls_card(),
+                    _raman_depth_controls_card(),
                     _raman_plot_settings_card(),
                 ],
                 tab_id="raman-tab-processing",
@@ -1441,6 +1628,10 @@ def render_raman_preset_loaded_line(loaded_name, locale_data):
     Input("raman-sim-metric", "value"),
     Input("raman-sim-top-n", "value"),
     Input("raman-sim-minimum-score", "value"),
+    Input("raman-axis-target", "value"),
+    Input("raman-axis-source-unit", "value"),
+    Input("raman-laser-wavelength", "value"),
+    Input("raman-regions-input", "value"),
     State("raman-preset-snapshot", "data"),
 )
 def render_raman_preset_dirty_flag(
@@ -1451,6 +1642,7 @@ def render_raman_preset_dirty_flag(
     nm_m,
     pk_pr, pk_dist, pk_mp,
     sim_metric, sim_tn, sim_ms,
+    ax_target, ax_source, laser_nm, regions_text,
     snapshot,
 ):
     loc = _loc(locale_data)
@@ -1464,6 +1656,7 @@ def render_raman_preset_dirty_flag(
             nm_m,
             pk_pr, pk_dist, pk_mp,
             sim_metric, sim_tn, sim_ms,
+            ax_target, ax_source, laser_nm, regions_text,
             template_id=template_id,
         ),
     )
@@ -1617,6 +1810,45 @@ def render_raman_similarity_chrome(locale_data):
     )
 
 
+@callback(
+    Output("raman-depth-card-title", "children"),
+    Output("raman-depth-card-hint", "children"),
+    Output("raman-axis-target-label", "children"),
+    Output("raman-axis-target", "options"),
+    Output("raman-axis-source-label", "children"),
+    Output("raman-axis-source-unit", "options"),
+    Output("raman-laser-wavelength-label", "children"),
+    Output("raman-regions-label", "children"),
+    Output("raman-regions-hint", "children"),
+    Input("ui-locale", "data"),
+)
+def render_raman_depth_chrome(locale_data):
+    loc = _loc(locale_data)
+    target_options = [
+        {"label": translate_ui(loc, "dash.analysis.raman.depth.axis_target.as_is"), "value": "as_is"},
+        {"label": translate_ui(loc, "dash.analysis.raman.depth.axis_target.raman_shift"), "value": "raman_shift"},
+        {"label": translate_ui(loc, "dash.analysis.raman.depth.axis_target.wavenumber"), "value": "wavenumber"},
+        {"label": translate_ui(loc, "dash.analysis.raman.depth.axis_target.wavelength_nm"), "value": "nm"},
+    ]
+    source_options = [
+        {"label": translate_ui(loc, "dash.analysis.raman.depth.axis_source.auto"), "value": "auto"},
+        {"label": translate_ui(loc, "dash.analysis.raman.depth.axis_source.raman_shift"), "value": "raman_shift"},
+        {"label": translate_ui(loc, "dash.analysis.raman.depth.axis_source.cm1"), "value": "cm-1"},
+        {"label": translate_ui(loc, "dash.analysis.raman.depth.axis_source.nm"), "value": "nm"},
+    ]
+    return (
+        translate_ui(loc, "dash.analysis.raman.depth.title"),
+        translate_ui(loc, "dash.analysis.raman.depth.hint"),
+        translate_ui(loc, "dash.analysis.raman.depth.axis_target"),
+        target_options,
+        translate_ui(loc, "dash.analysis.raman.depth.axis_source"),
+        source_options,
+        translate_ui(loc, "dash.analysis.raman.depth.laser_wavelength"),
+        translate_ui(loc, "dash.analysis.raman.depth.regions_label"),
+        translate_ui(loc, "dash.analysis.raman.depth.regions_hint"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Toggle inputs based on method
 # ---------------------------------------------------------------------------
@@ -1681,6 +1913,10 @@ def toggle_raman_baseline_region_inputs(enabled):
     Output("raman-sim-metric", "value"),
     Output("raman-sim-top-n", "value"),
     Output("raman-sim-minimum-score", "value"),
+    Output("raman-axis-target", "value"),
+    Output("raman-axis-source-unit", "value"),
+    Output("raman-laser-wavelength", "value"),
+    Output("raman-regions-input", "value"),
     Input("raman-preset-hydrate", "data"),
     Input("raman-history-hydrate", "data"),
     Input("raman-template-select", "value"),
@@ -1717,12 +1953,19 @@ def hydrate_raman_processing_controls(_preset_hydrate, _history_hydrate, templat
     top_n = int(sim.get("top_n", 3))
     min_score = float(sim.get("minimum_score", 0.45))
 
+    ax = d["axis_conversion"]
+    ri = d["region_integration"]
+
     return (
         method, wl, po, sigma,
         bl_method, lam, p, bool(enabled), region_min, region_max,
         norm_method,
         prom, dist, mp,
         metric, top_n, min_score,
+        str(ax.get("target") or "as_is"),
+        str(ax.get("source_unit") or "auto"),
+        ax.get("laser_wavelength_nm"),
+        _regions_to_text(ri.get("regions")),
     )
 
 
@@ -1753,6 +1996,10 @@ def hydrate_raman_processing_controls(_preset_hydrate, _history_hydrate, templat
     Input("raman-sim-metric", "value"),
     Input("raman-sim-top-n", "value"),
     Input("raman-sim-minimum-score", "value"),
+    Input("raman-axis-target", "value"),
+    Input("raman-axis-source-unit", "value"),
+    Input("raman-laser-wavelength", "value"),
+    Input("raman-regions-input", "value"),
     State("raman-processing-draft", "data"),
     State("raman-processing-undo-stack", "data"),
     State("raman-processing-redo-stack", "data"),
@@ -1764,6 +2011,7 @@ def sync_raman_processing_draft_from_controls(
     nm_m,
     pk_pr, pk_dist, pk_mp,
     template_id, sim_metric, sim_tn, sim_ms,
+    ax_target, ax_source, laser_nm, regions_text,
     prev_draft, undo_stack, redo_stack,
 ):
     ctx = dash.callback_context
@@ -1774,6 +2022,7 @@ def sync_raman_processing_draft_from_controls(
         nm_m,
         pk_pr, pk_dist, pk_mp,
         metric_value, sim_tn, sim_ms,
+        ax_target, ax_source, laser_nm, regions_text,
         template_id=template_id,
     )
     old_norm = _normalize_raman_processing_draft(prev_draft, template_id=template_id)
@@ -2036,6 +2285,8 @@ def display_result(result_id, _refresh, ui_theme, locale_data, plot_settings, pr
         extra_lines=[
             html.P(translate_ui(loc, "dash.analysis.raman.baseline", detail=processing.get("signal_pipeline", {}).get("baseline", {}))),
             html.P(translate_ui(loc, "dash.analysis.raman.normalization", detail=processing.get("signal_pipeline", {}).get("normalization", {}))),
+            html.P(translate_ui(loc, "dash.analysis.raman.axis_conversion", detail=processing.get("signal_pipeline", {}).get("axis_conversion", {}))),
+            html.P(translate_ui(loc, "dash.analysis.raman.region_integration", detail=processing.get("analysis_steps", {}).get("region_integration", {}))),
             html.P(translate_ui(loc, "dash.analysis.raman.peak_detection", detail=processing.get("analysis_steps", {}).get("peak_detection", {}))),
             html.P(translate_ui(loc, "dash.analysis.raman.similarity_matching", detail=processing.get("analysis_steps", {}).get("similarity_matching", {}))),
             html.P(
@@ -2437,6 +2688,30 @@ def _build_raman_analysis_summary(
         html.Dt("Library matching", className="col-sm-4 text-muted ms-meta-term"),
         html.Dd(_meta_value(library_status), className="col-sm-8 ms-meta-def"),
     ]
+    axis_unit_eff = str((summary or {}).get("spectral_axis_unit_effective") or "").strip()
+    if axis_unit_eff:
+        axis_role_eff = str((summary or {}).get("spectral_axis_role_effective") or "").strip()
+        dl_rows.extend(
+            [
+                html.Dt(translate_ui(loc, "dash.analysis.raman.depth.summary_axis"), className="col-sm-4 text-muted ms-meta-term"),
+                html.Dd(_meta_value(f"{axis_role_eff} ({axis_unit_eff})" if axis_role_eff else axis_unit_eff), className="col-sm-8 ms-meta-def"),
+            ]
+        )
+    region_integrals = (summary or {}).get("region_integrals") or []
+    region_parts = []
+    for r in region_integrals:
+        if not isinstance(r, dict) or r.get("area") is None:
+            continue
+        rlo, rhi = r.get("lo"), r.get("hi")
+        rlabel = r.get("label") or (f"{rlo:g}-{rhi:g}" if isinstance(rlo, (int, float)) and isinstance(rhi, (int, float)) else "region")
+        region_parts.append(f"{rlabel}: {float(r.get('area')):.4g}")
+    if region_parts:
+        dl_rows.extend(
+            [
+                html.Dt(translate_ui(loc, "dash.analysis.raman.depth.summary_regions"), className="col-sm-4 text-muted ms-meta-term"),
+                html.Dd(_meta_value("; ".join(region_parts)), className="col-sm-8 ms-meta-def"),
+            ]
+        )
     if caution:
         dl_rows.extend(
             [
@@ -2533,7 +2808,12 @@ def _build_figure(
     peaks = curves.get("peaks", [])
     diagnostics = curves.get("diagnostics") or {}
     settings = normalize_spectral_plot_settings(plot_settings)
-    x_axis_title = build_axis_title("RAMAN", "x", detected_unit=curves.get("x_unit"))
+    x_axis_title = build_axis_title(
+        "RAMAN",
+        "x",
+        detected_unit=curves.get("x_unit"),
+        axis_role=curves.get("axis_role"),
+    )
     y_axis_title = build_axis_title(
         "RAMAN",
         "y",
@@ -2667,6 +2947,8 @@ def _build_figure(
         min_distance_ratio=0.08,
         min_distance_floor=35.0,
     )
+    peak_axis_unit = str((peaks[0] or {}).get("axis_unit") or "").strip() if peaks and isinstance(peaks[0], dict) else ""
+    peak_unit_label = peak_axis_unit or "cm⁻¹"
     for i, peak in enumerate(peak_candidates):
         pos = peak.get("position")
         intensity = peak.get("intensity")
@@ -2688,7 +2970,7 @@ def _build_figure(
                 textfont=dict(size=8, color="#DC2626"),
                 name=f"Peak {pos:.0f}",
                 showlegend=False,
-                hovertemplate=f"{pos:.1f} cm⁻¹ | I={float(intensity or 0):.3g}<extra></extra>",
+                hovertemplate=f"{pos:.1f} {peak_unit_label} | I={float(intensity or 0):.3g}<extra></extra>",
             )
         )
 
@@ -2889,6 +3171,10 @@ def _build_peak_cards_from_curves(project_id: str, dataset_key: str, summary: di
     for idx, peak in enumerate(shown):
         pos = peak.get("position")
         intensity = peak.get("intensity")
+        axis_unit = str(peak.get("axis_unit") or "").strip()
+        region_label = str(peak.get("region") or "").strip()
+        signal_basis = str(peak.get("signal_basis") or "").strip()
+        annotation = " · ".join(bit for bit in (region_label, signal_basis) if bit)
         cards.append(
             dbc.Card(
                 dbc.CardBody(
@@ -2902,10 +3188,15 @@ def _build_peak_cards_from_curves(project_id: str, dataset_key: str, summary: di
                         ),
                         dbc.Row(
                             [
-                                dbc.Col([html.Small(translate_ui(loc, "dash.analysis.label.position"), className="text-muted d-block"), html.Span(f"{pos:.1f}" if pos is not None else "--")], md=6),
+                                dbc.Col([html.Small(translate_ui(loc, "dash.analysis.label.position"), className="text-muted d-block"), html.Span(f"{pos:.1f}{f' {axis_unit}' if axis_unit else ''}" if pos is not None else "--")], md=6),
                                 dbc.Col([html.Small(translate_ui(loc, "dash.analysis.label.intensity"), className="text-muted d-block"), html.Span(f"{intensity:.4f}" if intensity is not None else "--")], md=6),
                             ],
                             className="g-2",
+                        ),
+                        *(
+                            [html.Small(annotation, className="text-muted d-block mt-1")]
+                            if annotation
+                            else []
                         ),
                     ]
                 ),

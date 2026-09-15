@@ -173,6 +173,29 @@ _FTIR_SIMILARITY_MATCHING_DEFAULTS: dict[str, Any] = {
     "minimum_score": 0.45,
 }
 
+_FTIR_AXIS_TARGET_TOKENS = {
+    "as_is": "as_is",
+    "as-is": "as_is",
+    "asis": "as_is",
+    "wavenumber": "wavenumber",
+    "wavenumber_cm1": "wavenumber",
+    "cm-1": "wavenumber",
+    "um": "um",
+    "µm": "um",
+    "wavelength_um": "um",
+    "nm": "nm",
+    "wavelength_nm": "nm",
+}
+_FTIR_AXIS_SOURCE_UNITS = frozenset({"auto", "cm-1", "um", "nm"})
+_FTIR_AXIS_CONVERSION_DEFAULTS: dict[str, Any] = {
+    "enabled": False,
+    "target": "as_is",
+    "source_unit": None,
+    "laser_wavelength_nm": None,
+}
+_FTIR_SIGNAL_CONVERSION_DEFAULTS: dict[str, Any] = {"enabled": False}
+_FTIR_REGION_INTEGRATION_DEFAULTS: dict[str, Any] = {"enabled": False, "regions": []}
+
 _FTIR_MAX_PEAK_CARDS = 8
 _FTIR_TRUNCATE_PEAK_CARDS_WHEN = 9
 
@@ -202,6 +225,9 @@ def _default_ftir_processing_draft(template_id: str | None = None) -> dict[str, 
             **copy.deepcopy(_FTIR_SIMILARITY_MATCHING_DEFAULTS),
             "metric": _default_ftir_similarity_metric(template_id),
         },
+        "axis_conversion": copy.deepcopy(_FTIR_AXIS_CONVERSION_DEFAULTS),
+        "signal_conversion": copy.deepcopy(_FTIR_SIGNAL_CONVERSION_DEFAULTS),
+        "region_integration": copy.deepcopy(_FTIR_REGION_INTEGRATION_DEFAULTS),
     }
 
 
@@ -274,6 +300,77 @@ def _normalize_similarity_matching_values(metric, top_n, minimum_score, *, templ
     return {"metric": metric_token, "top_n": tn, "minimum_score": ms}
 
 
+def _normalize_axis_conversion_values(target, source_unit) -> dict[str, Any]:
+    token = _FTIR_AXIS_TARGET_TOKENS.get(str(target or "as_is").strip().lower(), "as_is")
+    source = str(source_unit or "auto").strip().lower()
+    if source not in _FTIR_AXIS_SOURCE_UNITS:
+        source = "auto"
+    return {
+        "enabled": token != "as_is",
+        "target": token,
+        # None = use the dataset's declared unit; an explicit "auto" token
+        # would be misread as a physical unit downstream.
+        "source_unit": None if source == "auto" else source,
+        "laser_wavelength_nm": None,
+    }
+
+
+def _normalize_signal_conversion_values(enabled) -> dict[str, Any]:
+    return {"enabled": bool(enabled)}
+
+
+def _parse_region_definitions(text) -> list[dict[str, Any]]:
+    """Parse ``lo hi label`` lines into region dicts (axis units)."""
+    regions: list[dict[str, Any]] = []
+    for line in str(text or "").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        parts = stripped.split(None, 2)
+        if len(parts) < 2:
+            continue
+        try:
+            lo = float(parts[0])
+            hi = float(parts[1])
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(lo) or not math.isfinite(hi):
+            continue
+        regions.append({"lo": lo, "hi": hi, "label": parts[2].strip() if len(parts) > 2 else ""})
+    return regions
+
+
+def _regions_to_text(regions) -> str:
+    lines: list[str] = []
+    for region in regions or []:
+        if not isinstance(region, dict):
+            continue
+        try:
+            lo = float(region.get("lo"))
+            hi = float(region.get("hi"))
+        except (TypeError, ValueError):
+            continue
+        label = str(region.get("label") or "").strip()
+        lines.append(f"{lo:g} {hi:g} {label}".rstrip())
+    return "\n".join(lines)
+
+
+def _normalize_region_integration_values(enabled, regions) -> dict[str, Any]:
+    out: list[dict[str, Any]] = []
+    for region in regions or []:
+        if not isinstance(region, dict):
+            continue
+        try:
+            lo = float(region.get("lo"))
+            hi = float(region.get("hi"))
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(lo) or not math.isfinite(hi):
+            continue
+        out.append({"lo": lo, "hi": hi, "label": str(region.get("label") or "")})
+    return {"enabled": bool(enabled) and bool(out), "regions": out}
+
+
 def _normalize_ftir_processing_draft(draft: dict | None, *, template_id: str | None = None) -> dict[str, Any]:
     d = dict(draft or {})
     sm = d.get("smoothing")
@@ -312,12 +409,33 @@ def _normalize_ftir_processing_draft(draft: dict | None, *, template_id: str | N
     else:
         sim = _normalize_similarity_matching_values(None, None, None, template_id=template_id)
 
+    ax = d.get("axis_conversion")
+    if isinstance(ax, dict):
+        ax = _normalize_axis_conversion_values(ax.get("target"), ax.get("source_unit"))
+    else:
+        ax = copy.deepcopy(_FTIR_AXIS_CONVERSION_DEFAULTS)
+
+    sc = d.get("signal_conversion")
+    if isinstance(sc, dict):
+        sc = _normalize_signal_conversion_values(sc.get("enabled"))
+    else:
+        sc = copy.deepcopy(_FTIR_SIGNAL_CONVERSION_DEFAULTS)
+
+    ri = d.get("region_integration")
+    if isinstance(ri, dict):
+        ri = _normalize_region_integration_values(ri.get("enabled"), ri.get("regions"))
+    else:
+        ri = copy.deepcopy(_FTIR_REGION_INTEGRATION_DEFAULTS)
+
     return {
         "smoothing": sm,
         "baseline": bl,
         "normalization": nm,
         "peak_detection": pk,
         "similarity_matching": sim,
+        "axis_conversion": ax,
+        "signal_conversion": sc,
+        "region_integration": ri,
     }
 
 
@@ -339,9 +457,14 @@ def _ftir_draft_from_control_values(
     sim_metric,
     sim_top_n,
     sim_minimum_score,
+    axis_target=None,
+    axis_source_unit=None,
+    absorbance_enabled=None,
+    regions_text=None,
     *,
     template_id: str | None = None,
 ) -> dict[str, Any]:
+    regions = _parse_region_definitions(regions_text)
     return {
         "smoothing": _normalize_smoothing_values(smooth_method, smooth_window, smooth_poly, smooth_sigma),
         "baseline": _normalize_baseline_values(baseline_method, baseline_lam, baseline_p, baseline_region_enabled, baseline_region_min, baseline_region_max),
@@ -353,6 +476,11 @@ def _ftir_draft_from_control_values(
             sim_minimum_score,
             template_id=template_id,
         ),
+        "axis_conversion": _normalize_axis_conversion_values(axis_target, axis_source_unit),
+        "signal_conversion": _normalize_signal_conversion_values(
+            "enabled" in (absorbance_enabled or [])
+        ),
+        "region_integration": _normalize_region_integration_values(True, regions),
     }
 
 
@@ -364,6 +492,9 @@ def _ftir_overrides_from_draft(draft: dict | None, *, template_id: str | None = 
         "normalization": copy.deepcopy(norm["normalization"]),
         "peak_detection": copy.deepcopy(norm["peak_detection"]),
         "similarity_matching": copy.deepcopy(norm["similarity_matching"]),
+        "axis_conversion": copy.deepcopy(norm["axis_conversion"]),
+        "signal_conversion": copy.deepcopy(norm["signal_conversion"]),
+        "region_integration": copy.deepcopy(norm["region_integration"]),
     }
 
 
@@ -376,8 +507,11 @@ def _ftir_draft_from_loaded_processing(processing: dict | None) -> dict[str, Any
     sm = sp.get("smoothing") if isinstance(sp.get("smoothing"), dict) else processing.get("smoothing")
     bl = sp.get("baseline") if isinstance(sp.get("baseline"), dict) else processing.get("baseline")
     nm = sp.get("normalization") if isinstance(sp.get("normalization"), dict) else processing.get("normalization")
+    ax = sp.get("axis_conversion") if isinstance(sp.get("axis_conversion"), dict) else processing.get("axis_conversion")
+    sc = sp.get("signal_conversion") if isinstance(sp.get("signal_conversion"), dict) else processing.get("signal_conversion")
     pk = ast.get("peak_detection") if isinstance(ast.get("peak_detection"), dict) else processing.get("peak_detection")
     sim = ast.get("similarity_matching") if isinstance(ast.get("similarity_matching"), dict) else processing.get("similarity_matching")
+    ri = ast.get("region_integration") if isinstance(ast.get("region_integration"), dict) else processing.get("region_integration")
     return _normalize_ftir_processing_draft(
         {
             "smoothing": sm,
@@ -385,6 +519,9 @@ def _ftir_draft_from_loaded_processing(processing: dict | None) -> dict[str, Any
             "normalization": nm,
             "peak_detection": pk,
             "similarity_matching": sim,
+            "axis_conversion": ax,
+            "signal_conversion": sc,
+            "region_integration": ri,
         },
         template_id=template_id,
     )
@@ -398,6 +535,9 @@ def _ftir_preset_processing_body_for_save(draft: dict | None, *, template_id: st
         "normalization": copy.deepcopy(norm["normalization"]),
         "peak_detection": copy.deepcopy(norm["peak_detection"]),
         "similarity_matching": copy.deepcopy(norm["similarity_matching"]),
+        "axis_conversion": copy.deepcopy(norm["axis_conversion"]),
+        "signal_conversion": copy.deepcopy(norm["signal_conversion"]),
+        "region_integration": copy.deepcopy(norm["region_integration"]),
     }
 
 
@@ -411,6 +551,9 @@ def _ftir_ui_snapshot_dict(template_id: str | None, draft: dict | None) -> dict[
         "normalization": norm["normalization"],
         "peak_detection": norm["peak_detection"],
         "similarity_matching": norm["similarity_matching"],
+        "axis_conversion": norm["axis_conversion"],
+        "signal_conversion": norm["signal_conversion"],
+        "region_integration": norm["region_integration"],
     }
 
 
@@ -754,6 +897,52 @@ def _ftir_similarity_matching_controls_card() -> dbc.Card:
     )
 
 
+def _ftir_depth_controls_card() -> dbc.Card:
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H5(id="ftir-depth-card-title", className="card-title mb-2"),
+                html.P(id="ftir-depth-card-hint", className="small text-muted mb-3"),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="ftir-axis-target-label", html_for="ftir-axis-target", className="mb-1"),
+                                dbc.Select(id="ftir-axis-target", options=[], value="as_is"),
+                            ],
+                            md=6,
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Label(id="ftir-axis-source-label", html_for="ftir-axis-source-unit", className="mb-1"),
+                                dbc.Select(id="ftir-axis-source-unit", options=[], value="auto"),
+                            ],
+                            md=6,
+                        ),
+                    ],
+                    className="g-3 mb-2",
+                ),
+                dbc.Checklist(
+                    id="ftir-absorbance-enabled",
+                    options=[],
+                    value=[],
+                    switch=True,
+                    className="mb-2",
+                ),
+                dbc.Label(id="ftir-regions-label", html_for="ftir-regions-input", className="mb-1"),
+                dbc.Textarea(
+                    id="ftir-regions-input",
+                    rows=3,
+                    placeholder="1500 1700 carbonyl",
+                    className="font-monospace small",
+                ),
+                html.P(id="ftir-regions-hint", className="small text-muted mt-1 mb-0"),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Left-column tabs
 # ---------------------------------------------------------------------------
@@ -788,6 +977,7 @@ def _ftir_left_column_tabs() -> dbc.Tabs:
                     _ftir_normalization_controls_card(),
                     _ftir_peak_detection_controls_card(),
                     _ftir_similarity_matching_controls_card(),
+                    _ftir_depth_controls_card(),
                     _ftir_plot_settings_card(),
                 ],
                 tab_id="ftir-tab-processing",
@@ -1436,6 +1626,10 @@ def render_ftir_preset_loaded_line(loaded_name, locale_data):
     Input("ftir-sim-metric", "value"),
     Input("ftir-sim-top-n", "value"),
     Input("ftir-sim-minimum-score", "value"),
+    Input("ftir-axis-target", "value"),
+    Input("ftir-axis-source-unit", "value"),
+    Input("ftir-absorbance-enabled", "value"),
+    Input("ftir-regions-input", "value"),
     State("ftir-preset-snapshot", "data"),
 )
 def render_ftir_preset_dirty_flag(
@@ -1446,6 +1640,7 @@ def render_ftir_preset_dirty_flag(
     nm_m,
     pk_pr, pk_dist, pk_mp,
     sim_metric, sim_tn, sim_ms,
+    ax_target, ax_source, abs_enabled, regions_text,
     snapshot,
 ):
     loc = _loc(locale_data)
@@ -1459,6 +1654,7 @@ def render_ftir_preset_dirty_flag(
             nm_m,
             pk_pr, pk_dist, pk_mp,
             sim_metric, sim_tn, sim_ms,
+            ax_target, ax_source, abs_enabled, regions_text,
             template_id=template_id,
         ),
     )
@@ -1612,6 +1808,48 @@ def render_ftir_similarity_chrome(locale_data):
     )
 
 
+@callback(
+    Output("ftir-depth-card-title", "children"),
+    Output("ftir-depth-card-hint", "children"),
+    Output("ftir-axis-target-label", "children"),
+    Output("ftir-axis-target", "options"),
+    Output("ftir-axis-source-label", "children"),
+    Output("ftir-axis-source-unit", "options"),
+    Output("ftir-absorbance-enabled", "options"),
+    Output("ftir-regions-label", "children"),
+    Output("ftir-regions-hint", "children"),
+    Input("ui-locale", "data"),
+)
+def render_ftir_depth_chrome(locale_data):
+    loc = _loc(locale_data)
+    target_options = [
+        {"label": translate_ui(loc, "dash.analysis.ftir.depth.axis_target.as_is"), "value": "as_is"},
+        {"label": translate_ui(loc, "dash.analysis.ftir.depth.axis_target.wavenumber"), "value": "wavenumber"},
+        {"label": translate_ui(loc, "dash.analysis.ftir.depth.axis_target.wavelength_um"), "value": "um"},
+        {"label": translate_ui(loc, "dash.analysis.ftir.depth.axis_target.wavelength_nm"), "value": "nm"},
+    ]
+    source_options = [
+        {"label": translate_ui(loc, "dash.analysis.ftir.depth.axis_source.auto"), "value": "auto"},
+        {"label": translate_ui(loc, "dash.analysis.ftir.depth.axis_source.cm1"), "value": "cm-1"},
+        {"label": translate_ui(loc, "dash.analysis.ftir.depth.axis_source.um"), "value": "um"},
+        {"label": translate_ui(loc, "dash.analysis.ftir.depth.axis_source.nm"), "value": "nm"},
+    ]
+    absorbance_options = [
+        {"label": translate_ui(loc, "dash.analysis.ftir.depth.absorbance_toggle"), "value": "enabled"},
+    ]
+    return (
+        translate_ui(loc, "dash.analysis.ftir.depth.title"),
+        translate_ui(loc, "dash.analysis.ftir.depth.hint"),
+        translate_ui(loc, "dash.analysis.ftir.depth.axis_target"),
+        target_options,
+        translate_ui(loc, "dash.analysis.ftir.depth.axis_source"),
+        source_options,
+        absorbance_options,
+        translate_ui(loc, "dash.analysis.ftir.depth.regions_label"),
+        translate_ui(loc, "dash.analysis.ftir.depth.regions_hint"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Toggle inputs based on method
 # ---------------------------------------------------------------------------
@@ -1676,6 +1914,10 @@ def toggle_ftir_baseline_region_inputs(enabled):
     Output("ftir-sim-metric", "value"),
     Output("ftir-sim-top-n", "value"),
     Output("ftir-sim-minimum-score", "value"),
+    Output("ftir-axis-target", "value"),
+    Output("ftir-axis-source-unit", "value"),
+    Output("ftir-absorbance-enabled", "value"),
+    Output("ftir-regions-input", "value"),
     Input("ftir-preset-hydrate", "data"),
     Input("ftir-history-hydrate", "data"),
     Input("ftir-template-select", "value"),
@@ -1712,12 +1954,20 @@ def hydrate_ftir_processing_controls(_preset_hydrate, _history_hydrate, template
     top_n = int(sim.get("top_n", 3))
     min_score = float(sim.get("minimum_score", 0.45))
 
+    ax = d["axis_conversion"]
+    sc = d["signal_conversion"]
+    ri = d["region_integration"]
+
     return (
         method, wl, po, sigma,
         bl_method, lam, p, bool(enabled), region_min, region_max,
         norm_method,
         prom, dist, mp,
         metric, top_n, min_score,
+        str(ax.get("target") or "as_is"),
+        str(ax.get("source_unit") or "auto"),
+        ["enabled"] if sc.get("enabled") else [],
+        _regions_to_text(ri.get("regions")),
     )
 
 
@@ -1748,6 +1998,10 @@ def hydrate_ftir_processing_controls(_preset_hydrate, _history_hydrate, template
     Input("ftir-sim-metric", "value"),
     Input("ftir-sim-top-n", "value"),
     Input("ftir-sim-minimum-score", "value"),
+    Input("ftir-axis-target", "value"),
+    Input("ftir-axis-source-unit", "value"),
+    Input("ftir-absorbance-enabled", "value"),
+    Input("ftir-regions-input", "value"),
     State("ftir-processing-draft", "data"),
     State("ftir-processing-undo-stack", "data"),
     State("ftir-processing-redo-stack", "data"),
@@ -1759,6 +2013,7 @@ def sync_ftir_processing_draft_from_controls(
     nm_m,
     pk_pr, pk_dist, pk_mp,
     template_id, sim_metric, sim_tn, sim_ms,
+    ax_target, ax_source, abs_enabled, regions_text,
     prev_draft, undo_stack, redo_stack,
 ):
     ctx = dash.callback_context
@@ -1769,6 +2024,7 @@ def sync_ftir_processing_draft_from_controls(
         nm_m,
         pk_pr, pk_dist, pk_mp,
         metric_value, sim_tn, sim_ms,
+        ax_target, ax_source, abs_enabled, regions_text,
         template_id=template_id,
     )
     old_norm = _normalize_ftir_processing_draft(prev_draft, template_id=template_id)
@@ -2031,6 +2287,9 @@ def display_result(result_id, _refresh, ui_theme, locale_data, plot_settings, pr
         extra_lines=[
             html.P(translate_ui(loc, "dash.analysis.ftir.baseline", detail=processing.get("signal_pipeline", {}).get("baseline", {}))),
             html.P(translate_ui(loc, "dash.analysis.ftir.normalization", detail=processing.get("signal_pipeline", {}).get("normalization", {}))),
+            html.P(translate_ui(loc, "dash.analysis.ftir.axis_conversion", detail=processing.get("signal_pipeline", {}).get("axis_conversion", {}))),
+            html.P(translate_ui(loc, "dash.analysis.ftir.signal_conversion", detail=processing.get("signal_pipeline", {}).get("signal_conversion", {}))),
+            html.P(translate_ui(loc, "dash.analysis.ftir.region_integration", detail=processing.get("analysis_steps", {}).get("region_integration", {}))),
             html.P(translate_ui(loc, "dash.analysis.ftir.peak_detection", detail=processing.get("analysis_steps", {}).get("peak_detection", {}))),
             html.P(translate_ui(loc, "dash.analysis.ftir.similarity_matching", detail=processing.get("analysis_steps", {}).get("similarity_matching", {}))),
             html.P(
@@ -2432,6 +2691,37 @@ def _build_ftir_analysis_summary(
         html.Dt("Library matching", className="col-sm-4 text-muted ms-meta-term"),
         html.Dd(_meta_value(library_status), className="col-sm-8 ms-meta-def"),
     ]
+    axis_unit_eff = str((summary or {}).get("spectral_axis_unit_effective") or "").strip()
+    if axis_unit_eff:
+        axis_role_eff = str((summary or {}).get("spectral_axis_role_effective") or "").strip()
+        dl_rows.extend(
+            [
+                html.Dt(translate_ui(loc, "dash.analysis.ftir.depth.summary_axis"), className="col-sm-4 text-muted ms-meta-term"),
+                html.Dd(_meta_value(f"{axis_role_eff} ({axis_unit_eff})" if axis_role_eff else axis_unit_eff), className="col-sm-8 ms-meta-def"),
+            ]
+        )
+    if (summary or {}).get("converted_to_absorbance"):
+        dl_rows.extend(
+            [
+                html.Dt(translate_ui(loc, "dash.analysis.ftir.depth.summary_signal_basis"), className="col-sm-4 text-muted ms-meta-term"),
+                html.Dd(_meta_value(translate_ui(loc, "dash.analysis.ftir.depth.summary_absorbance")), className="col-sm-8 ms-meta-def"),
+            ]
+        )
+    region_integrals = (summary or {}).get("region_integrals") or []
+    region_parts = []
+    for r in region_integrals:
+        if not isinstance(r, dict) or r.get("area") is None:
+            continue
+        rlo, rhi = r.get("lo"), r.get("hi")
+        rlabel = r.get("label") or (f"{rlo:g}-{rhi:g}" if isinstance(rlo, (int, float)) and isinstance(rhi, (int, float)) else "region")
+        region_parts.append(f"{rlabel}: {float(r.get('area')):.4g}")
+    if region_parts:
+        dl_rows.extend(
+            [
+                html.Dt(translate_ui(loc, "dash.analysis.ftir.depth.summary_regions"), className="col-sm-4 text-muted ms-meta-term"),
+                html.Dd(_meta_value("; ".join(region_parts)), className="col-sm-8 ms-meta-def"),
+            ]
+        )
     if caution:
         dl_rows.extend(
             [
@@ -2528,7 +2818,12 @@ def _build_figure(
     peaks = curves.get("peaks", [])
     diagnostics = curves.get("diagnostics") or {}
     settings = normalize_spectral_plot_settings(plot_settings)
-    x_axis_title = build_axis_title("FTIR", "x", detected_unit=curves.get("x_unit"))
+    x_axis_title = build_axis_title(
+        "FTIR",
+        "x",
+        detected_unit=curves.get("x_unit"),
+        axis_role=curves.get("axis_role"),
+    )
     y_axis_title = build_axis_title(
         "FTIR",
         "y",
@@ -2662,6 +2957,8 @@ def _build_figure(
         min_distance_ratio=0.08,
         min_distance_floor=35.0,
     )
+    peak_axis_unit = str((peaks[0] or {}).get("axis_unit") or "").strip() if peaks and isinstance(peaks[0], dict) else ""
+    peak_unit_label = peak_axis_unit or "cm⁻¹"
     for i, peak in enumerate(peak_candidates):
         pos = peak.get("position")
         intensity = peak.get("intensity")
@@ -2683,7 +2980,7 @@ def _build_figure(
                 textfont=dict(size=8, color="#DC2626"),
                 name=f"Peak {pos:.0f}",
                 showlegend=False,
-                hovertemplate=f"{pos:.1f} cm⁻¹ | I={float(intensity or 0):.3g}<extra></extra>",
+                hovertemplate=f"{pos:.1f} {peak_unit_label} | I={float(intensity or 0):.3g}<extra></extra>",
             )
         )
 
@@ -2884,6 +3181,15 @@ def _build_peak_cards_from_curves(project_id: str, dataset_key: str, summary: di
     for idx, peak in enumerate(shown):
         pos = peak.get("position")
         intensity = peak.get("intensity")
+        axis_unit = str(peak.get("axis_unit") or "").strip()
+        region_label = str(peak.get("region") or "").strip()
+        signal_basis = str(peak.get("signal_basis") or "").strip()
+        annotation_bits = []
+        if region_label:
+            annotation_bits.append(region_label)
+        if signal_basis:
+            annotation_bits.append(signal_basis)
+        annotation = " · ".join(annotation_bits)
         cards.append(
             dbc.Card(
                 dbc.CardBody(
@@ -2897,10 +3203,15 @@ def _build_peak_cards_from_curves(project_id: str, dataset_key: str, summary: di
                         ),
                         dbc.Row(
                             [
-                                dbc.Col([html.Small(translate_ui(loc, "dash.analysis.label.position"), className="text-muted d-block"), html.Span(f"{pos:.1f}" if pos is not None else "--")], md=6),
+                                dbc.Col([html.Small(translate_ui(loc, "dash.analysis.label.position"), className="text-muted d-block"), html.Span(f"{pos:.1f}{f' {axis_unit}' if axis_unit else ''}" if pos is not None else "--")], md=6),
                                 dbc.Col([html.Small(translate_ui(loc, "dash.analysis.label.intensity"), className="text-muted d-block"), html.Span(f"{intensity:.4f}" if intensity is not None else "--")], md=6),
                             ],
                             className="g-2",
+                        ),
+                        *(
+                            [html.Small(annotation, className="text-muted d-block mt-1")]
+                            if annotation
+                            else []
                         ),
                     ]
                 ),

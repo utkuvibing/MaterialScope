@@ -594,6 +594,10 @@ def _record_key_results(record: dict) -> dict[str, str]:
             "library_offline_limited_mode",
             "caution_code",
             "caution_message",
+            "peak_count",
+            "spectral_axis_unit_effective",
+            "spectral_axis_role_effective",
+            "converted_to_absorbance",
             "sample_name",
             "sample_mass",
             "heating_rate",
@@ -1705,6 +1709,14 @@ def _record_main_mini_table(record: dict) -> tuple[list[str], list[list[str]]] |
             ["Best Candidate", _xrd_best_candidate_name(summary)],
             ["Best Candidate Score", _format_number(_xrd_best_candidate_score(summary), digits=3)],
             ["Caution Code", _format_value(summary.get("caution_code"))],
+        ]
+    elif analysis in {"FTIR", "RAMAN"}:
+        # PR-18: surface the effective spectral basis instead of the first
+        # three arbitrary summary keys.
+        payload = [
+            ["Peak Count", _format_value(summary.get("peak_count"))],
+            ["Effective Axis", _format_value(summary.get("spectral_axis_unit_effective"))],
+            ["Match Status", _format_value(summary.get("match_status"))],
         ]
     else:
         payload = []
