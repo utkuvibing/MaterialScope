@@ -190,17 +190,42 @@ def _xrd_match_marker_style(kind: str, settings: Mapping[str, Any]) -> dict[str,
     return base
 
 
-def _xrd_peak_label(position: float, intensity: float, *, settings: Mapping[str, Any], lang: str) -> str:
+def _xrd_position_unit(axis_role: str | None, lang: str) -> str:
+    if str(axis_role or "").strip().lower() == "d_spacing":
+        return " Å"
+    return "°" if lang == "tr" else " deg"
+
+
+def _xrd_peak_label(
+    position: float,
+    intensity: float,
+    *,
+    settings: Mapping[str, Any],
+    lang: str,
+    axis_role: str | None = None,
+) -> str:
     pos_precision = int(settings.get("label_position_precision", 2))
-    angle_unit = "°" if lang == "tr" else " deg"
-    return f"{position:.{pos_precision}f}{angle_unit}"
+    return f"{position:.{pos_precision}f}{_xrd_position_unit(axis_role, lang)}"
 
 
-def _xrd_peak_hover_label(position: float, intensity: float, *, settings: Mapping[str, Any], lang: str) -> str:
+def _xrd_peak_hover_label(
+    position: float,
+    intensity: float,
+    *,
+    settings: Mapping[str, Any],
+    lang: str,
+    scherrer_nm: float | None = None,
+    axis_role: str | None = None,
+) -> str:
     pos_precision = int(settings.get("label_position_precision", 2))
     intensity_precision = int(settings.get("label_intensity_precision", 0))
-    angle_unit = "°" if lang == "tr" else " deg"
-    return f"{position:.{pos_precision}f}{angle_unit} | I={intensity:.{intensity_precision}f}"
+    base = (
+        f"{position:.{pos_precision}f}{_xrd_position_unit(axis_role, lang)}"
+        f" | I={intensity:.{intensity_precision}f}"
+    )
+    if scherrer_nm is not None and math.isfinite(float(scherrer_nm)):
+        base += f" | D≈{float(scherrer_nm):.1f} nm"
+    return base
 
 
 def _interpolate_signal_at_positions(axis: list[float], signal: list[float], positions: list[float]) -> list[float]:
@@ -317,6 +342,7 @@ def build_xrd_result_figure(
     axis_title: str,
     y_axis_title: str = "Intensity (counts)",
     drawn_shapes: list[dict[str, Any]] | None = None,
+    axis_role: str | None = None,
 ) -> go.Figure:
     settings = normalize_xrd_plot_settings(plot_settings)
     line_width = float(settings.get("line_width", 2.0))
@@ -393,7 +419,9 @@ def build_xrd_result_figure(
         visual_peak_y = _interpolate_signal_at_positions(axis, primary_signal, peak_x) if has_corrected else []
         peak_y = visual_peak_y if len(visual_peak_y) == len(peak_x) else peak_intensity
         peak_text = [
-            _xrd_peak_label(peak_x[idx], peak_intensity[idx], settings=settings, lang=loc) if idx in label_indices else ""
+            _xrd_peak_label(peak_x[idx], peak_intensity[idx], settings=settings, lang=loc, axis_role=axis_role)
+            if idx in label_indices
+            else ""
             for idx in range(len(peaks))
         ]
         fig.add_trace(
@@ -404,7 +432,14 @@ def build_xrd_result_figure(
                 name=translate_ui(loc, "dash.analysis.xrd.figure.peaks"),
                 marker=dict(color="#D97706", size=int(settings.get("marker_size", 8)), symbol="diamond"),
                 text=[
-                    _xrd_peak_hover_label(peak_x[idx], peak_intensity[idx], settings=settings, lang=loc)
+                    _xrd_peak_hover_label(
+                        peak_x[idx],
+                        peak_intensity[idx],
+                        settings=settings,
+                        lang=loc,
+                        scherrer_nm=peaks[idx].get("scherrer_crystallite_size_nm"),
+                        axis_role=axis_role,
+                    )
                     for idx in range(len(peaks))
                 ],
                 hovertemplate="%{text}<extra></extra>",

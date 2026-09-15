@@ -167,6 +167,7 @@ def _make_xrd_dataset(*, include_reference_library: bool = True, no_match: bool 
                 {
                     "id": "xrd_phase_mismatch_a",
                     "name": "Mismatch A",
+                    "reference_wavelength_angstrom": 1.5406,
                     "peaks": [
                         {"position": 11.2, "intensity": 1.0},
                         {"position": 25.8, "intensity": 0.7},
@@ -180,6 +181,7 @@ def _make_xrd_dataset(*, include_reference_library: bool = True, no_match: bool 
                 {
                     "id": "xrd_phase_alpha",
                     "name": "Phase Alpha",
+                    "reference_wavelength_angstrom": 1.5406,
                     "peaks": [
                         {"position": 18.37, "intensity": 0.62},
                         {"position": 33.18, "intensity": 1.0},
@@ -191,6 +193,7 @@ def _make_xrd_dataset(*, include_reference_library: bool = True, no_match: bool 
                 {
                     "id": "xrd_phase_beta",
                     "name": "Phase Beta",
+                    "reference_wavelength_angstrom": 1.5406,
                     "peaks": [
                         {"position": 21.85, "intensity": 0.63},
                         {"position": 35.75, "intensity": 0.95},

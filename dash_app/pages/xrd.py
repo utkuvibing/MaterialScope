@@ -417,6 +417,7 @@ def _baseline_card() -> dbc.Card:
                     options=[
                         {"label": "Rolling minimum", "value": "rolling_minimum"},
                         {"label": "Linear", "value": "linear"},
+                        {"label": "AsLS (asymmetric least squares)", "value": "asls"},
                     ],
                     value="rolling_minimum",
                 ),
@@ -426,6 +427,34 @@ def _baseline_card() -> dbc.Card:
                         dbc.Col([dbc.Label(id="xrd-baseline-smooth-label", html_for="xrd-baseline-smooth", className="mb-1"), dbc.Input(id="xrd-baseline-smooth", type="number", min=3, step=2, value=9)], md=6),
                     ],
                     className="g-2 mt-2",
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col([dbc.Label(id="xrd-baseline-lam-label", html_for="xrd-baseline-lam", className="mb-1"), dbc.Input(id="xrd-baseline-lam", type="number", min=1e2, max=1e10, step=1e4, value=1e6)], md=6),
+                        dbc.Col([dbc.Label(id="xrd-baseline-p-label", html_for="xrd-baseline-p", className="mb-1"), dbc.Input(id="xrd-baseline-p", type="number", min=0.0001, max=0.5, step=0.001, value=0.01)], md=6),
+                    ],
+                    className="g-2 mt-2",
+                ),
+            ],
+            className="xrd-left-panel-card-body",
+        ),
+        className=_XRD_LEFT_PANEL_CARD,
+    )
+
+
+def _scherrer_card() -> dbc.Card:
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H5(id="xrd-scherrer-card-title", className="card-title mb-2"),
+                html.P(id="xrd-scherrer-card-hint", className="small text-muted mb-2"),
+                dbc.Checkbox(id="xrd-scherrer-enabled", value=False, className="mb-2"),
+                dbc.Row(
+                    [
+                        dbc.Col([dbc.Label(id="xrd-scherrer-k-label", html_for="xrd-scherrer-k", className="mb-1"), dbc.Input(id="xrd-scherrer-k", type="number", min=0.5, max=2.0, step=0.01, value=0.9)], md=6),
+                        dbc.Col([dbc.Label(id="xrd-scherrer-inst-label", html_for="xrd-scherrer-inst-fwhm", className="mb-1"), dbc.Input(id="xrd-scherrer-inst-fwhm", type="number", min=0, step=0.01, value=None, placeholder="2θ deg")], md=6),
+                    ],
+                    className="g-2",
                 ),
             ],
             className="xrd-left-panel-card-body",
@@ -632,6 +661,7 @@ def _left_tabs() -> dbc.Tabs:
                             _smooth_card(),
                             _baseline_card(),
                             _peak_card(),
+                            _scherrer_card(),
                             _match_card_controls(),
                             _xrd_plot_settings_advanced_block(),
                         ],
@@ -1257,6 +1287,13 @@ def render_xrd_processing_history_chrome(locale_data):
     Output("xrd-baseline-window-label", "children"),
     Output("xrd-baseline-smooth-label", "children"),
     Output("xrd-baseline-method", "options"),
+    Output("xrd-baseline-lam-label", "children"),
+    Output("xrd-baseline-p-label", "children"),
+    Output("xrd-scherrer-card-title", "children"),
+    Output("xrd-scherrer-card-hint", "children"),
+    Output("xrd-scherrer-enabled", "label"),
+    Output("xrd-scherrer-k-label", "children"),
+    Output("xrd-scherrer-inst-label", "children"),
     Output("xrd-peak-card-title", "children"),
     Output("xrd-peak-card-hint", "children"),
     Output("xrd-peak-prom-label", "children"),
@@ -1308,6 +1345,7 @@ def render_xrd_processing_cards_chrome(locale_data):
     bl_opts = [
         {"label": translate_ui(loc, "dash.analysis.xrd.baseline.rolling"), "value": "rolling_minimum"},
         {"label": translate_ui(loc, "dash.analysis.xrd.baseline.linear"), "value": "linear"},
+        {"label": translate_ui(loc, "dash.analysis.xrd.baseline.asls"), "value": "asls"},
     ]
     style_opts = [
         {"label": translate_ui(loc, "dash.analysis.xrd.plot.style.color_shape"), "value": "color_shape"},
@@ -1333,6 +1371,13 @@ def render_xrd_processing_cards_chrome(locale_data):
         translate_ui(loc, "dash.analysis.xrd.baseline.window"),
         translate_ui(loc, "dash.analysis.xrd.baseline.smoothing_window"),
         bl_opts,
+        translate_ui(loc, "dash.analysis.xrd.baseline.lam"),
+        translate_ui(loc, "dash.analysis.xrd.baseline.asymmetry"),
+        translate_ui(loc, "dash.analysis.xrd.scherrer.card_title"),
+        translate_ui(loc, "dash.analysis.xrd.scherrer.hint"),
+        translate_ui(loc, "dash.analysis.xrd.scherrer.enabled"),
+        translate_ui(loc, "dash.analysis.xrd.scherrer.shape_factor"),
+        translate_ui(loc, "dash.analysis.xrd.scherrer.instrumental_fwhm"),
         translate_ui(loc, "dash.analysis.xrd.peak.card_title"),
         translate_ui(loc, "dash.analysis.xrd.peak.hint"),
         translate_ui(loc, "dash.analysis.xrd.peak.prominence"),
@@ -1387,11 +1432,15 @@ def toggle_xrd_smooth_poly(method):
 @callback(
     Output("xrd-baseline-window", "disabled"),
     Output("xrd-baseline-smooth", "disabled"),
+    Output("xrd-baseline-lam", "disabled"),
+    Output("xrd-baseline-p", "disabled"),
     Input("xrd-baseline-method", "value"),
 )
 def toggle_xrd_baseline_windows(method):
-    off = str(method or "").strip().lower() != "rolling_minimum"
-    return off, off
+    name = str(method or "").strip().lower()
+    rolling_off = name != "rolling_minimum"
+    asls_off = name != "asls"
+    return rolling_off, rolling_off, asls_off, asls_off
 
 
 @callback(
@@ -1405,6 +1454,11 @@ def toggle_xrd_baseline_windows(method):
     Output("xrd-baseline-method", "value"),
     Output("xrd-baseline-window", "value"),
     Output("xrd-baseline-smooth", "value"),
+    Output("xrd-baseline-lam", "value"),
+    Output("xrd-baseline-p", "value"),
+    Output("xrd-scherrer-enabled", "value"),
+    Output("xrd-scherrer-k", "value"),
+    Output("xrd-scherrer-inst-fwhm", "value"),
     Output("xrd-peak-prom", "value"),
     Output("xrd-peak-dist", "value"),
     Output("xrd-peak-width", "value"),
@@ -1446,6 +1500,7 @@ def hydrate_xrd_processing_controls(_p, _h, draft):
     ax = d["axis_normalization"]
     sm = d["smoothing"]
     bl = d["baseline"]
+    sc = d["scherrer"]
     pk = d["peak_detection"]
     mc = d["method_context"]
     ps = mc.get("xrd_plot_settings") if isinstance(mc.get("xrd_plot_settings"), dict) else {}
@@ -1460,6 +1515,11 @@ def hydrate_xrd_processing_controls(_p, _h, draft):
         str(bl.get("method") or "rolling_minimum"),
         int(bl.get("window_length", 31)),
         int(bl.get("smoothing_window", 9)),
+        float(bl.get("lam") or 1e6),
+        float(bl.get("p") or 0.01),
+        bool(sc.get("enabled", False)),
+        float(sc.get("shape_factor", 0.9)),
+        sc.get("instrumental_fwhm_deg"),
         float(pk.get("prominence", 0.08)),
         int(pk.get("distance", 6)),
         int(pk.get("width", 2)),
@@ -1509,6 +1569,11 @@ def hydrate_xrd_processing_controls(_p, _h, draft):
     Input("xrd-baseline-method", "value"),
     Input("xrd-baseline-window", "value"),
     Input("xrd-baseline-smooth", "value"),
+    Input("xrd-baseline-lam", "value"),
+    Input("xrd-baseline-p", "value"),
+    Input("xrd-scherrer-enabled", "value"),
+    Input("xrd-scherrer-k", "value"),
+    Input("xrd-scherrer-inst-fwhm", "value"),
     Input("xrd-peak-prom", "value"),
     Input("xrd-peak-dist", "value"),
     Input("xrd-peak-width", "value"),
@@ -1559,6 +1624,11 @@ def sync_xrd_processing_draft(
     bl_m,
     bl_w,
     bl_sw,
+    bl_lam,
+    bl_p,
+    sch_en,
+    sch_k,
+    sch_inst,
     pk_pr,
     pk_di,
     pk_wi,
@@ -1608,6 +1678,11 @@ def sync_xrd_processing_draft(
         bl_method=bl_m,
         bl_window=bl_w,
         bl_smooth_window=bl_sw,
+        bl_lam=bl_lam,
+        bl_p=bl_p,
+        sch_enabled=sch_en,
+        sch_k=sch_k,
+        sch_inst_fwhm=sch_inst,
         pk_prom=pk_pr,
         pk_dist=pk_di,
         pk_width=pk_wi,
@@ -2159,6 +2234,7 @@ def _build_figure(project_id, dataset_key, summary, processing, ui_theme):
         sample_name=sample_name,
         axis_title=axis_title,
         y_axis_title=y_axis_title,
+        axis_role=str(method_context.get("xrd_axis_role") or "two_theta"),
     )
     return dcc.Graph(
         id="xrd-result-plot-graph",
@@ -2252,8 +2328,76 @@ def display_xrd_result(result_id, _refresh, locale_data, project_id):
         html.P(translate_ui(loc, "dash.analysis.xrd.wavelength_line", value=wl_display)),
         html.P(translate_ui(loc, "dash.analysis.xrd.provenance_state", state=provenance_state)),
     ]
+    blocked_reason = str(
+        summary.get("matching_blocked_reason") or method_context.get("xrd_matching_blocked_reason") or ""
+    ).strip()
+    if blocked_reason:
+        proc_extra.append(
+            html.P(
+                translate_ui(loc, "dash.analysis.xrd.matching_blocked", reason=blocked_reason),
+                className="text-warning",
+            )
+        )
+    excluded_candidates = int(summary.get("wavelength_gate_excluded_candidates") or 0)
+    excluded_peaks = int(summary.get("wavelength_gate_excluded_peaks") or 0)
+    if excluded_candidates or excluded_peaks:
+        proc_extra.append(
+            html.P(
+                translate_ui(
+                    loc,
+                    "dash.analysis.xrd.wavelength_gate_line",
+                    candidates=excluded_candidates,
+                    peaks=excluded_peaks,
+                ),
+                className="small text-muted",
+            )
+        )
     if provenance_warning:
         proc_extra.append(html.P(translate_ui(loc, "dash.analysis.xrd.provenance_warning", warning=provenance_warning)))
+    scherrer_status = str(summary.get("scherrer_status") or "disabled")
+    if scherrer_status != "disabled":
+        scherrer_assumptions = summary.get("scherrer_assumptions") if isinstance(summary.get("scherrer_assumptions"), dict) else {}
+        if scherrer_status == "computed":
+            median_nm = summary.get("scherrer_median_nm")
+            median_txt = f"{median_nm:.1f} nm" if isinstance(median_nm, (int, float)) else na
+            proc_extra.append(
+                html.P(
+                    translate_ui(
+                        loc,
+                        "dash.analysis.xrd.scherrer.summary_line",
+                        count=int(summary.get("scherrer_computed_count") or 0),
+                        median=median_txt,
+                        k=scherrer_assumptions.get("shape_factor_k"),
+                        wavelength=scherrer_assumptions.get("wavelength_angstrom"),
+                    ),
+                    className="small",
+                )
+            )
+            proc_extra.append(
+                html.P(
+                    translate_ui(
+                        loc,
+                        "dash.analysis.xrd.scherrer.assumptions_line",
+                        fwhm=scherrer_assumptions.get("fwhm_units") or "degree_2theta",
+                        instrumental=scherrer_assumptions.get("instrumental_broadening_status") or "not_corrected",
+                    ),
+                    className="small text-muted",
+                )
+            )
+            caveat = str(scherrer_assumptions.get("instrumental_broadening_caveat") or "").strip()
+            if caveat:
+                proc_extra.append(html.P(caveat, className="small text-muted"))
+        else:
+            proc_extra.append(
+                html.P(
+                    translate_ui(
+                        loc,
+                        "dash.analysis.xrd.scherrer.withheld_line",
+                        reason=str(summary.get("scherrer_withheld_reason") or "unknown"),
+                    ),
+                    className="small text-warning",
+                )
+            )
     proc_extra.extend(
         [
             html.P(translate_ui(loc, "dash.analysis.xrd.qualitative_notice")),
@@ -2381,6 +2525,7 @@ def render_xrd_result_figure_area(cache, overlay_idx, ui_theme, locale_data, pro
         axis_title=axis_title,
         y_axis_title=y_axis_title,
         drawn_shapes=_xrd_shapes_from_relayout(relayout_data),
+        axis_role=str(method_context.get("xrd_axis_role") or "two_theta"),
     )
     return dcc.Graph(
         id="xrd-result-plot-graph",

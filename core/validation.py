@@ -950,7 +950,13 @@ def enrich_xrd_result_validation(
         checks["caution_state_output"] = "not_run"
         if confidence_band != "not_run":
             issues.append("XRD not_run outputs must use confidence_band='not_run'.")
-        message = "XRD phase matching was not run because no reference library candidates were available."
+        if "wavelength" in caution_code.lower():
+            message = (
+                "XRD phase matching was not run: wavelength compatibility could not be "
+                "established before comparison. Declare xrd_wavelength_angstrom to enable matching."
+            )
+        else:
+            message = "XRD phase matching was not run because no reference library candidates were available."
         if message not in warnings:
             warnings.append(message)
 
