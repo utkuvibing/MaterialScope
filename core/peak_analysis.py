@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import warnings
 from dataclasses import dataclass, field
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 from scipy.signal import find_peaks, peak_widths
@@ -47,6 +47,73 @@ class ThermalPeak:
     enthalpy_j_g: Optional[float] = None   # Enthalpy in J/g; ONLY set when beta-corrected
     enthalpy_basis: str = 'legacy_unknown'
     enthalpy_withheld_reason: Optional[str] = None
+    # --- PR-15 configurable integration -------------------------------
+    # Set only when DSCProcessor.integrate_peaks() re-integrated this peak
+    # over configured bounds.  ``area``/``enthalpy_*`` always reflect the
+    # final integration; these fields record how it was bounded and how
+    # sensitive the area is to bound placement.
+    integration_mode: Optional[str] = None      # 'characterized' | 'custom' | 'custom_snapped' | 'fwhm_window'
+    integration_bounds: Optional[Tuple[float, float]] = None  # (T_low, T_high) actually used
+    integration_baseline: Optional[str] = None  # construction used under the window
+    integration_sensitivity: Optional[Dict] = None            # bound-perturbation record
+
+
+def integrate_peak_bounds(
+    temperature: np.ndarray,
+    signal: np.ndarray,
+    t_low: float,
+    t_high: float,
+    *,
+    baseline_mode: str = 'local_linear_endpoints',
+) -> float:
+    """
+    Integrate a peak between explicit temperature bounds.
+
+    A local linear baseline is drawn between the signal values interpolated
+    at ``t_low`` and ``t_high`` — the standard DSC peak-integration
+    construction — and ``signal - baseline`` is trapezoid-integrated over
+    the window.  ``baseline_mode='zero'`` integrates the raw signal instead
+    (appropriate when a global baseline correction already ran and the
+    caller wants no further baseline subtraction).
+
+    Bounds are clamped to the measured range; partial overlap returns the
+    area over the covered portion.  Degenerate or disjoint windows return
+    0.0 rather than fabricating an area.
+
+    Returns the signed temperature-domain area in [signal unit] x K.
+    """
+    temperature = np.asarray(temperature, dtype=float)
+    signal = np.asarray(signal, dtype=float)
+    n = len(temperature)
+    if n < 2 or not (t_high > t_low):
+        return 0.0
+
+    t_min, t_max = float(temperature[0]), float(temperature[-1])
+    lo = float(np.clip(t_low, t_min, t_max))
+    hi = float(np.clip(t_high, t_min, t_max))
+    if not (hi > lo):
+        return 0.0
+
+    # The requested effective bounds are part of the integration domain even
+    # when they fall between measured samples.  Keep only strictly interior
+    # samples, then insert signal values interpolated at both endpoints.  This
+    # also permits valid windows narrower than the native sample spacing.
+    interior = (temperature > lo) & (temperature < hi)
+    t_seg = np.concatenate(([lo], temperature[interior], [hi]))
+    s_lo = float(np.interp(lo, temperature, signal))
+    s_hi = float(np.interp(hi, temperature, signal))
+    s_seg = np.concatenate(([s_lo], signal[interior], [s_hi]))
+
+    if baseline_mode == 'zero':
+        base_seg = np.zeros_like(s_seg)
+    else:
+        # Linear baseline between the bound endpoints (interpolated).
+        base_seg = s_lo + (s_hi - s_lo) * (t_seg - lo) / (hi - lo)
+
+    try:
+        return float(np.trapezoid(s_seg - base_seg, t_seg))
+    except AttributeError:
+        return float(np.trapz(s_seg - base_seg, t_seg))
 
 
 # ---------------------------------------------------------------------------
