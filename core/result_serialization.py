@@ -891,6 +891,20 @@ def thermal_peak_to_dict(peak: ThermalPeak) -> dict[str, Any]:
     }
     if basis == BASIS_BETA_CORRECTED:
         payload["enthalpy_j_g"] = getattr(peak, "enthalpy_j_g", None)
+    # PR-15: carry the configured-integration record so a saved state
+    # reports how the area was bounded and how bound-sensitive it is.
+    integration_mode = getattr(peak, "integration_mode", None)
+    if integration_mode is not None:
+        payload["integration_mode"] = integration_mode
+    integration_bounds = getattr(peak, "integration_bounds", None)
+    if integration_bounds is not None:
+        payload["integration_bounds"] = list(integration_bounds)
+    integration_baseline = getattr(peak, "integration_baseline", None)
+    if integration_baseline is not None:
+        payload["integration_baseline"] = integration_baseline
+    integration_sensitivity = getattr(peak, "integration_sensitivity", None)
+    if isinstance(integration_sensitivity, Mapping):
+        payload["integration_sensitivity"] = copy.deepcopy(dict(integration_sensitivity))
     direction = getattr(peak, "direction", None)
     if direction is not None:
         payload["direction"] = direction
@@ -936,6 +950,22 @@ def thermal_peak_from_dict(payload: dict[str, Any]) -> ThermalPeak:
             object.__setattr__(peak, "direction", direction)
         except Exception:
             pass
+    # PR-15 integration record (absent for pre-PR-15 payloads).
+    integration_mode = payload.get("integration_mode")
+    if integration_mode is not None:
+        peak.integration_mode = str(integration_mode)
+    integration_bounds = payload.get("integration_bounds")
+    if isinstance(integration_bounds, (list, tuple)) and len(integration_bounds) == 2:
+        lo = _to_optional_float(integration_bounds[0])
+        hi = _to_optional_float(integration_bounds[1])
+        if lo is not None and hi is not None:
+            peak.integration_bounds = (lo, hi)
+    integration_baseline = payload.get("integration_baseline")
+    if integration_baseline is not None:
+        peak.integration_baseline = str(integration_baseline)
+    integration_sensitivity = payload.get("integration_sensitivity")
+    if isinstance(integration_sensitivity, Mapping):
+        peak.integration_sensitivity = copy.deepcopy(dict(integration_sensitivity))
     return peak
 
 
@@ -1055,6 +1085,20 @@ def serialize_dsc_result(
             ),
             "enthalpy_basis": getattr(peak, "enthalpy_basis", BASIS_LEGACY_UNKNOWN),
             "enthalpy_withheld_reason": getattr(peak, "enthalpy_withheld_reason", None),
+            # PR-15: how this peak's area was bounded and how sensitive the
+            # area is to bound placement (None for default FWHM windows).
+            "integration_mode": getattr(peak, "integration_mode", None),
+            "integration_bounds": (
+                list(peak.integration_bounds)
+                if getattr(peak, "integration_bounds", None) is not None
+                else None
+            ),
+            "integration_baseline": getattr(peak, "integration_baseline", None),
+            "integration_sensitivity": (
+                copy.deepcopy(dict(peak.integration_sensitivity))
+                if isinstance(getattr(peak, "integration_sensitivity", None), Mapping)
+                else None
+            ),
         }
         for peak in peaks
     ]

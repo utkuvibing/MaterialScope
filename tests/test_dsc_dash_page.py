@@ -107,7 +107,7 @@ def test_default_processing_draft_has_all_sections():
     mod = _import_dsc_page()
     defaults = mod._default_processing_draft()
 
-    assert set(defaults.keys()) == {"smoothing", "baseline", "normalization", "peak_detection", "glass_transition"}
+    assert set(defaults.keys()) == {"smoothing", "baseline", "normalization", "peak_detection", "glass_transition", "integration"}
     assert defaults["smoothing"]["method"] == "savgol"
     assert defaults["baseline"]["method"] == "asls"
     assert defaults["baseline"].get("region") is None
@@ -116,6 +116,7 @@ def test_default_processing_draft_has_all_sections():
     assert defaults["peak_detection"]["prominence"] is None
     assert defaults["peak_detection"]["distance"] is None
     assert defaults["glass_transition"] == {"mode": "auto", "region": None}
+    assert defaults["integration"] == {"enabled": False, "bounds": None, "snap_to_characterized": False}
 
 
 def test_normalize_normalization_values_defaults_to_enabled():
@@ -186,9 +187,10 @@ def test_overrides_from_draft_includes_all_user_sections():
         }
     )
 
-    assert set(overrides.keys()) == {"smoothing", "baseline", "normalization", "peak_detection", "glass_transition"}
+    assert set(overrides.keys()) == {"smoothing", "baseline", "normalization", "peak_detection", "glass_transition", "integration"}
     assert overrides["baseline"]["region"] == [40.0, 200.0]
     assert overrides["normalization"] == {"enabled": False, "force": False}
+    assert overrides["integration"] == {"enabled": False, "bounds": None, "snap_to_characterized": False}
 
 
 def test_normalize_baseline_values_optional_region():
@@ -327,6 +329,10 @@ def test_dsc_preset_dirty_flag_renders_clean_when_snapshot_matches():
         False,
         None,
         None,
+        False,
+        None,
+        None,
+        False,
         snap,
     )
     assert "text-success" in str(flag)
@@ -360,6 +366,10 @@ def test_dsc_preset_dirty_flag_renders_dirty_when_controls_differ():
         False,
         None,
         None,
+        False,
+        None,
+        None,
+        False,
         snap,
     )
     assert "text-warning" in str(flag)
@@ -391,6 +401,10 @@ def test_dsc_preset_dirty_flag_renders_no_baseline_without_snapshot():
         False,
         None,
         None,
+        False,
+        None,
+        None,
+        False,
         None,
     )
     assert "text-muted" in str(flag)

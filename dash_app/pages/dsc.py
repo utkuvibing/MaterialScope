@@ -141,6 +141,11 @@ _DSC_GLASS_TRANSITION_DEFAULTS: dict = {
     "mode": "auto",
     "region": None,
 }
+_DSC_INTEGRATION_DEFAULTS: dict = {
+    "enabled": False,
+    "bounds": None,
+    "snap_to_characterized": False,
+}
 _DSC_NORMALIZATION_DEFAULTS: dict = {
     "enabled": True,
     "force": False,
@@ -198,6 +203,7 @@ def _default_processing_draft() -> dict:
         "normalization": copy.deepcopy(_DSC_NORMALIZATION_DEFAULTS),
         "peak_detection": copy.deepcopy(_DSC_PEAK_DETECTION_DEFAULTS),
         "glass_transition": copy.deepcopy(_DSC_GLASS_TRANSITION_DEFAULTS),
+        "integration": copy.deepcopy(_DSC_INTEGRATION_DEFAULTS),
     }
 
 
@@ -285,6 +291,43 @@ def _normalize_glass_transition_values(enabled, rmin, rmax) -> dict:
     return {"mode": "auto", "region": [lower, upper]}
 
 
+def _normalize_integration_values(enabled, bound_min, bound_max, snap) -> dict:
+    """Normalize the configurable peak-integration section (PR-15).
+
+    ``bounds=None`` means each detected peak is re-integrated over its
+    characterised onset/endset.  A [T_low, T_high] pair selects the peak(s)
+    whose apex lies inside the window; ``snap`` then replaces the typed
+    bounds with the characterised onset/endset.
+    """
+    if isinstance(enabled, str):
+        enabled = enabled.strip().lower() in {"1", "true", "on", "yes"}
+    enabled_flag = bool(enabled)
+    if isinstance(snap, str):
+        snap = snap.strip().lower() in {"1", "true", "on", "yes"}
+    snap_flag = bool(snap)
+
+    bounds = None
+    if bound_min not in (None, "") and bound_max not in (None, ""):
+        try:
+            lower = float(bound_min)
+            upper = float(bound_max)
+        except (TypeError, ValueError):
+            lower = upper = None
+        if (
+            lower is not None
+            and math.isfinite(lower)
+            and math.isfinite(upper)
+            and lower < upper
+        ):
+            bounds = [lower, upper]
+
+    return {
+        "enabled": enabled_flag,
+        "bounds": bounds,
+        "snap_to_characterized": snap_flag,
+    }
+
+
 def _normalize_normalization_values(enabled, force=None) -> dict:
     if isinstance(force, str):
         force = force.strip().lower() in {"1", "true", "on", "yes"}
@@ -364,12 +407,26 @@ def _normalize_dsc_processing_draft(draft: dict | None) -> dict:
     else:
         glass_transition = copy.deepcopy(_DSC_GLASS_TRANSITION_DEFAULTS)
 
+    integration = draft_payload.get("integration")
+    if isinstance(integration, dict):
+        int_bounds = integration.get("bounds")
+        int_bounds_ok = isinstance(int_bounds, (list, tuple)) and len(int_bounds) == 2
+        integration = _normalize_integration_values(
+            integration.get("enabled"),
+            int_bounds[0] if int_bounds_ok else None,
+            int_bounds[1] if int_bounds_ok else None,
+            integration.get("snap_to_characterized"),
+        )
+    else:
+        integration = copy.deepcopy(_DSC_INTEGRATION_DEFAULTS)
+
     return {
         "smoothing": smoothing,
         "baseline": baseline,
         "normalization": normalization,
         "peak_detection": peak_detection,
         "glass_transition": glass_transition,
+        "integration": integration,
     }
 
 
@@ -385,6 +442,7 @@ def _dsc_draft_from_loaded_processing(processing: dict | None) -> dict:
             "normalization": signal_pipeline.get("normalization") if isinstance(signal_pipeline.get("normalization"), dict) else processing.get("normalization"),
             "peak_detection": analysis_steps.get("peak_detection") if isinstance(analysis_steps.get("peak_detection"), dict) else processing.get("peak_detection"),
             "glass_transition": analysis_steps.get("glass_transition") if isinstance(analysis_steps.get("glass_transition"), dict) else processing.get("glass_transition"),
+            "integration": analysis_steps.get("integration") if isinstance(analysis_steps.get("integration"), dict) else processing.get("integration"),
         }
     )
 
@@ -399,6 +457,7 @@ def _dsc_ui_snapshot_dict(template_id: str | None, draft: dict | None) -> dict[s
         "normalization": norm["normalization"],
         "peak_detection": norm["peak_detection"],
         "glass_transition": norm["glass_transition"],
+        "integration": norm["integration"],
     }
 
 
@@ -430,6 +489,10 @@ def _dsc_draft_from_control_values(
     tg_enabled,
     tg_min,
     tg_max,
+    int_enabled=False,
+    int_min=None,
+    int_max=None,
+    int_snap=False,
 ) -> dict[str, Any]:
     return _normalize_dsc_processing_draft(
         {
@@ -448,6 +511,7 @@ def _dsc_draft_from_control_values(
             ),
             "peak_detection": _normalize_peak_detection_values(peak_direction, peak_prominence, peak_distance),
             "glass_transition": _normalize_glass_transition_values(tg_enabled, tg_min, tg_max),
+            "integration": _normalize_integration_values(int_enabled, int_min, int_max, int_snap),
         }
     )
 
@@ -498,7 +562,7 @@ def _do_reset(draft: dict, undo: list | None, redo: list | None, defaults: dict 
 def _overrides_from_draft(draft: dict | None) -> dict:
     draft_payload = _normalize_dsc_processing_draft(draft)
     combined: dict[str, dict] = {}
-    for section in ("smoothing", "baseline", "normalization", "peak_detection", "glass_transition"):
+    for section in ("smoothing", "baseline", "normalization", "peak_detection", "glass_transition", "integration"):
         values = draft_payload.get(section)
         if isinstance(values, dict):
             combined[section] = copy.deepcopy(values)
@@ -905,6 +969,64 @@ def _tg_controls_card() -> dbc.Card:
     )
 
 
+def _integration_controls_card() -> dbc.Card:
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.H5(id="dsc-integration-card-title", className="card-title mb-3"),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Checkbox(id="dsc-integration-enabled", value=False, label=" "),
+                                html.Small(id="dsc-integration-enable-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=12,
+                        ),
+                    ],
+                    className="mb-2",
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dsc-integration-min-label", html_for="dsc-integration-min"),
+                                dbc.Input(id="dsc-integration-min", type="number", value=None),
+                                html.Small(id="dsc-integration-min-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=6,
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dsc-integration-max-label", html_for="dsc-integration-max"),
+                                dbc.Input(id="dsc-integration-max", type="number", value=None),
+                                html.Small(id="dsc-integration-max-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=6,
+                        ),
+                    ],
+                    className="g-2 mb-2",
+                ),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Checkbox(id="dsc-integration-snap", value=False, label=" "),
+                                html.Small(id="dsc-integration-snap-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=12,
+                        ),
+                    ],
+                    className="mb-2",
+                ),
+                dbc.Button(id="dsc-integration-apply-btn", color="primary", size="sm", className="mb-2"),
+                html.Div(id="dsc-integration-status", className="small text-muted"),
+            ]
+        ),
+        className="mb-3",
+    )
+
+
 def _dsc_left_column_tabs() -> dbc.Tabs:
     return dbc.Tabs(
         [
@@ -934,6 +1056,7 @@ def _dsc_left_column_tabs() -> dbc.Tabs:
                     _smoothing_controls_card(),
                     _baseline_controls_card(),
                     _peak_controls_card(),
+                    _integration_controls_card(),
                     _tg_controls_card(),
                 ],
                 tab_id="dsc-tab-processing",
@@ -969,6 +1092,25 @@ def _peak_card(row: dict, idx: int, loc: str) -> dbc.Card:
     endset = row.get("endset_temperature")
     fwhm = row.get("fwhm")
     height = row.get("height")
+    int_mode = row.get("integration_mode")
+    int_bounds = row.get("integration_bounds")
+    int_sens = row.get("integration_sensitivity") if isinstance(row.get("integration_sensitivity"), dict) else {}
+    int_sens_rel = int_sens.get("area_delta_rel")
+    integration_line = None
+    if int_mode in {"characterized", "custom", "custom_snapped"} and isinstance(int_bounds, (list, tuple)) and len(int_bounds) == 2:
+        mode_label = translate_ui(loc, f"dash.analysis.dsc.integration.mode.{int_mode}")
+        sens_txt = (
+            f" · ±{float(int_sens_rel) * 100:.1f}%"
+            if isinstance(int_sens_rel, (int, float)) and math.isfinite(float(int_sens_rel))
+            else ""
+        )
+        integration_line = html.Div(
+            html.Small(
+                f"{translate_ui(loc, 'dash.analysis.dsc.integration.bounds_line')}: "
+                f"[{float(int_bounds[0]):.1f}, {float(int_bounds[1]):.1f}] °C · {mode_label}{sens_txt}",
+                className="text-muted d-block mt-1",
+            )
+        )
     return dbc.Card(
         dbc.CardBody(
             [
@@ -1020,6 +1162,7 @@ def _peak_card(row: dict, idx: int, loc: str) -> dbc.Card:
                     ],
                     className="g-2",
                 ),
+                integration_line if integration_line is not None else html.Div(),
             ]
         ),
         className="mb-2",
@@ -1369,6 +1512,35 @@ def render_dsc_tg_chrome(locale_data):
 
 
 @callback(
+    Output("dsc-integration-card-title", "children"),
+    Output("dsc-integration-enabled", "label"),
+    Output("dsc-integration-min-label", "children"),
+    Output("dsc-integration-max-label", "children"),
+    Output("dsc-integration-snap", "label"),
+    Output("dsc-integration-apply-btn", "children"),
+    Output("dsc-integration-enable-hint", "children"),
+    Output("dsc-integration-min-hint", "children"),
+    Output("dsc-integration-max-hint", "children"),
+    Output("dsc-integration-snap-hint", "children"),
+    Input("ui-locale", "data"),
+)
+def render_dsc_integration_chrome(locale_data):
+    loc = _loc(locale_data)
+    return (
+        translate_ui(loc, "dash.analysis.dsc.integration.title"),
+        translate_ui(loc, "dash.analysis.dsc.integration.enable"),
+        translate_ui(loc, "dash.analysis.dsc.integration.bound_min"),
+        translate_ui(loc, "dash.analysis.dsc.integration.bound_max"),
+        translate_ui(loc, "dash.analysis.dsc.integration.snap"),
+        translate_ui(loc, "dash.analysis.dsc.integration.apply_btn"),
+        translate_ui(loc, "dash.analysis.dsc.integration.help.enable"),
+        translate_ui(loc, "dash.analysis.dsc.integration.help.bound_min"),
+        translate_ui(loc, "dash.analysis.dsc.integration.help.bound_max"),
+        translate_ui(loc, "dash.analysis.dsc.integration.help.snap"),
+    )
+
+
+@callback(
     Output("dsc-prerun-dataset-info", "children"),
     Input("dsc-dataset-select", "value"),
     Input("dsc-refresh", "data"),
@@ -1700,6 +1872,10 @@ def render_dsc_preset_loaded_line(name, locale_data):
     Input("dsc-tg-region-enabled", "value"),
     Input("dsc-tg-region-min", "value"),
     Input("dsc-tg-region-max", "value"),
+    Input("dsc-integration-enabled", "value"),
+    Input("dsc-integration-min", "value"),
+    Input("dsc-integration-max", "value"),
+    Input("dsc-integration-snap", "value"),
     State("dsc-preset-snapshot", "data"),
 )
 def render_dsc_preset_dirty_flag(
@@ -1726,6 +1902,10 @@ def render_dsc_preset_dirty_flag(
     tg_enabled,
     tg_min,
     tg_max,
+    int_enabled,
+    int_min,
+    int_max,
+    int_snap,
     snapshot,
 ):
     loc = _loc(locale_data)
@@ -1755,6 +1935,10 @@ def render_dsc_preset_dirty_flag(
             tg_enabled,
             tg_min,
             tg_max,
+            int_enabled,
+            int_min,
+            int_max,
+            int_snap,
         ),
     )
     if _dsc_snapshots_equal(snapshot, current):
@@ -1968,6 +2152,28 @@ def apply_glass_transition(n_clicks, enabled, region_min, region_max, draft, und
     Output("dsc-processing-draft", "data", allow_duplicate=True),
     Output("dsc-processing-undo", "data", allow_duplicate=True),
     Output("dsc-processing-redo", "data", allow_duplicate=True),
+    Input("dsc-integration-apply-btn", "n_clicks"),
+    State("dsc-integration-enabled", "value"),
+    State("dsc-integration-min", "value"),
+    State("dsc-integration-max", "value"),
+    State("dsc-integration-snap", "value"),
+    State("dsc-processing-draft", "data"),
+    State("dsc-processing-undo", "data"),
+    prevent_initial_call=True,
+)
+def apply_integration(n_clicks, enabled, bound_min, bound_max, snap, draft, undo):
+    if not n_clicks:
+        raise dash.exceptions.PreventUpdate
+    values = _normalize_integration_values(enabled, bound_min, bound_max, snap)
+    next_undo = _push_undo(undo, draft)
+    next_draft = _apply_draft_section(draft, "integration", values)
+    return next_draft, next_undo, []
+
+
+@callback(
+    Output("dsc-processing-draft", "data", allow_duplicate=True),
+    Output("dsc-processing-undo", "data", allow_duplicate=True),
+    Output("dsc-processing-redo", "data", allow_duplicate=True),
     Output("dsc-history-status", "children", allow_duplicate=True),
     Input("dsc-undo-btn", "n_clicks"),
     Input("dsc-redo-btn", "n_clicks"),
@@ -2086,6 +2292,20 @@ def _tg_status_text(draft: dict | None, loc: str) -> str:
     return f"{applied}: {translate_ui(loc, 'dash.analysis.dsc.tg.region_auto')}"
 
 
+def _integration_status_text(draft: dict | None, loc: str) -> str:
+    values = (draft or {}).get("integration") or {}
+    if not values.get("enabled"):
+        return translate_ui(loc, "dash.analysis.dsc.integration.status_disabled")
+    bounds = values.get("bounds")
+    applied = translate_ui(loc, "dash.analysis.dsc.integration.applied")
+    if isinstance(bounds, (list, tuple)) and len(bounds) == 2:
+        mode = translate_ui(loc, "dash.analysis.dsc.integration.bounds_custom").format(tmin=bounds[0], tmax=bounds[1])
+        if values.get("snap_to_characterized"):
+            mode = f"{mode} + {translate_ui(loc, 'dash.analysis.dsc.integration.snap_suffix')}"
+        return f"{applied}: {mode}"
+    return f"{applied}: {translate_ui(loc, 'dash.analysis.dsc.integration.bounds_characterized')}"
+
+
 @callback(
     Output("dsc-normalization-enabled", "value"),
     Output("dsc-normalization-force", "value"),
@@ -2193,6 +2413,28 @@ def sync_tg_controls(draft, locale_data):
     region_max = region[1] if enabled else None
     status = _tg_status_text(draft, loc)
     return bool(enabled), region_min, region_max, status
+
+
+@callback(
+    Output("dsc-integration-enabled", "value"),
+    Output("dsc-integration-min", "value"),
+    Output("dsc-integration-max", "value"),
+    Output("dsc-integration-snap", "value"),
+    Output("dsc-integration-status", "children"),
+    Input("dsc-processing-draft", "data"),
+    Input("ui-locale", "data"),
+)
+def sync_integration_controls(draft, locale_data):
+    loc = _loc(locale_data)
+    values = (draft or {}).get("integration") or {}
+    enabled = bool(values.get("enabled"))
+    bounds = values.get("bounds")
+    bounds_ok = isinstance(bounds, (list, tuple)) and len(bounds) == 2
+    bound_min = bounds[0] if bounds_ok else None
+    bound_max = bounds[1] if bounds_ok else None
+    snap = bool(values.get("snap_to_characterized"))
+    status = _integration_status_text(draft, loc)
+    return enabled, bound_min, bound_max, snap, status
 
 
 @callback(

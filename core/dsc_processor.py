@@ -22,9 +22,15 @@ import numpy as np
 
 from core.preprocessing import smooth_signal, compute_derivative, normalize_by_mass
 from core.baseline import correct_baseline
-from core.peak_analysis import find_thermal_peaks, characterize_peaks, ThermalPeak
+from core.peak_analysis import (
+    find_thermal_peaks,
+    characterize_peaks,
+    integrate_peak_bounds,
+    ThermalPeak,
+)
 from core.sign_convention import CANONICAL, SignConvention, parse_declared
 from core.units_dimensional import (
+    BASIS_BETA_CORRECTED,
     UnitClass,
     canonical_signal_unit,
     heat_flow_step_to_delta_cp,
@@ -589,26 +595,233 @@ class DSCProcessor:
         self._metadata['steps'].append({'step': 'find_peaks', **kwargs})
         return self
 
-    def _apply_peak_enthalpies(self) -> None:
-        """Attach β-aware enthalpy J/g to every characterised peak.
+    def _apply_peak_enthalpy(self, peak: ThermalPeak) -> None:
+        """Attach β-aware enthalpy J/g to a single characterised peak.
 
         Reads the working unit only — never the sample mass — so a second
         division is impossible.  Withholds when provenance is missing.
         """
         beta, reason = self._resolved_beta()
+        conversion = peak_area_to_enthalpy(
+            peak.area,
+            working_signal_unit=self._working_signal_unit,
+            beta_k_min=beta,
+        )
+        peak.enthalpy_j_g = conversion.value
+        peak.enthalpy_basis = conversion.basis
+        # Root cause first: an unusable heating rate explains the
+        # withholding better than the resulting missing value.
+        peak.enthalpy_withheld_reason = (
+            reason or conversion.withheld_reason
+        )
+
+    def _apply_peak_enthalpies(self) -> None:
+        """Attach β-aware enthalpy J/g to every characterised peak."""
         for peak in self._peaks:
-            conversion = peak_area_to_enthalpy(
-                peak.area,
+            self._apply_peak_enthalpy(peak)
+
+    def integrate_peaks(
+        self,
+        bounds: Optional[Tuple[float, float]] = None,
+        *,
+        snap_to_characterized: bool = False,
+        sensitivity_delta_fraction: float = 0.02,
+    ) -> 'DSCProcessor':
+        """
+        Re-integrate characterised peaks over configured bounds (PR-15).
+
+        Bound semantics
+        ---------------
+        ``bounds=None``
+            Every peak is re-integrated over its characterised
+            (onset, endset) temperatures — the classical construction.
+            Peaks without finite characterised bounds keep their default
+            FWHM-window area and record ``integration_mode='fwhm_window'``.
+        ``bounds=(T_low, T_high)``
+            Only peaks whose apex lies inside the window are re-integrated
+            over it (``integration_mode='custom'``); peaks outside keep
+            their default window.  This matches the "draw a region around
+            one event" interaction and never lets a single window be
+            double-counted across peaks.
+        ``snap_to_characterized=True`` with ``bounds``
+            The window *selects* the peak, then the actual integration
+            bounds snap to the peak's characterised onset/endset
+            (``integration_mode='custom_snapped'``).  A peak whose
+            characterised bounds are missing keeps the custom window.
+
+        For every re-integrated peak the area is the trapezoid integral of
+        ``signal - local_linear_baseline`` where the baseline is the
+        straight line between the signal values at the two bounds — the
+        standard DSC peak-integration construction.  ``peak.area`` and the
+        β-aware ``peak.enthalpy_j_g`` (via the PR-9
+        ``peak_area_to_enthalpy`` path) are recomputed in place.
+
+        Integration sensitivity
+        -----------------------
+        For each re-integrated peak a bound-perturbation sensitivity is
+        recorded in ``peak.integration_sensitivity``: the bounds are moved
+        outward and inward by ``delta = sensitivity_delta_fraction *
+        (T_high - T_low)`` and the area is recomputed through the same
+        construction.  ``area_delta_abs``/``area_delta_rel`` quantify how
+        strongly the result depends on bound placement.
+
+        This is a *sensitivity to integration bound placement* — it is not
+        a metrological uncertainty estimate and must not be presented as
+        one.  The repository carries no calibration or instrument error
+        model that would support an uncertainty statement.
+
+        Parameters
+        ----------
+        bounds:
+            Optional ``(T_low, T_high)`` integration window.  When omitted
+            the characterised onset/endset of each peak is used.
+        snap_to_characterized:
+            When True and ``bounds`` are given, snap each affected peak's
+            integration bounds to its characterised onset/endset.
+        sensitivity_delta_fraction:
+            Bound perturbation as a fraction of the integration window
+            width; must be in (0, 0.5).  Default 0.02 (2%).
+
+        Returns
+        -------
+        self, for method chaining.
+        """
+        step_record: Dict = {
+            'step': 'integrate_peaks',
+            'bounds': list(bounds) if bounds is not None else None,
+            'snap_to_characterized': bool(snap_to_characterized),
+            'sensitivity_delta_fraction': sensitivity_delta_fraction,
+        }
+        if not self._peaks:
+            warnings.warn(
+                "integrate_peaks() called before find_peaks() produced "
+                "peaks; nothing to integrate.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            step_record['outcome'] = 'no_peaks'
+            self._metadata['steps'].append(step_record)
+            return self
+
+        try:
+            delta_fraction = float(sensitivity_delta_fraction)
+        except (TypeError, ValueError):
+            delta_fraction = 0.02
+        if not (0.0 < delta_fraction < 0.5):
+            raise ValueError(
+                f"sensitivity_delta_fraction must be in (0, 0.5), got "
+                f"{sensitivity_delta_fraction}."
+            )
+
+        custom_bounds: Optional[Tuple[float, float]] = None
+        if bounds is not None:
+            t_low, t_high = float(bounds[0]), float(bounds[1])
+            if not (np.isfinite(t_low) and np.isfinite(t_high) and t_high > t_low):
+                raise ValueError(
+                    f"bounds must be a finite (T_low, T_high) pair with "
+                    f"T_high > T_low, got {bounds}."
+                )
+            custom_bounds = (t_low, t_high)
+        step_record['bounds'] = list(custom_bounds) if custom_bounds else None
+
+        n_integrated = 0
+        for peak in self._peaks:
+            mode: Optional[str] = None
+            effective: Optional[Tuple[float, float]] = None
+            if custom_bounds is not None:
+                if not (custom_bounds[0] <= peak.peak_temperature <= custom_bounds[1]):
+                    continue  # outside the configured window: keep FWHM area
+                char_bounds = (
+                    peak.onset_temperature, peak.endset_temperature
+                )
+                char_ok = (
+                    snap_to_characterized
+                    and char_bounds[0] is not None
+                    and char_bounds[1] is not None
+                    and np.isfinite(char_bounds[0])
+                    and np.isfinite(char_bounds[1])
+                    and char_bounds[1] > char_bounds[0]
+                )
+                if char_ok:
+                    effective = (float(char_bounds[0]), float(char_bounds[1]))
+                    mode = 'custom_snapped'
+                else:
+                    effective = custom_bounds
+                    mode = 'custom'
+            else:
+                onset, endset = peak.onset_temperature, peak.endset_temperature
+                if (
+                    onset is None or endset is None
+                    or not np.isfinite(onset) or not np.isfinite(endset)
+                    or not (endset > onset)
+                ):
+                    peak.integration_mode = 'fwhm_window'
+                    continue
+                effective = (float(onset), float(endset))
+                mode = 'characterized'
+
+            t_low, t_high = effective
+            area = integrate_peak_bounds(
+                self._temperature, self._signal, t_low, t_high,
+                baseline_mode='local_linear_endpoints',
+            )
+
+            # Bound-perturbation sensitivity: move each bound out/in by
+            # delta and re-integrate through the same construction.
+            delta = delta_fraction * (t_high - t_low)
+            area_outer = integrate_peak_bounds(
+                self._temperature, self._signal, t_low - delta, t_high + delta,
+                baseline_mode='local_linear_endpoints',
+            )
+            area_inner = integrate_peak_bounds(
+                self._temperature, self._signal, t_low + delta, t_high - delta,
+                baseline_mode='local_linear_endpoints',
+            )
+            area_delta_abs = max(abs(area_outer - area), abs(area_inner - area))
+            area_delta_rel = (
+                area_delta_abs / abs(area) if abs(area) > 1e-15 else None
+            )
+            # Report the enthalpy-scale sensitivity through the same PR-9
+            # conversion so the figure is in the same units as the result.
+            enthalpy_sensitivity = peak_area_to_enthalpy(
+                area_delta_abs,
                 working_signal_unit=self._working_signal_unit,
-                beta_k_min=beta,
+                beta_k_min=self._resolved_beta()[0],
             )
-            peak.enthalpy_j_g = conversion.value
-            peak.enthalpy_basis = conversion.basis
-            # Root cause first: an unusable heating rate explains the
-            # withholding better than the resulting missing value.
-            peak.enthalpy_withheld_reason = (
-                reason or conversion.withheld_reason
-            )
+            peak.integration_sensitivity = {
+                'method': 'bound_perturbation',
+                'delta_temperature': float(delta),
+                'delta_fraction': float(delta_fraction),
+                'area': float(area),
+                'area_outer': float(area_outer),
+                'area_inner': float(area_inner),
+                'area_delta_abs': float(area_delta_abs),
+                'area_delta_rel': (
+                    float(area_delta_rel) if area_delta_rel is not None else None
+                ),
+                'enthalpy_delta_j_g': (
+                    enthalpy_sensitivity.value
+                    if enthalpy_sensitivity.basis == BASIS_BETA_CORRECTED
+                    else None
+                ),
+                'interpretation': (
+                    'Sensitivity of the integrated area to integration-bound '
+                    'placement only; not an instrument or metrological '
+                    'uncertainty estimate.'
+                ),
+            }
+
+            peak.area = area
+            peak.integration_mode = mode
+            peak.integration_bounds = (t_low, t_high)
+            peak.integration_baseline = 'local_linear_endpoints'
+            self._apply_peak_enthalpy(peak)
+            n_integrated += 1
+
+        step_record['integrated_count'] = n_integrated
+        step_record['outcome'] = 'integrated' if n_integrated else 'no_matching_peaks'
+        self._metadata['steps'].append(step_record)
+        return self
 
     def detect_glass_transition(
         self,

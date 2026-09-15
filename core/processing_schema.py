@@ -24,7 +24,7 @@ _SIGNAL_PIPELINE_SECTIONS = {
     "PEAK DECONVOLUTION": (),
 }
 _ANALYSIS_STEP_SECTIONS = {
-    "DSC": ("glass_transition", "peak_detection"),
+    "DSC": ("glass_transition", "peak_detection", "integration"),
     "TGA": ("step_detection",),
     "DTA": ("peak_detection",),
     "FTIR": ("peak_detection", "similarity_matching"),

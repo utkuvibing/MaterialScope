@@ -45,6 +45,13 @@ from core.xrd_display import xrd_candidate_display_payload
 from core.xrd_demo_references import load_demo_xrd_references
 
 
+_DSC_INTEGRATION_DEFAULTS = {
+    "enabled": False,
+    "bounds": None,
+    "snap_to_characterized": False,
+    "sensitivity_delta_fraction": 0.02,
+}
+
 _DSC_TEMPLATE_DEFAULTS = {
     "dsc.general": {
         "smoothing": {"method": "savgol", "window_length": 11, "polyorder": 3},
@@ -52,6 +59,7 @@ _DSC_TEMPLATE_DEFAULTS = {
         "normalization": {"enabled": True},
         "peak_detection": {"direction": "both"},
         "glass_transition": {"mode": "auto", "region": None},
+        "integration": copy.deepcopy(_DSC_INTEGRATION_DEFAULTS),
     },
     "dsc.polymer_tg": {
         "smoothing": {"method": "savgol", "window_length": 15, "polyorder": 3},
@@ -59,6 +67,7 @@ _DSC_TEMPLATE_DEFAULTS = {
         "normalization": {"enabled": True},
         "peak_detection": {"direction": "both"},
         "glass_transition": {"mode": "auto", "region": None},
+        "integration": copy.deepcopy(_DSC_INTEGRATION_DEFAULTS),
     },
     "dsc.polymer_melting_crystallization": {
         "smoothing": {"method": "savgol", "window_length": 11, "polyorder": 3},
@@ -66,6 +75,7 @@ _DSC_TEMPLATE_DEFAULTS = {
         "normalization": {"enabled": True},
         "peak_detection": {"direction": "both"},
         "glass_transition": {"mode": "auto", "region": None},
+        "integration": copy.deepcopy(_DSC_INTEGRATION_DEFAULTS),
     },
 }
 
@@ -391,6 +401,7 @@ def _execute_dsc_batch(
     normalization = copy.deepcopy((processing.get("signal_pipeline") or {}).get("normalization") or {})
     peak_detection = copy.deepcopy((processing.get("analysis_steps") or {}).get("peak_detection") or {})
     glass_transition = copy.deepcopy((processing.get("analysis_steps") or {}).get("glass_transition") or {})
+    integration = copy.deepcopy((processing.get("analysis_steps") or {}).get("integration") or {})
     normalization_enabled = bool(normalization.get("enabled", True))
     # PR-12: explicit opt-in for re-normalizing an already-specific signal;
     # the source value stays on the record so the run is reproducible.
@@ -455,6 +466,55 @@ def _execute_dsc_batch(
         dtg_signal = np.array([])
 
     processor.find_peaks(**peak_detection)
+
+    # PR-15: optional configurable integration bounds.  When enabled the
+    # peaks are re-integrated over the configured window (or their
+    # characterised onset/endset), the area is recomputed through the PR-9
+    # enthalpy path, and a bound-perturbation sensitivity is recorded on
+    # each affected peak.
+    integration_enabled = bool(integration.get("enabled"))
+    integration_bounds = integration.get("bounds")
+    if isinstance(integration_bounds, (list, tuple)) and len(integration_bounds) == 2:
+        try:
+            integration_bounds = (float(integration_bounds[0]), float(integration_bounds[1]))
+        except (TypeError, ValueError):
+            integration_bounds = None
+    else:
+        integration_bounds = None
+    integration_snap = bool(integration.get("snap_to_characterized"))
+    try:
+        integration_delta = float(integration.get("sensitivity_delta_fraction") or 0.02)
+    except (TypeError, ValueError):
+        integration_delta = 0.02
+    if not (0.0 < integration_delta < 0.5):
+        integration_delta = 0.02
+    if integration_enabled:
+        processor.integrate_peaks(
+            bounds=integration_bounds,
+            snap_to_characterized=integration_snap,
+            sensitivity_delta_fraction=integration_delta,
+        )
+    integration_step_meta = next(
+        (
+            step
+            for step in reversed(processor.get_result().metadata.get("steps") or [])
+            if isinstance(step, dict) and step.get("step") == "integrate_peaks"
+        ),
+        {},
+    )
+    processing = update_processing_step(
+        processing,
+        "integration",
+        {
+            "enabled": integration_enabled,
+            "bounds": list(integration_bounds) if integration_bounds else None,
+            "snap_to_characterized": integration_snap,
+            "sensitivity_delta_fraction": integration_delta,
+            "integrated_count": integration_step_meta.get("integrated_count", 0),
+            "outcome": integration_step_meta.get("outcome", "disabled"),
+        },
+        analysis_type="DSC",
+    )
     tg_region = glass_transition.get("region")
     processor.detect_glass_transition(region=tuple(tg_region) if isinstance(tg_region, (list, tuple)) and len(tg_region) == 2 else None)
     result = processor.get_result()
