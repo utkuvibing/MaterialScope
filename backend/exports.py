@@ -98,17 +98,29 @@ def _results_to_xlsx_bytes(results: dict[str, dict[str, Any]], issues: list[str]
                 "validation_status": (record.get("validation") or {}).get("status"),
                 "saved_at_utc": (record.get("provenance") or {}).get("saved_at_utc"),
             }
-            row.update(record.get("summary", {}))
+            # peak_table is exported as a dedicated sheet below; keep it out
+            # of the summary row so it doesn't land as a stringified blob.
+            row.update(
+                {
+                    key: value
+                    for key, value in (record.get("summary") or {}).items()
+                    if key != "peak_table"
+                }
+            )
             summary_rows.append(row)
 
         summary_df = pd.DataFrame(summary_rows) if summary_rows else pd.DataFrame([{"message": "No valid results"}])
         summary_df.to_excel(writer, sheet_name="Results", index=False)
 
         for record in results.values():
-            if not record.get("rows"):
-                continue
-            sheet_name = f"{record['analysis_type']}_{record['id']}"[:31]
-            pd.DataFrame(record["rows"]).to_excel(writer, sheet_name=sheet_name, index=False)
+            if record.get("rows"):
+                sheet_name = f"{record['analysis_type']}_{record['id']}"[:31]
+                pd.DataFrame(record["rows"]).to_excel(writer, sheet_name=sheet_name, index=False)
+            # PR-18: annotated spectral peak table as its own sheet.
+            peak_table = (record.get("summary") or {}).get("peak_table")
+            if isinstance(peak_table, list) and peak_table:
+                peak_sheet = f"{record['analysis_type']}_{record['id']}_peaks"[:31]
+                pd.DataFrame(peak_table).to_excel(writer, sheet_name=peak_sheet, index=False)
 
         if issues:
             pd.DataFrame({"issue": issues}).to_excel(writer, sheet_name="Skipped", index=False)

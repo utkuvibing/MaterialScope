@@ -996,13 +996,22 @@ def create_app(
             if raw_signal and len(raw_signal) != len(temperature):
                 raw_signal = []
 
+        diagnostics = analysis_state.get("diagnostics") or {}
+        # PR-18: when the analysis axis was converted, raw samples (sorted on
+        # the declared axis, often in the opposite order) cannot be overlaid
+        # on the converted axis — drop them rather than misplace points.
+        if (diagnostics.get("axis_conversion") or {}).get("basis") == "converted":
+            raw_signal = []
+
         smoothed = _to_list(analysis_state.get("smoothed"))
         baseline = _to_list(analysis_state.get("baseline"))
         corrected = _to_list(analysis_state.get("corrected"))
         normalized = _to_list(analysis_state.get("normalized"))
         dtg = _to_list(analysis_state.get("dtg"))
         dtg_per_min = _to_list(analysis_state.get("dtg_per_min"))
-        raw_peaks = analysis_state.get("peaks") or []
+        # PR-18: prefer the annotated peak table (adds axis unit, signal
+        # basis, region labels) when present; fall back to raw peak dicts.
+        raw_peaks = analysis_state.get("peak_table") or analysis_state.get("peaks") or []
         if not isinstance(raw_peaks, list):
             raw_peaks = []
 
@@ -1030,14 +1039,26 @@ def create_app(
         axis_role = None
         signal_role = None
         if normalized_analysis_type == "FTIR":
-            axis_role = str(metadata.get("spectral_axis_role") or "wavenumber")
+            # PR-18: after an axis conversion the effective unit/role come
+            # from the stored analysis state, not the declared import units.
+            x_unit = analysis_state.get("axis_unit") or x_unit
+            axis_role = str(
+                analysis_state.get("axis_role")
+                or metadata.get("spectral_axis_role")
+                or "wavenumber"
+            )
             signal_role = str(
                 diagnostics.get("signal_role")
                 or method_context.get("ftir_signal_role")
                 or ""
             ).strip() or None
         elif normalized_analysis_type == "RAMAN":
-            axis_role = str(metadata.get("spectral_axis_role") or "raman_shift")
+            x_unit = analysis_state.get("axis_unit") or x_unit
+            axis_role = str(
+                analysis_state.get("axis_role")
+                or metadata.get("spectral_axis_role")
+                or "raman_shift"
+            )
             signal_role = str(
                 diagnostics.get("signal_role")
                 or method_context.get("raman_signal_role")

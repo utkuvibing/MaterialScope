@@ -142,7 +142,7 @@ def test_layout_uses_results_surface_class():
 def test_default_processing_draft_has_all_sections():
     mod = _import_ftir_page()
     defaults = mod._default_ftir_processing_draft()
-    assert set(defaults.keys()) == {"smoothing", "baseline", "normalization", "peak_detection", "similarity_matching"}
+    assert set(defaults.keys()) == {"smoothing", "baseline", "normalization", "peak_detection", "similarity_matching", "axis_conversion", "signal_conversion", "region_integration"}
     assert defaults["smoothing"]["method"] == "savgol"
     assert defaults["baseline"]["method"] == "asls"
     assert defaults["normalization"]["method"] == "vector"
@@ -225,7 +225,7 @@ def test_ftir_overrides_from_draft_includes_all_sections():
         "similarity_matching": {"metric": "pearson", "top_n": 5, "minimum_score": 0.6},
     }
     overrides = mod._ftir_overrides_from_draft(draft)
-    assert set(overrides.keys()) == {"smoothing", "baseline", "normalization", "peak_detection", "similarity_matching"}
+    assert set(overrides.keys()) == {"smoothing", "baseline", "normalization", "peak_detection", "similarity_matching", "axis_conversion", "signal_conversion", "region_integration"}
     assert overrides["baseline"]["region"] == [400.0, 1800.0]
     assert overrides["similarity_matching"]["metric"] == "pearson"
 
@@ -253,7 +253,7 @@ def test_ftir_preset_processing_body_for_save_includes_all_sections():
         "peak_detection": {"prominence": 0.1, "distance": 10, "max_peaks": 20},
     })
     body = mod._ftir_preset_processing_body_for_save(draft)
-    assert set(body.keys()) == {"smoothing", "baseline", "normalization", "peak_detection", "similarity_matching"}
+    assert set(body.keys()) == {"smoothing", "baseline", "normalization", "peak_detection", "similarity_matching", "axis_conversion", "signal_conversion", "region_integration"}
     assert body["smoothing"]["window_length"] == 15
     assert body["similarity_matching"]["metric"] == "cosine"
 
@@ -750,6 +750,7 @@ def test_preset_dirty_flag_renders_clean_when_snapshot_matches():
         "vector",
         0.035, 5, 12,
         "cosine", 3, 0.45,
+        "as_is", "auto", [], "",
         snap,
     )
     assert "text-success" in str(flag)
@@ -766,6 +767,7 @@ def test_preset_dirty_flag_renders_dirty_when_snapshot_differs():
         "vector",
         0.035, 5, 12,
         "cosine", 3, 0.45,
+        "as_is", "auto", [], "",
         snap,
     )
     assert "text-warning" in str(flag)

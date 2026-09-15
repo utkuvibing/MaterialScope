@@ -79,6 +79,14 @@ def canonical_unit_token(unit: str | None) -> str:
         "transmittance": "transmittance",
         "reflectance": "reflectance",
         "nm": "nm",
+        "um": "um",
+        "µm": "um",
+        "micron": "um",
+        "microns": "um",
+        "micrometer": "um",
+        "micrometre": "um",
+        "micrometers": "um",
+        "micrometres": "um",
         "1/angstrom": "1/angstrom",
         "angstrom^-1": "1/angstrom",
         "å^-1": "1/angstrom",
@@ -114,6 +122,7 @@ def canonical_unit_label(unit: str | None, *, plotly_html: bool = False) -> str:
             "1/angstrom": f"Å{_SUP_MINUS_ONE_HTML}",
             "angstrom": "Å",
             "uV": "µV",
+            "um": "µm",
         }
         if token in html_map:
             return html_map[token]
@@ -128,6 +137,7 @@ def canonical_unit_label(unit: str | None, *, plotly_html: bool = False) -> str:
         "1/angstrom": f"Å{_SUP_MINUS_ONE_UNICODE}",
         "angstrom": "Å",
         "uV": "µV",
+        "um": "µm",
     }
     if token in unicode_map:
         return unicode_map[token]
@@ -246,6 +256,7 @@ def build_axis_title(
     detected_unit: str | None = None,
     signal_kind: str | None = None,
     *,
+    axis_role: str | None = None,
     plotly_html: bool = False,
 ) -> str:
     """Build a modality-aware axis title from modality, axis role, and units."""
@@ -257,13 +268,18 @@ def build_axis_title(
     raw_unit_token = canonical_unit_token(detected_unit)
     unit_token = _safe_unit_token(modality_token, axis_token, detected_unit)
     inferred_kind = _infer_signal_kind(modality_token, unit_token, signal_kind)
+    role_token = str(axis_role or "").strip().lower()
 
     if axis_token == "x":
         if modality_token == "FTIR":
-            if unit_token == "nm":
+            if unit_token in {"nm", "um"} or role_token == "wavelength":
                 return _title_with_unit("Wavelength", unit_token, plotly_html=plotly_html)
             return _title_with_unit("Wavenumber", unit_token or "cm^-1", plotly_html=plotly_html)
         if modality_token == "RAMAN":
+            if role_token == "wavenumber":
+                return _title_with_unit("Wavenumber", unit_token or "cm^-1", plotly_html=plotly_html)
+            if role_token == "wavelength" or unit_token in {"nm", "um"}:
+                return _title_with_unit("Wavelength", unit_token, plotly_html=plotly_html)
             return _title_with_unit("Raman Shift", unit_token or "cm^-1", plotly_html=plotly_html)
         if modality_token == "XRD":
             if unit_token == "1/angstrom":
