@@ -2263,6 +2263,8 @@ TRANSLATIONS = {
     },
     "dash.analysis.tga.unit.fallback": {"tr": "TGA birim modu.", "en": "TGA unit mode."},
     "dash.analysis.tga.step_detection": {"tr": "Adım algılama: {detail}", "en": "Step Detection: {detail}"},
+    "dash.analysis.tga.residual_mass": {"tr": "Hedef sıcaklıkta kalıntı kütle: {detail}", "en": "Residual mass at target: {detail}"},
+    "dash.analysis.tga.dtg_per_min": {"tr": "DTG %/min: {detail}", "en": "DTG %/min: {detail}"},
     "dash.analysis.tga.unit_mode_line": {"tr": "Birim modu: {label} (temel: {basis})", "en": "Unit Mode: {label} (basis: {basis})"},
     "dash.analysis.tga.calibration": {"tr": "Kalibrasyon: {detail}", "en": "Calibration: {detail}"},
     "dash.analysis.tga.template.tga.general.label": {"tr": "Genel TGA", "en": "General TGA"},
@@ -2426,6 +2428,40 @@ TRANSLATIONS = {
     "dash.analysis.tga.processing.step.prominence_ph": {"tr": "boş = otomatik", "en": "empty = auto"},
     "dash.analysis.tga.processing.step.min_mass": {"tr": "Min. kütle kaybı (%)", "en": "Min mass loss (%)"},
     "dash.analysis.tga.processing.step.half_width": {"tr": "Arama yarım genişliği (örnek)", "en": "Search half width (samples)"},
+    "dash.analysis.tga.processing.smooth.window_c": {
+        "tr": "Pencere (°C, isteğe bağlı)",
+        "en": "Window (°C, optional)",
+    },
+    "dash.analysis.tga.processing.smooth.window_c_hint": {
+        "tr": "Ayarlanırsa nokta penceresi yerine sıcaklık alanı genişliği kullanılır; Gauss için σ (°C) olur.",
+        "en": "When set, a temperature-domain width is used instead of the point window; becomes σ (°C) for Gaussian.",
+    },
+    "dash.analysis.tga.depth.card_title": {"tr": "Derinlik", "en": "Depth"},
+    "dash.analysis.tga.depth.card_hint": {
+        "tr": "Hedef sıcaklıkta kalıntı kütle ve izlenebilir ısıtma hızı varsa DTG %/min.",
+        "en": "Residual mass at target temperatures and DTG %/min when a traceable heating rate exists.",
+    },
+    "dash.analysis.tga.depth.dtg_per_min": {
+        "tr": "DTG'yi %/min olarak hesapla (izlenebilir ısıtma hızı gerekir)",
+        "en": "Compute DTG as %/min (requires traceable heating rate)",
+    },
+    "dash.analysis.tga.depth.dtg_per_min_hint": {
+        "tr": "Isıtma hızı yoksa ya da doğrulanamıyorsa %/min açık bir gerekçeyle saklanmaz (üretilmez).",
+        "en": "If the heating rate is missing or unverified, %/min is withheld with an explicit reason.",
+    },
+    "dash.analysis.tga.depth.residual_enabled": {
+        "tr": "Hedef sıcaklıklarda kalıntı kütle ölç",
+        "en": "Measure residual mass at target temperatures",
+    },
+    "dash.analysis.tga.depth.residual_targets": {
+        "tr": "Hedef sıcaklıklar",
+        "en": "Target temperatures",
+    },
+    "dash.analysis.tga.depth.residual_targets_ph": {"tr": "örn. 350, 550, 700", "en": "e.g. 350, 550, 700"},
+    "dash.analysis.tga.depth.residual_targets_hint": {
+        "tr": "Virgülle ayrılmış °C değerleri; ölçüm aralığı dışındakiler gerekçeyle saklanır, ekstrapole edilmez.",
+        "en": "Comma-separated °C values; out-of-range targets are withheld with a reason, never extrapolated.",
+    },
     "dash.analysis.tga.dtg.card_title": {"tr": "DTG önizlemesi", "en": "DTG preview"},
     "dash.analysis.tga.dtg.caption": {
         "tr": "Kütle kaybının sıcaklığa göre türevi (DTG); ana kütle eğrisinden ayrı gösterilir.",
@@ -2677,6 +2713,25 @@ TRANSLATIONS = {
         "en": "{name} @ {rt:.1f} °C · ΔT {sg}{dv:.1f} °C",
     },
     "dash.analysis.tga.summary.atmosphere_label": {"tr": "Atmosfer", "en": "Atmosphere"},
+    "dash.analysis.tga.summary.residual_label": {"tr": "Kalıntı kütle @ hedef", "en": "Residual mass @ target"},
+    "dash.analysis.tga.summary.residual_item": {
+        "tr": "{target} °C: {value}",
+        "en": "{target} °C: {value}",
+    },
+    "dash.analysis.tga.summary.residual_withheld_item": {
+        "tr": "{target} °C: saklandı ({reason})",
+        "en": "{target} °C: withheld ({reason})",
+    },
+    "dash.analysis.tga.summary.dtg_per_min_label": {"tr": "DTG %/min", "en": "DTG %/min"},
+    "dash.analysis.tga.summary.dtg_per_min_traceable": {
+        "tr": "izlenebilir ısıtma hızı ile hesaplandı",
+        "en": "computed from traceable heating rate",
+    },
+    "dash.analysis.tga.summary.dtg_per_min_withheld": {
+        "tr": "saklandı ({reason})",
+        "en": "withheld ({reason})",
+    },
+    "dash.analysis.tga.dtg.trace_name_per_min": {"tr": "DTG %/min", "en": "DTG %/min"},
     "dash.analysis.dta.title": {"tr": "DTA analizi", "en": "DTA Analysis"},
     "dash.analysis.dta.caption": {
         "tr": "DTA uyumlu veri seti seçin, şablonu seçin ve diferansiyel termal analizi çalıştırın.",

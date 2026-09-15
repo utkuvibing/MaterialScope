@@ -23,7 +23,7 @@ from core.result_serialization import (
     thermal_peak_from_dict,
     thermal_peak_to_dict,
 )
-from core.tga_processor import TGAResult
+from core.tga_processor import ResidualMassPoint, TGAResult
 
 
 PROJECT_EXTENSION = ".scopezip"
@@ -267,18 +267,38 @@ def _serialize_tga_state(state: Mapping[str, Any]) -> dict[str, Any]:
     result = state.get("tga_result")
     steps = []
     summary = {}
+    residual_mass_points = []
+    dtg_per_min = None
+    dtg_per_min_basis = "not_computed"
+    dtg_per_min_withheld_reason = None
     if result is not None:
         steps = [mass_loss_step_to_dict(step) for step in result.steps]
         summary = {
             "total_mass_loss_percent": result.total_mass_loss_percent,
             "residue_percent": result.residue_percent,
         }
+        residual_mass_points = [
+            {
+                "target_temperature": point.target_temperature,
+                "residual_mass_percent": point.residual_mass_percent,
+                "residual_mass_mg": point.residual_mass_mg,
+                "withheld_reason": point.withheld_reason,
+            }
+            for point in getattr(result, "residual_mass_points", []) or []
+        ]
+        dtg_per_min = _array_to_list(getattr(result, "dtg_per_min", None))
+        dtg_per_min_basis = getattr(result, "dtg_per_min_basis", "not_computed")
+        dtg_per_min_withheld_reason = getattr(result, "dtg_per_min_withheld_reason", None)
     return {
         "smoothed": _array_to_list(state.get("smoothed")),
         "dtg": _array_to_list(state.get("dtg")),
         "steps": steps,
         "summary": summary,
         "processing": copy.deepcopy(state.get("processing", {})),
+        "residual_mass_points": residual_mass_points,
+        "dtg_per_min": dtg_per_min,
+        "dtg_per_min_basis": dtg_per_min_basis,
+        "dtg_per_min_withheld_reason": dtg_per_min_withheld_reason,
     }
 
 
@@ -287,6 +307,24 @@ def _deserialize_tga_state(payload: Mapping[str, Any]) -> dict[str, Any]:
     dtg = _list_to_array(payload.get("dtg"))
     steps = [mass_loss_step_from_dict(item) for item in payload.get("steps", [])]
     summary = payload.get("summary") or {}
+    dtg_per_min = _list_to_array(payload.get("dtg_per_min"))
+    residual_mass_points = [
+        ResidualMassPoint(
+            target_temperature=float(item.get("target_temperature", float("nan"))),
+            residual_mass_percent=(
+                float(item["residual_mass_percent"])
+                if item.get("residual_mass_percent") is not None
+                else None
+            ),
+            residual_mass_mg=(
+                float(item["residual_mass_mg"])
+                if item.get("residual_mass_mg") is not None
+                else None
+            ),
+            withheld_reason=item.get("withheld_reason"),
+        )
+        for item in payload.get("residual_mass_points", []) or []
+    ]
     tga_result = None
     if smoothed is not None and dtg is not None and summary:
         tga_result = TGAResult(
@@ -297,10 +335,15 @@ def _deserialize_tga_state(payload: Mapping[str, Any]) -> dict[str, Any]:
             total_mass_loss_percent=float(summary.get("total_mass_loss_percent", 0.0)),
             residue_percent=float(summary.get("residue_percent", 0.0)),
             metadata={},
+            residual_mass_points=residual_mass_points,
+            dtg_per_min=dtg_per_min,
+            dtg_per_min_basis=str(payload.get("dtg_per_min_basis") or "not_computed"),
+            dtg_per_min_withheld_reason=payload.get("dtg_per_min_withheld_reason"),
         )
     return {
         "smoothed": smoothed,
         "dtg": dtg,
+        "dtg_per_min": dtg_per_min,
         "tga_result": tga_result,
         "processing": copy.deepcopy(payload.get("processing", {})),
     }

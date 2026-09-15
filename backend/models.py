@@ -570,12 +570,14 @@ class AnalysisStateCurvesResponse(BaseModel):
     corrected: list[float] = Field(default_factory=list)
     normalized: list[float] = Field(default_factory=list)
     dtg: list[float] = Field(default_factory=list)
+    dtg_per_min: list[float] = Field(default_factory=list)
     peaks: list[dict[str, Any]] = Field(default_factory=list)
     has_smoothed: bool = False
     has_baseline: bool = False
     has_corrected: bool = False
     has_normalized: bool = False
     has_dtg: bool = False
+    has_dtg_per_min: bool = False
     has_peaks: bool = False
     diagnostics: dict[str, Any] = Field(default_factory=dict)
 

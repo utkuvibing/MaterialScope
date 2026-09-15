@@ -314,6 +314,16 @@ def _build_tga_scientific_context(
             "Total Mass Loss",
             "total_mass_loss_percent = smoothed_mass_start - smoothed_mass_end",
         ),
+        build_equation(
+            "Residual Mass at Target",
+            "residual_mass_percent(T_target) = interp(T_target; T, smoothed_mass)",
+            notes="Interpolated on the smoothed mass-% curve; targets outside the measured range are withheld, never extrapolated.",
+        ),
+        build_equation(
+            "DTG per Minute",
+            "dtg_per_min = dtg_per_degC * heating_rate_K_min",
+            notes="Emitted only when the heating rate is traceable (user/parsed provenance); otherwise withheld with an explicit reason.",
+        ),
     ]
     interpretation = [
         build_interpretation(
@@ -329,9 +339,54 @@ def _build_tga_scientific_context(
             unit="percent",
         ),
     ]
+    residual_points = summary.get("residual_mass_points") or []
+    for point in residual_points:
+        target = point.get("target_temperature")
+        if point.get("withheld_reason"):
+            interpretation.append(
+                build_interpretation(
+                    "Residual mass target withheld.",
+                    metric="residual_mass",
+                    value=None,
+                    unit="percent",
+                    implication=f"target={target}: {point['withheld_reason']}",
+                )
+            )
+        else:
+            interpretation.append(
+                build_interpretation(
+                    "Residual mass at declared target temperature.",
+                    metric="residual_mass",
+                    value=point.get("residual_mass_percent"),
+                    unit="percent",
+                    implication=f"target={target}",
+                )
+            )
+    dtg_per_min_basis = summary.get("dtg_per_min_basis") or "not_computed"
+    if dtg_per_min_basis == "beta_traceable":
+        interpretation.append(
+            build_interpretation(
+                "DTG expressed per minute via the traceable heating rate.",
+                metric="dtg_per_min",
+                value=(metadata or {}).get("heating_rate"),
+                unit="K/min (basis)",
+            )
+        )
+    elif dtg_per_min_basis == "withheld":
+        interpretation.append(
+            build_interpretation(
+                "DTG %/min withheld.",
+                metric="dtg_per_min",
+                value=None,
+                unit="%/min",
+                implication=summary.get("dtg_per_min_withheld_reason") or "heating rate not traceable",
+            )
+        )
     limitations = [
         "Step boundaries are approximate and depend on smoothing and prominence thresholds.",
         "Absolute mass-loss conversion requires trusted initial-mass metadata.",
+        "DTG %/min requires a traceable heating rate; it is withheld when rate provenance is missing or unverified.",
+        "Residual mass at a target temperature is an interpolation on the smoothed curve, not a separate measurement.",
     ]
     warnings = _validation_warnings(validation)
     base_context = build_scientific_context(
@@ -1309,6 +1364,24 @@ def serialize_tga_result(
         "sample_name": dataset.metadata.get("sample_name"),
         "sample_mass": dataset.metadata.get("sample_mass"),
         "heating_rate": dataset.metadata.get("heating_rate"),
+        # PR-17: residual mass at declared target temperatures.  Each point
+        # carries an explicit withheld_reason when the target is outside the
+        # measured range or not finite — never extrapolated or silently
+        # dropped.
+        "residual_mass_points": [
+            {
+                "target_temperature": _clean_scalar(point.target_temperature),
+                "residual_mass_percent": _clean_scalar(point.residual_mass_percent),
+                "residual_mass_mg": _clean_scalar(point.residual_mass_mg),
+                "withheld_reason": point.withheld_reason,
+            }
+            for point in getattr(result, "residual_mass_points", []) or []
+        ],
+        # PR-17: DTG %/min honesty record — 'beta_traceable' with the curve
+        # in state, or 'withheld' with an explicit reason, or
+        # 'not_computed' when the section was disabled.
+        "dtg_per_min_basis": getattr(result, "dtg_per_min_basis", "not_computed"),
+        "dtg_per_min_withheld_reason": getattr(result, "dtg_per_min_withheld_reason", None),
     }
     return make_result_record(
         result_id=f"tga_{dataset_key}",

@@ -559,7 +559,7 @@ def _record_key_results(record: dict) -> dict[str, str]:
     summary = record.get("summary") or {}
     analysis_type = str(record.get("analysis_type") or "").upper()
     if analysis_type == "TGA":
-        keep = ("step_count", "total_mass_loss_percent", "residue_percent", "sample_name", "sample_mass", "heating_rate")
+        keep = ("step_count", "total_mass_loss_percent", "residue_percent", "sample_name", "sample_mass", "heating_rate", "dtg_per_min_basis", "dtg_per_min_withheld_reason")
     elif analysis_type == "DSC":
         keep = (
             "peak_count",
@@ -620,13 +620,27 @@ def _record_metric_snapshot(record: dict) -> str:
     summary = record.get("summary") or {}
     analysis_type = str(record.get("analysis_type") or "").upper()
     if analysis_type == "TGA":
-        return ", ".join(
-            [
-                f"total mass loss {_format_number(summary.get('total_mass_loss_percent'))}%",
-                f"residue {_format_number(summary.get('residue_percent'))}%",
-                f"step count {_format_value(summary.get('step_count'))}",
-            ]
-        )
+        parts = [
+            f"total mass loss {_format_number(summary.get('total_mass_loss_percent'))}%",
+            f"residue {_format_number(summary.get('residue_percent'))}%",
+            f"step count {_format_value(summary.get('step_count'))}",
+        ]
+        # PR-17: residual mass at declared targets (withheld points keep
+        # their explicit reason instead of a number).
+        for point in summary.get("residual_mass_points") or []:
+            if not isinstance(point, dict):
+                continue
+            target = _format_number(point.get("target_temperature"))
+            if point.get("withheld_reason"):
+                parts.append(f"residual@{target} °C withheld ({point['withheld_reason']})")
+            else:
+                parts.append(f"residual@{target} °C {_format_number(point.get('residual_mass_percent'))}%")
+        dpm_basis = summary.get("dtg_per_min_basis")
+        if dpm_basis == "beta_traceable":
+            parts.append("DTG %/min computed (traceable heating rate)")
+        elif dpm_basis == "withheld":
+            parts.append(f"DTG %/min withheld ({summary.get('dtg_per_min_withheld_reason') or 'heating rate not traceable'})")
+        return ", ".join(parts)
     if analysis_type == "DSC":
         snapshot = [f"peak count {_format_value(summary.get('peak_count'))}"]
         if summary.get("tg_midpoint") is not None:
