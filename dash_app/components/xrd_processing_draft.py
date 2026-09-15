@@ -17,6 +17,7 @@ _XRD_TEMPLATE_DEFAULTS: dict[str, dict[str, Any]] = {
         "smoothing": {"method": "savgol", "window_length": 11, "polyorder": 3},
         "baseline": {"method": "rolling_minimum", "window_length": 31, "smoothing_window": 9},
         "peak_detection": {"method": "scipy_find_peaks", "prominence": 0.08, "distance": 6, "width": 2, "max_peaks": 12},
+        "scherrer": {"enabled": False, "shape_factor": 0.9, "instrumental_fwhm_deg": None},
         "method_context": {
             "xrd_match_metric": "peak_overlap_weighted",
             "xrd_match_tolerance_deg": 0.28,
@@ -31,6 +32,7 @@ _XRD_TEMPLATE_DEFAULTS: dict[str, dict[str, Any]] = {
         "smoothing": {"method": "savgol", "window_length": 15, "polyorder": 3},
         "baseline": {"method": "rolling_minimum", "window_length": 41, "smoothing_window": 9},
         "peak_detection": {"method": "scipy_find_peaks", "prominence": 0.12, "distance": 8, "width": 3, "max_peaks": 16},
+        "scherrer": {"enabled": False, "shape_factor": 0.9, "instrumental_fwhm_deg": None},
         "method_context": {
             "xrd_match_metric": "peak_overlap_weighted",
             "xrd_match_tolerance_deg": 0.24,
@@ -85,6 +87,7 @@ def default_xrd_draft_for_template(template_id: str | None) -> dict[str, Any]:
         "smoothing": copy.deepcopy(src["smoothing"]),
         "baseline": copy.deepcopy(src["baseline"]),
         "peak_detection": copy.deepcopy(src["peak_detection"]),
+        "scherrer": copy.deepcopy(src["scherrer"]),
         "method_context": mc,
     }
 
@@ -155,6 +158,10 @@ def _normalize_baseline(d: dict | None) -> dict[str, Any]:
         return {"method": "none"}
     if method == "linear":
         return {"method": "linear"}
+    if method == "asls":
+        lam = _coerce_float_bounds(src.get("lam"), default=1e6, minimum=1e2, maximum=1e10)
+        p = _coerce_float_bounds(src.get("p"), default=0.01, minimum=1e-4, maximum=0.5)
+        return {"method": "asls", "lam": lam, "p": p}
     wl = _coerce_int_positive(src.get("window_length"), default=31, minimum=5)
     if wl % 2 == 0:
         wl += 1
@@ -162,6 +169,20 @@ def _normalize_baseline(d: dict | None) -> dict[str, Any]:
     if sw % 2 == 0:
         sw += 1
     return {"method": "rolling_minimum", "window_length": wl, "smoothing_window": sw}
+
+
+def _normalize_scherrer(d: dict | None) -> dict[str, Any]:
+    src = dict(d or {})
+    enabled = bool(src.get("enabled", False))
+    k = _coerce_float_bounds(src.get("shape_factor"), default=0.9, minimum=0.5, maximum=2.0)
+    inst = _coerce_optional_float(src.get("instrumental_fwhm_deg"))
+    if inst is not None and inst <= 0.0:
+        inst = None
+    return {
+        "enabled": enabled,
+        "shape_factor": k,
+        "instrumental_fwhm_deg": inst,
+    }
 
 
 def _normalize_peak_detection(d: dict | None) -> dict[str, Any]:
@@ -223,6 +244,7 @@ def normalize_xrd_processing_draft(draft: dict | None) -> dict[str, Any]:
     sm = _normalize_smoothing(d.get("smoothing") if isinstance(d.get("smoothing"), dict) else {})
     bl = _normalize_baseline(d.get("baseline") if isinstance(d.get("baseline"), dict) else {})
     pk = _normalize_peak_detection(d.get("peak_detection") if isinstance(d.get("peak_detection"), dict) else {})
+    sc = _normalize_scherrer(d.get("scherrer") if isinstance(d.get("scherrer"), dict) else {})
     mc_in = d.get("method_context") if isinstance(d.get("method_context"), dict) else {}
     plot_in = mc_in.get("xrd_plot_settings") if isinstance(mc_in.get("xrd_plot_settings"), dict) else {}
     mc = _normalize_method_context(mc_in, plot_in)
@@ -231,6 +253,7 @@ def normalize_xrd_processing_draft(draft: dict | None) -> dict[str, Any]:
         "smoothing": sm,
         "baseline": bl,
         "peak_detection": pk,
+        "scherrer": sc,
         "method_context": mc,
     }
 
@@ -243,6 +266,7 @@ def xrd_overrides_from_draft(draft: dict | None) -> dict[str, Any]:
         "smoothing": copy.deepcopy(norm["smoothing"]),
         "baseline": copy.deepcopy(norm["baseline"]),
         "peak_detection": copy.deepcopy(norm["peak_detection"]),
+        "scherrer": copy.deepcopy(norm["scherrer"]),
         "method_context": mc,
     }
 
@@ -256,6 +280,7 @@ def xrd_draft_from_loaded_processing(processing: dict | None) -> dict[str, Any]:
     sm = sp.get("smoothing") if isinstance(sp.get("smoothing"), dict) else processing.get("smoothing")
     bl = sp.get("baseline") if isinstance(sp.get("baseline"), dict) else processing.get("baseline")
     pk = ast.get("peak_detection") if isinstance(ast.get("peak_detection"), dict) else processing.get("peak_detection")
+    sc = ast.get("scherrer") if isinstance(ast.get("scherrer"), dict) else processing.get("scherrer")
     mc = processing.get("method_context") if isinstance(processing.get("method_context"), dict) else {}
     return normalize_xrd_processing_draft(
         {
@@ -263,6 +288,7 @@ def xrd_draft_from_loaded_processing(processing: dict | None) -> dict[str, Any]:
             "smoothing": sm,
             "baseline": bl,
             "peak_detection": pk,
+            "scherrer": sc,
             "method_context": mc,
         }
     )
@@ -277,7 +303,7 @@ def xrd_ui_snapshot_dict(template_id: str | None, draft: dict | None) -> dict[st
     norm = normalize_xrd_processing_draft(draft)
     return {
         "workflow_template_id": tid,
-        **{k: copy.deepcopy(norm[k]) for k in ("axis_normalization", "smoothing", "baseline", "peak_detection")},
+        **{k: copy.deepcopy(norm[k]) for k in ("axis_normalization", "smoothing", "baseline", "peak_detection", "scherrer")},
         "method_context": copy.deepcopy(norm["method_context"]),
     }
 
@@ -322,6 +348,11 @@ def xrd_draft_from_control_values(
     bl_method,
     bl_window,
     bl_smooth_window,
+    bl_lam,
+    bl_p,
+    sch_enabled,
+    sch_k,
+    sch_inst_fwhm,
     pk_prom,
     pk_dist,
     pk_width,
@@ -398,12 +429,23 @@ def xrd_draft_from_control_values(
             "axis_max": axis_max,
         },
         "smoothing": {"method": sm_method, "window_length": sm_window, "polyorder": sm_poly},
-        "baseline": {"method": bl_method, "window_length": bl_window, "smoothing_window": bl_smooth_window},
+        "baseline": {
+            "method": bl_method,
+            "window_length": bl_window,
+            "smoothing_window": bl_smooth_window,
+            "lam": bl_lam,
+            "p": bl_p,
+        },
         "peak_detection": {
             "prominence": pk_prom,
             "distance": pk_dist,
             "width": pk_width,
             "max_peaks": pk_max,
+        },
+        "scherrer": {
+            "enabled": bool(sch_enabled),
+            "shape_factor": sch_k,
+            "instrumental_fwhm_deg": sch_inst_fwhm,
         },
         "method_context": mc,
     }

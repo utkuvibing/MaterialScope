@@ -84,6 +84,11 @@ def canonical_unit_token(unit: str | None) -> str:
         "å^-1": "1/angstrom",
         "1/å": "1/angstrom",
         "a^-1": "1/angstrom",
+        "angstrom": "angstrom",
+        "å": "angstrom",
+        "d_spacing": "angstrom",
+        "d-spacing": "angstrom",
+        "d spacing": "angstrom",
         "%/°c": "%/°C",
         "%/degc": "%/°C",
         "%/c": "%/°C",
@@ -107,6 +112,7 @@ def canonical_unit_label(unit: str | None, *, plotly_html: bool = False) -> str:
             "%/K": f"% K{_SUP_MINUS_ONE_HTML}",
             "degree_2theta": "°",
             "1/angstrom": f"Å{_SUP_MINUS_ONE_HTML}",
+            "angstrom": "Å",
             "uV": "µV",
         }
         if token in html_map:
@@ -120,6 +126,7 @@ def canonical_unit_label(unit: str | None, *, plotly_html: bool = False) -> str:
         "%/K": f"% K{_SUP_MINUS_ONE_UNICODE}",
         "degree_2theta": "°",
         "1/angstrom": f"Å{_SUP_MINUS_ONE_UNICODE}",
+        "angstrom": "Å",
         "uV": "µV",
     }
     if token in unicode_map:
@@ -261,6 +268,8 @@ def build_axis_title(
         if modality_token == "XRD":
             if unit_token == "1/angstrom":
                 return _title_with_unit("q", unit_token, plotly_html=plotly_html)
+            if unit_token == "angstrom":
+                return _title_with_unit("d", unit_token, plotly_html=plotly_html)
             return _title_with_unit("2θ", "degree_2theta", plotly_html=plotly_html)
         if unit_token not in {"°C", "K", "°F"}:
             unit_token = "°C"

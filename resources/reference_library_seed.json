@@ -3442,6 +3442,7 @@
         {
           "candidate_id": "xrd_phase_alpha",
           "candidate_name": "Phase Alpha",
+          "reference_wavelength_angstrom": 1.5406,
           "peaks": [
             {
               "position": 18.37,
@@ -3468,6 +3469,7 @@
         {
           "candidate_id": "xrd_phase_beta",
           "candidate_name": "Phase Beta",
+          "reference_wavelength_angstrom": 1.5406,
           "peaks": [
             {
               "position": 21.85,

@@ -599,18 +599,40 @@ def _record_key_results(record: dict) -> dict[str, str]:
             "heating_rate",
         )
     elif analysis_type == "XRD":
-        return _table_payload(
-            {
-                "Accepted Match Status": summary.get("match_status"),
-                "Best Candidate": _xrd_best_candidate_name(summary),
-                "Best Candidate Score": _xrd_best_candidate_score(summary),
-                "Confidence Band": summary.get("confidence_band"),
-                "Shared Peaks": summary.get("top_candidate_shared_peak_count"),
-                "Coverage Ratio": summary.get("top_candidate_coverage_ratio"),
-                "Caution Code": summary.get("caution_code"),
-                "Best Candidate Reason Below Threshold": summary.get("top_candidate_reason_below_threshold"),
-            }
-        )
+        table = {
+            "Accepted Match Status": summary.get("match_status"),
+            "Best Candidate": _xrd_best_candidate_name(summary),
+            "Best Candidate Score": _xrd_best_candidate_score(summary),
+            "Confidence Band": summary.get("confidence_band"),
+            "Shared Peaks": summary.get("top_candidate_shared_peak_count"),
+            "Coverage Ratio": summary.get("top_candidate_coverage_ratio"),
+            "Caution Code": summary.get("caution_code"),
+            "Best Candidate Reason Below Threshold": summary.get("top_candidate_reason_below_threshold"),
+        }
+        if summary.get("matching_blocked_reason"):
+            table["Matching Blocked Reason"] = summary.get("matching_blocked_reason")
+        if summary.get("wavelength_gate_excluded_candidates") or summary.get("wavelength_gate_excluded_peaks"):
+            table["Wavelength Gate Excluded Candidates"] = summary.get("wavelength_gate_excluded_candidates")
+            table["Wavelength Gate Excluded Peaks"] = summary.get("wavelength_gate_excluded_peaks")
+        if summary.get("scherrer_status") not in (None, "", "disabled"):
+            table["Scherrer Status"] = summary.get("scherrer_status")
+            if summary.get("scherrer_status") == "computed":
+                table["Scherrer Computed Peaks"] = summary.get("scherrer_computed_count")
+                table["Scherrer Median (nm)"] = summary.get("scherrer_median_nm")
+                table["Scherrer Range (nm)"] = (
+                    f"{_format_number(summary.get('scherrer_min_nm'))} – {_format_number(summary.get('scherrer_max_nm'))}"
+                    if summary.get("scherrer_min_nm") is not None
+                    else None
+                )
+            else:
+                table["Scherrer Withheld Reason"] = summary.get("scherrer_withheld_reason")
+            assumptions = summary.get("scherrer_assumptions")
+            if isinstance(assumptions, dict):
+                table["Scherrer Wavelength (angstrom)"] = assumptions.get("wavelength_angstrom")
+                table["Scherrer Shape Factor K"] = assumptions.get("shape_factor_k")
+                table["Scherrer FWHM Units"] = assumptions.get("fwhm_units")
+                table["Scherrer Instrumental Broadening"] = assumptions.get("instrumental_broadening_status")
+        return _table_payload(table)
     else:
         keep = tuple(summary.keys())
     return _table_payload({key: summary.get(key) for key in keep})

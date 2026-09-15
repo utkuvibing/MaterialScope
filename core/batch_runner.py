@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import copy
+import math
 from typing import Any, Mapping
 
 import numpy as np
 from scipy.signal import find_peaks, savgol_filter
 
+from core.baseline import als_baseline
 from core.dta_processor import DTAProcessor
 from core.dsc_processor import DSCProcessor
 from core.library_cloud_client import get_library_cloud_client
@@ -43,6 +45,7 @@ from core.validation import enrich_spectral_result_validation, enrich_xrd_result
 from core.spectral_demo_references import load_demo_spectral_references
 from core.xrd_display import xrd_candidate_display_payload
 from core.xrd_demo_references import load_demo_xrd_references
+from core.xrd_depth import analyze_xrd_scherrer, scherrer_median_nm
 
 
 _DSC_INTEGRATION_DEFAULTS = {
@@ -157,6 +160,7 @@ _XRD_TEMPLATE_DEFAULTS = {
         "smoothing": {"method": "savgol", "window_length": 11, "polyorder": 3},
         "baseline": {"method": "rolling_minimum", "window_length": 31, "smoothing_window": 9},
         "peak_detection": {"method": "scipy_find_peaks", "prominence": 0.08, "distance": 6, "width": 2, "max_peaks": 12},
+        "scherrer": {"enabled": False, "shape_factor": 0.9, "instrumental_fwhm_deg": None},
         "method_context": {
             "xrd_match_metric": "peak_overlap_weighted",
             "xrd_match_tolerance_deg": 0.28,
@@ -171,6 +175,7 @@ _XRD_TEMPLATE_DEFAULTS = {
         "smoothing": {"method": "savgol", "window_length": 15, "polyorder": 3},
         "baseline": {"method": "rolling_minimum", "window_length": 41, "smoothing_window": 9},
         "peak_detection": {"method": "scipy_find_peaks", "prominence": 0.12, "distance": 8, "width": 3, "max_peaks": 16},
+        "scherrer": {"enabled": False, "shape_factor": 0.9, "instrumental_fwhm_deg": None},
         "method_context": {
             "xrd_match_metric": "peak_overlap_weighted",
             "xrd_match_tolerance_deg": 0.24,
@@ -1957,27 +1962,61 @@ def _rolling_minimum(signal: np.ndarray, window: int) -> np.ndarray:
     return np.min(np.vstack(slices), axis=0)
 
 
-def _estimate_xrd_baseline(signal: np.ndarray, config: Mapping[str, Any]) -> np.ndarray:
+def _estimate_xrd_baseline(signal: np.ndarray, config: dict[str, Any]) -> np.ndarray:
     method = str(config.get("method") or "rolling_minimum").strip().lower()
     if method in {"none", "off"}:
+        config["applied"] = False
+        config["status"] = "disabled"
         return np.zeros_like(signal)
-    if method in {"linear", "asls"}:
+    if method == "linear":
+        config["applied"] = True
+        config["status"] = "applied"
+        config["definition"] = "straight line between the first and last measured points"
         return np.linspace(float(signal[0]), float(signal[-1]), num=signal.size, endpoint=True)
+    if method == "asls":
+        # PR-19: route through the real pybaselines AsLS implementation used by
+        # the thermal modalities; the previous endpoint-line stand-in is gone.
+        lam = _coerce_positive_float(config.get("lam"), 1e6)
+        asymmetry = _coerce_optional_float(config.get("p"), 0.01)
+        if asymmetry is None or not 0.0 < float(asymmetry) < 1.0:
+            asymmetry = 0.01
+        config["lam"] = float(lam)
+        config["p"] = float(asymmetry)
+        config["implementation"] = "pybaselines.Baseline.asls"
+        try:
+            baseline = als_baseline(
+                np.arange(signal.size, dtype=float),
+                signal,
+                lam=float(lam),
+                p=float(asymmetry),
+            )
+        except Exception as exc:
+            config["applied"] = False
+            config["status"] = "failed"
+            config["error"] = f"asls baseline failed: {exc}"
+            return np.zeros_like(signal)
+        config["applied"] = True
+        config["status"] = "applied"
+        return np.asarray(baseline, dtype=float)
 
     window = _resolve_odd_window(
         _coerce_positive_int(config.get("window_length"), 31),
         signal.size,
     )
+    config["resolved_window_length"] = int(window)
     baseline = _rolling_minimum(signal, window)
     smooth_window = _resolve_odd_window(
         _coerce_positive_int(config.get("smoothing_window"), 9),
         signal.size,
     )
+    config["resolved_smoothing_window"] = int(smooth_window)
     if smooth_window >= 3:
         kernel = np.ones(smooth_window, dtype=float) / float(smooth_window)
         pad = smooth_window // 2
         padded = np.pad(baseline, (pad, pad), mode="edge")
         baseline = np.convolve(padded, kernel, mode="valid")
+    config["applied"] = True
+    config["status"] = "applied"
     return baseline
 
 
@@ -2061,9 +2100,6 @@ def _resolve_xrd_matching_config(processing: Mapping[str, Any]) -> dict[str, Any
     }
 
 
-_XRD_REFERENCE_DEFAULT_WAVELENGTH_ANGSTROM = 1.5406
-
-
 def _d_spacing_from_two_theta(two_theta_deg: float, wavelength_angstrom: float) -> float | None:
     if two_theta_deg <= 0.0 or wavelength_angstrom <= 0.0 or two_theta_deg >= 180.0:
         return None
@@ -2086,7 +2122,7 @@ def _two_theta_from_d_spacing(d_spacing: float, wavelength_angstrom: float) -> f
 def _resolve_xrd_peak_wavelength(
     peak: Mapping[str, Any],
     *,
-    default: float | None = _XRD_REFERENCE_DEFAULT_WAVELENGTH_ANGSTROM,
+    default: float | None = None,
 ) -> float | None:
     wavelength = _coerce_optional_float(
         peak.get("reference_wavelength_angstrom")
@@ -2138,6 +2174,16 @@ def _resolve_xrd_comparison_value(
         if converted_position is not None:
             return converted_position
     if position is not None:
+        # Raw 2theta positions are only directly comparable when the two
+        # wavelengths are not known to differ. Comparing positions recorded at
+        # a declared-but-different wavelength would silently produce a false
+        # mismatch/ match, so those peaks are treated as unplaceable here.
+        if (
+            wavelength_angstrom is not None
+            and reference_wavelength is not None
+            and not math.isclose(float(reference_wavelength), float(wavelength_angstrom), rel_tol=1e-4, abs_tol=1e-4)
+        ):
+            return None
         return float(position)
     if reference_wavelength is not None and d_spacing is not None:
         return _two_theta_from_d_spacing(float(d_spacing), float(reference_wavelength))
@@ -2424,6 +2470,41 @@ def _match_xrd_reference_peaks(
     return matches, unmatched_reference_indices
 
 
+def _xrd_reference_wavelength_gate(
+    reference_peaks: list[dict[str, float]],
+) -> tuple[list[dict[str, float]], int]:
+    """Split reference peaks into wavelength-placeable and excluded sets.
+
+    A reference peak is placeable when it carries a d-spacing or a declared
+    radiation wavelength; either makes its lattice signature interpretable in
+    any comparison space. Peaks carrying only a raw 2theta position with no
+    declared wavelength cannot be interpreted — the radiation they were
+    recorded at is unknown — so they are excluded rather than silently
+    compared against the observed axis.
+    """
+    placeable: list[dict[str, float]] = []
+    excluded = 0
+    for peak in reference_peaks:
+        d_spacing = _coerce_optional_float(peak.get("d_spacing") or peak.get("d") or peak.get("dspace"))
+        declared_wavelength = _resolve_xrd_peak_wavelength(peak, default=None)
+        if d_spacing is not None or declared_wavelength is not None:
+            placeable.append(peak)
+        else:
+            excluded += 1
+    return placeable, excluded
+
+
+def _xrd_reference_declared_wavelengths(reference_peaks: list[dict[str, float]]) -> list[float]:
+    declared = {
+        float(value)
+        for value in (
+            _resolve_xrd_peak_wavelength(peak, default=None) for peak in reference_peaks
+        )
+        if value is not None
+    }
+    return sorted(declared)
+
+
 def _rank_xrd_phase_candidates(
     *,
     observed_peaks: list[dict[str, float]],
@@ -2444,7 +2525,8 @@ def _rank_xrd_phase_candidates(
     prefilter_tolerance = tolerance_deg * 2.0
     prefilter_limit = max(top_n * 10, 20)
     for reference in references:
-        reference_peaks = [dict(item) for item in reference.get("peaks") or [] if isinstance(item, Mapping)]
+        all_reference_peaks = [dict(item) for item in reference.get("peaks") or [] if isinstance(item, Mapping)]
+        reference_peaks, _excluded = _xrd_reference_wavelength_gate(all_reference_peaks)
         loose_matches, _ = _match_xrd_reference_peaks(
             observed_peaks=observed_peaks,
             reference_peaks=reference_peaks,
@@ -2456,6 +2538,7 @@ def _rank_xrd_phase_candidates(
             {
                 "reference": reference,
                 "shared_peak_count": len(loose_matches),
+                "placeable_peak_count": len(reference_peaks),
             }
         )
     prefiltered.sort(
@@ -2468,8 +2551,64 @@ def _rank_xrd_phase_candidates(
     ranked: list[dict[str, Any]] = []
     for candidate in prefiltered[:prefilter_limit]:
         reference = candidate["reference"]
-        reference_peaks = [dict(item) for item in reference.get("peaks") or [] if isinstance(item, Mapping)]
-        if not reference_peaks:
+        all_reference_peaks = [dict(item) for item in reference.get("peaks") or [] if isinstance(item, Mapping)]
+        reference_peaks, excluded_peak_count = _xrd_reference_wavelength_gate(all_reference_peaks)
+        declared_wavelengths = _xrd_reference_declared_wavelengths(all_reference_peaks)
+        wavelength_compatible = len(reference_peaks) > 0
+        if not all_reference_peaks:
+            continue
+
+        if not wavelength_compatible:
+            display_payload = xrd_candidate_display_payload(reference)
+            ranked.append(
+                {
+                    "candidate_id": reference["candidate_id"],
+                    "candidate_name": reference["candidate_name"],
+                    "normalized_score": 0.0,
+                    "confidence_band": "no_match",
+                    "library_provider": reference.get("provider") or "",
+                    "library_package": reference.get("package_id") or "",
+                    "library_version": reference.get("package_version") or "",
+                    "display_name": display_payload.get("display_name"),
+                    "phase_name": display_payload.get("phase_name"),
+                    "formula_pretty": display_payload.get("formula_pretty"),
+                    "formula": display_payload.get("formula"),
+                    "source_id": display_payload.get("source_id"),
+                    "reference_metadata": {},
+                    "reference_peaks": [],
+                    "structure_payload": {},
+                    "source_assets": [],
+                    "evidence": {
+                        "metric": metric,
+                        "comparison_space": comparison_space,
+                        "tolerance_deg": tolerance_deg,
+                        "observed_peak_count": len(observed_peaks),
+                        "reference_peak_count": 0,
+                        "reference_peak_count_total": len(all_reference_peaks),
+                        "shared_peak_count": 0,
+                        "weighted_overlap_score": 0.0,
+                        "coverage_ratio": 0.0,
+                        "mean_delta_position": None,
+                        "mean_delta_ratio": None,
+                        "unmatched_major_peak_count": 0,
+                        "unmatched_major_peak_positions": [],
+                        "matched_peak_pairs": [],
+                        "unmatched_observed_peaks": [],
+                        "unmatched_reference_peaks": [],
+                        "wavelength_compatible": False,
+                        "wavelength_excluded_peak_count": int(excluded_peak_count),
+                        "reference_wavelengths_angstrom": declared_wavelengths,
+                        "wavelength_gate_reason": (
+                            "no reference peak carries a d-spacing or a declared radiation "
+                            "wavelength; 2theta positions without wavelength provenance cannot "
+                            "be compared honestly"
+                        ),
+                        "library_provider": reference.get("provider") or "",
+                        "library_package": reference.get("package_id") or "",
+                        "library_version": reference.get("package_version") or "",
+                    },
+                }
+            )
             continue
 
         matches, unmatched_indices = _match_xrd_reference_peaks(
@@ -2676,6 +2815,10 @@ def _rank_xrd_phase_candidates(
                     "tolerance_deg": tolerance_deg,
                     "observed_peak_count": len(observed_peaks),
                     "reference_peak_count": len(reference_peaks),
+                    "reference_peak_count_total": len(all_reference_peaks),
+                    "wavelength_compatible": True,
+                    "wavelength_excluded_peak_count": int(excluded_peak_count),
+                    "reference_wavelengths_angstrom": declared_wavelengths,
                     "shared_peak_count": shared_peak_count,
                     "weighted_overlap_score": round(weighted_overlap_score, 4),
                     "coverage_ratio": round(coverage_ratio, 4),
@@ -2868,6 +3011,35 @@ def _execute_xrd_batch(
             xrd_provenance_warning = (
                 "XRD wavelength is not recorded; qualitative phase matching provenance remains incomplete."
             )
+
+    # PR-19: Scherrer crystallite-size estimation (optional, explicit
+    # assumptions). Runs on detected peaks before matching so peak rows carry
+    # size estimates regardless of matching outcome.
+    scherrer_config = copy.deepcopy((processing.get("analysis_steps") or {}).get("scherrer") or {})
+    scherrer_result = analyze_xrd_scherrer(
+        axis=axis,
+        corrected_signal=corrected,
+        peaks=peaks,
+        observed_space=observed_space,
+        wavelength_angstrom=wavelength_angstrom,
+        config=scherrer_config,
+    )
+    scherrer_rows = list(scherrer_result.get("rows") or [])
+    for peak, scherrer_row in zip(peaks, scherrer_rows):
+        peak["scherrer_status"] = scherrer_row.get("status")
+        peak["scherrer_withheld_reason"] = scherrer_row.get("withheld_reason") or ""
+        peak["scherrer_two_theta_deg"] = scherrer_row.get("two_theta_deg")
+        peak["scherrer_fwhm_deg_2theta"] = scherrer_row.get("fwhm_deg_2theta")
+        peak["scherrer_fwhm_deg_2theta_observed"] = scherrer_row.get("fwhm_deg_2theta_observed")
+        peak["scherrer_crystallite_size_nm"] = scherrer_row.get("crystallite_size_nm")
+
+    # PR-19 wavelength gate: 2theta-space matching against reference peaks is
+    # only physically defined when the observed radiation wavelength is known.
+    # Without it there is no way to establish observed/reference wavelength
+    # compatibility, so local matching is blocked before any comparison runs.
+    matching_blocked_reason = ""
+    if observed_space == "two_theta" and wavelength_angstrom is None:
+        matching_blocked_reason = "xrd_two_theta_matching_requires_observed_wavelength"
     cloud_client = get_library_cloud_client()
     cloud_payload: Mapping[str, Any] | None = None
     references: list[dict[str, Any]] = []
@@ -2968,13 +3140,16 @@ def _execute_xrd_batch(
                 peak["d_spacing"] = float(peak.get("position", 0.0))
                 if wavelength_angstrom is not None:
                     peak["wavelength_angstrom"] = float(wavelength_angstrom)
-        ranked_matches = _rank_xrd_phase_candidates(
-            observed_peaks=matching_peaks,
-            references=references,
-            matching_config=matching_config,
-            comparison_space=observed_space,
-            wavelength_angstrom=wavelength_angstrom,
-        )
+        if matching_blocked_reason:
+            ranked_matches = []
+        else:
+            ranked_matches = _rank_xrd_phase_candidates(
+                observed_peaks=matching_peaks,
+                references=references,
+                matching_config=matching_config,
+                comparison_space=observed_space,
+                wavelength_angstrom=wavelength_angstrom,
+            )
         if manager.count_installed_candidates("XRD") > 0:
             library_result_source = "limited_fallback_cache"
             library_access_mode = "limited_cached_fallback"
@@ -3053,6 +3228,22 @@ def _execute_xrd_batch(
             "minimum_score": minimum_score,
             "top_phase_score": round(top_score, 4),
         }
+    elif matching_blocked_reason:
+        match_status = "not_run"
+        confidence_band = "not_run"
+        caution_payload = {
+            "code": "xrd_matching_blocked_missing_wavelength",
+            "message": (
+                "Qualitative phase matching was blocked before comparison: the observed pattern is on a "
+                "2theta axis but no radiation wavelength is declared (xrd_wavelength_angstrom), so "
+                "wavelength compatibility with reference candidates cannot be established. Declare the "
+                "radiation wavelength to enable matching."
+            ),
+            "minimum_score": minimum_score,
+            "top_phase_score": round(top_score, 4),
+            "blocked_reason": matching_blocked_reason,
+            "reference_candidate_count": len(references),
+        }
     else:
         match_status = "matched" if matched else "no_match"
         confidence_band = top_match["confidence_band"] if matched and top_match else "no_match"
@@ -3128,6 +3319,17 @@ def _execute_xrd_batch(
     processing = update_processing_step(processing, "smoothing", smoothing, analysis_type="XRD")
     processing = update_processing_step(processing, "baseline", baseline, analysis_type="XRD")
     processing = update_processing_step(processing, "peak_detection", resolved_peak_detection, analysis_type="XRD")
+    processing = update_processing_step(
+        processing,
+        "scherrer",
+        {
+            **dict(scherrer_result.get("resolved_config") or {}),
+            "status": scherrer_result.get("status"),
+            "withheld_reason": scherrer_result.get("withheld_reason") or "",
+            "computed_count": int(scherrer_result.get("computed_count") or 0),
+        },
+        analysis_type="XRD",
+    )
 
     processing = update_method_context(
         processing,
@@ -3144,6 +3346,9 @@ def _execute_xrd_batch(
             "xrd_wavelength_angstrom": wavelength_angstrom,
             "xrd_provenance_state": xrd_provenance_state,
             "xrd_provenance_warning": xrd_provenance_warning,
+            "xrd_matching_blocked_reason": matching_blocked_reason,
+            "xrd_scherrer_status": scherrer_result.get("status"),
+            "xrd_scherrer_computed_count": int(scherrer_result.get("computed_count") or 0),
             "xrd_comparison_space": observed_space,
             "xrd_match_coordinate_space": (top_match or {}).get("evidence", {}).get("comparison_space") or observed_space,
             "xrd_preprocessing_order": ["axis_normalization", "smoothing", "baseline", "peak_detection"],
@@ -3207,10 +3412,36 @@ def _execute_xrd_batch(
         },
     )
 
+    wavelength_gate_excluded_candidates = sum(
+        1
+        for item in ranked_matches
+        if isinstance(item, Mapping) and (item.get("evidence") or {}).get("wavelength_compatible") is False
+    )
+    wavelength_gate_excluded_peaks = sum(
+        int((item.get("evidence") or {}).get("wavelength_excluded_peak_count") or 0)
+        for item in ranked_matches
+        if isinstance(item, Mapping)
+    )
+    scherrer_sizes = [
+        float(row["crystallite_size_nm"])
+        for row in scherrer_rows
+        if row.get("status") == "computed" and row.get("crystallite_size_nm") is not None
+    ]
     summary = {
         "peak_count": len(peaks),
         "match_status": match_status,
         "candidate_count": len(ranked_matches),
+        "matching_blocked_reason": matching_blocked_reason,
+        "wavelength_gate_excluded_candidates": wavelength_gate_excluded_candidates,
+        "wavelength_gate_excluded_peaks": wavelength_gate_excluded_peaks,
+        "scherrer_enabled": bool(scherrer_result.get("enabled")),
+        "scherrer_status": scherrer_result.get("status"),
+        "scherrer_withheld_reason": scherrer_result.get("withheld_reason") or "",
+        "scherrer_computed_count": int(scherrer_result.get("computed_count") or 0),
+        "scherrer_median_nm": scherrer_median_nm(scherrer_rows),
+        "scherrer_min_nm": min(scherrer_sizes) if scherrer_sizes else None,
+        "scherrer_max_nm": max(scherrer_sizes) if scherrer_sizes else None,
+        "scherrer_assumptions": dict(scherrer_result.get("assumptions") or {}),
         "top_phase_id": top_match["candidate_id"] if matched and top_match else None,
         "top_phase": top_match["candidate_name"] if matched and top_match else None,
         "top_phase_score": round(top_score, 4),

@@ -29,7 +29,7 @@ _ANALYSIS_STEP_SECTIONS = {
     "DTA": ("peak_detection",),
     "FTIR": ("peak_detection", "similarity_matching"),
     "RAMAN": ("peak_detection", "similarity_matching"),
-    "XRD": ("peak_detection",),
+    "XRD": ("peak_detection", "scherrer"),
     "KISSINGER": ("kinetic_regression",),
     "OZAWA-FLYNN-WALL": ("isoconversional_analysis",),
     "FRIEDMAN": ("isoconversional_analysis",),

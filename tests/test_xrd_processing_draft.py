@@ -52,7 +52,7 @@ def test_phase_screening_match_and_peak_defaults_stricter_than_general():
 
 def test_default_draft_has_all_sections_and_plot_settings():
     d = default_xrd_draft_for_template("xrd.general")
-    assert set(d.keys()) == {"axis_normalization", "smoothing", "baseline", "peak_detection", "method_context"}
+    assert set(d.keys()) == {"axis_normalization", "smoothing", "baseline", "peak_detection", "scherrer", "method_context"}
     mc = d["method_context"]
     assert isinstance(mc.get("xrd_plot_settings"), dict)
     assert mc["xrd_plot_settings"].get("show_peak_labels") is True
