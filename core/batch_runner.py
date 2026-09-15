@@ -58,7 +58,7 @@ _DSC_TEMPLATE_DEFAULTS = {
         "baseline": {"method": "asls"},
         "normalization": {"enabled": True},
         "peak_detection": {"direction": "both"},
-        "glass_transition": {"mode": "auto", "region": None},
+        "glass_transition": {"mode": "auto", "region": None, "method": "step"},
         "integration": copy.deepcopy(_DSC_INTEGRATION_DEFAULTS),
     },
     "dsc.polymer_tg": {
@@ -66,7 +66,7 @@ _DSC_TEMPLATE_DEFAULTS = {
         "baseline": {"method": "asls"},
         "normalization": {"enabled": True},
         "peak_detection": {"direction": "both"},
-        "glass_transition": {"mode": "auto", "region": None},
+        "glass_transition": {"mode": "auto", "region": None, "method": "step"},
         "integration": copy.deepcopy(_DSC_INTEGRATION_DEFAULTS),
     },
     "dsc.polymer_melting_crystallization": {
@@ -74,7 +74,7 @@ _DSC_TEMPLATE_DEFAULTS = {
         "baseline": {"method": "asls"},
         "normalization": {"enabled": True},
         "peak_detection": {"direction": "both"},
-        "glass_transition": {"mode": "auto", "region": None},
+        "glass_transition": {"mode": "auto", "region": None, "method": "step"},
         "integration": copy.deepcopy(_DSC_INTEGRATION_DEFAULTS),
     },
 }
@@ -516,7 +516,16 @@ def _execute_dsc_batch(
         analysis_type="DSC",
     )
     tg_region = glass_transition.get("region")
-    processor.detect_glass_transition(region=tuple(tg_region) if isinstance(tg_region, (list, tuple)) and len(tg_region) == 2 else None)
+    tg_region_tuple = tuple(tg_region) if isinstance(tg_region, (list, tuple)) and len(tg_region) == 2 else None
+    # PR-16: method 'iso' runs the ISO-11357-2-style two-tangent /
+    # Cp-offset construction alongside (not instead of) the plateau-shift
+    # detector; it also reports every gated transition, not only the best.
+    tg_method_requested = str(glass_transition.get("method") or "step").strip().lower()
+    tg_method = "iso" if tg_method_requested == "iso" else "step"
+    if tg_method == "iso":
+        processor.detect_glass_transition_iso(region=tg_region_tuple)
+    else:
+        processor.detect_glass_transition(region=tg_region_tuple)
     result = processor.get_result()
     # Record which signal Tg was measured on: a glass transition is a
     # baseline step, so detection uses the pre-baseline signal whenever peak
@@ -525,7 +534,8 @@ def _execute_dsc_batch(
         (
             step
             for step in reversed(result.metadata.get("steps") or [])
-            if isinstance(step, dict) and step.get("step") == "detect_glass_transition"
+            if isinstance(step, dict)
+            and step.get("step") in ("detect_glass_transition", "detect_glass_transition_iso")
         ),
         {},
     )
@@ -534,6 +544,8 @@ def _execute_dsc_batch(
         "glass_transition",
         {
             "mode": glass_transition.get("mode", "auto"),
+            "method": tg_method,
+            "method_requested": tg_method_requested,
             "region": tg_region,
             "event_count": len(result.glass_transitions),
             "signal": tg_step_meta.get("signal"),

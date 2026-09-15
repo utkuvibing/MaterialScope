@@ -68,6 +68,28 @@ def _detrended_std(x: np.ndarray, y: np.ndarray) -> float:
     return float(np.std(y - np.polyval(coeffs, x)))
 
 
+def _tg_plateau_masks(
+    t_full: np.ndarray,
+    t_on: float,
+    t_en: float,
+    flat_t: float,
+) -> Optional[Tuple[float, float, np.ndarray, np.ndarray]]:
+    """Flat-signal windows bracketing a transition extent [t_on, t_en].
+
+    The windows are pushed a half-transition-width clear of the measured
+    extent so they sit on genuinely flat signal.  Returns
+    ``(pre_edge, post_edge, pre_mask, post_mask)``, or ``None`` when either
+    window holds fewer than 3 samples.
+    """
+    gap = max(0.5 * (t_en - t_on), 0.5 * flat_t)
+    pre_edge, post_edge = t_on - gap, t_en + gap
+    pre = (t_full >= pre_edge - flat_t) & (t_full < pre_edge)
+    post = (t_full >= post_edge) & (t_full < post_edge + flat_t)
+    if int(pre.sum()) < 3 or int(post.sum()) < 3:
+        return None
+    return pre_edge, post_edge, pre, post
+
+
 def _tg_step_evidence(
     t_full: np.ndarray,
     s_full: np.ndarray,
@@ -129,13 +151,7 @@ def _tg_step_evidence(
         return None
 
     def _plateau_levels(t_on: float, t_en: float):
-        gap = max(0.5 * (t_en - t_on), 0.5 * flat_t)
-        pre_edge, post_edge = t_on - gap, t_en + gap
-        pre = (t_full >= pre_edge - flat_t) & (t_full < pre_edge)
-        post = (t_full >= post_edge) & (t_full < post_edge + flat_t)
-        if int(pre.sum()) < 3 or int(post.sum()) < 3:
-            return None
-        return pre_edge, post_edge, pre, post
+        return _tg_plateau_masks(t_full, t_on, t_en, flat_t)
 
     first = _plateau_levels(float(t_full[onset]), float(t_full[endset]))
     if first is None:
@@ -238,6 +254,105 @@ def _tg_step_evidence(
     return onset, endset, step
 
 
+def _iso_two_tangent_construct(
+    t_full: np.ndarray,
+    s_full: np.ndarray,
+    d1_abs_ctx: np.ndarray,
+    d1_signed_ctx: np.ndarray,
+    onset: int,
+    endset: int,
+    flat_t: float,
+) -> Optional[Dict]:
+    """ISO-11357-2-style two-tangent construction for one accepted step.
+
+    The candidate's ``[onset, endset]`` extent (from ``_tg_step_evidence``)
+    locates the transition; this function then applies the classical
+    construction on the full signal:
+
+    * pre- and post-transition tangents are least-squares lines over the
+      same flat plateau windows used by the morphology gates;
+    * the inflection tangent runs through the point of steepest |d1|
+      inside the transition with the smoothed signed slope there;
+    * ``t_ig`` (extrapolated onset) and ``t_eg`` (extrapolated endset) are
+      the intersections of the inflection tangent with the pre/post
+      tangents;
+    * ``t_mg`` (midpoint) is where the smoothed curve crosses the midline
+      ``(L_pre + L_post) / 2`` — the half-Cp-change point;
+    * ``step`` is the vertical Cp offset between the two extrapolated
+      tangents evaluated at ``t_mg``.
+
+    The construction is only returned when the geometry is physically
+    sane: distinct tangent slopes, ``t_ig < t_infl < t_eg``, intersections
+    inside the fitted plateau spans, and a real midline crossing.
+    Degenerate geometry returns ``None`` rather than fabricating numbers.
+    """
+    n = len(t_full)
+    t_on, t_en = float(t_full[onset]), float(t_full[endset])
+    masks = _tg_plateau_masks(t_full, t_on, t_en, flat_t)
+    if masks is None:
+        return None
+    pre_edge, post_edge, pre, post = masks
+
+    a1, b1 = (float(v) for v in np.polyfit(t_full[pre], s_full[pre], 1))
+    a2, b2 = (float(v) for v in np.polyfit(t_full[post], s_full[post], 1))
+
+    seg = np.arange(onset, endset + 1)
+    i_infl = int(seg[int(np.argmax(d1_abs_ctx[seg]))])
+    t_infl = float(t_full[i_infl])
+    s_infl = float(s_full[i_infl])
+    m_infl = float(d1_signed_ctx[i_infl])
+    c_infl = s_infl - m_infl * t_infl
+
+    eps = 1e-12
+    if abs(m_infl - a1) < eps or abs(m_infl - a2) < eps:
+        return None
+    t_ig = (c_infl - b1) / (a1 - m_infl)
+    t_eg = (c_infl - b2) / (a2 - m_infl)
+    if not (np.isfinite(t_ig) and np.isfinite(t_eg)):
+        return None
+    # ISO geometry: the onset intersection precedes the inflection, the
+    # endset follows it, and both live on the fitted tangent spans.
+    if not (t_ig < t_infl < t_eg):
+        return None
+    if t_ig < pre_edge - flat_t or t_eg > post_edge + flat_t:
+        return None
+
+    s_sm = np.convolve(s_full, np.ones(5) / 5.0, mode='same')
+    lo_i = int(np.clip(np.searchsorted(t_full, t_ig), 0, n - 2))
+    hi_i = int(np.clip(np.searchsorted(t_full, t_eg), lo_i + 1, n - 1))
+    tt = t_full[lo_i:hi_i + 1]
+    f = s_sm[lo_i:hi_i + 1] - 0.5 * ((a1 * tt + b1) + (a2 * tt + b2))
+    crossings = np.where(np.signbit(f[:-1]) != np.signbit(f[1:]))[0]
+    if crossings.size == 0:
+        return None
+    k = int(crossings[int(np.argmin(np.abs(tt[crossings] - t_infl)))])
+    f0, f1 = float(f[k]), float(f[k + 1])
+    t_mg = (
+        float(tt[k] - f0 * (tt[k + 1] - tt[k]) / (f1 - f0))
+        if f1 != f0
+        else float(tt[k])
+    )
+    step = (a2 * t_mg + b2) - (a1 * t_mg + b1)
+    if not np.isfinite(step) or abs(step) < eps:
+        return None
+
+    return {
+        't_ig': float(t_ig),
+        't_eg': float(t_eg),
+        't_mg': float(t_mg),
+        'step': float(step),
+        't_infl': t_infl,
+        's_infl': s_infl,
+        'm_infl': m_infl,
+        'pre_tangent': {'slope': a1, 'intercept': b1},
+        'post_tangent': {'slope': a2, 'intercept': b2},
+        'plateau_windows': {
+            'pre': [float(pre_edge - flat_t), float(pre_edge)],
+            'post': [float(post_edge), float(post_edge + flat_t)],
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
@@ -256,6 +371,17 @@ class GlassTransition:
     delta_cp_j_g_k: Optional[float] = None  # ΔCp [J/(g·K)]; ONLY set when beta-corrected
     delta_cp_basis: str = 'legacy_unknown'
     delta_cp_withheld_reason: Optional[str] = None
+    # --- PR-16 construction provenance -----------------------------------
+    # Which construction produced this Tg:
+    #   'step_morphology' — plateau-shift detector (detect_glass_transition)
+    #   'iso_two_tangent' — ISO-11357-2-style two-tangent / Cp-offset
+    #                       construction (detect_glass_transition_iso)
+    # None for payloads predating PR-16.
+    construction: Optional[str] = None
+    # For 'iso_two_tangent': the tangent geometry actually used — pre/post
+    # tangent slope+intercept, inflection point/slope, Tig/Teg and the
+    # plateau windows the tangents were fitted on.  None otherwise.
+    construction_details: Optional[Dict] = None
 
 
 @dataclass
@@ -1008,6 +1134,7 @@ class DSCProcessor:
             delta_cp_j_g_k=conversion.value,
             delta_cp_basis=conversion.basis,
             delta_cp_withheld_reason=beta_reason or conversion.withheld_reason,
+            construction='step_morphology',
         )
         self._glass_transitions.append(tg)
         self._metadata['steps'].append(
@@ -1016,6 +1143,197 @@ class DSCProcessor:
                 'region': region,
                 'signal': signal_source,
                 'tg_midpoint': tg_midpoint,
+            }
+        )
+        return self
+
+    def detect_glass_transition_iso(
+        self,
+        region: Optional[Tuple[float, float]] = None,
+        *,
+        max_transitions: int = 8,
+    ) -> 'DSCProcessor':
+        """
+        Detect glass transitions with an ISO-11357-2-style construction.
+
+        This runs **alongside** :meth:`detect_glass_transition` — it does
+        not replace it.  Candidate selection and the step-morphology gates
+        are identical (``_tg_step_evidence`` on the same signal source), so
+        the two methods agree on *where* baseline steps live.  What differs
+        is the characterisation and the multiplicity:
+
+        * every gated candidate is characterised (multi-transition scan),
+          not only the sharpest one;
+        * onset/endset/midpoint come from the two-tangent construction in
+          ``_iso_two_tangent_construct`` — Tig/Teg are the intersections
+          of the inflection tangent with the extrapolated pre/post
+          tangents, Tmg is the half-Cp-change midline crossing, and the
+          reported step is the vertical Cp offset between the tangents at
+          Tmg;
+        * each result carries ``construction='iso_two_tangent'`` and the
+          full tangent geometry in ``construction_details``.
+
+        Candidates whose tangent geometry is degenerate (parallel
+        tangents, intersections outside the fitted plateau spans, no
+        midline crossing) are skipped and counted in the step metadata —
+        no numbers are fabricated for them.
+
+        Parameters
+        ----------
+        region:
+            Optional (T_start, T_end) window restricting the candidate
+            search; morphology gates and the tangent construction still
+            see full-signal context.
+        max_transitions:
+            Upper bound on reported transitions (default 8).
+
+        Returns
+        -------
+        self, for method chaining.
+        """
+        temperature = self._temperature
+        signal = (
+            self._pre_baseline_signal
+            if self._pre_baseline_signal is not None
+            else self._signal
+        )
+        signal_source = "pre_baseline" if self._pre_baseline_signal is not None else "working"
+        n = len(temperature)
+
+        if region is not None:
+            t_lo, t_hi = float(region[0]), float(region[1])
+            mask = (temperature >= t_lo) & (temperature <= t_hi)
+            if mask.sum() < 10:
+                warnings.warn(
+                    f"detect_glass_transition_iso: fewer than 10 points in region "
+                    f"[{t_lo}, {t_hi}].  Skipping Tg detection.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                return self
+            idxs = np.where(mask)[0]
+            t_work = temperature[idxs]
+            s_work = signal[idxs]
+            offset = int(idxs[0])
+        else:
+            t_work = temperature
+            s_work = signal
+            offset = 0
+
+        m = len(t_work)
+        if m < 10:
+            return self
+
+        d1_abs = np.abs(np.gradient(s_work, t_work))
+        smooth_w = max(3, int(round(m * 0.005)) | 1)
+        kernel = np.ones(smooth_w) / smooth_w
+        d1_smooth = np.convolve(d1_abs, kernel, mode='same')
+
+        noise_level = float(np.median(d1_smooth))
+        noise_mad = 1.4826 * float(np.median(np.abs(d1_smooth - noise_level)))
+        cand_floor = noise_level + _TG_CANDIDATE_MAD * noise_mad
+        flat_width = max(5, m // 10)
+
+        if region is not None:
+            ctx_w = max(3, int(round(n * 0.005)) | 1)
+            ctx_kernel = np.ones(ctx_w) / ctx_w
+            d1_ctx = np.convolve(
+                np.abs(np.gradient(signal, temperature)), ctx_kernel, mode='same',
+            )
+            noise_ctx = float(np.median(d1_ctx))
+        else:
+            ctx_kernel = kernel
+            d1_ctx, noise_ctx = d1_smooth, noise_level
+
+        # Signed derivative over the full signal for inflection tangents.
+        d1_signed_ctx = np.convolve(
+            np.gradient(signal, temperature), ctx_kernel, mode='same',
+        )
+
+        d_t = float(np.median(np.diff(temperature))) if n > 1 else 0.0
+        flat_t = flat_width * abs(d_t) if d_t else 0.0
+
+        candidates: List[Tuple[float, int, int, int, float]] = []
+        for infl in range(1, m - 1):
+            if d1_smooth[infl] < cand_floor:
+                continue
+            if not (
+                d1_smooth[infl] >= d1_smooth[infl - 1]
+                and d1_smooth[infl] > d1_smooth[infl + 1]
+            ):
+                continue
+            evidence = _tg_step_evidence(
+                temperature, signal,
+                infl + offset, d1_ctx, noise_ctx, flat_width,
+                strict_context=region is not None,
+            )
+            if evidence is None:
+                continue
+            candidates.append((float(d1_smooth[infl]), infl) + evidence)
+
+        accepted: List[GlassTransition] = []
+        accepted_spans: List[Tuple[int, int]] = []
+        skipped_construction = 0
+        beta, beta_reason = self._resolved_beta()
+        for _d1v, infl_local, onset, endset, _step in sorted(
+            candidates, key=lambda c: -c[0]
+        ):
+            if len(accepted) >= max_transitions:
+                break
+            if any(onset <= a_en and endset >= a_on for a_on, a_en in accepted_spans):
+                continue
+            construction = _iso_two_tangent_construct(
+                temperature, signal, d1_ctx, d1_signed_ctx,
+                onset, endset, flat_t,
+            )
+            if construction is None:
+                skipped_construction += 1
+                continue
+            conversion = heat_flow_step_to_delta_cp(
+                construction['step'],
+                working_signal_unit=self._working_signal_unit,
+                beta_k_min=beta,
+            )
+            accepted.append(
+                GlassTransition(
+                    tg_midpoint=construction['t_mg'],
+                    tg_onset=construction['t_ig'],
+                    tg_endset=construction['t_eg'],
+                    heat_flow_step=construction['step'],
+                    delta_cp_j_g_k=conversion.value,
+                    delta_cp_basis=conversion.basis,
+                    delta_cp_withheld_reason=beta_reason or conversion.withheld_reason,
+                    construction='iso_two_tangent',
+                    construction_details={
+                        'inflection_temperature': construction['t_infl'],
+                        'inflection_signal': construction['s_infl'],
+                        'inflection_slope': construction['m_infl'],
+                        'pre_tangent': construction['pre_tangent'],
+                        'post_tangent': construction['post_tangent'],
+                        'plateau_windows': construction['plateau_windows'],
+                        'method': (
+                            'ISO-11357-2-style two-tangent construction: '
+                            'Tig/Teg are inflection-tangent intersections with '
+                            'the extrapolated plateau tangents; Tmg is the '
+                            'half-Cp-change midline crossing; the reported '
+                            'step is the tangent Cp offset at Tmg.'
+                        ),
+                    },
+                )
+            )
+            accepted_spans.append((onset, endset))
+
+        accepted.sort(key=lambda tg: tg.tg_midpoint)
+        self._glass_transitions.extend(accepted)
+        self._metadata['steps'].append(
+            {
+                'step': 'detect_glass_transition_iso',
+                'region': region,
+                'signal': signal_source,
+                'candidate_count': len(candidates),
+                'transition_count': len(accepted),
+                'skipped_construction': skipped_construction,
+                'tg_midpoints': [tg.tg_midpoint for tg in accepted],
             }
         )
         return self

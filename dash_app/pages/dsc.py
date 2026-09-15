@@ -140,6 +140,7 @@ _DSC_PEAK_DETECTION_DEFAULTS: dict = {
 _DSC_GLASS_TRANSITION_DEFAULTS: dict = {
     "mode": "auto",
     "region": None,
+    "method": "step",
 }
 _DSC_INTEGRATION_DEFAULTS: dict = {
     "enabled": False,
@@ -278,17 +279,28 @@ def _normalize_peak_detection_values(direction: str | None, prominence, distance
     }
 
 
-def _normalize_glass_transition_values(enabled, rmin, rmax) -> dict:
+def _normalize_tg_method(method) -> str:
+    """Normalize the Tg construction selector (PR-16).
+
+    ``"iso"`` selects the ISO-11357-2-style two-tangent construction
+    (multi-transition); anything else falls back to the plateau-shift
+    step detector.
+    """
+    return "iso" if str(method or "").strip().lower() == "iso" else "step"
+
+
+def _normalize_glass_transition_values(enabled, rmin, rmax, method="step") -> dict:
+    method_value = _normalize_tg_method(method)
     if not enabled:
-        return {"mode": "auto", "region": None}
+        return {"mode": "auto", "region": None, "method": method_value}
     try:
         lower = float(rmin)
         upper = float(rmax)
     except (TypeError, ValueError):
-        return {"mode": "auto", "region": None}
+        return {"mode": "auto", "region": None, "method": method_value}
     if not math.isfinite(lower) or not math.isfinite(upper) or lower >= upper:
-        return {"mode": "auto", "region": None}
-    return {"mode": "auto", "region": [lower, upper]}
+        return {"mode": "auto", "region": None, "method": method_value}
+    return {"mode": "auto", "region": [lower, upper], "method": method_value}
 
 
 def _normalize_integration_values(enabled, bound_min, bound_max, snap) -> dict:
@@ -403,6 +415,7 @@ def _normalize_dsc_processing_draft(draft: dict | None) -> dict:
             tg_enabled,
             tg_region[0] if tg_enabled else None,
             tg_region[1] if tg_enabled else None,
+            glass_transition.get("method"),
         )
     else:
         glass_transition = copy.deepcopy(_DSC_GLASS_TRANSITION_DEFAULTS)
@@ -493,6 +506,7 @@ def _dsc_draft_from_control_values(
     int_min=None,
     int_max=None,
     int_snap=False,
+    tg_method="step",
 ) -> dict[str, Any]:
     return _normalize_dsc_processing_draft(
         {
@@ -510,7 +524,7 @@ def _dsc_draft_from_control_values(
                 bl_region_max,
             ),
             "peak_detection": _normalize_peak_detection_values(peak_direction, peak_prominence, peak_distance),
-            "glass_transition": _normalize_glass_transition_values(tg_enabled, tg_min, tg_max),
+            "glass_transition": _normalize_glass_transition_values(tg_enabled, tg_min, tg_max, tg_method),
             "integration": _normalize_integration_values(int_enabled, int_min, int_max, int_snap),
         }
     )
@@ -924,10 +938,27 @@ def _peak_controls_card() -> dbc.Card:
 
 
 def _tg_controls_card() -> dbc.Card:
+    tg_method_options = [
+        {"label": "Step morphology (single best transition)", "value": "step"},
+        {"label": "ISO two-tangent construction (multi-transition)", "value": "iso"},
+    ]
     return dbc.Card(
         dbc.CardBody(
             [
                 html.H5(id="dsc-tg-card-title", className="card-title mb-3"),
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                dbc.Label(id="dsc-tg-method-label", html_for="dsc-tg-method"),
+                                dbc.Select(id="dsc-tg-method", options=tg_method_options, value="step"),
+                                html.Small(id="dsc-tg-method-hint", className="form-text text-muted d-block mt-1"),
+                            ],
+                            md=12,
+                        ),
+                    ],
+                    className="mb-2",
+                ),
                 dbc.Row(
                     [
                         dbc.Col(
@@ -1488,6 +1519,8 @@ def render_dsc_peak_chrome(locale_data):
 
 @callback(
     Output("dsc-tg-card-title", "children"),
+    Output("dsc-tg-method-label", "children"),
+    Output("dsc-tg-method-hint", "children"),
     Output("dsc-tg-region-enabled", "label"),
     Output("dsc-tg-region-min-label", "children"),
     Output("dsc-tg-region-max-label", "children"),
@@ -1501,6 +1534,8 @@ def render_dsc_tg_chrome(locale_data):
     loc = _loc(locale_data)
     return (
         translate_ui(loc, "dash.analysis.dsc.tg.title"),
+        translate_ui(loc, "dash.analysis.dsc.tg.method_label"),
+        translate_ui(loc, "dash.analysis.dsc.tg.help.method"),
         translate_ui(loc, "dash.analysis.dsc.tg.enable_region"),
         translate_ui(loc, "dash.analysis.dsc.tg.region_min"),
         translate_ui(loc, "dash.analysis.dsc.tg.region_max"),
@@ -1872,6 +1907,7 @@ def render_dsc_preset_loaded_line(name, locale_data):
     Input("dsc-tg-region-enabled", "value"),
     Input("dsc-tg-region-min", "value"),
     Input("dsc-tg-region-max", "value"),
+    Input("dsc-tg-method", "value"),
     Input("dsc-integration-enabled", "value"),
     Input("dsc-integration-min", "value"),
     Input("dsc-integration-max", "value"),
@@ -1902,6 +1938,7 @@ def render_dsc_preset_dirty_flag(
     tg_enabled,
     tg_min,
     tg_max,
+    tg_method,
     int_enabled,
     int_min,
     int_max,
@@ -1939,6 +1976,7 @@ def render_dsc_preset_dirty_flag(
             int_min,
             int_max,
             int_snap,
+            tg_method,
         ),
     )
     if _dsc_snapshots_equal(snapshot, current):
@@ -2132,6 +2170,7 @@ def apply_peak_detection(n_clicks, direction, prominence, distance, draft, undo)
     Output("dsc-processing-undo", "data", allow_duplicate=True),
     Output("dsc-processing-redo", "data", allow_duplicate=True),
     Input("dsc-tg-apply-btn", "n_clicks"),
+    State("dsc-tg-method", "value"),
     State("dsc-tg-region-enabled", "value"),
     State("dsc-tg-region-min", "value"),
     State("dsc-tg-region-max", "value"),
@@ -2139,10 +2178,10 @@ def apply_peak_detection(n_clicks, direction, prominence, distance, draft, undo)
     State("dsc-processing-undo", "data"),
     prevent_initial_call=True,
 )
-def apply_glass_transition(n_clicks, enabled, region_min, region_max, draft, undo):
+def apply_glass_transition(n_clicks, method, enabled, region_min, region_max, draft, undo):
     if not n_clicks:
         raise dash.exceptions.PreventUpdate
-    values = _normalize_glass_transition_values(enabled, region_min, region_max)
+    values = _normalize_glass_transition_values(enabled, region_min, region_max, method)
     next_undo = _push_undo(undo, draft)
     next_draft = _apply_draft_section(draft, "glass_transition", values)
     return next_draft, next_undo, []
@@ -2287,9 +2326,16 @@ def _tg_status_text(draft: dict | None, loc: str) -> str:
     values = (draft or {}).get("glass_transition") or {}
     region = values.get("region")
     applied = translate_ui(loc, "dash.analysis.dsc.tg.applied")
+    method_key = (
+        "dash.analysis.dsc.tg.method_iso"
+        if _normalize_tg_method(values.get("method")) == "iso"
+        else "dash.analysis.dsc.tg.method_step"
+    )
     if isinstance(region, (list, tuple)) and len(region) == 2:
-        return f"{applied}: {translate_ui(loc, 'dash.analysis.dsc.tg.region_custom').format(tmin=region[0], tmax=region[1])}"
-    return f"{applied}: {translate_ui(loc, 'dash.analysis.dsc.tg.region_auto')}"
+        region_txt = translate_ui(loc, 'dash.analysis.dsc.tg.region_custom').format(tmin=region[0], tmax=region[1])
+    else:
+        region_txt = translate_ui(loc, 'dash.analysis.dsc.tg.region_auto')
+    return f"{applied}: {translate_ui(loc, method_key)} · {region_txt}"
 
 
 def _integration_status_text(draft: dict | None, loc: str) -> str:
@@ -2397,6 +2443,7 @@ def sync_peak_controls(draft, locale_data):
 
 
 @callback(
+    Output("dsc-tg-method", "value"),
     Output("dsc-tg-region-enabled", "value"),
     Output("dsc-tg-region-min", "value"),
     Output("dsc-tg-region-max", "value"),
@@ -2411,8 +2458,9 @@ def sync_tg_controls(draft, locale_data):
     enabled = isinstance(region, (list, tuple)) and len(region) == 2
     region_min = region[0] if enabled else None
     region_max = region[1] if enabled else None
+    method = _normalize_tg_method(values.get("method"))
     status = _tg_status_text(draft, loc)
-    return bool(enabled), region_min, region_max, status
+    return method, bool(enabled), region_min, region_max, status
 
 
 @callback(
@@ -3028,21 +3076,13 @@ def _event_hover_html(row: dict, y_value: float | None, loc: str) -> str:
     )
 
 
-def _build_tg_summary(summary: dict, loc: str) -> html.Div:
-    tg_mid = _coerce_float(summary.get("tg_midpoint"))
-    tg_onset = _coerce_float(summary.get("tg_onset"))
-    tg_endset = _coerce_float(summary.get("tg_endset"))
-    delta_cp = _coerce_float(summary.get("delta_cp"))
-    dcp_basis = str(summary.get("delta_cp_basis") or "legacy_unknown")
-    step_units = summary.get("heat_flow_step_units") or "signal units"
-    tg_count = int(summary.get("glass_transition_count") or (1 if tg_mid is not None else 0) or 0)
-
-    if tg_count == 0 or tg_mid is None:
-        return html.Div(
-            html.P(translate_ui(loc, "dash.analysis.state.not_detected"), className="text-muted mb-0 small"),
-            className="mb-3",
-        )
-
+def _tg_summary_one_liner(trans: dict, loc: str, step_units: str) -> tuple[str, str]:
+    """Render one transition's one-liner + ΔCp label (PR-16 multi-Tg)."""
+    tg_mid = _coerce_float(trans.get("tg_midpoint"))
+    tg_onset = _coerce_float(trans.get("tg_onset"))
+    tg_endset = _coerce_float(trans.get("tg_endset"))
+    delta_cp = _coerce_float(trans.get("delta_cp"))
+    dcp_basis = str(trans.get("delta_cp_basis") or "legacy_unknown")
     onset_txt = f"{tg_onset:.1f}" if tg_onset is not None else "--"
     end_txt = f"{tg_endset:.1f}" if tg_endset is not None else "--"
     dcp_txt = f"{delta_cp:.4f}" if delta_cp is not None else "--"
@@ -3055,30 +3095,66 @@ def _build_tg_summary(summary: dict, loc: str) -> html.Div:
         dcp_label = translate_ui(
             loc, "dash.analysis.dsc.label.step_height", unit=step_units
         )
-        step_value = _coerce_float(summary.get("heat_flow_step"))
+        step_value = _coerce_float(trans.get("heat_flow_step"))
         dcp_txt = f"{step_value:.4f}" if step_value is not None else "--"
-    summary_line = translate_ui(loc, "dash.analysis.dsc.events.tg_one_liner").format(
-        midpoint=f"{tg_mid:.1f}",
+    line = translate_ui(loc, "dash.analysis.dsc.events.tg_one_liner").format(
+        midpoint=f"{tg_mid:.1f}" if tg_mid is not None else "--",
         onset=onset_txt,
         endset=end_txt,
         dcp=dcp_txt,
     )
-    extra: list[Any] = []
-    if tg_count > 1:
-        extra.append(
-            html.P(
-                translate_ui(loc, "dash.analysis.state.more_transitions", n=tg_count - 1),
-                className="text-muted small mb-0",
+    construction = str(trans.get("construction") or "")
+    if construction == "iso_two_tangent":
+        line += f" · {translate_ui(loc, 'dash.analysis.dsc.tg.method_iso')}"
+    elif construction == "step_morphology":
+        line += f" · {translate_ui(loc, 'dash.analysis.dsc.tg.method_step')}"
+    return line, dcp_label
+
+
+def _build_tg_summary(summary: dict, loc: str) -> html.Div:
+    step_units = summary.get("heat_flow_step_units") or "signal units"
+    transitions = summary.get("transitions")
+    tg_count = int(summary.get("glass_transition_count") or 0)
+    if not isinstance(transitions, list) or not transitions:
+        tg_mid = _coerce_float(summary.get("tg_midpoint"))
+        if tg_count == 0 or tg_mid is None:
+            return html.Div(
+                html.P(translate_ui(loc, "dash.analysis.state.not_detected"), className="text-muted mb-0 small"),
+                className="mb-3",
             )
+        line, dcp_label = _tg_summary_one_liner(summary, loc, step_units)
+        extra: list[Any] = []
+        if tg_count > 1:
+            extra.append(
+                html.P(
+                    translate_ui(loc, "dash.analysis.state.more_transitions", n=tg_count - 1),
+                    className="text-muted small mb-0",
+                )
+            )
+        return html.Div(
+            [
+                html.P(line, className="small mb-1"),
+                html.P(dcp_label, className="text-muted small mb-0"),
+                *extra,
+            ],
+            className="mb-3",
         )
-    return html.Div(
-        [
-            html.P(summary_line, className="small mb-1"),
-            html.P(dcp_label, className="text-muted small mb-0"),
-            *extra,
-        ],
-        className="mb-3",
-    )
+
+    # PR-16 multi-transition surface: every reported transition with the
+    # construction that produced it.
+    blocks: list[Any] = []
+    for trans in transitions:
+        if not isinstance(trans, dict) or _coerce_float(trans.get("tg_midpoint")) is None:
+            continue
+        line, dcp_label = _tg_summary_one_liner(trans, loc, step_units)
+        blocks.append(html.P(line, className="small mb-1"))
+        blocks.append(html.P(dcp_label, className="text-muted small mb-2"))
+    if not blocks:
+        return html.Div(
+            html.P(translate_ui(loc, "dash.analysis.state.not_detected"), className="text-muted mb-0 small"),
+            className="mb-3",
+        )
+    return html.Div(blocks, className="mb-3")
 
 
 def _build_event_cards(summary: dict, rows: list[dict], loc: str) -> html.Div:

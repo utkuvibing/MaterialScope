@@ -1980,6 +1980,13 @@ TRANSLATIONS = {
     "dash.analysis.dsc.tg.applied": {"tr": "Uygulandı", "en": "Applied"},
     "dash.analysis.dsc.tg.region_auto": {"tr": "otomatik bölge", "en": "auto region"},
     "dash.analysis.dsc.tg.region_custom": {"tr": "özel bölge [{tmin}, {tmax}]", "en": "custom region [{tmin}, {tmax}]"},
+    "dash.analysis.dsc.tg.method_label": {"tr": "Tg yöntemi", "en": "Tg method"},
+    "dash.analysis.dsc.tg.method_step": {"tr": "basamak morfolojisi", "en": "step morphology"},
+    "dash.analysis.dsc.tg.method_iso": {"tr": "ISO iki-teğet", "en": "ISO two-tangent"},
+    "dash.analysis.dsc.tg.help.method": {
+        "tr": "Basamak morfolojisi en keskin tekil geçişi raporlar; ISO iki-teğet konstrüksiyonu (ISO 11357-2 tarzı) tüm uygun geçişleri teğet kesişimleriyle raporlar.",
+        "en": "Step morphology reports the single sharpest transition; the ISO two-tangent construction (ISO 11357-2 style) reports every qualifying transition via tangent intersections.",
+    },
     "dash.analysis.dsc.integration.title": {"tr": "Tepe entegrasyonu", "en": "Peak Integration"},
     "dash.analysis.dsc.integration.enable": {"tr": "Sınırları yapılandır", "en": "Configure bounds"},
     "dash.analysis.dsc.integration.bound_min": {"tr": "Alt sınır (°C)", "en": "Lower bound (°C)"},

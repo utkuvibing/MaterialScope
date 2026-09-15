@@ -987,6 +987,14 @@ def glass_transition_to_dict(tg: GlassTransition) -> dict[str, Any]:
     }
     if basis == BASIS_BETA_CORRECTED:
         payload["delta_cp"] = _clean_scalar(getattr(tg, "delta_cp_j_g_k", None))
+    # PR-16: which construction produced this Tg (absent for pre-PR-16
+    # payloads).  ISO runs also carry the tangent geometry used.
+    construction = getattr(tg, "construction", None)
+    if construction is not None:
+        payload["construction"] = str(construction)
+    details = getattr(tg, "construction_details", None)
+    if isinstance(details, Mapping):
+        payload["construction_details"] = copy.deepcopy(dict(details))
     return payload
 
 
@@ -1015,6 +1023,8 @@ def glass_transition_from_dict(payload: dict[str, Any]) -> GlassTransition:
     if step is None:
         step = payload.get("delta_cp")
 
+    construction = payload.get("construction")
+    details = payload.get("construction_details")
     return GlassTransition(
         tg_midpoint=float(payload["tg_midpoint"]),
         tg_onset=float(payload["tg_onset"]),
@@ -1023,6 +1033,10 @@ def glass_transition_from_dict(payload: dict[str, Any]) -> GlassTransition:
         delta_cp_j_g_k=corrected,
         delta_cp_basis=basis,
         delta_cp_withheld_reason=withheld,
+        construction=str(construction) if construction is not None else None,
+        construction_details=(
+            copy.deepcopy(dict(details)) if isinstance(details, Mapping) else None
+        ),
     )
 
 
@@ -1121,6 +1135,12 @@ def serialize_dsc_result(
         tg_basis = getattr(first_tg, "delta_cp_basis", BASIS_LEGACY_UNKNOWN)
         summary.update(
             {
+                # PR-16: every detected transition, not only the first —
+                # multi-transition ISO scans surface all of them.
+                "transitions": [
+                    glass_transition_to_dict(tg) for tg in glass_transitions
+                ],
+                "tg_construction": getattr(first_tg, "construction", None),
                 "tg_midpoint": _clean_scalar(first_tg.tg_midpoint),
                 "tg_onset": _clean_scalar(first_tg.tg_onset),
                 "tg_endset": _clean_scalar(first_tg.tg_endset),
