@@ -63,3 +63,6 @@ build/reference_library_*/
 
 # Runtime output (reports, exports, playwright captures) is generated content.
 output/
+
+# Local synthetic test fixtures for manual Phase 2 verification (not for release).
+/testing_data/

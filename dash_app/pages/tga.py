@@ -580,12 +580,15 @@ def _tga_smoothing_controls_card() -> dbc.Card:
                         dbc.Col(
                             [
                                 dbc.Label(id="tga-smooth-window-c-label", html_for="tga-smooth-window-c", className="mb-1"),
+                                # step="any" and no min: with type="number", a fixed step/min makes
+                                # HTML5 checkValidity() fail for off-lattice values; dbc.Input then
+                                # dispatches NaN which compares equal to the empty prop — the typed
+                                # value silently never reaches the draft store (manual-QA bug).
                                 dbc.Input(
                                     id="tga-smooth-window-c",
                                     type="number",
-                                    min=0.1,
-                                    step=0.5,
-                                    value=None,
+                                    step="any",
+                                    value="",
                                     placeholder="",
                                 ),
                                 html.P(id="tga-smooth-window-c-hint", className="small text-muted mb-0 mt-1"),
