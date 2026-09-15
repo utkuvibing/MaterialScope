@@ -14,6 +14,7 @@ from core.literature_models import (
     normalize_literature_comparisons,
     normalize_literature_context,
 )
+from core.kinetics import KINETICS_CI_SCOPE, KINETICS_OLS_ASSUMPTIONS
 from core.peak_analysis import ThermalPeak
 from core.sign_convention import summarize_provenance
 from core.units_dimensional import (
@@ -696,6 +697,8 @@ def _build_kissinger_scientific_context(result: Any, *, validation: dict[str, An
                 "propagated through Ea = -slope * R"
             ),
             "confidence_level": _clean_scalar(getattr(result, "confidence_level", None)),
+            "ea_ci_ols_assumptions": KINETICS_OLS_ASSUMPTIONS,
+            "ea_ci_scope": KINETICS_CI_SCOPE,
             "intercept_semantics": getattr(result, "intercept_semantics", None),
         },
         equations=equations,
@@ -703,7 +706,8 @@ def _build_kissinger_scientific_context(result: Any, *, validation: dict[str, An
         fit_quality=fit_quality,
         limitations=[
             "Assumes a dominant single-step process and representative peak temperatures.",
-            "The Ea confidence interval reflects regression scatter only, not instrument or sampling uncertainty.",
+            KINETICS_OLS_ASSUMPTIONS,
+            KINETICS_CI_SCOPE,
         ],
     )
     summary = {
@@ -769,6 +773,8 @@ def _build_ofw_scientific_context(results: list[Any], *, validation: dict[str, A
                 "propagated through Ea = -slope * R / 0.4567"
             ),
             "confidence_level": _clean_scalar(getattr(results[0], "confidence_level", None)) if results else None,
+            "ea_ci_ols_assumptions": KINETICS_OLS_ASSUMPTIONS,
+            "ea_ci_scope": KINETICS_CI_SCOPE,
             "intercept_semantics": (
                 "regression intercept = C, the Doyle-approximation constant term; it is not ln(A)"
             ),
@@ -789,7 +795,8 @@ def _build_ofw_scientific_context(results: list[Any], *, validation: dict[str, A
         ),
         limitations=[
             "Accuracy degrades near low/high conversion tails where interpolation is unstable.",
-            "Ea confidence intervals reflect regression scatter only, not instrument or sampling uncertainty.",
+            KINETICS_OLS_ASSUMPTIONS,
+            KINETICS_CI_SCOPE,
         ],
     )
     rows = []
@@ -846,6 +853,8 @@ def _build_friedman_scientific_context(results: list[Any], *, validation: dict[s
                 "propagated through Ea = -slope * R"
             ),
             "confidence_level": _clean_scalar(getattr(results[0], "confidence_level", None)) if results else None,
+            "ea_ci_ols_assumptions": KINETICS_OLS_ASSUMPTIONS,
+            "ea_ci_scope": KINETICS_CI_SCOPE,
             "intercept_semantics": (
                 "regression intercept = ln(A * f(alpha)) at each conversion alpha; it is not ln(A) alone"
             ),
@@ -866,7 +875,8 @@ def _build_friedman_scientific_context(results: list[Any], *, validation: dict[s
         ),
         limitations=[
             "Derivative-based method is sensitive to noise and smoothing choices.",
-            "Ea confidence intervals reflect regression scatter only, not instrument or sampling uncertainty.",
+            KINETICS_OLS_ASSUMPTIONS,
+            KINETICS_CI_SCOPE,
         ],
     )
     rows = []

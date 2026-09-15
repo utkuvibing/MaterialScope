@@ -33,6 +33,18 @@ KINETICS_CI_METHOD = (
     "(slope +/- t_{n-2, 1-alpha/2} * stderr), propagated through the "
     "method's linear Ea transform"
 )
+KINETICS_OLS_ASSUMPTIONS = (
+    "The fitted relationship is linear and correctly specified; observations "
+    "are independent; residuals have zero mean, constant variance, and are "
+    "approximately normal for finite-sample Student-t inference; predictor "
+    "values are treated as fixed and measured without material error."
+)
+KINETICS_CI_SCOPE = (
+    "Pointwise regression interval on the fitted Ea transform at each conversion "
+    "level (or the single Kissinger fit), covering regression scatter only; it "
+    "is not a simultaneous band or an instrument, preprocessing, sampling, or "
+    "metrological uncertainty model."
+)
 
 # Explicit semantics of the fitted regression intercept per method. The
 # intercept is NOT ln(A) on its own in any of these linearizations.
@@ -53,13 +65,17 @@ INTERCEPT_SEMANTICS = {
 
 
 def _coerce_confidence_level(value: Any) -> float:
-    """Return a valid confidence level in (0, 1); default 0.95."""
+    """Return a confidence level in (0, 1), rejecting invalid input."""
     try:
         level = float(value)
-    except (TypeError, ValueError):
-        return KINETICS_DEFAULT_CONFIDENCE_LEVEL
-    if not 0.0 < level < 1.0:
-        return KINETICS_DEFAULT_CONFIDENCE_LEVEL
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"confidence_level must be a finite number in (0, 1), got {value!r}."
+        ) from exc
+    if not math.isfinite(level) or not 0.0 < level < 1.0:
+        raise ValueError(
+            f"confidence_level must be a finite number in (0, 1), got {value!r}."
+        )
     return level
 
 
@@ -185,11 +201,14 @@ def kissinger_analysis(
     The Ea interval is a two-sided Student-t interval on the OLS slope
     (``n - 2`` degrees of freedom) propagated through ``Ea = -slope·R``.
     With fewer than three points the regression has no residual degrees
-    of freedom and the interval is withheld.
+    of freedom and the interval is withheld. The interval is pointwise and
+    covers regression scatter only under the OLS assumptions recorded in
+    ``KINETICS_OLS_ASSUMPTIONS``; it is not a metrological uncertainty model.
     """
     beta = np.asarray(heating_rates, dtype=float)
     tp_celsius = np.asarray(peak_temperatures, dtype=float)
     tp_kelvin = tp_celsius + 273.15
+    level = _coerce_confidence_level(confidence_level)
 
     if len(beta) < 2:
         raise ValueError("At least two data points are required for Kissinger analysis.")
@@ -201,7 +220,6 @@ def kissinger_analysis(
 
     fit = stats.linregress(inv_tp, ln_beta_tp2)
     slope, intercept, r_value = fit.slope, fit.intercept, fit.rvalue
-    level = _coerce_confidence_level(confidence_level)
 
     ea_j_per_mol = -slope * GAS_CONSTANT_R          # J/mol
     ea_kj_per_mol = ea_j_per_mol / 1000.0            # kJ/mol
@@ -289,6 +307,7 @@ def ozawa_flynn_wall_analysis(
     """
     if alpha_values is None:
         alpha_values = np.arange(0.1, 0.95, 0.05).tolist()
+    level = _coerce_confidence_level(confidence_level)
 
     beta = np.asarray(heating_rates, dtype=float)
     log_beta = np.log10(beta)
@@ -334,7 +353,6 @@ def ozawa_flynn_wall_analysis(
 
         fit = stats.linregress(inv_t, log_b)
         slope, intercept, r_value = fit.slope, fit.intercept, fit.rvalue
-        level = _coerce_confidence_level(confidence_level)
 
         # Doyle approximation: slope = -0.4567 * Ea / R
         ea_j_per_mol = -slope * GAS_CONSTANT_R / 0.4567
@@ -421,6 +439,7 @@ def friedman_analysis(
     """
     if alpha_values is None:
         alpha_values = np.arange(0.1, 0.95, 0.05).tolist()
+    level = _coerce_confidence_level(confidence_level)
 
     n = len(heating_rates)
     if len(temperature_data) != n or len(conversion_data) != n or len(dalpha_dt_data) != n:
@@ -473,7 +492,6 @@ def friedman_analysis(
 
         fit = stats.linregress(inv_t, ln_da)
         slope, intercept, r_value = fit.slope, fit.intercept, fit.rvalue
-        level = _coerce_confidence_level(confidence_level)
 
         ea_j_per_mol = -slope * GAS_CONSTANT_R
         ea_kj_per_mol = ea_j_per_mol / 1000.0
@@ -656,6 +674,8 @@ def _kinetics_summary(method_id: str, results: list[KineticResult]) -> dict[str,
             "n_points": int(result.n_points) if result.n_points is not None else None,
             "confidence_level": float(result.confidence_level) if result.confidence_level is not None else None,
             "ea_ci_method": KINETICS_CI_METHOD,
+            "ea_ci_ols_assumptions": KINETICS_OLS_ASSUMPTIONS,
+            "ea_ci_scope": KINETICS_CI_SCOPE,
             "ea_ci_status": result.ea_ci_status,
             "ea_ci_withheld_reason": result.ea_ci_withheld_reason or "",
             "activation_energy_ci_low_kj_mol": float(result.ea_ci_low_kj_mol) if result.ea_ci_low_kj_mol is not None else None,
@@ -675,6 +695,8 @@ def _kinetics_summary(method_id: str, results: list[KineticResult]) -> dict[str,
         "mean_r_squared": float(np.mean(r2)) if r2 else None,
         "confidence_level": levels.pop() if len(levels) == 1 else None,
         "ea_ci_method": KINETICS_CI_METHOD,
+        "ea_ci_ols_assumptions": KINETICS_OLS_ASSUMPTIONS,
+        "ea_ci_scope": KINETICS_CI_SCOPE,
         "ea_ci_computed_count": sum(1 for item in results if item.ea_ci_status == "computed"),
         "ea_ci_withheld_count": sum(1 for item in results if item.ea_ci_status == "withheld"),
         "activation_energy_ci_low_min_kj_mol": min(ci_lows) if ci_lows else None,
@@ -760,6 +782,8 @@ def _kinetics_scientific_context(method_id: str, label: str, results: list[Kinet
             "method": label,
             "temperature_scale": "kelvin",
             "ea_ci_method": KINETICS_CI_METHOD,
+            "ea_ci_ols_assumptions": KINETICS_OLS_ASSUMPTIONS,
+            "ea_ci_scope": KINETICS_CI_SCOPE,
             "confidence_level": float(results[0].confidence_level) if results and results[0].confidence_level is not None else None,
             "intercept_semantics": INTERCEPT_SEMANTICS.get(method_id),
         },
@@ -768,7 +792,8 @@ def _kinetics_scientific_context(method_id: str, label: str, results: list[Kinet
         fit_quality=fit_quality,
         limitations=[
             "Interpretation quality depends on heating-rate spread and conversion interpolation quality.",
-            "Ea confidence intervals are OLS slope t-intervals; they quantify regression scatter only, not instrument or sampling uncertainty.",
+            KINETICS_OLS_ASSUMPTIONS,
+            KINETICS_CI_SCOPE,
             "The regression intercept is not ln(A) on its own; see intercept_semantics for the method-specific meaning.",
         ],
     )

@@ -5,8 +5,12 @@ from scipy.optimize import brentq
 from core.kinetics import (
     GAS_CONSTANT_R,
     KINETICS_CI_METHOD,
+    KINETICS_CI_SCOPE,
+    KINETICS_OLS_ASSUMPTIONS,
     compute_conversion,
+    friedman_analysis,
     kissinger_analysis,
+    ozawa_flynn_wall_analysis,
     run_kinetic_analysis,
 )
 
@@ -24,6 +28,65 @@ def _kissinger_fixture(ea_j_mol: float = 150_000.0, ln_a: float = np.log(1e10), 
         f = lambda T: np.log(beta / T**2) + ea_j_mol / (GAS_CONSTANT_R * T) - intercept  # noqa: E731
         temps.append(float(brentq(f, 300.0, 2000.0)) - 273.15)
     return list(rates), temps, ea_j_mol / 1000.0, ln_a
+
+
+def _ofw_known_slope_fixture(ea_j_mol: float = 120_000.0):
+    target_kelvin = np.array([480.0, 500.0, 520.0, 540.0])
+    inv_t = 1.0 / target_kelvin
+    slope = -0.4567 * ea_j_mol / GAS_CONSTANT_R
+    intercept = 14.0
+    # Fixed residuals are orthogonal to both the intercept and 1/T columns,
+    # preserving the injected slope while producing a non-zero known CI.
+    residuals = np.array([
+        0.024398319048653094,
+        -0.035704249639157526,
+        -0.005029697658674984,
+        0.016335628249179189,
+    ])
+    rates = np.power(10.0, intercept + slope * inv_t + residuals).tolist()
+    temperatures = [
+        np.array([target - 20.0, target, target + 20.0]) - 273.15
+        for target in target_kelvin
+    ]
+    conversions = [np.array([0.0, 0.5, 1.0]) for _ in rates]
+    return (
+        rates,
+        temperatures,
+        conversions,
+        ea_j_mol / 1000.0,
+        105.0768437876644,
+        134.9231562123356,
+    )
+
+
+def _friedman_known_slope_fixture(ea_j_mol: float = 95_000.0):
+    rates = [5.0, 10.0, 20.0, 40.0]
+    target_kelvin = np.array([480.0, 500.0, 520.0, 540.0])
+    intercept = 18.0
+    residuals = np.array([
+        0.024398319048653094,
+        -0.035704249639157526,
+        -0.005029697658674984,
+        0.016335628249179189,
+    ])
+    rates_at_alpha = np.exp(
+        intercept - ea_j_mol / (GAS_CONSTANT_R * target_kelvin) + residuals
+    )
+    temperatures = [
+        np.array([target - 20.0, target, target + 20.0]) - 273.15
+        for target in target_kelvin
+    ]
+    conversions = [np.array([0.0, 0.5, 1.0]) for _ in rates]
+    dalpha_dt = [np.full(3, value) for value in rates_at_alpha]
+    return (
+        rates,
+        temperatures,
+        conversions,
+        dalpha_dt,
+        ea_j_mol / 1000.0,
+        88.18459455782633,
+        101.81540544217367,
+    )
 
 
 def test_compute_conversion_tga_mode_uses_mass_drop_fraction():
@@ -190,10 +253,72 @@ def test_kissinger_confidence_level_is_explicit_and_affects_width():
     assert w95 > w50 > 0.0
 
 
-def test_kissinger_invalid_confidence_level_falls_back_to_default():
+def test_kissinger_invalid_confidence_level_is_rejected():
     rates, temps, _, _ = _kissinger_fixture()
-    result = kissinger_analysis(rates, temps, confidence_level=1.5)
-    assert result.confidence_level == pytest.approx(0.95)
+    with pytest.raises(ValueError, match="confidence_level"):
+        kissinger_analysis(rates, temps, confidence_level=1.5)
+
+
+def test_ofw_recovers_independent_known_slope_ea_and_ci():
+    rates, temperatures, conversions, expected_ea, expected_low, expected_high = (
+        _ofw_known_slope_fixture()
+    )
+
+    result = ozawa_flynn_wall_analysis(
+        rates, temperatures, conversions, alpha_values=[0.5]
+    )[0]
+
+    assert result.activation_energy == pytest.approx(expected_ea, rel=1e-10)
+    assert result.ea_ci_status == "computed"
+    assert result.ea_ci_low_kj_mol == pytest.approx(expected_low, rel=1e-10)
+    assert result.ea_ci_high_kj_mol == pytest.approx(expected_high, rel=1e-10)
+
+
+def test_friedman_recovers_independent_known_slope_ea_and_ci():
+    rates, temperatures, conversions, dalpha_dt, expected_ea, expected_low, expected_high = (
+        _friedman_known_slope_fixture()
+    )
+
+    result = friedman_analysis(
+        rates,
+        temperatures,
+        conversions,
+        dalpha_dt,
+        alpha_values=[0.5],
+    )[0]
+
+    assert result.activation_energy == pytest.approx(expected_ea, rel=1e-10)
+    assert result.ea_ci_status == "computed"
+    assert result.ea_ci_low_kj_mol == pytest.approx(expected_low, rel=1e-10)
+    assert result.ea_ci_high_kj_mol == pytest.approx(expected_high, rel=1e-10)
+
+
+@pytest.mark.parametrize("invalid_level", [0.0, 1.0, -0.1, float("nan"), "bad"])
+def test_isoconversional_invalid_confidence_levels_are_rejected(invalid_level):
+    rates, temperatures, conversions, *_ = _ofw_known_slope_fixture()
+    with pytest.raises(ValueError, match="confidence_level"):
+        ozawa_flynn_wall_analysis(
+            rates,
+            temperatures,
+            conversions,
+            alpha_values=[0.5],
+            confidence_level=invalid_level,
+        )
+
+
+def test_friedman_invalid_confidence_level_is_rejected():
+    rates, temperatures, conversions, dalpha_dt, *_ = (
+        _friedman_known_slope_fixture()
+    )
+    with pytest.raises(ValueError, match="confidence_level"):
+        friedman_analysis(
+            rates,
+            temperatures,
+            conversions,
+            dalpha_dt,
+            alpha_values=[0.5],
+            confidence_level=0.0,
+        )
 
 
 def test_ofw_rows_carry_ci_and_intercept_semantics():
@@ -366,6 +491,8 @@ def test_scientific_context_documents_ci_method_and_intercept_semantics():
 
     ctx = payload["scientific_context"]
     assert ctx["methodology"]["ea_ci_method"] == KINETICS_CI_METHOD
+    assert ctx["methodology"]["ea_ci_ols_assumptions"] == KINETICS_OLS_ASSUMPTIONS
+    assert ctx["methodology"]["ea_ci_scope"] == KINETICS_CI_SCOPE
     assert ctx["methodology"]["confidence_level"] == pytest.approx(0.95)
     assert "ln(A * R / Ea)" in ctx["methodology"]["intercept_semantics"]
     assert any(
