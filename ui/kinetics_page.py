@@ -236,9 +236,24 @@ def _render_kissinger(datasets):
 
         col1, col2, col3 = st.columns(3)
         col1.metric("Activation Energy", f"{result.activation_energy:.1f} kJ/mol")
+        if (
+            getattr(result, "ea_ci_status", None) == "computed"
+            and getattr(result, "ea_ci_low_kj_mol", None) is not None
+            and getattr(result, "ea_ci_high_kj_mol", None) is not None
+        ):
+            level = getattr(result, "confidence_level", None) or 0.95
+            col1.caption(
+                f"{level:.0%} CI [{result.ea_ci_low_kj_mol:.1f}, {result.ea_ci_high_kj_mol:.1f}] kJ/mol "
+                f"(OLS slope t-interval)"
+            )
+        elif getattr(result, "ea_ci_status", None) == "withheld":
+            col1.caption(f"Ea CI withheld: {getattr(result, 'ea_ci_withheld_reason', '') or 'unknown'}")
         col2.metric("R²", f"{result.r_squared:.6f}")
         if result.pre_exponential is not None:
-            col3.metric("ln(A)", f"{result.pre_exponential:.2f}")
+            # The Kissinger intercept is ln(A·R/Ea), not ln(A).
+            col3.metric("ln(A·R/Ea)", f"{result.pre_exponential:.2f}")
+            if getattr(result, "ln_a_min_inv", None) is not None:
+                col3.caption(f"ln(A) [min⁻¹] = {result.ln_a_min_inv:.2f} (derived)")
 
         if result.plot_data:
             fig = create_kissinger_plot(
@@ -378,6 +393,12 @@ def _render_ofw(datasets):
                 {
                     "α": f"{alpha_val:.2f}" if alpha_val is not None else "N/A",
                     "Ea (kJ/mol)": f"{result.activation_energy:.1f}",
+                    "Ea CI (kJ/mol)": (
+                        f"[{result.ea_ci_low_kj_mol:.1f}, {result.ea_ci_high_kj_mol:.1f}]"
+                        if getattr(result, "ea_ci_status", None) == "computed"
+                        and result.ea_ci_low_kj_mol is not None
+                        else "withheld"
+                    ),
                     "R²": f"{result.r_squared:.4f}" if result.r_squared is not None else "N/A",
                 }
             )
@@ -385,7 +406,9 @@ def _render_ofw(datasets):
                 alphas_plot.append(alpha_val)
                 eas_plot.append(result.activation_energy)
 
+        level = getattr(ofw_results[0], "confidence_level", None) or 0.95
         st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        st.caption(f"Ea CI: {level:.0%} OLS slope t-interval per conversion level.")
 
         if alphas_plot:
             fig = create_thermal_plot(
@@ -515,6 +538,12 @@ def _render_friedman(datasets):
                 {
                     "α": f"{alpha_val:.2f}" if alpha_val is not None else "N/A",
                     "Ea (kJ/mol)": f"{result.activation_energy:.1f}",
+                    "Ea CI (kJ/mol)": (
+                        f"[{result.ea_ci_low_kj_mol:.1f}, {result.ea_ci_high_kj_mol:.1f}]"
+                        if getattr(result, "ea_ci_status", None) == "computed"
+                        and result.ea_ci_low_kj_mol is not None
+                        else "withheld"
+                    ),
                     "ln[A·f(α)]": f"{result.pre_exponential:.2f}" if result.pre_exponential is not None else "N/A",
                     "R²": f"{result.r_squared:.4f}" if result.r_squared is not None else "N/A",
                 }
@@ -523,7 +552,9 @@ def _render_friedman(datasets):
                 alphas_plot.append(alpha_val)
                 eas_plot.append(result.activation_energy)
 
+        level = getattr(friedman_results[0], "confidence_level", None) or 0.95
         st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        st.caption(f"Ea CI: {level:.0%} OLS slope t-interval per conversion level.")
 
         if alphas_plot:
             fig = create_thermal_plot(

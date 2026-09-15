@@ -10,6 +10,8 @@ Supports:
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -25,6 +27,91 @@ from core.scientific_reasoning import build_scientific_reasoning
 
 GAS_CONSTANT_R = 8.314462  # J/(mol·K)
 
+KINETICS_DEFAULT_CONFIDENCE_LEVEL = 0.95
+KINETICS_CI_METHOD = (
+    "two-sided Student-t interval on the OLS regression slope "
+    "(slope +/- t_{n-2, 1-alpha/2} * stderr), propagated through the "
+    "method's linear Ea transform"
+)
+
+# Explicit semantics of the fitted regression intercept per method. The
+# intercept is NOT ln(A) on its own in any of these linearizations.
+INTERCEPT_SEMANTICS = {
+    "kissinger": (
+        "regression intercept = ln(A * R / Ea); "
+        "ln(A) with A in min^-1 is derived separately as intercept + ln(Ea / R)"
+    ),
+    "ofw": (
+        "regression intercept = C, the Doyle-approximation constant term in "
+        "log10(beta) = -0.4567 * Ea / (R * T_alpha) + C; it is not ln(A)"
+    ),
+    "friedman": (
+        "regression intercept = ln(A * f(alpha)) at this conversion alpha; "
+        "it is not ln(A) alone"
+    ),
+}
+
+
+def _coerce_confidence_level(value: Any) -> float:
+    """Return a valid confidence level in (0, 1); default 0.95."""
+    try:
+        level = float(value)
+    except (TypeError, ValueError):
+        return KINETICS_DEFAULT_CONFIDENCE_LEVEL
+    if not 0.0 < level < 1.0:
+        return KINETICS_DEFAULT_CONFIDENCE_LEVEL
+    return level
+
+
+def _slope_ea_ci(
+    *,
+    slope: float,
+    slope_stderr: float,
+    n_points: int,
+    confidence_level: float,
+    slope_to_ea_factor: float,
+) -> tuple[float | None, float | None, str, str]:
+    """Map an OLS slope t-interval onto Ea (kJ/mol).
+
+    ``slope_to_ea_factor`` is the signed factor such that
+    ``Ea_kJ = -slope * factor`` (Kissinger/Friedman: R/1000; OFW:
+    R/(0.4567*1000)). The sign flip means the slope interval maps onto Ea
+    in reversed order.
+
+    Returns ``(low, high, status, withheld_reason)``. The interval is
+    withheld when fewer than 3 points were fitted (n-2 < 1 degree of
+    freedom) or the slope standard error is non-finite.
+    """
+    if n_points < 3:
+        return None, None, "withheld", "ea_ci_requires_at_least_3_points"
+    if not math.isfinite(slope_stderr) or slope_stderr < 0.0:
+        return None, None, "withheld", "ea_ci_slope_stderr_not_finite"
+    dof = n_points - 2
+    t_crit = float(stats.t.ppf(0.5 + confidence_level / 2.0, dof))
+    slope_lo = slope - t_crit * slope_stderr
+    slope_hi = slope + t_crit * slope_stderr
+    ea_low = -slope_hi * slope_to_ea_factor
+    ea_high = -slope_lo * slope_to_ea_factor
+    low, high = min(ea_low, ea_high), max(ea_low, ea_high)
+    if not (math.isfinite(low) and math.isfinite(high)):
+        return None, None, "withheld", "ea_ci_not_finite"
+    return float(low), float(high), "computed", ""
+
+
+def _kissinger_ln_a_min_inv(regression_intercept: float | None, ea_kj_per_mol: float | None) -> float | None:
+    """Derive ln(A) with A in min^-1 from the Kissinger intercept.
+
+    intercept = ln(A * R / Ea)  =>  ln(A) = intercept + ln(Ea / R),
+    with Ea in J/mol and R in J/(mol*K). Returns None when inputs are
+    missing or non-positive (Ea <= 0 cannot produce a physical A here).
+    """
+    if regression_intercept is None or ea_kj_per_mol is None:
+        return None
+    ea_j = float(ea_kj_per_mol) * 1000.0
+    if not math.isfinite(ea_j) or ea_j <= 0.0 or not math.isfinite(float(regression_intercept)):
+        return None
+    return float(regression_intercept + math.log(ea_j / GAS_CONSTANT_R))
+
 
 # ---------------------------------------------------------------------------
 # Data class
@@ -36,9 +123,22 @@ class KineticResult:
 
     method: str                            # 'kissinger', 'ozawa_flynn_wall', 'friedman'
     activation_energy: float               # kJ/mol
-    pre_exponential: Optional[float] = None   # ln(A) for Kissinger
+    pre_exponential: Optional[float] = None   # regression intercept (see intercept_semantics)
     r_squared: Optional[float] = None        # Regression quality (0–1)
     plot_data: Optional[dict] = field(default=None)  # Data for plotting
+    # PR-20 statistics/provenance fields
+    regression_slope: Optional[float] = None
+    regression_intercept: Optional[float] = None
+    slope_stderr: Optional[float] = None
+    intercept_stderr: Optional[float] = None
+    n_points: Optional[int] = None
+    confidence_level: Optional[float] = None
+    ea_ci_low_kj_mol: Optional[float] = None
+    ea_ci_high_kj_mol: Optional[float] = None
+    ea_ci_status: Optional[str] = None           # 'computed' | 'withheld'
+    ea_ci_withheld_reason: Optional[str] = None
+    intercept_semantics: Optional[str] = None    # explicit meaning of the intercept
+    ln_a_min_inv: Optional[float] = None         # Kissinger only: ln(A), A in min^-1
 
 
 # ---------------------------------------------------------------------------
@@ -48,6 +148,7 @@ class KineticResult:
 def kissinger_analysis(
     heating_rates: list[float],
     peak_temperatures: list[float],
+    confidence_level: float = KINETICS_DEFAULT_CONFIDENCE_LEVEL,
 ) -> KineticResult:
     """
     Kissinger kinetic analysis.
@@ -62,7 +163,8 @@ def kissinger_analysis(
     Returns
     -------
     KineticResult
-        Activation energy (kJ/mol), ln(A), R², and plot data.
+        Activation energy (kJ/mol), regression intercept, R², plot data,
+        and a confidence interval on Ea at ``confidence_level``.
 
     Notes
     -----
@@ -73,6 +175,17 @@ def kissinger_analysis(
     A linear regression of ln(β/Tp²) vs 1/Tp gives:
         slope  = -Ea / R
         intercept = ln(A · R / Ea)
+
+    The intercept is therefore *not* ln(A); it is ln(A·R/Ea). The result
+    carries ``ln_a_min_inv = intercept + ln(Ea/R)`` as the derived ln(A)
+    with A in min⁻¹, while ``pre_exponential``/``regression_intercept``
+    retain the raw fitted intercept for backwards compatibility and for
+    reconstructing the regression line.
+
+    The Ea interval is a two-sided Student-t interval on the OLS slope
+    (``n - 2`` degrees of freedom) propagated through ``Ea = -slope·R``.
+    With fewer than three points the regression has no residual degrees
+    of freedom and the interval is withheld.
     """
     beta = np.asarray(heating_rates, dtype=float)
     tp_celsius = np.asarray(peak_temperatures, dtype=float)
@@ -86,13 +199,24 @@ def kissinger_analysis(
     inv_tp = 1.0 / tp_kelvin
     ln_beta_tp2 = np.log(beta / tp_kelvin**2)
 
-    slope, intercept, r_value, _, _ = stats.linregress(inv_tp, ln_beta_tp2)
+    fit = stats.linregress(inv_tp, ln_beta_tp2)
+    slope, intercept, r_value = fit.slope, fit.intercept, fit.rvalue
+    level = _coerce_confidence_level(confidence_level)
 
     ea_j_per_mol = -slope * GAS_CONSTANT_R          # J/mol
     ea_kj_per_mol = ea_j_per_mol / 1000.0            # kJ/mol
-    ln_a = intercept                                  # ln(A·R/Ea) ≈ ln(A) for reporting
+    # The fitted intercept is ln(A·R/Ea), not ln(A); ln(A) is derived below.
+    ln_a = intercept
 
     r_squared = r_value**2
+    ci_low, ci_high, ci_status, ci_reason = _slope_ea_ci(
+        slope=slope,
+        slope_stderr=float(fit.stderr),
+        n_points=len(beta),
+        confidence_level=level,
+        slope_to_ea_factor=GAS_CONSTANT_R / 1000.0,
+    )
+    ln_a_min_inv = _kissinger_ln_a_min_inv(intercept, ea_kj_per_mol)
 
     # Points along the fitted line for plotting
     x_fit = np.linspace(inv_tp.min(), inv_tp.max(), 200)
@@ -113,6 +237,18 @@ def kissinger_analysis(
         pre_exponential=ln_a,
         r_squared=r_squared,
         plot_data=plot_data,
+        regression_slope=float(slope),
+        regression_intercept=float(intercept),
+        slope_stderr=float(fit.stderr) if math.isfinite(fit.stderr) else None,
+        intercept_stderr=float(fit.intercept_stderr) if math.isfinite(fit.intercept_stderr) else None,
+        n_points=len(beta),
+        confidence_level=level,
+        ea_ci_low_kj_mol=ci_low,
+        ea_ci_high_kj_mol=ci_high,
+        ea_ci_status=ci_status,
+        ea_ci_withheld_reason=ci_reason,
+        intercept_semantics=INTERCEPT_SEMANTICS["kissinger"],
+        ln_a_min_inv=ln_a_min_inv,
     )
 
 
@@ -121,6 +257,7 @@ def ozawa_flynn_wall_analysis(
     temperature_data: list[np.ndarray],
     conversion_data: list[np.ndarray],
     alpha_values: Optional[list[float]] = None,
+    confidence_level: float = KINETICS_DEFAULT_CONFIDENCE_LEVEL,
 ) -> list[KineticResult]:
     """
     Ozawa-Flynn-Wall (OFW) isoconversional analysis.
@@ -195,11 +332,20 @@ def ozawa_flynn_wall_analysis(
         inv_t = np.array([1.0 / t for t in temps_at_alpha])
         log_b = np.array(valid_log_beta)
 
-        slope, intercept, r_value, _, _ = stats.linregress(inv_t, log_b)
+        fit = stats.linregress(inv_t, log_b)
+        slope, intercept, r_value = fit.slope, fit.intercept, fit.rvalue
+        level = _coerce_confidence_level(confidence_level)
 
         # Doyle approximation: slope = -0.4567 * Ea / R
         ea_j_per_mol = -slope * GAS_CONSTANT_R / 0.4567
         ea_kj_per_mol = ea_j_per_mol / 1000.0
+        ci_low, ci_high, ci_status, ci_reason = _slope_ea_ci(
+            slope=slope,
+            slope_stderr=float(fit.stderr),
+            n_points=len(inv_t),
+            confidence_level=level,
+            slope_to_ea_factor=GAS_CONSTANT_R / (0.4567 * 1000.0),
+        )
 
         x_fit = np.linspace(inv_t.min(), inv_t.max(), 200)
         y_fit = slope * x_fit + intercept
@@ -221,6 +367,17 @@ def ozawa_flynn_wall_analysis(
                 pre_exponential=None,
                 r_squared=r_value**2,
                 plot_data=plot_data,
+                regression_slope=float(slope),
+                regression_intercept=float(intercept),
+                slope_stderr=float(fit.stderr) if math.isfinite(fit.stderr) else None,
+                intercept_stderr=float(fit.intercept_stderr) if math.isfinite(fit.intercept_stderr) else None,
+                n_points=len(inv_t),
+                confidence_level=level,
+                ea_ci_low_kj_mol=ci_low,
+                ea_ci_high_kj_mol=ci_high,
+                ea_ci_status=ci_status,
+                ea_ci_withheld_reason=ci_reason,
+                intercept_semantics=INTERCEPT_SEMANTICS["ofw"],
             )
         )
 
@@ -233,6 +390,7 @@ def friedman_analysis(
     conversion_data: list[np.ndarray],
     dalpha_dt_data: list[np.ndarray],
     alpha_values: Optional[list[float]] = None,
+    confidence_level: float = KINETICS_DEFAULT_CONFIDENCE_LEVEL,
 ) -> list[KineticResult]:
     """
     Friedman differential isoconversional analysis.
@@ -313,10 +471,19 @@ def friedman_analysis(
         inv_t = np.array(inv_t_vals)
         ln_da = np.array(ln_dalpha_dt_vals)
 
-        slope, intercept, r_value, _, _ = stats.linregress(inv_t, ln_da)
+        fit = stats.linregress(inv_t, ln_da)
+        slope, intercept, r_value = fit.slope, fit.intercept, fit.rvalue
+        level = _coerce_confidence_level(confidence_level)
 
         ea_j_per_mol = -slope * GAS_CONSTANT_R
         ea_kj_per_mol = ea_j_per_mol / 1000.0
+        ci_low, ci_high, ci_status, ci_reason = _slope_ea_ci(
+            slope=slope,
+            slope_stderr=float(fit.stderr),
+            n_points=len(inv_t),
+            confidence_level=level,
+            slope_to_ea_factor=GAS_CONSTANT_R / 1000.0,
+        )
 
         x_fit = np.linspace(inv_t.min(), inv_t.max(), 200)
         y_fit = slope * x_fit + intercept
@@ -335,9 +502,20 @@ def friedman_analysis(
             KineticResult(
                 method="friedman",
                 activation_energy=ea_kj_per_mol,
-                pre_exponential=intercept,   # ln[A·f(α)]
+                pre_exponential=intercept,   # ln[A·f(α)] — see intercept_semantics
                 r_squared=r_value**2,
                 plot_data=plot_data,
+                regression_slope=float(slope),
+                regression_intercept=float(intercept),
+                slope_stderr=float(fit.stderr) if math.isfinite(fit.stderr) else None,
+                intercept_stderr=float(fit.intercept_stderr) if math.isfinite(fit.intercept_stderr) else None,
+                n_points=len(inv_t),
+                confidence_level=level,
+                ea_ci_low_kj_mol=ci_low,
+                ea_ci_high_kj_mol=ci_high,
+                ea_ci_status=ci_status,
+                ea_ci_withheld_reason=ci_reason,
+                intercept_semantics=INTERCEPT_SEMANTICS["friedman"],
             )
         )
 
@@ -437,9 +615,30 @@ def _kinetics_rows(method_id: str, results: list[KineticResult]) -> list[dict[st
         alpha = (item.plot_data or {}).get("alpha")
         if alpha is not None:
             row["alpha"] = float(alpha)
+        row["regression_intercept"] = (
+            float(item.regression_intercept) if item.regression_intercept is not None else None
+        )
+        row["intercept_semantics"] = item.intercept_semantics
+        row["n_points"] = int(item.n_points) if item.n_points is not None else None
+        row["confidence_level"] = (
+            float(item.confidence_level) if item.confidence_level is not None else None
+        )
+        row["ea_ci_method"] = KINETICS_CI_METHOD
+        row["ea_ci_status"] = item.ea_ci_status
+        row["activation_energy_ci_low_kj_mol"] = (
+            float(item.ea_ci_low_kj_mol) if item.ea_ci_low_kj_mol is not None else None
+        )
+        row["activation_energy_ci_high_kj_mol"] = (
+            float(item.ea_ci_high_kj_mol) if item.ea_ci_high_kj_mol is not None else None
+        )
+        if item.ea_ci_withheld_reason:
+            row["ea_ci_withheld_reason"] = item.ea_ci_withheld_reason
         if method_id == "kissinger":
             row["regression_axis_x"] = "1/Tp"
             row["regression_axis_y"] = "ln(beta/Tp^2)"
+            row["ln_a_min_inv"] = (
+                float(item.ln_a_min_inv) if item.ln_a_min_inv is not None else None
+            )
         rows.append(row)
     return rows
 
@@ -451,16 +650,35 @@ def _kinetics_summary(method_id: str, results: list[KineticResult]) -> dict[str,
             "activation_energy_kj_mol": float(result.activation_energy),
             "pre_exponential": float(result.pre_exponential) if result.pre_exponential is not None else None,
             "r_squared": float(result.r_squared) if result.r_squared is not None else None,
+            "regression_intercept": float(result.regression_intercept) if result.regression_intercept is not None else None,
+            "intercept_semantics": result.intercept_semantics,
+            "ln_a_min_inv": float(result.ln_a_min_inv) if result.ln_a_min_inv is not None else None,
+            "n_points": int(result.n_points) if result.n_points is not None else None,
+            "confidence_level": float(result.confidence_level) if result.confidence_level is not None else None,
+            "ea_ci_method": KINETICS_CI_METHOD,
+            "ea_ci_status": result.ea_ci_status,
+            "ea_ci_withheld_reason": result.ea_ci_withheld_reason or "",
+            "activation_energy_ci_low_kj_mol": float(result.ea_ci_low_kj_mol) if result.ea_ci_low_kj_mol is not None else None,
+            "activation_energy_ci_high_kj_mol": float(result.ea_ci_high_kj_mol) if result.ea_ci_high_kj_mol is not None else None,
         }
 
     ea = [float(item.activation_energy) for item in results]
     r2 = [float(item.r_squared) for item in results if item.r_squared is not None]
+    ci_lows = [float(item.ea_ci_low_kj_mol) for item in results if item.ea_ci_low_kj_mol is not None]
+    ci_highs = [float(item.ea_ci_high_kj_mol) for item in results if item.ea_ci_high_kj_mol is not None]
+    levels = {float(item.confidence_level) for item in results if item.confidence_level is not None}
     return {
         "conversion_point_count": len(results),
         "activation_energy_min_kj_mol": min(ea) if ea else None,
         "activation_energy_max_kj_mol": max(ea) if ea else None,
         "activation_energy_mean_kj_mol": float(np.mean(ea)) if ea else None,
         "mean_r_squared": float(np.mean(r2)) if r2 else None,
+        "confidence_level": levels.pop() if len(levels) == 1 else None,
+        "ea_ci_method": KINETICS_CI_METHOD,
+        "ea_ci_computed_count": sum(1 for item in results if item.ea_ci_status == "computed"),
+        "ea_ci_withheld_count": sum(1 for item in results if item.ea_ci_status == "withheld"),
+        "activation_energy_ci_low_min_kj_mol": min(ci_lows) if ci_lows else None,
+        "activation_energy_ci_high_max_kj_mol": max(ci_highs) if ci_highs else None,
     }
 
 
@@ -505,6 +723,27 @@ def _kinetics_scientific_context(method_id: str, label: str, results: list[Kinet
                 unit="kJ/mol",
             )
         )
+        first = results[0]
+        if first.ea_ci_status == "computed" and first.ea_ci_low_kj_mol is not None:
+            interpretations.append(
+                build_interpretation(
+                    f"Ea {first.confidence_level:.0%} confidence interval "
+                    f"[{first.ea_ci_low_kj_mol:.2f}, {first.ea_ci_high_kj_mol:.2f}] kJ/mol "
+                    f"({KINETICS_CI_METHOD}).",
+                    metric="activation_energy_ci",
+                    value={"low": float(first.ea_ci_low_kj_mol), "high": float(first.ea_ci_high_kj_mol)},
+                    unit="kJ/mol",
+                )
+            )
+        elif first.ea_ci_status == "withheld":
+            interpretations.append(
+                build_interpretation(
+                    f"Ea confidence interval withheld: {first.ea_ci_withheld_reason}.",
+                    metric="activation_energy_ci",
+                    value=None,
+                    unit="kJ/mol",
+                )
+            )
 
     r2 = [float(item.r_squared) for item in results if item.r_squared is not None]
     fit_quality = build_fit_quality(
@@ -520,12 +759,17 @@ def _kinetics_scientific_context(method_id: str, label: str, results: list[Kinet
             "analysis_family": "Kinetic Analysis",
             "method": label,
             "temperature_scale": "kelvin",
+            "ea_ci_method": KINETICS_CI_METHOD,
+            "confidence_level": float(results[0].confidence_level) if results and results[0].confidence_level is not None else None,
+            "intercept_semantics": INTERCEPT_SEMANTICS.get(method_id),
         },
         equations=equations,
         numerical_interpretation=interpretations,
         fit_quality=fit_quality,
         limitations=[
             "Interpretation quality depends on heating-rate spread and conversion interpolation quality.",
+            "Ea confidence intervals are OLS slope t-intervals; they quantify regression scatter only, not instrument or sampling uncertainty.",
+            "The regression intercept is not ln(A) on its own; see intercept_semantics for the method-specific meaning.",
         ],
     )
     reasoning = build_scientific_reasoning(
@@ -550,6 +794,7 @@ def run_kinetic_analysis(
     conversion_data: list[np.ndarray] | None = None,
     dalpha_dt_data: list[np.ndarray] | None = None,
     alpha_values: Optional[list[float]] = None,
+    confidence_level: float = KINETICS_DEFAULT_CONFIDENCE_LEVEL,
 ) -> dict[str, Any]:
     """
     Unified kinetics runner with report-ready payloads.
@@ -562,7 +807,7 @@ def run_kinetic_analysis(
     if method_id == "kissinger":
         if peak_temperatures is None:
             raise ValueError("peak_temperatures is required for Kissinger analysis.")
-        result = kissinger_analysis(heating_rates, peak_temperatures)
+        result = kissinger_analysis(heating_rates, peak_temperatures, confidence_level=confidence_level)
         results = [result]
     elif method_id == "ofw":
         if temperature_data is None or conversion_data is None:
@@ -572,6 +817,7 @@ def run_kinetic_analysis(
             temperature_data,
             conversion_data,
             alpha_values=alpha_values,
+            confidence_level=confidence_level,
         )
     else:
         if temperature_data is None or conversion_data is None or dalpha_dt_data is None:
@@ -584,6 +830,7 @@ def run_kinetic_analysis(
             conversion_data,
             dalpha_dt_data,
             alpha_values=alpha_values,
+            confidence_level=confidence_level,
         )
 
     rows = _kinetics_rows(method_id, results)

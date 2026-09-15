@@ -646,7 +646,10 @@ def _build_kissinger_scientific_context(result: Any, *, validation: dict[str, An
         build_equation(
             "Kissinger Linearization",
             "ln(beta / Tp^2) = -Ea / (R * Tp) + ln(A * R / Ea)",
-            notes="Linear regression of ln(beta/Tp^2) vs 1/Tp.",
+            notes=(
+                "Linear regression of ln(beta/Tp^2) vs 1/Tp. The fitted intercept is "
+                "ln(A*R/Ea), not ln(A); ln(A) [min^-1] is derived as intercept + ln(Ea/R)."
+            ),
         )
     ]
     interpretation = [
@@ -657,6 +660,27 @@ def _build_kissinger_scientific_context(result: Any, *, validation: dict[str, An
             unit="kJ/mol",
         ),
     ]
+    ci_low = getattr(result, "ea_ci_low_kj_mol", None)
+    ci_high = getattr(result, "ea_ci_high_kj_mol", None)
+    if getattr(result, "ea_ci_status", None) == "computed" and ci_low is not None and ci_high is not None:
+        interpretation.append(
+            build_interpretation(
+                f"Ea {_clean_scalar(getattr(result, 'confidence_level', 0.95)) or 0.95:.0%} confidence interval "
+                f"[{float(ci_low):.2f}, {float(ci_high):.2f}] kJ/mol (OLS slope t-interval).",
+                metric="activation_energy_ci",
+                value={"low": _clean_scalar(ci_low), "high": _clean_scalar(ci_high)},
+                unit="kJ/mol",
+            )
+        )
+    elif getattr(result, "ea_ci_status", None) == "withheld":
+        interpretation.append(
+            build_interpretation(
+                f"Ea confidence interval withheld: {getattr(result, 'ea_ci_withheld_reason', '') or 'unknown'}.",
+                metric="activation_energy_ci",
+                value=None,
+                unit="kJ/mol",
+            )
+        )
     fit_quality = build_fit_quality(
         {
             "r_squared": _clean_scalar(getattr(result, "r_squared", None)),
@@ -664,12 +688,22 @@ def _build_kissinger_scientific_context(result: Any, *, validation: dict[str, An
         }
     )
     base_context = build_scientific_context(
-        methodology={"analysis_family": "Kinetic Analysis", "method": "Kissinger"},
+        methodology={
+            "analysis_family": "Kinetic Analysis",
+            "method": "Kissinger",
+            "ea_ci_method": (
+                "two-sided Student-t interval on the OLS regression slope "
+                "propagated through Ea = -slope * R"
+            ),
+            "confidence_level": _clean_scalar(getattr(result, "confidence_level", None)),
+            "intercept_semantics": getattr(result, "intercept_semantics", None),
+        },
         equations=equations,
         numerical_interpretation=interpretation,
         fit_quality=fit_quality,
         limitations=[
             "Assumes a dominant single-step process and representative peak temperatures.",
+            "The Ea confidence interval reflects regression scatter only, not instrument or sampling uncertainty.",
         ],
     )
     summary = {
@@ -714,13 +748,36 @@ def _build_ofw_scientific_context(results: list[Any], *, validation: dict[str, A
                 unit="kJ/mol",
             )
         )
+    ci_computed = sum(1 for item in results if getattr(item, "ea_ci_status", None) == "computed")
+    ci_withheld = sum(1 for item in results if getattr(item, "ea_ci_status", None) == "withheld")
+    if results:
+        interpretation.append(
+            build_interpretation(
+                f"Ea confidence intervals computed for {ci_computed} of {len(results)} conversion levels"
+                + (f" ({ci_withheld} withheld, fewer than 3 fitted points)." if ci_withheld else "."),
+                metric="ea_ci_computed_count",
+                value=ci_computed,
+                unit="levels",
+            )
+        )
     base_context = build_scientific_context(
-        methodology={"analysis_family": "Kinetic Analysis", "method": "Ozawa-Flynn-Wall"},
+        methodology={
+            "analysis_family": "Kinetic Analysis",
+            "method": "Ozawa-Flynn-Wall",
+            "ea_ci_method": (
+                "two-sided Student-t interval on the OLS regression slope "
+                "propagated through Ea = -slope * R / 0.4567"
+            ),
+            "confidence_level": _clean_scalar(getattr(results[0], "confidence_level", None)) if results else None,
+            "intercept_semantics": (
+                "regression intercept = C, the Doyle-approximation constant term; it is not ln(A)"
+            ),
+        },
         equations=[
             build_equation(
                 "OFW Approximation",
                 "log(beta) = -0.4567 * Ea / (R * T_alpha) + C",
-                notes="Doyle approximation evaluated per conversion level alpha.",
+                notes="Doyle approximation evaluated per conversion level alpha; the intercept C is the approximation constant term, not ln(A).",
             )
         ],
         numerical_interpretation=interpretation,
@@ -732,6 +789,7 @@ def _build_ofw_scientific_context(results: list[Any], *, validation: dict[str, A
         ),
         limitations=[
             "Accuracy degrades near low/high conversion tails where interpolation is unstable.",
+            "Ea confidence intervals reflect regression scatter only, not instrument or sampling uncertainty.",
         ],
     )
     rows = []
@@ -759,22 +817,47 @@ def _build_ofw_scientific_context(results: list[Any], *, validation: dict[str, A
 def _build_friedman_scientific_context(results: list[Any], *, validation: dict[str, Any] | None = None) -> dict[str, Any]:
     r2_values = [float(item.r_squared) for item in results if getattr(item, "r_squared", None) is not None]
     mean_r2 = sum(r2_values) / len(r2_values) if r2_values else None
+    ci_computed = sum(1 for item in results if getattr(item, "ea_ci_status", None) == "computed")
+    ci_withheld = sum(1 for item in results if getattr(item, "ea_ci_status", None) == "withheld")
+    interpretation = [
+        build_interpretation(
+            "Computed activation-energy profile from differential conversion rates.",
+            metric="conversion_point_count",
+            value=len(results),
+            unit="points",
+        )
+    ]
+    if results:
+        interpretation.append(
+            build_interpretation(
+                f"Ea confidence intervals computed for {ci_computed} of {len(results)} conversion levels"
+                + (f" ({ci_withheld} withheld, fewer than 3 fitted points)." if ci_withheld else "."),
+                metric="ea_ci_computed_count",
+                value=ci_computed,
+                unit="levels",
+            )
+        )
     base_context = build_scientific_context(
-        methodology={"analysis_family": "Kinetic Analysis", "method": "Friedman"},
+        methodology={
+            "analysis_family": "Kinetic Analysis",
+            "method": "Friedman",
+            "ea_ci_method": (
+                "two-sided Student-t interval on the OLS regression slope "
+                "propagated through Ea = -slope * R"
+            ),
+            "confidence_level": _clean_scalar(getattr(results[0], "confidence_level", None)) if results else None,
+            "intercept_semantics": (
+                "regression intercept = ln(A * f(alpha)) at each conversion alpha; it is not ln(A) alone"
+            ),
+        },
         equations=[
             build_equation(
                 "Friedman Differential Form",
                 "ln(dalpha/dt) = -Ea / (R * T_alpha) + ln(A * f(alpha))",
+                notes="The fitted intercept is ln(A*f(alpha)) at the fixed alpha, not ln(A).",
             )
         ],
-        numerical_interpretation=[
-            build_interpretation(
-                "Computed activation-energy profile from differential conversion rates.",
-                metric="conversion_point_count",
-                value=len(results),
-                unit="points",
-            )
-        ],
+        numerical_interpretation=interpretation,
         fit_quality=build_fit_quality(
             {
                 "mean_r_squared": _clean_scalar(mean_r2),
@@ -783,6 +866,7 @@ def _build_friedman_scientific_context(results: list[Any], *, validation: dict[s
         ),
         limitations=[
             "Derivative-based method is sensitive to noise and smoothing choices.",
+            "Ea confidence intervals reflect regression scatter only, not instrument or sampling uncertainty.",
         ],
     )
     rows = []
@@ -1761,6 +1845,15 @@ def serialize_kissinger_result(
         "activation_energy_kj_mol": _clean_scalar(result.activation_energy),
         "r_squared": _clean_scalar(result.r_squared),
         "pre_exponential": _clean_scalar(result.pre_exponential),
+        "regression_intercept": _clean_scalar(getattr(result, "regression_intercept", None)),
+        "intercept_semantics": getattr(result, "intercept_semantics", None),
+        "ln_a_min_inv": _clean_scalar(getattr(result, "ln_a_min_inv", None)),
+        "n_points": _clean_scalar(getattr(result, "n_points", None)),
+        "confidence_level": _clean_scalar(getattr(result, "confidence_level", None)),
+        "ea_ci_status": getattr(result, "ea_ci_status", None),
+        "ea_ci_withheld_reason": getattr(result, "ea_ci_withheld_reason", None) or "",
+        "activation_energy_ci_low_kj_mol": _clean_scalar(getattr(result, "ea_ci_low_kj_mol", None)),
+        "activation_energy_ci_high_kj_mol": _clean_scalar(getattr(result, "ea_ci_high_kj_mol", None)),
     }
     return make_result_record(
         result_id="kissinger",
@@ -1798,6 +1891,13 @@ def serialize_ofw_results(
                 "alpha": _clean_scalar(plot_data.get("alpha")),
                 "activation_energy_kj_mol": _clean_scalar(item.activation_energy),
                 "r_squared": _clean_scalar(item.r_squared),
+                "regression_intercept": _clean_scalar(getattr(item, "regression_intercept", None)),
+                "intercept_semantics": getattr(item, "intercept_semantics", None),
+                "n_points": _clean_scalar(getattr(item, "n_points", None)),
+                "confidence_level": _clean_scalar(getattr(item, "confidence_level", None)),
+                "ea_ci_status": getattr(item, "ea_ci_status", None),
+                "activation_energy_ci_low_kj_mol": _clean_scalar(getattr(item, "ea_ci_low_kj_mol", None)),
+                "activation_energy_ci_high_kj_mol": _clean_scalar(getattr(item, "ea_ci_high_kj_mol", None)),
             }
         )
     summary = {"conversion_point_count": len(rows)}
@@ -1838,6 +1938,13 @@ def serialize_friedman_results(
                 "activation_energy_kj_mol": _clean_scalar(item.activation_energy),
                 "pre_exponential": _clean_scalar(item.pre_exponential),
                 "r_squared": _clean_scalar(item.r_squared),
+                "regression_intercept": _clean_scalar(getattr(item, "regression_intercept", None)),
+                "intercept_semantics": getattr(item, "intercept_semantics", None),
+                "n_points": _clean_scalar(getattr(item, "n_points", None)),
+                "confidence_level": _clean_scalar(getattr(item, "confidence_level", None)),
+                "ea_ci_status": getattr(item, "ea_ci_status", None),
+                "activation_energy_ci_low_kj_mol": _clean_scalar(getattr(item, "ea_ci_low_kj_mol", None)),
+                "activation_energy_ci_high_kj_mol": _clean_scalar(getattr(item, "ea_ci_high_kj_mol", None)),
             }
         )
     summary = {"conversion_point_count": len(rows)}
