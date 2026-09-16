@@ -19,6 +19,6 @@ def normalize_locale(locale: str | None) -> str:
     return normalize_ui_locale(locale)
 
 
-def t(locale: str | None, key: str, **kwargs: Any) -> str:
+def t(locale: str | None, key: str, /, **kwargs: Any) -> str:
     """Translate *key* for Dash using explicit *locale* (same catalog as Streamlit-free ``translate_ui``)."""
     return translate_ui(locale, key, **kwargs)

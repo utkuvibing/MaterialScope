@@ -4037,10 +4037,12 @@ def normalize_ui_locale(locale: str | None) -> str:
     return loc if loc in SUPPORTED_LANGUAGES else "en"
 
 
-def translate_ui(locale: str | None, key: str, **kwargs) -> str:
+def translate_ui(locale: str | None, key: str, /, **kwargs) -> str:
     """Translate a UI key using explicit locale (Dash and other non-Streamlit callers).
 
     Does not read Streamlit session state. Falls back to English when a key or language is missing.
+    ``locale``/``key`` are positional-only so catalog placeholders such as ``{key}`` can be
+    passed as format kwargs (``key=...``) without colliding with the signature.
     """
     lang = normalize_ui_locale(locale)
     entry = TRANSLATIONS.get(key)
@@ -4062,7 +4064,7 @@ def get_language() -> str:
     return lang
 
 
-def t(key: str, **kwargs) -> str:
+def t(key: str, /, **kwargs) -> str:
     """Translate a UI key using the current session language."""
     lang = get_language()
     entry = TRANSLATIONS.get(key)
