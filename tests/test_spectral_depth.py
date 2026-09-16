@@ -739,3 +739,410 @@ class TestDashDraftPlumbing:
         )
         # Non-positive excitation is dropped -> converter will withhold.
         assert draft["axis_conversion"]["laser_wavelength_nm"] is None
+
+
+# ---------------------------------------------------------------------------
+# Import-provenance -> signal conversion (manual-QA regression)
+# ---------------------------------------------------------------------------
+
+_FTIR_TRANSMITTANCE_FILENAME = "ftir_transmittance.csv"
+
+
+def _ftir_transmittance_csv_bytes() -> bytes:
+    """Deterministic synthetic FTIR %T spectrum — the same shape as the
+    manual-QA file ``testing_data/ftir_transmittance.csv`` (which is
+    gitignored), generated in-test so the suite is self-contained:
+    descending wavenumber axis, absorption bands as downward %T dips."""
+    wn = np.arange(400.0, 4000.0001, 2.0)[::-1]  # 4000 -> 400 descending
+    rng = np.random.default_rng(20260403)
+
+    def band(center: float, depth: float, width: float) -> np.ndarray:
+        return depth * np.exp(-0.5 * ((wn - center) / width) ** 2)
+
+    pct_t = (
+        92.0
+        - 0.001 * (4000.0 - wn)          # slight baseline tilt
+        - band(3400.0, 35.0, 220.0)      # O-H broad
+        - band(2920.0, 22.0, 45.0)       # C-H asym
+        - band(2850.0, 15.0, 35.0)       # C-H sym
+        - band(1715.0, 55.0, 30.0)       # C=O
+        - band(1450.0, 18.0, 35.0)       # CH2 bend
+        - band(1050.0, 70.0, 60.0)       # Si-O / C-O strong
+        + rng.normal(0.0, 0.15, wn.size)
+    )
+    lines = [
+        "# Synthetic FTIR %T — bands 3400/2920/2850/1715/1450/1050 cm-1, descending axis",
+        "Wavenumber (cm-1),Transmittance (%T)",
+    ]
+    lines += [f"{w:g},{t:.4f}" for w, t in zip(wn, pct_t)]
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def _import_ftir_transmittance():
+    """Reproduce the manual-QA import: ``ftir_transmittance.csv`` imported as
+    FTIR with the explicit column mapping the wizard records."""
+    import io
+
+    from core.data_io import read_thermal_data
+
+    buf = io.BytesIO(_ftir_transmittance_csv_bytes())
+    buf.name = _FTIR_TRANSMITTANCE_FILENAME
+    return read_thermal_data(
+        buf,
+        column_mapping={
+            "temperature": "Wavenumber (cm-1)",
+            "signal": "Transmittance (%T)",
+        },
+        data_type="FTIR",
+        metadata={"sample_name": "ftir_transmittance"},
+    )
+
+
+class TestImportProvenanceSignalConversion:
+    """An explicit ``Transmittance (%T)`` column mapping must carry enough
+    provenance for the FTIR pipeline to treat the signal as transmittance, so
+    an enabled absorbance conversion actually runs (A = -log10 T) instead of
+    silently no-op'ing on ``signal_role == 'unknown'``."""
+
+    def test_explicit_percent_t_mapping_converts_to_absorbance(self):
+        from core.batch_runner import execute_batch_template
+
+        dataset = _import_ftir_transmittance()
+        # Import provenance: the mapped column declares percent transmittance.
+        assert dataset.units["signal"] == "%T"
+        assert dataset.metadata["inferred_signal_unit"] == "%T"
+
+        outcome = execute_batch_template(
+            dataset_key="qa_ftir_t",
+            dataset=dataset,
+            analysis_type="FTIR",
+            workflow_template_id="ftir.general",
+            existing_processing={
+                "signal_pipeline": {
+                    "axis_conversion": {"enabled": True, "target": "um"},
+                    "signal_conversion": {"enabled": True},
+                    "smoothing": {"method": "none"},
+                }
+            },
+        )
+        assert outcome["status"] == "saved"
+        state = outcome["state"]
+        diag = state["diagnostics"]
+        summary = outcome["record"]["summary"]
+
+        assert diag["signal_role"] == "absorbance"
+        assert diag["inverted_for_transmittance"] is False
+        assert diag["absorbance_conversion"]["converted"] is True
+        assert diag["absorbance_conversion"]["basis"] == "converted"
+        assert summary["converted_to_absorbance"] is True
+        assert summary["spectral_signal_role_effective"] == "absorbance"
+        # Effective signal basis is recorded on the state for downstream
+        # surfaces (figure axis labels, curves endpoint, exports).
+        assert state["signal_role"] == "absorbance"
+        assert state["signal_unit"] == "absorbance"
+
+        # Curve values are true absorbance: A = -log10(T/100) evaluated on the
+        # converted + sorted axis (smoothing disabled for exact equality).
+        raw_wn = dataset.data["temperature"].to_numpy(dtype=float)
+        raw_t = dataset.data["signal"].to_numpy(dtype=float)
+        um_axis = 1e4 / raw_wn
+        order = np.argsort(um_axis)
+        unique_axis, unique_idx = np.unique(um_axis[order], return_index=True)
+        expected = -np.log10(raw_t[order][unique_idx] / 100.0)
+        np.testing.assert_allclose(
+            np.asarray(state["axis"], dtype=float), unique_axis, rtol=1e-9
+        )
+        np.testing.assert_allclose(
+            np.asarray(state["smoothed"], dtype=float), expected, rtol=1e-9
+        )
+        # Sanity: absorbance scale, not the ~20-90 %T input range.
+        assert float(np.max(expected)) < 1.5
+
+        warnings = " ".join(str(w) for w in outcome["validation"]["warnings"])
+        assert "converted to absorbance" in warnings
+
+    def test_conversion_disabled_preserves_transmittance(self):
+        from core.batch_runner import execute_batch_template
+
+        outcome = execute_batch_template(
+            dataset_key="qa_ftir_t_off",
+            dataset=_import_ftir_transmittance(),
+            analysis_type="FTIR",
+            workflow_template_id="ftir.general",
+            existing_processing={
+                "signal_pipeline": {
+                    "axis_conversion": {"enabled": True, "target": "um"},
+                    "smoothing": {"method": "none"},
+                }
+            },
+        )
+        assert outcome["status"] == "saved"
+        state = outcome["state"]
+        diag = state["diagnostics"]
+
+        assert diag["signal_role"] == "transmittance"
+        assert diag["inverted_for_transmittance"] is True
+        assert "absorbance_conversion" not in diag
+        assert outcome["record"]["summary"]["converted_to_absorbance"] is False
+        # The %T signal basis is preserved for downstream surfaces.
+        assert state["signal_unit"] == "%T"
+        # Inversion fallback keeps the percent scale (max - T), not -log10.
+        smoothed = np.asarray(state["smoothed"], dtype=float)
+        assert float(smoothed.max()) > 10.0
+
+    def test_already_absorbance_input_is_not_double_converted(self):
+        import io
+
+        from core.batch_runner import execute_batch_template
+        from core.data_io import read_thermal_data
+
+        buf = io.StringIO(
+            "Wavenumber (cm-1),Absorbance\n"
+            "4000.0,0.04\n"
+            "3000.0,0.32\n"
+            "2000.0,0.55\n"
+            "1000.0,0.21\n"
+            "500.0,0.05\n"
+        )
+        dataset = read_thermal_data(
+            buf,
+            column_mapping={
+                "temperature": "Wavenumber (cm-1)",
+                "signal": "Absorbance",
+            },
+            data_type="FTIR",
+        )
+        outcome = execute_batch_template(
+            dataset_key="qa_ftir_a",
+            dataset=dataset,
+            analysis_type="FTIR",
+            workflow_template_id="ftir.general",
+            existing_processing={
+                "signal_pipeline": {
+                    "signal_conversion": {"enabled": True},
+                    "smoothing": {"method": "none"},
+                }
+            },
+        )
+        assert outcome["status"] == "saved"
+        state = outcome["state"]
+        diag = state["diagnostics"]
+
+        assert diag["signal_role"] == "absorbance"
+        assert diag["absorbance_conversion"]["basis"] == "not_applicable"
+        assert outcome["record"]["summary"]["converted_to_absorbance"] is False
+        # Values are the declared absorbance signal, unchanged (no -log10 of
+        # an already-absorbance trace).
+        raw_signal = dataset.data["signal"].to_numpy(dtype=float)
+        order = np.argsort(dataset.data["temperature"].to_numpy(dtype=float))
+        np.testing.assert_allclose(
+            np.asarray(state["smoothed"], dtype=float), raw_signal[order], rtol=1e-9
+        )
+
+    def test_ambiguous_signal_role_withholds_with_reason(self):
+        import io
+
+        from core.batch_runner import execute_batch_template
+        from core.data_io import read_thermal_data
+
+        buf = io.StringIO(
+            "Wavenumber (cm-1),Signal\n"
+            "4000.0,0.04\n"
+            "3000.0,0.32\n"
+            "2000.0,0.55\n"
+            "1000.0,0.21\n"
+            "500.0,0.05\n"
+        )
+        dataset = read_thermal_data(
+            buf,
+            column_mapping={
+                "temperature": "Wavenumber (cm-1)",
+                "signal": "Signal",
+            },
+            data_type="FTIR",
+        )
+        outcome = execute_batch_template(
+            dataset_key="qa_ftir_unknown",
+            dataset=dataset,
+            analysis_type="FTIR",
+            workflow_template_id="ftir.general",
+            existing_processing={
+                "signal_pipeline": {"signal_conversion": {"enabled": True}},
+            },
+        )
+        assert outcome["status"] == "saved"
+        diag = outcome["state"]["diagnostics"]
+
+        # enabled=True must never silently no-op on an unproven role.
+        assert diag["signal_role"] == "unknown"
+        assert diag["absorbance_conversion"]["basis"] == "withheld"
+        assert diag["absorbance_conversion"]["withheld_reason"]
+        assert outcome["record"]["summary"]["converted_to_absorbance"] is False
+        warnings = " ".join(str(w) for w in outcome["validation"]["warnings"])
+        assert "withheld" in warnings
+
+    def test_generic_percent_signal_is_not_promoted_to_transmittance(self):
+        import io
+
+        from core.batch_runner import execute_batch_template
+        from core.data_io import read_thermal_data
+
+        buf = io.StringIO(
+            "Wavenumber (cm-1),Signal (%)\n"
+            "4000.0,91.0\n"
+            "3000.0,62.0\n"
+            "2000.0,35.0\n"
+            "1000.0,58.0\n"
+            "500.0,90.0\n"
+        )
+        dataset = read_thermal_data(
+            buf,
+            column_mapping={
+                "temperature": "Wavenumber (cm-1)",
+                "signal": "Signal (%)",
+            },
+            data_type="FTIR",
+        )
+        outcome = execute_batch_template(
+            dataset_key="qa_ftir_pct",
+            dataset=dataset,
+            analysis_type="FTIR",
+            workflow_template_id="ftir.general",
+            existing_processing={
+                "signal_pipeline": {"signal_conversion": {"enabled": True}},
+            },
+        )
+        assert outcome["status"] == "saved"
+        diag = outcome["state"]["diagnostics"]
+
+        # An arbitrary percentage column is not transmittance provenance.
+        assert diag["signal_role"] == "unknown"
+        assert diag["absorbance_conversion"]["basis"] == "withheld"
+        assert outcome["record"]["summary"]["converted_to_absorbance"] is False
+
+    def test_legacy_percent_unit_recovers_transmittance_from_column_header(self):
+        """A dataset imported before the %T parse fix has units '%', but the
+        recorded original column header still declares transmittance — that
+        provenance is sufficient to convert."""
+        import pandas as pd
+
+        from core.batch_runner import execute_batch_template
+        from core.data_io import ThermalDataset
+
+        x, y = _ftir_spectrum()
+        dataset = ThermalDataset(
+            data=pd.DataFrame({"temperature": x, "signal": y}),
+            metadata={"sample_name": "legacy", "inferred_signal_unit": "%"},
+            data_type="FTIR",
+            units={"temperature": "cm^-1", "signal": "%"},
+            original_columns={
+                "temperature": "Wavenumber (cm-1)",
+                "signal": "Transmittance (%T)",
+            },
+            file_path="",
+        )
+        outcome = execute_batch_template(
+            dataset_key="qa_ftir_legacy",
+            dataset=dataset,
+            analysis_type="FTIR",
+            workflow_template_id="ftir.general",
+            existing_processing={
+                "signal_pipeline": {"signal_conversion": {"enabled": True}},
+            },
+        )
+        assert outcome["status"] == "saved"
+        diag = outcome["state"]["diagnostics"]
+        assert diag["signal_role"] == "absorbance"
+        assert diag["absorbance_conversion"]["converted"] is True
+
+
+class TestManualQAEndToEnd:
+    """Drive the exact manual-QA path through the combined app: dataset
+    import with explicit mapping -> analysis run with depth overrides ->
+    analysis-state curves -> figure axis title."""
+
+    def test_ftir_transmittance_to_absorbance_end_to_end(self):
+        import base64
+
+        from fastapi.testclient import TestClient
+
+        from core.axis_labels import build_axis_title
+        from dash_app.server import create_combined_app
+
+        client = TestClient(create_combined_app())
+        project_id = client.post("/workspace/new").json()["project_id"]
+
+        payload = base64.b64encode(_ftir_transmittance_csv_bytes()).decode("ascii")
+        imported = client.post(
+            "/dataset/import",
+            json={
+                "project_id": project_id,
+                "file_name": _FTIR_TRANSMITTANCE_FILENAME,
+                "file_base64": payload,
+                "data_type": "FTIR",
+                "column_mapping": {
+                    "temperature": "Wavenumber (cm-1)",
+                    "signal": "Transmittance (%T)",
+                },
+                "metadata": {"sample_name": "ftir_transmittance"},
+            },
+        )
+        assert imported.status_code == 200
+        dataset_key = imported.json()["dataset"]["key"]
+
+        detail = client.get(f"/workspace/{project_id}/datasets/{dataset_key}")
+        assert detail.status_code == 200
+        assert detail.json()["units"]["signal"] == "%T"
+
+        run = client.post(
+            "/analysis/run",
+            json={
+                "project_id": project_id,
+                "dataset_key": dataset_key,
+                "analysis_type": "FTIR",
+                "workflow_template_id": "ftir.general",
+                "processing_overrides": {
+                    "axis_conversion": {"enabled": True, "target": "um"},
+                    "signal_conversion": {"enabled": True},
+                },
+            },
+        )
+        assert run.status_code == 200
+        run_body = run.json()
+        assert run_body["execution_status"] == "saved"
+        # The conversion provenance warning is counted in the run validation
+        # rollup; the full warning text rides on the saved result record.
+        assert run_body["validation"]["warning_count"] >= 1
+        result = client.get(
+            f"/workspace/{project_id}/results/{run_body['result_id']}"
+        )
+        assert result.status_code == 200
+        result_warnings = " ".join(
+            str(w)
+            for w in (result.json().get("validation") or {}).get("warnings") or []
+        )
+        assert "converted to absorbance" in result_warnings
+        result_summary = result.json().get("summary") or {}
+        assert result_summary["converted_to_absorbance"] is True
+        assert result_summary["spectral_signal_role_effective"] == "absorbance"
+
+        curves = client.get(
+            f"/workspace/{project_id}/analysis-state/FTIR/{dataset_key}"
+        )
+        assert curves.status_code == 200
+        curves = curves.json()
+        assert curves["signal_role"] == "absorbance"
+        assert curves["x_unit"] == "um"
+        assert curves["y_unit"] == "absorbance"
+
+        smoothed = np.asarray(curves["smoothed"], dtype=float)
+        assert float(np.nanmax(smoothed)) < 1.5
+        assert float(np.nanmin(smoothed)) >= -0.2
+
+        y_title = build_axis_title(
+            "FTIR",
+            "y",
+            detected_unit=curves["y_unit"],
+            signal_kind=curves["signal_role"],
+        )
+        assert y_title == "Absorbance (a.u.)"

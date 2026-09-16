@@ -590,6 +590,40 @@ def test_build_figure_uses_transmittance_label_when_signal_role_is_transmittance
     assert graph.figure.layout.yaxis.title.text == "Transmittance (%)"
 
 
+def test_build_figure_uses_absorbance_label_after_signal_conversion(monkeypatch):
+    """After an enabled transmittance→absorbance conversion the curves payload
+    carries the effective absorbance basis; the result figure must label the
+    y-axis Absorbance, not Transmittance."""
+    mod = _import_ftir_page()
+    import dash_app.api_client as api_client
+
+    monkeypatch.setattr(
+        api_client,
+        "analysis_state_curves",
+        lambda *_: {
+            "temperature": [10.0, 6.67, 5.0, 3.33],
+            "raw_signal": [],
+            "smoothed": [0.036, 0.22, 0.46, 0.05],
+            "baseline": [0.02, 0.02, 0.02, 0.02],
+            "corrected": [0.016, 0.20, 0.44, 0.03],
+            "normalized": [],
+            "peaks": [],
+            "x_unit": "um",
+            "axis_role": "wavelength",
+            "y_unit": "absorbance",
+            "signal_role": "absorbance",
+            "diagnostics": {
+                "signal_role": "absorbance",
+                "absorbance_conversion": {"basis": "converted", "converted": True},
+            },
+        },
+    )
+    fig_div = mod._build_figure("proj", "ds", {}, "light", "en")
+    graph = next(c for c in fig_div.children if isinstance(c, dcc.Graph))
+    assert graph.figure.layout.xaxis.title.text == "Wavelength (µm)"
+    assert graph.figure.layout.yaxis.title.text == "Absorbance (a.u.)"
+
+
 def test_ftir_layout_includes_raw_quality_section():
     mod = _import_ftir_page()
     layout_str = str(mod.layout)

@@ -1360,7 +1360,12 @@ def _extract_unit(col_name: str, role: str) -> str:
     if role == "temperature":
         return _TEMP_UNIT_MAP.get(unit_lower, "°C")
     if role == "signal":
-        for key, val in _SIGNAL_UNIT_KEYWORDS.items():
+        # Longest-token-first: specific multi-char units (e.g. "%t", "mw/mg")
+        # must win over their generic prefixes ("%", "mw") that also substring-
+        # match the header token.
+        for key, val in sorted(
+            _SIGNAL_UNIT_KEYWORDS.items(), key=lambda item: len(item[0]), reverse=True
+        ):
             if key in unit_lower:
                 return val
         normalized_col = col_name.strip().lower()

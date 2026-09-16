@@ -1032,13 +1032,41 @@ def _apply_spectral_smoothing(signal: np.ndarray, config: Mapping[str, Any]) -> 
     return np.convolve(padded, kernel, mode="valid")
 
 
+def _infer_spectral_signal_context(dataset) -> tuple[str, str, str]:
+    """Resolve ``(signal_unit, signal_role, provenance)`` for a spectral dataset.
+
+    The declared unit is the primary evidence.  Generic tokens (``a.u.``,
+    ``%``, ``unknown``) carry no transmittance/absorbance information, so the
+    only remaining evidence is the explicitly mapped source-column header —
+    e.g. an FTIR dataset imported before the ``%T`` unit fix recorded
+    ``units["signal"] == "%"`` but kept ``original_columns["signal"] ==
+    "Transmittance (%T)"``.  Header names are honoured only when they contain
+    an explicit basis token; an arbitrary percentage column is never promoted
+    to transmittance.
+    """
+    unit = str(
+        getattr(dataset, "units", {}).get("signal")
+        or getattr(dataset, "metadata", {}).get("inferred_signal_unit")
+        or ""
+    ).strip()
+    token = unit.lower()
+    if token == "absorbance":
+        return unit, "absorbance", "declared_unit"
+    if token in {"transmittance", "%t"}:
+        return unit, "transmittance", "declared_unit"
+
+    header = str(
+        (getattr(dataset, "original_columns", {}) or {}).get("signal") or ""
+    ).strip().lower()
+    if "absorbance" in header:
+        return "absorbance", "absorbance", "column_header"
+    if "transmittance" in header or "%t" in header:
+        return "%T" if "%" in header else "transmittance", "transmittance", "column_header"
+    return unit, "unknown", "unresolved"
+
+
 def _infer_spectral_signal_role(dataset) -> str:
-    unit = str(getattr(dataset, "units", {}).get("signal") or getattr(dataset, "metadata", {}).get("inferred_signal_unit") or "").strip().lower()
-    if unit in {"absorbance"}:
-        return "absorbance"
-    if unit in {"transmittance", "%t"}:
-        return "transmittance"
-    return "unknown"
+    return _infer_spectral_signal_context(dataset)[1]
 
 
 def _maybe_invert_spectral_signal(signal: np.ndarray, role: str) -> tuple[np.ndarray, bool]:
@@ -1608,23 +1636,39 @@ def _execute_spectral_batch(
     if not finite_mask.all():
         axis, signal = axis[finite_mask], signal[finite_mask]
 
-    signal_role = _infer_spectral_signal_role(dataset)
+    signal_unit_declared, signal_role, signal_role_provenance = _infer_spectral_signal_context(dataset)
     # PR-18: when enabled and the signal is transmittance, convert to true
-    # absorbance (A = -log10 T) instead of the crude max-min inversion.
+    # absorbance (A = -log10 T) instead of the crude max-min inversion.  An
+    # enabled conversion that cannot legitimately run is never a silent
+    # no-op: it records an explicit withheld reason and a validation warning.
     converted_to_absorbance = False
     absorbance_clipped_points = 0
     absorbance_conversion_reason = ""
-    if signal_conversion.get("enabled") and signal_role == "transmittance":
-        conv = transmittance_to_absorbance(signal, signal_unit=(dataset.units or {}).get("signal"))
-        if conv.basis == "converted" and conv.absorbance is not None:
-            working_signal = conv.absorbance
-            was_inverted = False
-            converted_to_absorbance = True
-            absorbance_clipped_points = conv.clipped_points
-            signal_role = "absorbance"
+    signal_conversion_basis = "not_requested"
+    signal_unit_effective = signal_unit_declared
+    conv = None
+    if signal_conversion.get("enabled"):
+        if signal_role == "transmittance":
+            conv = transmittance_to_absorbance(signal, signal_unit=signal_unit_declared)
+            if conv.basis == "converted" and conv.absorbance is not None:
+                working_signal = conv.absorbance
+                was_inverted = False
+                converted_to_absorbance = True
+                absorbance_clipped_points = conv.clipped_points
+                signal_role = "absorbance"
+                signal_unit_effective = "absorbance"
+                signal_conversion_basis = "converted"
+            else:
+                absorbance_conversion_reason = conv.withheld_reason or "conversion_failed"
+                signal_conversion_basis = "withheld"
+                working_signal, was_inverted = _maybe_invert_spectral_signal(signal, "transmittance")
+        elif signal_role == "absorbance":
+            signal_conversion_basis = "not_applicable"
+            working_signal, was_inverted = _maybe_invert_spectral_signal(signal, signal_role)
         else:
-            absorbance_conversion_reason = conv.withheld_reason or "conversion_failed"
-            working_signal, was_inverted = _maybe_invert_spectral_signal(signal, "transmittance")
+            absorbance_conversion_reason = f"signal_role_not_transmittance:{signal_role or 'unknown'}"
+            signal_conversion_basis = "withheld"
+            working_signal, was_inverted = _maybe_invert_spectral_signal(signal, signal_role)
     else:
         working_signal, was_inverted = _maybe_invert_spectral_signal(signal, signal_role)
 
@@ -1842,6 +1886,11 @@ def _execute_spectral_batch(
             "laser_wavelength_source": (axis_conv.laser_wavelength_source if axis_conv else None),
             "converted_to_absorbance": converted_to_absorbance,
             "absorbance_clipped_points": absorbance_clipped_points,
+            "spectral_signal_role_effective": signal_role,
+            "spectral_signal_unit_effective": signal_unit_effective or "",
+            "spectral_signal_role_provenance": signal_role_provenance,
+            "spectral_signal_conversion_basis": signal_conversion_basis,
+            "spectral_signal_conversion_withheld_reason": absorbance_conversion_reason or None,
         },
         analysis_type=analysis_type,
     )
@@ -1866,7 +1915,16 @@ def _execute_spectral_batch(
         )
     if absorbance_conversion_reason:
         spectral_warnings.append(
-            f"{modality_label} transmittance→absorbance conversion was withheld ({absorbance_conversion_reason}); the inversion fallback was used."
+            f"{modality_label} transmittance→absorbance conversion was withheld ({absorbance_conversion_reason}); "
+            + (
+                "the inversion fallback was used."
+                if was_inverted
+                else "the declared signal was used unchanged."
+            )
+        )
+    elif signal_conversion_basis == "not_applicable":
+        spectral_warnings.append(
+            f"{modality_label} signal is already absorbance; transmittance→absorbance conversion was skipped (not_applicable)."
         )
     if axis_conv is not None and axis_conv.basis == "withheld":
         spectral_warnings.append(
@@ -1968,6 +2026,10 @@ def _execute_spectral_batch(
             axis_conv.withheld_reason if axis_conv else None
         ),
         "converted_to_absorbance": converted_to_absorbance,
+        "spectral_signal_role_effective": signal_role,
+        "spectral_signal_unit_effective": signal_unit_effective or None,
+        "spectral_signal_conversion_basis": signal_conversion_basis,
+        "spectral_signal_conversion_withheld_reason": absorbance_conversion_reason or None,
     }
     rows = [
         {
@@ -2026,9 +2088,13 @@ def _execute_spectral_batch(
             "laser_wavelength_source": axis_conv.laser_wavelength_source,
             "notes": axis_conv.notes,
         }
-    if converted_to_absorbance or absorbance_conversion_reason:
+    if signal_conversion.get("enabled"):
         diagnostics["absorbance_conversion"] = {
+            "basis": signal_conversion_basis,
             "converted": converted_to_absorbance,
+            "input_unit": (conv.input_unit if conv else signal_unit_declared) or None,
+            "signal_unit_effective": signal_unit_effective or None,
+            "signal_role_provenance": signal_role_provenance,
             "clipped_points": absorbance_clipped_points,
             "withheld_reason": absorbance_conversion_reason or None,
         }
@@ -2055,6 +2121,8 @@ def _execute_spectral_batch(
         "axis": axis.tolist(),
         "axis_unit": axis_unit_display,
         "axis_role": axis_role_effective,
+        "signal_role": signal_role,
+        "signal_unit": signal_unit_effective,
         "smoothed": smoothed.tolist(),
         "baseline": baseline_curve.tolist() if not baseline_suppressed else [],
         "corrected": corrected.tolist() if not baseline_suppressed else [],
