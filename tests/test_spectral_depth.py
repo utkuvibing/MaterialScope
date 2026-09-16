@@ -20,8 +20,6 @@ are floating-point, never bit-exact.
 
 from __future__ import annotations
 
-import os
-
 import numpy as np
 import pytest
 
@@ -747,9 +745,37 @@ class TestDashDraftPlumbing:
 # Import-provenance -> signal conversion (manual-QA regression)
 # ---------------------------------------------------------------------------
 
-_FTIR_TRANSMITTANCE_FIXTURE = os.path.join(
-    os.path.dirname(__file__), "..", "testing_data", "ftir_transmittance.csv"
-)
+_FTIR_TRANSMITTANCE_FILENAME = "ftir_transmittance.csv"
+
+
+def _ftir_transmittance_csv_bytes() -> bytes:
+    """Deterministic synthetic FTIR %T spectrum — the same shape as the
+    manual-QA file ``testing_data/ftir_transmittance.csv`` (which is
+    gitignored), generated in-test so the suite is self-contained:
+    descending wavenumber axis, absorption bands as downward %T dips."""
+    wn = np.arange(400.0, 4000.0001, 2.0)[::-1]  # 4000 -> 400 descending
+    rng = np.random.default_rng(20260403)
+
+    def band(center: float, depth: float, width: float) -> np.ndarray:
+        return depth * np.exp(-0.5 * ((wn - center) / width) ** 2)
+
+    pct_t = (
+        92.0
+        - 0.001 * (4000.0 - wn)          # slight baseline tilt
+        - band(3400.0, 35.0, 220.0)      # O-H broad
+        - band(2920.0, 22.0, 45.0)       # C-H asym
+        - band(2850.0, 15.0, 35.0)       # C-H sym
+        - band(1715.0, 55.0, 30.0)       # C=O
+        - band(1450.0, 18.0, 35.0)       # CH2 bend
+        - band(1050.0, 70.0, 60.0)       # Si-O / C-O strong
+        + rng.normal(0.0, 0.15, wn.size)
+    )
+    lines = [
+        "# Synthetic FTIR %T — bands 3400/2920/2850/1715/1450/1050 cm-1, descending axis",
+        "Wavenumber (cm-1),Transmittance (%T)",
+    ]
+    lines += [f"{w:g},{t:.4f}" for w, t in zip(wn, pct_t)]
+    return ("\n".join(lines) + "\n").encode("utf-8")
 
 
 def _import_ftir_transmittance():
@@ -759,9 +785,8 @@ def _import_ftir_transmittance():
 
     from core.data_io import read_thermal_data
 
-    with open(_FTIR_TRANSMITTANCE_FIXTURE, "rb") as handle:
-        buf = io.BytesIO(handle.read())
-    buf.name = os.path.basename(_FTIR_TRANSMITTANCE_FIXTURE)
+    buf = io.BytesIO(_ftir_transmittance_csv_bytes())
+    buf.name = _FTIR_TRANSMITTANCE_FILENAME
     return read_thermal_data(
         buf,
         column_mapping={
@@ -1047,13 +1072,12 @@ class TestManualQAEndToEnd:
         client = TestClient(create_combined_app())
         project_id = client.post("/workspace/new").json()["project_id"]
 
-        with open(_FTIR_TRANSMITTANCE_FIXTURE, "rb") as handle:
-            payload = base64.b64encode(handle.read()).decode("ascii")
+        payload = base64.b64encode(_ftir_transmittance_csv_bytes()).decode("ascii")
         imported = client.post(
             "/dataset/import",
             json={
                 "project_id": project_id,
-                "file_name": os.path.basename(_FTIR_TRANSMITTANCE_FIXTURE),
+                "file_name": _FTIR_TRANSMITTANCE_FILENAME,
                 "file_base64": payload,
                 "data_type": "FTIR",
                 "column_mapping": {
