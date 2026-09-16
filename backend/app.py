@@ -1039,28 +1039,33 @@ def create_app(
         axis_role = None
         signal_role = None
         if normalized_analysis_type == "FTIR":
-            # PR-18: after an axis conversion the effective unit/role come
-            # from the stored analysis state, not the declared import units.
+            # PR-18: after an axis or signal conversion the effective
+            # unit/role come from the stored analysis state, not the declared
+            # import units.
             x_unit = analysis_state.get("axis_unit") or x_unit
+            y_unit = analysis_state.get("signal_unit") or y_unit
             axis_role = str(
                 analysis_state.get("axis_role")
                 or metadata.get("spectral_axis_role")
                 or "wavenumber"
             )
             signal_role = str(
-                diagnostics.get("signal_role")
+                analysis_state.get("signal_role")
+                or diagnostics.get("signal_role")
                 or method_context.get("ftir_signal_role")
                 or ""
             ).strip() or None
         elif normalized_analysis_type == "RAMAN":
             x_unit = analysis_state.get("axis_unit") or x_unit
+            y_unit = analysis_state.get("signal_unit") or y_unit
             axis_role = str(
                 analysis_state.get("axis_role")
                 or metadata.get("spectral_axis_role")
                 or "raman_shift"
             )
             signal_role = str(
-                diagnostics.get("signal_role")
+                analysis_state.get("signal_role")
+                or diagnostics.get("signal_role")
                 or method_context.get("raman_signal_role")
                 or ""
             ).strip() or None

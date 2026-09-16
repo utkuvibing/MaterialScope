@@ -850,6 +850,94 @@ class TestReadCSV:
 
 
 # ---------------------------------------------------------------------------
+# Signal-unit provenance (explicit %T column mapping → transmittance role)
+# ---------------------------------------------------------------------------
+
+class TestSignalUnitProvenance:
+    """Regression for the manual-QA defect: an explicit column mapping to
+    ``Transmittance (%T)`` must record percent-transmittance provenance so the
+    spectral pipeline can treat the signal as transmittance.  The trailing
+    unit token ``(%T)`` was being matched by the generic ``%`` keyword before
+    the ``%t`` keyword, silently degrading the unit to ``%`` and leaving the
+    signal role ``unknown``.
+    """
+
+    @staticmethod
+    def _ftir_csv(signal_header: str) -> io.StringIO:
+        return io.StringIO(
+            f"Wavenumber (cm-1),{signal_header}\n"
+            "4000.0,91.5\n"
+            "3000.0,62.3\n"
+            "2000.0,35.1\n"
+            "1000.0,58.8\n"
+            "500.0,90.2\n"
+        )
+
+    def test_explicit_percent_t_mapping_records_percent_transmittance(self):
+        """`Transmittance (%T)` must resolve to ``%T``, not generic ``%``."""
+        buf = self._ftir_csv("Transmittance (%T)")
+
+        ds = read_thermal_data(
+            buf,
+            column_mapping={
+                "temperature": "Wavenumber (cm-1)",
+                "signal": "Transmittance (%T)",
+            },
+            data_type="FTIR",
+        )
+
+        assert ds.units["signal"] == "%T"
+        assert ds.metadata["inferred_signal_unit"] == "%T"
+        # Transmittance provenance is confirmed: no "signal unit could not be
+        # confirmed" import warning for this explicitly mapped column.
+        assert not any(
+            "signal unit" in warning.lower() and "could not be confirmed" in warning.lower()
+            for warning in ds.metadata["import_warnings"]
+        )
+
+    def test_percent_t_unit_token_without_transmittance_name_still_recognized(self):
+        """A header like ``Signal (%T)`` declares %T by unit token alone."""
+        buf = self._ftir_csv("Signal (%T)")
+
+        ds = read_thermal_data(buf, data_type="FTIR")
+
+        assert ds.units["signal"] == "%T"
+        assert ds.metadata["inferred_signal_unit"] == "%T"
+
+    def test_generic_percent_signal_is_not_promoted_to_transmittance(self):
+        """An arbitrary percentage column must remain plain ``%`` so it is
+        never silently treated as transmittance."""
+        buf = self._ftir_csv("Signal (%)")
+
+        ds = read_thermal_data(
+            buf,
+            column_mapping={
+                "temperature": "Wavenumber (cm-1)",
+                "signal": "Signal (%)",
+            },
+            data_type="FTIR",
+        )
+
+        assert ds.units["signal"] == "%"
+        assert ds.metadata["inferred_signal_unit"] == "%"
+
+    def test_absorbance_header_records_absorbance_unit(self):
+        buf = self._ftir_csv("Absorbance (a.u.)")
+
+        ds = read_thermal_data(
+            buf,
+            column_mapping={
+                "temperature": "Wavenumber (cm-1)",
+                "signal": "Absorbance (a.u.)",
+            },
+            data_type="FTIR",
+        )
+
+        assert ds.units["signal"] == "a.u."
+        assert ds.metadata["inferred_signal_unit"] == "a.u."
+
+
+# ---------------------------------------------------------------------------
 # export_results_csv
 # ---------------------------------------------------------------------------
 
