@@ -110,7 +110,7 @@ from dash_app.components.spectral_plot_settings import (
     spectral_plot_settings_chrome,
     spectral_plot_settings_from_controls,
 )
-from core.axis_labels import build_axis_title
+from core.axis_labels import build_axis_title, canonical_unit_label
 from core.plotting import apply_materialscope_plot_theme, primary_y_range, sparse_label_indices
 from utils.i18n import normalize_ui_locale, translate_ui
 
@@ -2958,7 +2958,7 @@ def _build_figure(
         min_distance_floor=35.0,
     )
     peak_axis_unit = str((peaks[0] or {}).get("axis_unit") or "").strip() if peaks and isinstance(peaks[0], dict) else ""
-    peak_unit_label = peak_axis_unit or "cm⁻¹"
+    peak_unit_label = canonical_unit_label(peak_axis_unit) or "cm⁻¹"
     for i, peak in enumerate(peak_candidates):
         pos = peak.get("position")
         intensity = peak.get("intensity")
@@ -3182,6 +3182,7 @@ def _build_peak_cards_from_curves(project_id: str, dataset_key: str, summary: di
         pos = peak.get("position")
         intensity = peak.get("intensity")
         axis_unit = str(peak.get("axis_unit") or "").strip()
+        axis_unit_label = canonical_unit_label(axis_unit) or axis_unit
         region_label = str(peak.get("region") or "").strip()
         signal_basis = str(peak.get("signal_basis") or "").strip()
         annotation_bits = []
@@ -3190,6 +3191,11 @@ def _build_peak_cards_from_curves(project_id: str, dataset_key: str, summary: di
         if signal_basis:
             annotation_bits.append(signal_basis)
         annotation = " · ".join(annotation_bits)
+        position_label = (
+            translate_ui(loc, "dash.analysis.label.position_in_unit", unit=axis_unit_label)
+            if axis_unit_label
+            else translate_ui(loc, "dash.analysis.label.position")
+        )
         cards.append(
             dbc.Card(
                 dbc.CardBody(
@@ -3203,7 +3209,7 @@ def _build_peak_cards_from_curves(project_id: str, dataset_key: str, summary: di
                         ),
                         dbc.Row(
                             [
-                                dbc.Col([html.Small(translate_ui(loc, "dash.analysis.label.position"), className="text-muted d-block"), html.Span(f"{pos:.1f}{f' {axis_unit}' if axis_unit else ''}" if pos is not None else "--")], md=6),
+                                dbc.Col([html.Small(position_label, className="text-muted d-block"), html.Span(f"{pos:.1f}{f' {axis_unit_label}' if axis_unit_label else ''}" if pos is not None else "--")], md=6),
                                 dbc.Col([html.Small(translate_ui(loc, "dash.analysis.label.intensity"), className="text-muted d-block"), html.Span(f"{intensity:.4f}" if intensity is not None else "--")], md=6),
                             ],
                             className="g-2",

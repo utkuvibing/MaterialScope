@@ -3438,6 +3438,7 @@ TRANSLATIONS = {
     "dash.analysis.dta.raw_quality.hint.strong_edge_drift": {"tr": "Güçlü kenar kayması var; baseline ayarlarını kontrol edin.", "en": "Strong edge drift; check baseline settings."},
     "dash.analysis.dta.raw_quality.hint.moderate_edge_drift": {"tr": "Orta düzey kenar kayması var.", "en": "Moderate edge drift."},
     "dash.analysis.label.position": {"tr": "Pozisyon (cm⁻¹)", "en": "Position (cm^-1)"},
+    "dash.analysis.label.position_in_unit": {"tr": "Pozisyon ({unit})", "en": "Position ({unit})"},
     "dash.analysis.label.intensity": {"tr": "Yoğunluk", "en": "Intensity"},
     "dash.analysis.raman.title": {"tr": "Raman analizi", "en": "RAMAN Analysis"},
     "dash.analysis.raman.caption": {

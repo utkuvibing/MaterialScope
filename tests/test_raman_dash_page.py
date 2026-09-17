@@ -966,3 +966,64 @@ def test_build_match_table_library_unavailable_is_hidden():
     assert "d-none" in s
     assert "match_data_table" not in s
     assert "no match" not in s
+
+
+def _flatten_dash_text(node) -> str:
+    """Collect every string leaf in a rendered Dash component tree."""
+    parts: list[str] = []
+    stack = [node]
+    seen: set[int] = set()
+    while stack:
+        obj = stack.pop()
+        if obj is None or id(obj) in seen:
+            continue
+        seen.add(id(obj))
+        if isinstance(obj, str):
+            parts.append(obj)
+        elif isinstance(obj, (list, tuple)):
+            stack.extend(obj)
+        else:
+            stack.append(getattr(obj, "children", None))
+    return " ".join(parts)
+
+
+class TestRamanPeakCards:
+    """Peak cards must label positions with the effective axis unit — never
+    ``Position (cm^-1)`` above an nm value (manual-QA regression)."""
+
+    def test_peak_cards_use_effective_unit_label(self, monkeypatch):
+        import dash_app.api_client as api_client
+
+        mod = _import_raman_page()
+        monkeypatch.setattr(
+            api_client,
+            "analysis_state_curves",
+            lambda *a, **k: {
+                "peaks": [
+                    {
+                        "position": 561.88,
+                        "intensity": 1234.5,
+                        "axis_unit": "nm",
+                        "axis_role": "wavelength",
+                    }
+                ]
+            },
+        )
+        node = mod._build_peak_cards_from_curves("p", "d", {}, "en")
+        text = _flatten_dash_text(node)
+        assert "Position (nm)" in text
+        assert "Position (cm" not in text
+        assert "561.9 nm" in text
+
+    def test_peak_cards_fall_back_to_generic_label_without_unit(self, monkeypatch):
+        import dash_app.api_client as api_client
+
+        mod = _import_raman_page()
+        monkeypatch.setattr(
+            api_client,
+            "analysis_state_curves",
+            lambda *a, **k: {"peaks": [{"position": 520.0, "intensity": 9.9}]},
+        )
+        node = mod._build_peak_cards_from_curves("p", "d", {}, "en")
+        text = _flatten_dash_text(node)
+        assert "Position (cm^-1)" in text

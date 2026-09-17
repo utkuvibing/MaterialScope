@@ -1601,7 +1601,20 @@ def _execute_spectral_batch(
     # PR-18: optional axis conversion (FTIR wavelength<->wavenumber; Raman
     # nm<->shift gated on a declared excitation wavelength).  Applied before
     # sorting so every downstream stage sees the converted axis.
-    axis_unit_declared = axis_conversion.get("source_unit") or (dataset.units or {}).get("temperature")
+    axis_unit_cfg = axis_conversion.get("source_unit")
+    if axis_unit_cfg in (None, "", "auto"):
+        # "From dataset (declared)": a generic cm^-1 unit cannot distinguish
+        # a Raman shift from an absolute wavenumber — the dataset's declared
+        # physical role must travel with it.  An explicit source-unit
+        # selection is itself a declaration and stands on its own.
+        axis_unit_declared = (dataset.units or {}).get("temperature")
+        axis_role_declared = (
+            str((dataset.metadata or {}).get("spectral_axis_role") or "").strip().lower()
+            or "ambiguous"
+        )
+    else:
+        axis_unit_declared = axis_unit_cfg
+        axis_role_declared = None
     axis_conv = None
     axis_unit_effective = axis_unit_declared
     if axis_conversion.get("enabled") and axis_conversion.get("target"):
@@ -1612,6 +1625,7 @@ def _execute_spectral_batch(
             target_unit=axis_conversion.get("target"),
             laser_wavelength_nm=axis_conversion.get("laser_wavelength_nm"),
             dataset_metadata=dataset.metadata,
+            source_role=axis_role_declared,
         )
         if axis_conv.applied and axis_conv.axis is not None:
             axis = axis_conv.axis
@@ -1708,10 +1722,11 @@ def _execute_spectral_batch(
         peak_signal_basis = f"{peak_signal_basis}_absorbance"
     peak_table = annotate_peak_table(
         observed_peaks,
-        axis_unit=axis_unit_effective,
+        axis_unit=axis_unit_display,
         signal_basis=peak_signal_basis,
         regions=region_integrals,
         analysis_type=analysis_type,
+        axis_role=axis_role_effective,
     )
 
     match_basis = normalized_signal if norm_informative else corrected
@@ -1876,7 +1891,7 @@ def _execute_spectral_batch(
             "raman_signal_role": signal_role if analysis_type == "RAMAN" else "",
             "raman_inverted_for_transmittance": was_inverted if analysis_type == "RAMAN" else False,
             # PR-18 depth provenance
-            "spectral_axis_unit_effective": axis_unit_effective or "",
+            "spectral_axis_unit_effective": axis_unit_display or "",
             "spectral_axis_role_effective": axis_role_effective,
             "spectral_axis_conversion_basis": (axis_conv.basis if axis_conv else "not_requested"),
             "spectral_axis_conversion_withheld_reason": (
@@ -2019,7 +2034,7 @@ def _execute_spectral_batch(
             for r in region_integrals
         ],
         "peak_table": peak_table,
-        "spectral_axis_unit_effective": axis_unit_effective or None,
+        "spectral_axis_unit_effective": axis_unit_display or None,
         "spectral_axis_role_effective": axis_role_effective,
         "spectral_axis_conversion_basis": (axis_conv.basis if axis_conv else "not_requested"),
         "spectral_axis_conversion_withheld_reason": (

@@ -1146,3 +1146,431 @@ class TestManualQAEndToEnd:
             signal_kind=curves["signal_role"],
         )
         assert y_title == "Absorbance (a.u.)"
+
+
+# ---------------------------------------------------------------------------
+# Raman-shift axis provenance — manual-QA regression
+# ---------------------------------------------------------------------------
+# A `Raman Shift (cm-1)` axis was imported as generic `wavenumber`, which
+# routed the "from dataset" source through the ungated absolute
+# wavenumber -> wavelength conversion: fabricated thousands-of-nm values and
+# bypassed the excitation gate.  These tests pin the fixed behaviour.
+
+_RAMAN_SHIFT_FILENAME = "raman_shift.csv"
+
+
+def _raman_shift_csv_bytes() -> bytes:
+    """Deterministic stand-in for the manual-QA fixture
+    ``testing_data/raman_shift.csv`` (gitignored): a ``Raman Shift (cm-1)``
+    axis with sharp bands on a sloped baseline.  The header carries the
+    shift provenance — the values only need realistic peaks."""
+    shift = np.arange(200.0, 3500.0001, 1.5)
+    rng = np.random.default_rng(20260917)
+
+    def band(center: float, amp: float, fwhm: float) -> np.ndarray:
+        sigma = fwhm / (2.0 * np.sqrt(2.0 * np.log(2.0)))
+        return amp * np.exp(-0.5 * ((shift - center) / sigma) ** 2)
+
+    intensity = (
+        300.0
+        + 0.35 * (shift - 200.0)
+        + band(520.0, 4200.0, 8.0)
+        + band(1080.0, 1500.0, 18.0)
+        + band(1600.0, 2800.0, 22.0)
+        + band(2900.0, 900.0, 40.0)
+        + rng.normal(0.0, 8.0, shift.size)
+    )
+    lines = [
+        "# Synthetic Raman — peaks 520/1080/1600/2900 cm-1",
+        "Raman Shift (cm-1),Raman Signal (CPS)",
+    ]
+    lines += [f"{s:g},{t:.4f}" for s, t in zip(shift, intensity)]
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def _generic_raman_csv_bytes(axis_header: str) -> bytes:
+    """Generic cm-1 Raman file with a single band; the axis header carries
+    whatever physical declaration the caller wants to exercise.  The signal
+    column deliberately avoids ``counts``/``intensity`` tokens so the file
+    is not captured by the XRD measured-pattern detector."""
+    x = np.arange(200.0, 3500.0001, 2.0)
+    rng = np.random.default_rng(7)
+    intensity = (
+        500.0
+        + 2000.0 * np.exp(-0.5 * ((x - 1000.0) / 15.0) ** 2)
+        + rng.normal(0.0, 5.0, x.size)
+    )
+    lines = [f"{axis_header},Signal (CPS)"]
+    lines += [f"{v:g},{t:.3f}" for v, t in zip(x, intensity)]
+    return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def _import_raman_csv(file_name: str, csv_bytes: bytes, column_mapping: dict):
+    """Reproduce the manual-QA import: CSV imported as RAMAN through
+    ``read_thermal_data`` with the explicit column mapping the wizard records."""
+    import io
+
+    from core.data_io import read_thermal_data
+
+    buf = io.BytesIO(csv_bytes)
+    buf.name = file_name
+    return read_thermal_data(
+        buf,
+        column_mapping=column_mapping,
+        data_type="RAMAN",
+        metadata={"sample_name": file_name.rsplit(".", 1)[0]},
+    )
+
+
+def _import_raman_shift():
+    return _import_raman_csv(
+        _RAMAN_SHIFT_FILENAME,
+        _raman_shift_csv_bytes(),
+        {"temperature": "Raman Shift (cm-1)", "signal": "Raman Signal (CPS)"},
+    )
+
+
+def _run_raman_batch(dataset, axis_conversion: dict):
+    from core.batch_runner import execute_batch_template
+
+    return execute_batch_template(
+        dataset_key="qa_raman_axis",
+        dataset=dataset,
+        analysis_type="RAMAN",
+        workflow_template_id="raman.general",
+        existing_processing={"signal_pipeline": {"axis_conversion": axis_conversion}},
+    )
+
+
+class TestRamanShiftAxisProvenance:
+    def test_raman_shift_header_preserves_shift_role(self):
+        dataset = _import_raman_shift()
+        assert dataset.units["temperature"] == "cm^-1"
+        # Traceable shift provenance must not collapse to generic wavenumber.
+        assert dataset.metadata["spectral_axis_role"] == "raman_shift"
+
+    def test_wavenumber_header_preserves_absolute_role(self):
+        dataset = _import_raman_csv(
+            "abs_wavenumber.csv",
+            _generic_raman_csv_bytes("Wavenumber (cm-1)"),
+            {"temperature": "Wavenumber (cm-1)", "signal": "Signal (CPS)"},
+        )
+        assert dataset.metadata["spectral_axis_role"] == "wavenumber"
+
+    def test_generic_cm1_header_is_ambiguous(self):
+        dataset = _import_raman_csv(
+            "sample.csv",
+            _generic_raman_csv_bytes("X (cm-1)"),
+            {"temperature": "X (cm-1)", "signal": "Signal (CPS)"},
+        )
+        assert dataset.metadata["spectral_axis_role"] == "ambiguous"
+        warnings = " ".join(str(w) for w in dataset.metadata.get("import_warnings") or [])
+        assert "does not declare" in warnings
+
+    def test_shift_to_nm_without_excitation_is_withheld(self):
+        dataset = _import_raman_shift()
+        outcome = _run_raman_batch(dataset, {"enabled": True, "target": "nm"})
+        assert outcome["status"] == "saved"
+        state = outcome["state"]
+        summary = outcome["record"]["summary"]
+
+        # Withheld — no converted axis may be emitted.
+        assert summary["spectral_axis_conversion_basis"] == "withheld"
+        assert (
+            summary["spectral_axis_conversion_withheld_reason"]
+            == "excitation_wavelength_missing"
+        )
+        assert state["diagnostics"]["axis_conversion"]["basis"] == "withheld"
+
+        # The original Raman-shift basis is retained end to end.
+        raw_axis = np.sort(dataset.data["temperature"].to_numpy(dtype=float))
+        np.testing.assert_allclose(
+            np.asarray(state["axis"], dtype=float), raw_axis, rtol=1e-9
+        )
+        assert state["axis_unit"] == "cm-1"
+        assert state["axis_role"] == "raman_shift"
+        assert summary["spectral_axis_unit_effective"] == "cm-1"
+        assert summary["spectral_axis_role_effective"] == "raman_shift"
+        assert state["peak_table"]
+        assert all(r["axis_unit"] == "cm-1" for r in state["peak_table"])
+        assert all(r["axis_role"] == "raman_shift" for r in state["peak_table"])
+        # Peak positions stay on the shift axis — no fabricated nm values.
+        positions = [p["position"] for p in state["peaks"]]
+        assert positions and max(positions) < 4000.0
+
+    def test_shift_to_nm_with_532_converts_via_shift_math(self):
+        dataset = _import_raman_shift()
+        outcome = _run_raman_batch(
+            dataset,
+            {"enabled": True, "target": "nm", "laser_wavelength_nm": 532.0},
+        )
+        assert outcome["status"] == "saved"
+        state = outcome["state"]
+        summary = outcome["record"]["summary"]
+
+        assert summary["spectral_axis_conversion_basis"] == "converted"
+        # raman_shift_to_wavelength numerics on the imported shift axis.
+        raw_axis = dataset.data["temperature"].to_numpy(dtype=float)
+        expected = raman_shift_to_wavelength(raw_axis, laser_wavelength_nm=532.0)
+        np.testing.assert_allclose(
+            np.asarray(state["axis"], dtype=float),
+            np.unique(expected),
+            rtol=1e-9,
+        )
+        # Physically plausible visible/NIR — not the fabricated
+        # ~3000-20000 nm the absolute-wavenumber misroute produced.
+        axis = np.asarray(state["axis"], dtype=float)
+        assert float(axis.min()) > 533.0
+        assert float(axis.max()) < 700.0
+        assert state["axis_unit"] == "nm"
+        assert state["axis_role"] == "wavelength"
+        assert summary["spectral_axis_unit_effective"] == "nm"
+        assert summary["spectral_axis_role_effective"] == "wavelength"
+        assert all(r["axis_unit"] == "nm" for r in state["peak_table"])
+        assert all(r["axis_role"] == "wavelength" for r in state["peak_table"])
+
+        mc = outcome["record"]["processing"]["method_context"]
+        assert mc["laser_wavelength_nm"] == pytest.approx(532.0)
+        assert mc["laser_wavelength_source"] == "user"
+
+    def test_shift_conversion_anchor_1000cm1_at_532nm(self):
+        # Known fixture sanity anchor: a 1000 cm-1 shift under 532 nm
+        # excitation scatters near ~561.88 nm.
+        out = raman_shift_to_wavelength([1000.0], laser_wavelength_nm=532.0)
+        assert out[0] == pytest.approx(561.88, abs=0.02)
+
+    def test_declared_absolute_wavenumber_uses_absolute_path(self):
+        dataset = _import_raman_csv(
+            "abs_wavenumber.csv",
+            _generic_raman_csv_bytes("Wavenumber (cm-1)"),
+            {"temperature": "Wavenumber (cm-1)", "signal": "Signal (CPS)"},
+        )
+        assert dataset.metadata["spectral_axis_role"] == "wavenumber"
+        outcome = _run_raman_batch(dataset, {"enabled": True, "target": "nm"})
+        assert outcome["status"] == "saved"
+        summary = outcome["record"]["summary"]
+        # Genuinely declared absolute wavenumber still converts ungated.
+        assert summary["spectral_axis_conversion_basis"] == "converted"
+        raw_axis = dataset.data["temperature"].to_numpy(dtype=float)
+        np.testing.assert_allclose(
+            np.asarray(outcome["state"]["axis"], dtype=float),
+            np.unique(1e7 / raw_axis),
+            rtol=1e-9,
+        )
+
+    def test_ambiguous_cm1_source_withholds_auto_conversion(self):
+        dataset = _import_raman_csv(
+            "sample.csv",
+            _generic_raman_csv_bytes("X (cm-1)"),
+            {"temperature": "X (cm-1)", "signal": "Signal (CPS)"},
+        )
+        outcome = _run_raman_batch(dataset, {"enabled": True, "target": "nm"})
+        assert outcome["status"] == "saved"
+        summary = outcome["record"]["summary"]
+        # Neither physical interpretation may be silently chosen.
+        assert summary["spectral_axis_conversion_basis"] == "withheld"
+        assert (
+            summary["spectral_axis_conversion_withheld_reason"]
+            == "source_axis_role_ambiguous"
+        )
+        raw_axis = np.sort(dataset.data["temperature"].to_numpy(dtype=float))
+        np.testing.assert_allclose(
+            np.asarray(outcome["state"]["axis"], dtype=float), raw_axis, rtol=1e-9
+        )
+
+    def test_explicit_cm1_source_on_ambiguous_uses_absolute_path(self):
+        dataset = _import_raman_csv(
+            "sample.csv",
+            _generic_raman_csv_bytes("X (cm-1)"),
+            {"temperature": "X (cm-1)", "signal": "Signal (CPS)"},
+        )
+        # An explicit source-unit selection is itself the declaration.
+        outcome = _run_raman_batch(
+            dataset, {"enabled": True, "target": "nm", "source_unit": "cm-1"}
+        )
+        assert outcome["status"] == "saved"
+        summary = outcome["record"]["summary"]
+        assert summary["spectral_axis_conversion_basis"] == "converted"
+        raw_axis = dataset.data["temperature"].to_numpy(dtype=float)
+        np.testing.assert_allclose(
+            np.asarray(outcome["state"]["axis"], dtype=float),
+            np.unique(1e7 / raw_axis),
+            rtol=1e-9,
+        )
+
+    def test_explicit_raman_shift_source_is_excitation_gated(self):
+        dataset = _import_raman_csv(
+            "sample.csv",
+            _generic_raman_csv_bytes("X (cm-1)"),
+            {"temperature": "X (cm-1)", "signal": "Signal (CPS)"},
+        )
+        outcome = _run_raman_batch(
+            dataset,
+            {"enabled": True, "target": "nm", "source_unit": "raman_shift"},
+        )
+        assert outcome["status"] == "saved"
+        summary = outcome["record"]["summary"]
+        assert summary["spectral_axis_conversion_basis"] == "withheld"
+        assert (
+            summary["spectral_axis_conversion_withheld_reason"]
+            == "excitation_wavelength_missing"
+        )
+
+
+class TestRamanShiftExportProvenance:
+    def test_annotated_peak_table_and_xlsx_carry_axis_role(self):
+        import io
+
+        import pandas as pd
+        from backend.exports import _results_to_xlsx_bytes
+
+        outcome = _run_raman_batch(
+            _import_raman_shift(),
+            {"enabled": True, "target": "nm", "laser_wavelength_nm": 532.0},
+        )
+        assert outcome["status"] == "saved"
+        record = outcome["record"]
+        assert all(
+            r["axis_role"] == "wavelength" for r in record["summary"]["peak_table"]
+        )
+
+        blob = _results_to_xlsx_bytes({record["id"]: record}, [])
+        book = pd.read_excel(io.BytesIO(blob), sheet_name=None)
+        peak_sheets = [name for name in book if name.endswith("_peaks")]
+        assert peak_sheets
+        peaks_df = book[peak_sheets[0]]
+        assert "axis_role" in peaks_df.columns
+        assert "axis_unit" in peaks_df.columns
+        assert set(peaks_df["axis_role"]) == {"wavelength"}
+        assert set(peaks_df["axis_unit"]) == {"nm"}
+
+
+class TestManualQARamanEndToEnd:
+    """Drive the exact manual-QA path through the combined app: RAMAN import
+    with explicit mapping -> nm target with/without excitation ->
+    analysis-state curves -> axis title."""
+
+    def _import(self, client):
+        import base64
+
+        project_id = client.post("/workspace/new").json()["project_id"]
+        payload = base64.b64encode(_raman_shift_csv_bytes()).decode("ascii")
+        imported = client.post(
+            "/dataset/import",
+            json={
+                "project_id": project_id,
+                "file_name": _RAMAN_SHIFT_FILENAME,
+                "file_base64": payload,
+                "data_type": "RAMAN",
+                "column_mapping": {
+                    "temperature": "Raman Shift (cm-1)",
+                    "signal": "Raman Signal (CPS)",
+                },
+                "metadata": {"sample_name": "raman_shift"},
+            },
+        )
+        assert imported.status_code == 200
+        return project_id, imported.json()["dataset"]["key"]
+
+    def _run(self, client, project_id, dataset_key, overrides):
+        run = client.post(
+            "/analysis/run",
+            json={
+                "project_id": project_id,
+                "dataset_key": dataset_key,
+                "analysis_type": "RAMAN",
+                "workflow_template_id": "raman.general",
+                "processing_overrides": overrides,
+            },
+        )
+        assert run.status_code == 200
+        body = run.json()
+        assert body["execution_status"] == "saved"
+        return body
+
+    def test_raman_shift_axis_conversion_end_to_end(self):
+        from fastapi.testclient import TestClient
+
+        from core.axis_labels import build_axis_title
+        from dash_app.server import create_combined_app
+
+        client = TestClient(create_combined_app())
+        project_id, dataset_key = self._import(client)
+
+        detail = client.get(f"/workspace/{project_id}/datasets/{dataset_key}")
+        assert detail.status_code == 200
+        assert detail.json()["metadata"]["spectral_axis_role"] == "raman_shift"
+        assert detail.json()["units"]["temperature"] == "cm^-1"
+
+        # --- QA step 1: nm target, no excitation -> withheld ----------------
+        self._run(
+            client,
+            project_id,
+            dataset_key,
+            {"axis_conversion": {"enabled": True, "target": "nm"}},
+        )
+        curves = client.get(
+            f"/workspace/{project_id}/analysis-state/RAMAN/{dataset_key}"
+        )
+        assert curves.status_code == 200
+        curves = curves.json()
+        assert curves["axis_role"] == "raman_shift"
+        assert curves["x_unit"] == "cm-1"
+        axis = np.asarray(curves["temperature"], dtype=float)
+        assert float(axis.min()) == pytest.approx(200.0)
+        assert float(axis.max()) == pytest.approx(3500.0)
+        assert curves["peaks"]
+        assert all(p["axis_unit"] == "cm-1" for p in curves["peaks"])
+        assert all(p["axis_role"] == "raman_shift" for p in curves["peaks"])
+        x_title = build_axis_title(
+            "RAMAN",
+            "x",
+            detected_unit=curves["x_unit"],
+            axis_role=curves["axis_role"],
+        )
+        assert "Raman Shift" in x_title
+
+        # --- QA step 2: nm target + 532 nm excitation -> converted ---------
+        run = self._run(
+            client,
+            project_id,
+            dataset_key,
+            {
+                "axis_conversion": {
+                    "enabled": True,
+                    "target": "nm",
+                    "laser_wavelength_nm": 532.0,
+                }
+            },
+        )
+        result = client.get(f"/workspace/{project_id}/results/{run['result_id']}")
+        assert result.status_code == 200
+        result_summary = result.json().get("summary") or {}
+        assert result_summary["spectral_axis_conversion_basis"] == "converted"
+        assert result_summary["spectral_axis_unit_effective"] == "nm"
+        assert result_summary["spectral_axis_role_effective"] == "wavelength"
+        method_context = (result.json().get("processing") or {}).get(
+            "method_context"
+        ) or {}
+        assert method_context["laser_wavelength_nm"] == pytest.approx(532.0)
+
+        curves = client.get(
+            f"/workspace/{project_id}/analysis-state/RAMAN/{dataset_key}"
+        ).json()
+        assert curves["axis_role"] == "wavelength"
+        assert curves["x_unit"] == "nm"
+        axis = np.asarray(curves["temperature"], dtype=float)
+        assert float(axis.min()) > 533.0
+        assert float(axis.max()) < 700.0
+        assert curves["peaks"]
+        assert all(p["axis_unit"] == "nm" for p in curves["peaks"])
+        assert all(p["axis_role"] == "wavelength" for p in curves["peaks"])
+        positions = [float(p["position"]) for p in curves["peaks"]]
+        assert all(533.0 < p < 700.0 for p in positions)
+        x_title = build_axis_title(
+            "RAMAN",
+            "x",
+            detected_unit=curves["x_unit"],
+            axis_role=curves["axis_role"],
+        )
+        assert "Wavelength" in x_title

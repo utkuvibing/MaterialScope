@@ -295,6 +295,7 @@ def convert_spectral_axis(
     target_unit: Any,
     laser_wavelength_nm: Any = None,
     dataset_metadata: Mapping[str, Any] | None = None,
+    source_role: Any = None,
 ) -> AxisConversion:
     """Convert a spectral axis to a declared target unit.
 
@@ -302,6 +303,15 @@ def convert_spectral_axis(
     RAMAN additionally supports scattered-wavelength (nm) <-> Raman shift
     (cm⁻¹), which is withheld unless an explicitly declared excitation
     wavelength resolves to a finite positive nm value.
+
+    ``source_role`` carries the dataset-declared physical role of the source
+    axis (``raman_shift`` / ``wavenumber`` / ``wavelength`` / ``ambiguous``)
+    for the "from dataset" path.  A generic cm⁻¹ source declared as a Raman
+    shift is converted through the excitation-gated shift path, never through
+    the absolute wavenumber path; an ``ambiguous`` cm⁻¹ role withholds the
+    conversion outright rather than silently choosing an interpretation.
+    An explicit caller-selected source unit should pass ``source_role=None``
+    — the explicit unit declaration stands on its own.
 
     A request whose source already equals the target is an honest
     ``identity`` no-op.  Unknown or physically impossible conversions are
@@ -337,6 +347,20 @@ def convert_spectral_axis(
             result.withheld_reason = f"unsupported_axis_conversion:{src}->{tgt}"
             return result
     elif modality == "RAMAN":
+        role = str(source_role or "").strip().lower()
+        if src == WAVENUMBER_CM1 and role == "raman_shift":
+            # The dataset declares the generic cm-1 axis as a Raman shift:
+            # route it through the excitation-gated shift path, never the
+            # absolute wavenumber path.
+            src = RAMAN_SHIFT_CM1
+            result.source_unit = src
+        elif src == WAVENUMBER_CM1 and role not in {"", "wavenumber"}:
+            # The cm-1 axis is declared as something other than an absolute
+            # spectroscopic wavenumber — or its physical role is unresolved.
+            # Withhold rather than silently select an interpretation.
+            result.basis = "withheld"
+            result.withheld_reason = "source_axis_role_ambiguous"
+            return result
         if src == RAMAN_SHIFT_CM1 and tgt == WAVELENGTH_NM:
             laser, laser_src, reason = resolve_laser_wavelength_nm(
                 laser_wavelength_nm, dataset_metadata
@@ -488,14 +512,15 @@ def annotate_peak_table(
     signal_basis: str,
     regions: Iterable[RegionIntegral] | None = None,
     analysis_type: str = "",
+    axis_role: Any = None,
 ) -> list[dict[str, Any]]:
     """Annotate detected peaks with axis/signal provenance for export.
 
-    Each row carries the raw detector values plus the axis unit, the signal
-    basis the peak was detected on (e.g. ``corrected``, ``normalized``,
-    ``absorbance_converted``), and the label of any declared integration
-    region the peak falls inside.  No chemical assignments are invented —
-    annotation is limited to what the analysis actually produced.
+    Each row carries the raw detector values plus the effective axis unit and
+    axis role, the signal basis the peak was detected on (e.g. ``corrected``,
+    ``normalized``, ``absorbance_converted``), and the label of any declared
+    integration region the peak falls inside.  No chemical assignments are
+    invented — annotation is limited to what the analysis actually produced.
     """
     region_list = list(regions or [])
     rows: list[dict[str, Any]] = []
@@ -512,6 +537,7 @@ def annotate_peak_table(
                 "rank": int(peak.get("rank") or rank),
                 "position": position,
                 "axis_unit": str(axis_unit or ""),
+                "axis_role": str(axis_role or ""),
                 "intensity": peak.get("intensity"),
                 "prominence": peak.get("prominence"),
                 "signal_basis": signal_basis,

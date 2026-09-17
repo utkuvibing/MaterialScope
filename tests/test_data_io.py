@@ -564,7 +564,9 @@ class TestReadCSV:
 
         assert ds.data_type == "RAMAN"
         assert ds.units["temperature"] == "cm^-1"
-        assert ds.metadata["spectral_axis_role"] == "wavenumber"
+        # A 'Raman Shift' header is traceable shift provenance — the role
+        # must not collapse to generic wavenumber.
+        assert ds.metadata["spectral_axis_role"] == "raman_shift"
         assert ds.metadata["modality_confirmation_required"] is False
 
     def test_read_jcamp_single_spectrum_imports_as_ftir_mvp(self):
