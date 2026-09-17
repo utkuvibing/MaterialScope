@@ -1025,15 +1025,16 @@ class TestXrdMeasuredMetadata:
         assert ds.metadata["xrd_axis_role"] == "two_theta"
         assert ds.metadata["xrd_wavelength_angstrom"] is None
 
-    def test_repo_fixture_xrd_phase_alpha_wl_in_file_parses_cleanly(self):
-        fixture = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "testing_data",
-            "xrd_phase_alpha_wl_in_file.xy",
-        )
-        with open(fixture, "r", encoding="utf-8") as handle:
-            text = handle.read()
-        buf = io.StringIO(text)
+    def test_xrd_phase_alpha_pattern_with_wavelength_parses_cleanly(self):
+        # Mirrors testing_data/xrd_phase_alpha_wl_in_file.xy, which is
+        # gitignored; the structure is regenerated in-test so CI is
+        # self-contained (same precedent as the FTIR %T fixture).
+        lines = [
+            "# Synthetic XRD — Phase Alpha pattern",
+            "# Wavelength: 1.5406 Angstrom (Cu Ka)",
+        ]
+        lines += [f"{10.0 + 0.05 * i:.4f} {130.0 + (i % 7):.4f}" for i in range(1601)]
+        buf = io.StringIO("\n".join(lines) + "\n")
         buf.name = "xrd_phase_alpha_wl_in_file.xy"
 
         ds = read_thermal_data(buf)
