@@ -413,6 +413,18 @@ class TestImportPreviewModality:
         assert preview["xrd_wavelength_source"] == "parsed"
         assert preview["row_count"] == 12
 
+    def test_preview_xrd_xy_wavelength_declared_in_nm_is_normalized_to_angstrom(self):
+        from dash_app.import_preview import build_import_preview
+
+        xy = (
+            "# Wavelength: 0.15406 nm\n"
+            + "".join(f"{10.0 + 0.05 * i:.4f} {130.0 + i:.4f}\n" for i in range(12))
+        )
+        preview = build_import_preview("xrd_wl_nm.xy", self._b64(xy), modality="XRD")
+
+        assert preview["xrd_wavelength_angstrom"] == pytest.approx(1.5406)
+        assert preview["xrd_wavelength_source"] == "parsed"
+
     def test_preview_headerless_xrd_xy_still_exposes_numeric_roles(self):
         from dash_app.import_preview import build_import_preview
 

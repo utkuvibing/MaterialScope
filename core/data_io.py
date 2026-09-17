@@ -2384,26 +2384,84 @@ def _make_sheet_name(ds: ThermalDataset, index: int) -> str:
 
 # Recognised wavelength metadata syntax only — arbitrary comment text is
 # never treated as structured metadata.  Matches "Wavelength: 1.5406",
-# "# wavelength 1.5406", "lambda = 1.54", "Wavelength (Å): 1.5406".
+# "# wavelength 1.5406", "lambda = 1.54", "Wavelength (Å): 1.5406",
+# "Wavelength: 0.15406 nm", "Wavelength: 1.5406 Angstrom (Cu Ka)".
 _XRD_WAVELENGTH_META_RE = re.compile(
-    r"(?:wavelength|lambda)\s*(?:\([^)]*\)|\[[^\]]*\])?\s*[:=]?\s*"
-    r"([-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)",
+    r"(?:wavelength|lambda)\s*"
+    r"(?:\[\s*(?P<bracket_unit>[^\]]+?)\s*\]|\(\s*(?P<paren_unit>[^)]+?)\s*\))?\s*"
+    r"[:=]?\s*"
+    r"(?P<value>[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)"
+    r"(?:\s*(?P<tail_unit>[^\W\d_]+))?",
     re.IGNORECASE,
 )
 
+_XRD_WAVELENGTH_UNIT_ANGSTROM = {
+    "angstrom",
+    "angstroms",
+    "angstroem",
+    "angstroems",
+    "å",
+    "ångstrom",
+    "ångström",
+}
+_XRD_WAVELENGTH_UNIT_NM = {
+    "nm",
+    "nanometer",
+    "nanometers",
+    "nanometre",
+    "nanometres",
+}
 
-def _parse_xrd_wavelength_metadata(lines: list[str]) -> float | None:
+
+def _normalize_xrd_wavelength_unit(unit: str | None) -> str | None:
+    if not unit:
+        return None
+    token = str(unit).strip().rstrip(".").lower()
+    if token in _XRD_WAVELENGTH_UNIT_ANGSTROM:
+        return "angstrom"
+    if token in _XRD_WAVELENGTH_UNIT_NM:
+        return "nm"
+    return "unsupported"
+
+
+def _parse_xrd_wavelength_metadata(lines: list[str]) -> tuple[float | None, str | None]:
+    """Parse a declared radiation wavelength from metadata lines.
+
+    Returns ``(wavelength_angstrom, warning)``.  An explicitly declared unit
+    is honored (Angstrom/Å and nm are supported, nm is normalized to Å); an
+    explicitly declared unsupported unit withholds the value and returns a
+    warning instead of silently treating it as Å.  A value with no declared
+    unit keeps the legacy Å interpretation.
+    """
     for raw_line in lines:
         line = str(raw_line or "").strip()
         if not line:
             continue
         match = _XRD_WAVELENGTH_META_RE.search(line)
-        if match:
-            try:
-                return float(match.group(1))
-            except ValueError:
-                continue
-    return None
+        if not match:
+            continue
+        try:
+            value = float(match.group("value"))
+        except ValueError:
+            continue
+        declared_unit = match.group("tail_unit")
+        if declared_unit is None:
+            paren_unit = match.group("bracket_unit") or match.group("paren_unit")
+            if paren_unit is not None and re.fullmatch(r"[^\W\d_]+", str(paren_unit).strip()):
+                declared_unit = str(paren_unit).strip()
+        if declared_unit is None:
+            return value, None
+        normalized = _normalize_xrd_wavelength_unit(declared_unit)
+        if normalized == "angstrom":
+            return value, None
+        if normalized == "nm":
+            return value * 10.0, None
+        return None, (
+            "XRD wavelength metadata declared an unsupported unit "
+            f"'{str(declared_unit).strip()}'; the parsed value was withheld. "
+            "Set xrd_wavelength_angstrom explicitly (supported units: Angstrom, nm)."
+        )
+    return None, None
 
 
 def _extract_first_float(text: str | None) -> float | None:
@@ -2586,7 +2644,8 @@ def load_xrd_measured_preview(
     lines = text.splitlines()
     axis_values, signal_values = _parse_xrd_numeric_pairs(lines)
     frame = pd.DataFrame({"2theta (deg)": axis_values, "intensity (counts)": signal_values})
-    return frame, _parse_xrd_wavelength_metadata(lines[:40])
+    wavelength, _wavelength_warning = _parse_xrd_wavelength_metadata(lines[:40])
+    return frame, wavelength
 
 
 def _xrd_provenance_state(*, wavelength_angstrom: float | None) -> tuple[str, str]:
@@ -2610,10 +2669,12 @@ def _parse_xrd_measured_dataset(
 
     # Comment/metadata lines are skipped by the numeric-pair parser above;
     # wavelength is only extracted from recognised metadata syntax.
-    wavelength = _parse_xrd_wavelength_metadata(lines[:40])
+    wavelength, wavelength_warning = _parse_xrd_wavelength_metadata(lines[:40])
 
     warnings_list: list[str] = []
-    if wavelength is None:
+    if wavelength_warning:
+        warnings_list.append(wavelength_warning)
+    elif wavelength is None:
         warnings_list.append("XRD wavelength metadata was not found in the source; set xrd_wavelength_angstrom before phase matching.")
 
     suffix = str(Path(str(source_name or "")).suffix).lower()

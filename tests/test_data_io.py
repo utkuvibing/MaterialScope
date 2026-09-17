@@ -945,6 +945,69 @@ class TestXrdMeasuredMetadata:
         assert ds.metadata["xrd_wavelength_angstrom"] is None
         assert ds.metadata["xrd_wavelength_source"] is None
 
+    def test_xy_wavelength_declared_in_nm_is_normalized_to_angstrom(self):
+        buf = io.StringIO(
+            "# Synthetic XRD pattern\n"
+            "# Wavelength: 0.15406 nm\n"
+            "10.0 100\n"
+            "10.5 140\n"
+        )
+        buf.name = "pattern_wl_nm.xy"
+
+        ds = read_thermal_data(buf)
+
+        assert ds.metadata["xrd_wavelength_angstrom"] == pytest.approx(1.5406)
+        assert ds.metadata["xrd_wavelength_source"] == "parsed"
+        assert ds.metadata["xrd_provenance_state"] == "complete"
+        assert ds.metadata["import_warnings"] == []
+
+    def test_xy_wavelength_declared_in_lowercase_angstrom_is_kept(self):
+        buf = io.StringIO(
+            "# Synthetic XRD pattern\n"
+            "# wavelength = 1.5406 angstrom\n"
+            "10.0 100\n"
+            "10.5 140\n"
+        )
+        buf.name = "pattern_wl_lowercase_angstrom.xy"
+
+        ds = read_thermal_data(buf)
+
+        assert ds.metadata["xrd_wavelength_angstrom"] == pytest.approx(1.5406)
+        assert ds.metadata["xrd_wavelength_source"] == "parsed"
+
+    def test_xy_wavelength_paren_unit_angstrom_is_recognized(self):
+        buf = io.StringIO(
+            "# Synthetic XRD pattern\n"
+            "# Wavelength (Å): 1.5406\n"
+            "10.0 100\n"
+            "10.5 140\n"
+        )
+        buf.name = "pattern_wl_paren_angstrom.xy"
+
+        ds = read_thermal_data(buf)
+
+        assert ds.metadata["xrd_wavelength_angstrom"] == pytest.approx(1.5406)
+        assert ds.metadata["xrd_wavelength_source"] == "parsed"
+
+    def test_xy_wavelength_unsupported_unit_withholds_value_and_warns(self):
+        buf = io.StringIO(
+            "# Synthetic XRD pattern\n"
+            "# Wavelength: 154.06 pm\n"
+            "10.0 100\n"
+            "10.5 140\n"
+        )
+        buf.name = "pattern_wl_pm.xy"
+
+        ds = read_thermal_data(buf)
+
+        assert ds.metadata["xrd_wavelength_angstrom"] is None
+        assert ds.metadata["xrd_wavelength_source"] is None
+        assert ds.metadata["xrd_provenance_state"] == "incomplete"
+        assert any(
+            "unsupported unit 'pm'" in w and "withheld" in w
+            for w in ds.metadata["import_warnings"]
+        )
+
     def test_headerless_two_column_xy_still_imports(self):
         buf = io.StringIO(
             "5.0000 78\n"
