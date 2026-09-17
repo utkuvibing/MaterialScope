@@ -356,7 +356,7 @@ layout = html.Div(
                                     dbc.Col(
                                         [
                                             dbc.Label(id="home-mapping-xrd-label", children="", className="mt-3"),
-                                            dbc.Input(id="mapping-xrd-wavelength", type="number", value=1.5406),
+                                            dbc.Input(id="mapping-xrd-wavelength", type="number"),
                                         ],
                                         md=4,
                                     ),
@@ -888,7 +888,7 @@ def build_pending_preview(selected_file, modality, selected_sheet, pending_files
         empty_options, _NONE_VALUE,
         empty_options, _NONE_VALUE,
         empty_options, _NONE_VALUE,
-        "", None, None, 1.5406,
+        "", None, None, None,
         {"display": "none"},
     )
 
@@ -914,7 +914,7 @@ def build_pending_preview(selected_file, modality, selected_sheet, pending_files
             empty_options, _NONE_VALUE,
             empty_options, _NONE_VALUE,
             empty_options, _NONE_VALUE,
-            "", None, None, 1.5406,
+            "", None, None, None,
             {"display": "block" if modality == "XRD" else "none"},
         )
 
@@ -964,7 +964,9 @@ def build_pending_preview(selected_file, modality, selected_sheet, pending_files
         # PR-9/PR-13: mass and heating rate stay empty until the user types
         # them; a pre-filled value would be indistinguishable from a real
         # declaration downstream (fabricated β / mass provenance).
-        "", None, None, 1.5406,
+        # The XRD wavelength is only pre-filled from file-parsed metadata
+        # (source: "parsed") — never a fabricated Cu Ka default.
+        "", None, None, preview.get("xrd_wavelength_angstrom"),
         xrd_style,
     )
 
@@ -1345,6 +1347,25 @@ def import_with_mapping(
 
     data_type = modality or "DSC"
     declared_sign_convention = sign_convention if data_type in {"DSC", "DTA"} else None
+    # Wavelength provenance: an untouched prefill that matches the
+    # file-parsed value stays "parsed"; anything the user typed (or
+    # changed) is "user".  No fabricated Cu Ka default is ever sent.
+    xrd_wavelength_value = None
+    xrd_wavelength_source = None
+    if data_type == "XRD" and xrd_wavelength not in (None, "", 0, 0.0):
+        try:
+            xrd_wavelength_value = float(xrd_wavelength)
+        except (TypeError, ValueError):
+            xrd_wavelength_value = None
+        if xrd_wavelength_value is not None:
+            parsed_wavelength = (preview or {}).get("xrd_wavelength_angstrom")
+            try:
+                matches_parsed = parsed_wavelength is not None and abs(
+                    xrd_wavelength_value - float(parsed_wavelength)
+                ) < 1e-9
+            except (TypeError, ValueError):
+                matches_parsed = False
+            xrd_wavelength_source = "parsed" if matches_parsed else "user"
     metadata = {
         "sample_name": sample_name or "Unknown",
         "sample_mass": float(sample_mass) if sample_mass not in (None, "", 0, 0.0) else None,
@@ -1357,7 +1378,8 @@ def import_with_mapping(
             and heating_rate not in (None, "", 0, 0.0)
             else "missing"
         ),
-        "xrd_wavelength_angstrom": float(xrd_wavelength) if data_type == "XRD" and xrd_wavelength not in (None, "", 0, 0.0) else None,
+        "xrd_wavelength_angstrom": xrd_wavelength_value,
+        "xrd_wavelength_source": xrd_wavelength_source,
         # PR-10: explicit user confirmation releases the K-vs-°C scale gate.
         "temperature_scale_confirmed": bool(temp_scale_confirmed),
     }

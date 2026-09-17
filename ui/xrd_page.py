@@ -869,7 +869,8 @@ def _render_xrd_input_review_panel(*, dataset_key: str, dataset, state, lang: st
         wavelength_value = st.number_input(
             tx("XRD Dalgaboyu (Å)", "XRD Wavelength (Å)"),
             min_value=0.0,
-            value=float(current_wavelength or 1.5406),
+            value=float(current_wavelength) if current_wavelength else None,
+            placeholder=tx("örn. 1.5406", "e.g. 1.5406"),
             step=0.0001,
             format="%.4f",
             key=f"xrd_axis_review_wavelength_{dataset_key}",
@@ -886,7 +887,7 @@ def _render_xrd_input_review_panel(*, dataset_key: str, dataset, state, lang: st
             _apply_xrd_input_review(
                 dataset=dataset,
                 state=state,
-                wavelength_angstrom=float(wavelength_value) if wavelength_value > 0 else None,
+                wavelength_angstrom=float(wavelength_value) if wavelength_value else None,
             )
             _log_event(
                 tx("XRD Girdi Onayı Uygulandı", "XRD Input Review Applied"),

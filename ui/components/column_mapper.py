@@ -158,7 +158,8 @@ def render_column_mapper(df, guessed_mapping=None, data_type=None, key_prefix="c
             xrd_wavelength_angstrom = st.number_input(
                 tx("XRD Dalgaboyu (Å)", "XRD Wavelength (Å)"),
                 min_value=0.0,
-                value=1.5406,
+                value=None,
+                placeholder=tx("örn. 1.5406", "e.g. 1.5406"),
                 step=0.0001,
                 format="%.4f",
                 key=f"{key_prefix}_xrd_wavelength",

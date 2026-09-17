@@ -852,6 +852,202 @@ class TestReadCSV:
 
 
 # ---------------------------------------------------------------------------
+# XRD measured-data import: metadata/comment lines vs. the numeric table
+# (manual-QA regression: "# Wavelength: 1.5406 Angstrom (Cu Ka)" was treated
+# as a header row and metadata tokens leaked into the column mapping)
+# ---------------------------------------------------------------------------
+
+class TestXrdMeasuredMetadata:
+    @staticmethod
+    def _xy_with_wavelength() -> io.StringIO:
+        return io.StringIO(
+            "# Synthetic XRD — Phase Alpha pattern\n"
+            "# Wavelength: 1.5406 Angstrom (Cu Ka)\n"
+            "10.0000 132.7607\n"
+            "10.0500 133.5086\n"
+            "10.1000 125.2392\n"
+            "10.1500 137.4522\n"
+            "10.2000 129.9359\n"
+            "10.2500 130.1905\n"
+            "10.3000 134.9027\n"
+            "10.3500 128.4613\n"
+            "10.4000 132.1959\n"
+            "10.4500 133.1196\n"
+        )
+
+    def test_xy_wavelength_comment_line_yields_numeric_table_and_parsed_wavelength(self):
+        buf = self._xy_with_wavelength()
+        buf.name = "xrd_phase_alpha_wl_in_file.xy"
+
+        ds = read_thermal_data(buf)
+
+        assert ds.data_type == "XRD"
+        assert len(ds.data) == 10
+        assert ds.data["temperature"].tolist() == pytest.approx(
+            [10.0, 10.05, 10.1, 10.15, 10.2, 10.25, 10.3, 10.35, 10.4, 10.45]
+        )
+        assert ds.data["signal"].iloc[0] == pytest.approx(132.7607)
+        assert ds.data["signal"].iloc[-1] == pytest.approx(133.1196)
+        assert ds.metadata["xrd_wavelength_angstrom"] == pytest.approx(1.5406)
+        assert ds.metadata["xrd_wavelength_source"] == "parsed"
+        assert ds.metadata["xrd_provenance_state"] == "complete"
+
+    def test_xy_blank_user_wavelength_does_not_erase_parsed_value(self):
+        buf = self._xy_with_wavelength()
+        buf.name = "xrd_phase_alpha_wl_in_file.xy"
+
+        ds = read_thermal_data(buf, metadata={"xrd_wavelength_angstrom": None})
+
+        assert ds.metadata["xrd_wavelength_angstrom"] == pytest.approx(1.5406)
+        assert ds.metadata["xrd_wavelength_source"] == "parsed"
+
+    def test_xy_user_wavelength_overrides_file_value_and_records_provenance(self):
+        buf = self._xy_with_wavelength()
+        buf.name = "xrd_phase_alpha_wl_in_file.xy"
+
+        ds = read_thermal_data(
+            buf,
+            metadata={"xrd_wavelength_angstrom": 1.9, "xrd_wavelength_source": "user"},
+        )
+
+        assert ds.metadata["xrd_wavelength_angstrom"] == pytest.approx(1.9)
+        assert ds.metadata["xrd_wavelength_source"] == "user"
+
+    def test_xy_without_wavelength_metadata_leaves_wavelength_absent(self):
+        buf = io.StringIO(
+            "# Synthetic XRD pattern\n"
+            "10.0 100\n"
+            "10.5 140\n"
+            "11.0 120\n"
+        )
+        buf.name = "pattern_no_wl.xy"
+
+        ds = read_thermal_data(buf)
+
+        assert ds.data_type == "XRD"
+        assert len(ds.data) == 3
+        assert ds.metadata["xrd_wavelength_angstrom"] is None
+        assert ds.metadata["xrd_wavelength_source"] is None
+        assert ds.metadata["xrd_provenance_state"] == "incomplete"
+        assert any("wavelength" in w.lower() for w in ds.metadata["import_warnings"])
+
+    def test_xy_arbitrary_comment_text_is_not_structured_metadata(self):
+        buf = io.StringIO(
+            "# Wavelength scan: 2.0 to 80.0 degrees, Cu Ka tube installed\n"
+            "10.0 100\n"
+            "10.5 140\n"
+            "11.0 120\n"
+        )
+        buf.name = "pattern_scan_note.xy"
+
+        ds = read_thermal_data(buf)
+
+        assert ds.metadata["xrd_wavelength_angstrom"] is None
+        assert ds.metadata["xrd_wavelength_source"] is None
+
+    def test_xy_wavelength_declared_in_nm_is_normalized_to_angstrom(self):
+        buf = io.StringIO(
+            "# Synthetic XRD pattern\n"
+            "# Wavelength: 0.15406 nm\n"
+            "10.0 100\n"
+            "10.5 140\n"
+        )
+        buf.name = "pattern_wl_nm.xy"
+
+        ds = read_thermal_data(buf)
+
+        assert ds.metadata["xrd_wavelength_angstrom"] == pytest.approx(1.5406)
+        assert ds.metadata["xrd_wavelength_source"] == "parsed"
+        assert ds.metadata["xrd_provenance_state"] == "complete"
+        assert ds.metadata["import_warnings"] == []
+
+    def test_xy_wavelength_declared_in_lowercase_angstrom_is_kept(self):
+        buf = io.StringIO(
+            "# Synthetic XRD pattern\n"
+            "# wavelength = 1.5406 angstrom\n"
+            "10.0 100\n"
+            "10.5 140\n"
+        )
+        buf.name = "pattern_wl_lowercase_angstrom.xy"
+
+        ds = read_thermal_data(buf)
+
+        assert ds.metadata["xrd_wavelength_angstrom"] == pytest.approx(1.5406)
+        assert ds.metadata["xrd_wavelength_source"] == "parsed"
+
+    def test_xy_wavelength_paren_unit_angstrom_is_recognized(self):
+        buf = io.StringIO(
+            "# Synthetic XRD pattern\n"
+            "# Wavelength (Å): 1.5406\n"
+            "10.0 100\n"
+            "10.5 140\n"
+        )
+        buf.name = "pattern_wl_paren_angstrom.xy"
+
+        ds = read_thermal_data(buf)
+
+        assert ds.metadata["xrd_wavelength_angstrom"] == pytest.approx(1.5406)
+        assert ds.metadata["xrd_wavelength_source"] == "parsed"
+
+    def test_xy_wavelength_unsupported_unit_withholds_value_and_warns(self):
+        buf = io.StringIO(
+            "# Synthetic XRD pattern\n"
+            "# Wavelength: 154.06 pm\n"
+            "10.0 100\n"
+            "10.5 140\n"
+        )
+        buf.name = "pattern_wl_pm.xy"
+
+        ds = read_thermal_data(buf)
+
+        assert ds.metadata["xrd_wavelength_angstrom"] is None
+        assert ds.metadata["xrd_wavelength_source"] is None
+        assert ds.metadata["xrd_provenance_state"] == "incomplete"
+        assert any(
+            "unsupported unit 'pm'" in w and "withheld" in w
+            for w in ds.metadata["import_warnings"]
+        )
+
+    def test_headerless_two_column_xy_still_imports(self):
+        buf = io.StringIO(
+            "5.0000 78\n"
+            "5.0500 83\n"
+            "5.1000 98\n"
+            "5.1500 104\n"
+            "5.2000 109\n"
+        )
+        buf.name = "headerless.xy"
+
+        ds = read_thermal_data(buf)
+
+        assert ds.data_type == "XRD"
+        assert len(ds.data) == 5
+        assert ds.metadata["xrd_axis_role"] == "two_theta"
+        assert ds.metadata["xrd_wavelength_angstrom"] is None
+
+    def test_xrd_phase_alpha_pattern_with_wavelength_parses_cleanly(self):
+        # Mirrors testing_data/xrd_phase_alpha_wl_in_file.xy, which is
+        # gitignored; the structure is regenerated in-test so CI is
+        # self-contained (same precedent as the FTIR %T fixture).
+        lines = [
+            "# Synthetic XRD — Phase Alpha pattern",
+            "# Wavelength: 1.5406 Angstrom (Cu Ka)",
+        ]
+        lines += [f"{10.0 + 0.05 * i:.4f} {130.0 + (i % 7):.4f}" for i in range(1601)]
+        buf = io.StringIO("\n".join(lines) + "\n")
+        buf.name = "xrd_phase_alpha_wl_in_file.xy"
+
+        ds = read_thermal_data(buf)
+
+        assert ds.data_type == "XRD"
+        assert len(ds.data) == 1601
+        assert ds.data["temperature"].iloc[0] == pytest.approx(10.0)
+        assert ds.data["temperature"].iloc[-1] == pytest.approx(90.0)
+        assert ds.metadata["xrd_wavelength_angstrom"] == pytest.approx(1.5406)
+        assert ds.metadata["xrd_wavelength_source"] == "parsed"
+
+
+# ---------------------------------------------------------------------------
 # Signal-unit provenance (explicit %T column mapping → transmittance role)
 # ---------------------------------------------------------------------------
 
