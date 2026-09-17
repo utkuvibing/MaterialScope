@@ -379,6 +379,54 @@ class TestImportPreviewModality:
         # Without modality, auto-detection should identify DSC
         assert preview["guessed_mapping"]["data_type"] in ("DSC", "unknown")
 
+    @staticmethod
+    def _b64(content: str) -> str:
+        import base64
+        return base64.b64encode(content.encode("utf-8")).decode("ascii")
+
+    def test_preview_xrd_xy_metadata_comments_never_become_columns(self):
+        # Manual-QA regression: "# Wavelength: 1.5406 Angstrom (Cu Ka)" was
+        # sniffed as a header row, so the mapping dropdown offered
+        # "Wavelength:", "1.5406", "Angstrom", "(Cu", "Ka)" as columns.
+        from dash_app.import_preview import build_import_preview
+
+        xy = (
+            "# Synthetic XRD — Phase Alpha pattern\n"
+            "# Wavelength: 1.5406 Angstrom (Cu Ka)\n"
+            + "".join(f"{10.0 + 0.05 * i:.4f} {130.0 + i:.4f}\n" for i in range(12))
+        )
+        preview = build_import_preview(
+            "xrd_phase_alpha_wl_in_file.xy", self._b64(xy), modality="XRD"
+        )
+
+        assert preview["columns"] == ["2theta (deg)", "intensity (counts)"]
+        forbidden = ("Wavelength:", "Angstrom", "(Cu", "Ka)", "1.5406")
+        assert not any(token in preview["columns"] for token in forbidden)
+        assert not any(
+            token in str(preview["preview_rows"][:1]) for token in forbidden
+        )
+
+        guessed = preview["guessed_mapping"]
+        assert guessed["temperature"] == "2theta (deg)"
+        assert guessed["signal"] == "intensity (counts)"
+        assert preview["xrd_wavelength_angstrom"] == pytest.approx(1.5406)
+        assert preview["xrd_wavelength_source"] == "parsed"
+        assert preview["row_count"] == 12
+
+    def test_preview_headerless_xrd_xy_still_exposes_numeric_roles(self):
+        from dash_app.import_preview import build_import_preview
+
+        xy = "".join(f"{10.0 + 0.05 * i:.4f} {130.0 + i:.4f}\n" for i in range(12))
+        preview = build_import_preview("headerless.xy", self._b64(xy), modality="XRD")
+
+        assert preview["columns"] == ["2theta (deg)", "intensity (counts)"]
+        assert preview["guessed_mapping"]["temperature"] == "2theta (deg)"
+        assert preview["guessed_mapping"]["signal"] == "intensity (counts)"
+        assert preview["row_count"] == 12
+        # No wavelength metadata in the file → nothing to trust.
+        assert preview["xrd_wavelength_angstrom"] is None
+        assert preview["xrd_wavelength_source"] is None
+
 
 # ===========================================================================
 # Backend integration: import with modality

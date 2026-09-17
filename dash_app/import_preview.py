@@ -9,7 +9,12 @@ from typing import Any
 
 import pandas as pd
 
-from core.data_io import detect_file_format, guess_columns, list_excel_sheets
+from core.data_io import (
+    detect_file_format,
+    guess_columns,
+    list_excel_sheets,
+    load_xrd_measured_preview,
+)
 
 
 def decode_base64_content(content_string: str) -> bytes:
@@ -20,7 +25,15 @@ def load_raw_preview_dataframe(
     file_name: str,
     file_bytes: bytes,
     sheet_name: str | None = None,
+    modality: str | None = None,
 ) -> pd.DataFrame:
+    # Measured XRD patterns (e.g. .xy) carry comment/metadata lines that the
+    # generic header-sniffer mistakes for a header row; use the XRD-aware
+    # parser so the mapping step sees the real numeric columns.
+    xrd_preview = load_xrd_measured_preview(file_name, file_bytes, data_type=modality)
+    if xrd_preview is not None:
+        return xrd_preview[0]
+
     source = io.BytesIO(file_bytes)
     source.name = file_name
 
@@ -106,10 +119,15 @@ def build_import_preview(
         if sheet_name not in sheet_names:
             sheet_name = sheet_names[0] if sheet_names else None
 
-    frame = load_raw_preview_dataframe(file_name, file_bytes, sheet_name=sheet_name)
+    xrd_preview = load_xrd_measured_preview(file_name, file_bytes, data_type=modality)
+    if xrd_preview is not None:
+        frame, xrd_wavelength = xrd_preview
+    else:
+        frame = load_raw_preview_dataframe(file_name, file_bytes, sheet_name=sheet_name, modality=modality)
+        xrd_wavelength = None
     guessed = guess_columns(frame, source_name=file_name, modality=modality)
     preview = frame.head(20).copy().where(pd.notna(frame.head(20)), None)
-    return {
+    payload: dict[str, Any] = {
         "file_name": file_name,
         "file_base64": content_string,
         "columns": [str(column) for column in frame.columns],
@@ -119,3 +137,7 @@ def build_import_preview(
         "sheet_names": sheet_names,
         "sheet_name": sheet_name,
     }
+    if xrd_preview is not None:
+        payload["xrd_wavelength_angstrom"] = xrd_wavelength
+        payload["xrd_wavelength_source"] = "parsed" if xrd_wavelength is not None else None
+    return payload
