@@ -10,6 +10,7 @@ import httpx
 from dash import Input, Output, State, callback, dcc, html
 
 from dash_app.i18n import SUPPORTED_LOCALES, normalize_locale, t
+from utils.runtime_flags import preview_modules_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,12 @@ NAV_ANALYSIS_DEF: list[tuple[str, str, str]] = [
 
 NAV_MANAGEMENT_DEF: list[tuple[str, str, str]] = [
     ("nav.about", "bi-info-circle", "/about"),
+]
+
+# Preview modules stay behind MATERIALSCOPE_ENABLE_PREVIEW_MODULES; never
+# promoted into NAV_ANALYSIS_DEF (the six stable modalities).
+NAV_PREVIEW_DEF: list[tuple[str, str, str]] = [
+    ("nav.kinetics", "bi-lightning-charge", "/kinetics"),
 ]
 
 
@@ -121,6 +128,13 @@ def _sidebar_controls(locale: str, theme: str) -> html.Div:
 
 def build_sidebar_inner(locale: str, theme: str) -> html.Div:
     loc = normalize_locale(locale)
+    sections = [
+        _nav_section(loc, "nav.section_primary", NAV_PRIMARY_DEF),
+        _nav_section(loc, "nav.section_analysis", NAV_ANALYSIS_DEF),
+    ]
+    if preview_modules_enabled():
+        sections.append(_nav_section(loc, "nav.section_preview", NAV_PREVIEW_DEF))
+    sections.append(_nav_section(loc, "nav.section_management", NAV_MANAGEMENT_DEF))
     return html.Div(
         [
             html.Div(
@@ -134,9 +148,7 @@ def build_sidebar_inner(locale: str, theme: str) -> html.Div:
             html.Hr(className="sidebar-hr"),
             html.Div(
                 [
-                    _nav_section(loc, "nav.section_primary", NAV_PRIMARY_DEF),
-                    _nav_section(loc, "nav.section_analysis", NAV_ANALYSIS_DEF),
-                    _nav_section(loc, "nav.section_management", NAV_MANAGEMENT_DEF),
+                    *sections,
                     html.Hr(className="sidebar-hr my-2"),
                     _sidebar_history(loc),
                 ],
