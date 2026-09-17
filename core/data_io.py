@@ -43,6 +43,12 @@ from core.sign_convention import (
     parse_declared,
     provenance_record,
 )
+from core.spectral_depth import (
+    WAVELENGTH_NM,
+    WAVELENGTH_UM,
+    WAVENUMBER_CM1,
+    normalize_spectral_axis_unit,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -466,6 +472,56 @@ def _is_spectral_axis_hint(column_name: str | None) -> bool:
     )
 
 
+_RAMAN_SHIFT_AXIS_HINTS = (
+    "raman shift",
+    "raman-shift",
+    "raman_shift",
+    "ramanshift",
+    "shift",
+    "delta cm",
+    "δ cm",
+    "δcm",
+)
+_RAMAN_SHIFT_SOURCE_HINTS = (
+    "raman_shift",
+    "raman-shift",
+    "ramanshift",
+    "raman shift",
+)
+
+
+def _infer_spectral_axis_role(
+    axis_column: str | None,
+    resolved_type: str,
+    *,
+    source_name: str | None = None,
+    axis_unit: str | None = None,
+) -> str:
+    """Resolve the physical role of a spectral axis column from import evidence.
+
+    FTIR axes are absolute by construction (``wavenumber`` / ``wavelength``).
+    A RAMAN axis in cm^-1 is only recorded as ``raman_shift`` when import
+    provenance supports it — an explicit shift header, or a Raman-shift file
+    name.  An explicit absolute-``wavenumber`` header stays ``wavenumber``.
+    Any other generic or unlabelled cm^-1 axis is ``ambiguous``: neither
+    interpretation may be silently chosen downstream.
+    """
+    token = str(axis_column or "").strip().lower()
+    unit = str(axis_unit or "").strip().lower()
+    if "wavelength" in token or "lambda" in token or unit in {"nm", "um"}:
+        return "wavelength"
+    if resolved_type == "RAMAN":
+        if any(hint in token for hint in _RAMAN_SHIFT_AXIS_HINTS):
+            return "raman_shift"
+        if "wavenumber" in token or "wave number" in token:
+            return "wavenumber"
+        src = str(source_name or "").strip().lower()
+        if any(hint in src for hint in _RAMAN_SHIFT_SOURCE_HINTS):
+            return "raman_shift"
+        return "ambiguous"
+    return "wavenumber"
+
+
 def _is_xrd_axis_hint(column_name: str | None) -> bool:
     token = str(column_name or "").strip().lower()
     if not token:
@@ -689,7 +745,7 @@ def _parse_jcamp_dataset(
         "import_decimal_sep": ".",
         "import_header_row": 0,
         "import_data_start_row": max(xydata_index + 1, 0),
-        "spectral_axis_role": "wavenumber",
+        "spectral_axis_role": "raman_shift" if resolved_type == "RAMAN" else "wavenumber",
         "spectral_axis_column": "JCAMP_X",
         "jcamp_title": str(tags.get("TITLE") or ""),
         "jcamp_xunits": x_unit_raw or "1/CM",
@@ -1738,15 +1794,38 @@ def read_thermal_data(
         )
         import_confidence = _classify_import_confidence(import_confidence, "medium")
 
+    spectral_axis_role: str | None = None
     if resolved_type in _SPECTRAL_ANALYSIS_TYPES:
         axis_column = str(col_map.get("temperature") or "")
         if not _is_spectral_axis_hint(axis_column):
             import_warnings.append(
-                f"Spectral axis column '{axis_column}' was inferred without an explicit wavenumber/shift label; defaulting to wavenumber-first interpretation."
+                f"Spectral axis column '{axis_column}' was inferred without an explicit wavenumber/shift label; axis-role provenance is unresolved."
             )
             import_confidence = _classify_import_confidence(import_confidence, "review")
-        if units.get("temperature") in {"°C", "K", "°F"}:
+        # Record the axis unit the header actually declares.  A bare or
+        # unrecognized header still defaults to cm^-1 (the spectral convention
+        # for this importer), but an explicit nm/µm header is honoured instead
+        # of being silently rewritten to a wavenumber.
+        axis_unit_token = normalize_spectral_axis_unit(_raw_unit_token(axis_column))
+        if axis_unit_token == WAVELENGTH_NM:
+            units["temperature"] = "nm"
+        elif axis_unit_token == WAVELENGTH_UM:
+            units["temperature"] = "um"
+        elif units.get("temperature") in {"°C", "K", "°F"} or axis_unit_token == WAVENUMBER_CM1:
             units["temperature"] = "cm^-1"
+        spectral_axis_role = str(metadata.get("spectral_axis_role") or "").strip().lower() or _infer_spectral_axis_role(
+            axis_column,
+            resolved_type,
+            source_name=source_name,
+            axis_unit=units.get("temperature"),
+        )
+        if resolved_type == "RAMAN" and spectral_axis_role == "ambiguous":
+            import_warnings.append(
+                f"RAMAN axis column '{axis_column}' does not declare whether the cm^-1 axis is a Raman shift "
+                "or an absolute wavenumber; axis conversions that require a physical interpretation will be "
+                "withheld until the source axis role is declared."
+            )
+            import_confidence = _classify_import_confidence(import_confidence, "review")
         if inferred_signal_unit in {"a.u.", "unknown"}:
             import_warnings.append(
                 f"{resolved_type} signal unit could not be confirmed from column '{col_map['signal']}'; review signal scaling before stable interpretation."
@@ -1922,7 +2001,7 @@ def read_thermal_data(
         "temperature_scale_confirmed": temperature_scale_confirmed,
     }
     if resolved_type in _SPECTRAL_ANALYSIS_TYPES:
-        base_meta["spectral_axis_role"] = "wavenumber"
+        base_meta["spectral_axis_role"] = spectral_axis_role or "wavenumber"
         base_meta["spectral_axis_column"] = col_map.get("temperature", "")
     if resolved_type == "XRD":
         base_meta["xrd_axis_role"] = "two_theta"

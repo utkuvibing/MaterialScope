@@ -280,6 +280,10 @@ def build_axis_title(
                 return _title_with_unit("Wavenumber", unit_token or "cm^-1", plotly_html=plotly_html)
             if role_token == "wavelength" or unit_token in {"nm", "um"}:
                 return _title_with_unit("Wavelength", unit_token, plotly_html=plotly_html)
+            if role_token in {"ambiguous", "unknown"}:
+                # The cm-1 axis role is unresolved — label the unit without
+                # asserting a physical interpretation.
+                return _title_with_unit("Spectral axis", unit_token or "cm^-1", plotly_html=plotly_html)
             return _title_with_unit("Raman Shift", unit_token or "cm^-1", plotly_html=plotly_html)
         if modality_token == "XRD":
             if unit_token == "1/angstrom":
