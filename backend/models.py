@@ -261,6 +261,9 @@ class ResultSummary(BaseModel):
     saved_at_utc: str | None = None
     calibration_state: str | None = None
     reference_state: str | None = None
+    # Explicit module marker from result provenance (e.g. "preview_kinetics")
+    # so preview pages can rehydrate their saved results without title matching.
+    analysis_scope: str | None = None
 
 
 class ResultsListResponse(BaseModel):
@@ -320,6 +323,56 @@ class AnalysisRunResponse(BaseModel):
     summary: ProjectSummary
 
 
+class KineticsManualPoint(BaseModel):
+    """One manual Kissinger input pair (heating rate + peak temperature)."""
+
+    heating_rate: float
+    peak_temperature: float
+
+
+class KineticsDatasetSelection(BaseModel):
+    """One workspace dataset participating in a kinetic analysis run.
+
+    ``heating_rate``/``peak_temperature`` are user-declared overrides; when
+    omitted the backend resolves them from traceable dataset metadata
+    (``user``/``parsed`` heating-rate provenance) or a saved DSC analysis
+    peak table (``peak_index``). Untraceable values are never assumed.
+    """
+
+    dataset_key: str = Field(..., min_length=1)
+    heating_rate: float | None = None
+    peak_temperature: float | None = None
+    peak_index: int | None = None
+
+
+class KineticsRunRequest(BaseModel):
+    """Multi-dataset kinetic analysis request (preview module)."""
+
+    method: str = Field(..., min_length=1)
+    input_mode: str = "datasets"
+    manual_points: list[KineticsManualPoint] = Field(default_factory=list)
+    dataset_selections: list[KineticsDatasetSelection] = Field(default_factory=list)
+    alpha_min: float | None = None
+    alpha_max: float | None = None
+    alpha_step: float | None = None
+    confidence_level: float | None = None
+
+
+class KineticsRunResponse(BaseModel):
+    project_id: str
+    method_id: str
+    method_label: str
+    analysis_type: str
+    execution_status: str = "saved"
+    result_id: str
+    result_summary: dict[str, Any] = Field(default_factory=dict)
+    rows: list[dict[str, Any]] = Field(default_factory=list)
+    report_payload: dict[str, Any] = Field(default_factory=dict)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    validation: ValidationSummary
+    summary: ProjectSummary
+
+
 class DatasetDetailResponse(BaseModel):
     project_id: str
     dataset: DatasetSummary
@@ -353,6 +406,7 @@ class ResultDetailResponse(BaseModel):
     rows: list[dict[str, Any]] = Field(default_factory=list)
     rows_preview: list[dict[str, Any]]
     row_count: int
+    report_payload: dict[str, Any] = Field(default_factory=dict)
     # PNG bytes live in workspace ``figures``; this is metadata only for UIs (exports, Dash gallery).
     figure_artifacts: dict[str, Any] = Field(default_factory=dict)
 

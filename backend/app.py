@@ -54,6 +54,8 @@ from backend.models import (
     ExportGenerateRequest,
     ExportPreparationResponse,
     HealthResponse,
+    KineticsRunRequest,
+    KineticsRunResponse,
     LibraryCatalogResponse,
     LibraryCloudAuthTokenResponse,
     LibraryCoverageResponse,
@@ -123,6 +125,7 @@ from core.result_serialization import split_valid_results
 from core.validation import validate_thermal_dataset
 from utils.diagnostics import get_default_log_file, serialize_support_snapshot
 from utils.license_manager import APP_VERSION, commercial_mode_enabled, load_license_state
+from utils.runtime_flags import preview_modules_enabled
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / ".env", override=False)
 
@@ -1929,6 +1932,65 @@ def create_app(
                 "calibration_state": provenance.get("calibration_state"),
                 "reference_state": provenance.get("reference_state"),
             },
+            summary=_project_summary(state),
+        )
+
+    @app.post("/workspace/{project_id}/kinetics/run", response_model=KineticsRunResponse)
+    def kinetics_run(
+        project_id: str,
+        request: KineticsRunRequest,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> KineticsRunResponse:
+        """Preview module: multi-dataset kinetic analysis (Kissinger/OFW/Friedman).
+
+        Gated by ``MATERIALSCOPE_ENABLE_PREVIEW_MODULES``. All scientific
+        prerequisites are validated server-side; the normalized result is
+        persisted in the workspace ``results`` map with a history event.
+        """
+        _require_token(api_token, x_ta_token)
+        if not preview_modules_enabled():
+            raise HTTPException(
+                status_code=403,
+                detail="Preview modules are disabled (MATERIALSCOPE_ENABLE_PREVIEW_MODULES).",
+            )
+        state = _require_project_state(project_store, project_id)
+
+        from backend.kinetics_service import KineticsValidationError, run_kinetics_workflow
+
+        try:
+            outcome = run_kinetics_workflow(
+                state=state,
+                request=request,
+                app_version=APP_VERSION,
+                analyst_name=(state.get("branding") or {}).get("analyst_name"),
+            )
+        except KineticsValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        project_store.set(project_id, state)
+        record = outcome["record"]
+        validation = outcome["validation"] or {}
+        provenance = outcome["provenance"] or {}
+        return KineticsRunResponse(
+            project_id=project_id,
+            method_id=outcome["method_id"],
+            method_label=outcome["method_label"],
+            analysis_type=str(outcome["analysis_type"] or ""),
+            execution_status="saved",
+            result_id=outcome["result_id"],
+            result_summary=dict(record.get("summary") or {}),
+            rows=list(record.get("rows") or []),
+            report_payload=dict(record.get("report_payload") or {}),
+            provenance={
+                "saved_at_utc": provenance.get("saved_at_utc"),
+                "calibration_state": provenance.get("calibration_state"),
+                "reference_state": provenance.get("reference_state"),
+            },
+            validation=ValidationSummary(
+                status=validation.get("status", "unknown"),
+                warning_count=len(validation.get("warnings") or []),
+                issue_count=len(validation.get("issues") or []),
+            ),
             summary=_project_summary(state),
         )
 

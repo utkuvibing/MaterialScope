@@ -160,6 +160,7 @@ def summarize_dataset(dataset_key: str, dataset) -> DatasetSummary:
         vendor=metadata.get("vendor", "Generic"),
         sample_name=metadata.get("sample_name", ""),
         heating_rate=metadata.get("heating_rate"),
+        heating_rate_source=metadata.get("heating_rate_source"),
         import_confidence=metadata.get("import_confidence"),
         validation_status=validation.get("status", "unknown"),
         warning_count=len(validation.get("warnings") or []),
@@ -195,4 +196,5 @@ def summarize_result(record: dict[str, Any]) -> ResultSummary:
         saved_at_utc=provenance.get("saved_at_utc"),
         calibration_state=method_context.get("calibration_state") or provenance.get("calibration_state"),
         reference_state=method_context.get("reference_state") or provenance.get("reference_state"),
+        analysis_scope=provenance.get("analysis_scope"),
     )

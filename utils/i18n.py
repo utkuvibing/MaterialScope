@@ -4029,6 +4029,308 @@ TRANSLATIONS = {
         "tr": "Kaydedilecek etkin çalışma alanı yok. Önce veri içe aktarın veya bir `.scopezip` proje arşivi yükleyin.",
         "en": "No active workspace to save. Import data or load a MaterialScope project archive (.scopezip) first.",
     },
+
+    # --- Preview modules navigation + kinetics page ---
+    "nav.section_preview": {
+        "tr": "Gelişmiş / Önizleme",
+        "en": "Advanced / Preview",
+    },
+    "nav.kinetics": {
+        "tr": "Kinetik Analiz",
+        "en": "Kinetic Analysis",
+    },
+    "dash.kinetics.title": {
+        "tr": "Kinetik Analiz",
+        "en": "Kinetic Analysis",
+    },
+    "dash.kinetics.caption": {
+        "tr": "Farklı ısıtma hızlarından aktivasyon enerjisi — Kissinger, OFW ve Friedman yöntemleri.",
+        "en": "Activation energy from multiple heating rates — Kissinger, OFW, and Friedman methods.",
+    },
+    "dash.kinetics.badge": {
+        "tr": "Önizleme Modülü",
+        "en": "Preview Module",
+    },
+    "dash.kinetics.disabled_title": {
+        "tr": "Önizleme modülü kapalı",
+        "en": "Preview module disabled",
+    },
+    "dash.kinetics.disabled_body": {
+        "tr": "Kinetik analiz bir laboratuvar önizleme modülüdür ve bu dağıtım profilinde kapalıdır. `MATERIALSCOPE_ENABLE_PREVIEW_MODULES` etkinleştirilerek açılabilir.",
+        "en": "Kinetic analysis is a lab preview module and is disabled in this deployment profile. It can be enabled via `MATERIALSCOPE_ENABLE_PREVIEW_MODULES`.",
+    },
+    "dash.kinetics.guidance_what_title": {
+        "tr": "Bu sayfa ne yapar?",
+        "en": "What does this page do?",
+    },
+    "dash.kinetics.guidance_what_body": {
+        "tr": "Çoklu ısıtma hızı deneylerinden aktivasyon enerjisi (Ea) hesaplar. Kissinger tepe sıcaklığı kaymasını, OFW ve Friedman ise dönüşüm seviyelerinde izokonversiyonel analizi kullanır.",
+        "en": "Computes activation energy (Ea) from multi-heating-rate experiments. Kissinger uses the peak-temperature shift; OFW and Friedman use isoconversional analysis across conversion levels.",
+    },
+    "dash.kinetics.workflow_step1": {
+        "tr": "En az iki farklı ısıtma hızında DSC veya TGA veri seti içe aktarın.",
+        "en": "Import at least two DSC or TGA datasets measured at different heating rates.",
+    },
+    "dash.kinetics.workflow_step2": {
+        "tr": "DSC için önce DSC sayfasında baz çizgisi düzeltmesi çalıştırın; ısıtma hızlarını doğrulayın veya girin.",
+        "en": "For DSC, run baseline correction on the DSC page first; verify or enter heating rates.",
+    },
+    "dash.kinetics.workflow_step3": {
+        "tr": "Yöntemi seçin, parametreleri girin ve analizi çalıştırın.",
+        "en": "Choose the method, enter parameters, and run the analysis.",
+    },
+    "dash.kinetics.usage_title": {
+        "tr": "Bilimsel dürüstlük notları",
+        "en": "Scientific honesty notes",
+    },
+    "dash.kinetics.usage_bullet1": {
+        "tr": "Isıtma hızları yalnızca izlenebilir kaynaklardan kullanılır (dosyadan ayrıştırılmış veya açıkça girilmiş); eksik değerler varsayılan olarak doldurulmaz.",
+        "en": "Heating rates are only used when traceable (parsed from the file or explicitly entered); missing values are never filled with a default.",
+    },
+    "dash.kinetics.usage_bullet2": {
+        "tr": "Kissinger tepe sıcaklıkları siz girersiniz ya da kayıtlı DSC analizinin tepe tablosundan alınır; hiçbir zaman uydurulmaz.",
+        "en": "Kissinger peak temperatures come from your input or a saved DSC analysis peak table; they are never invented.",
+    },
+    "dash.kinetics.next_step_body": {
+        "tr": "Sonuç, çalışma alanına kaydedilir ve Rapor Merkezi ile proje arşivine dahil edilir.",
+        "en": "The result is saved to the workspace and flows into Report Center and the project archive.",
+    },
+    "dash.kinetics.setup_title": {
+        "tr": "Kurulum",
+        "en": "Setup",
+    },
+    "dash.kinetics.label_method": {
+        "tr": "Kinetik yöntem",
+        "en": "Kinetic method",
+    },
+    "dash.kinetics.method.kissinger": {
+        "tr": "Kissinger (tepe kayması)",
+        "en": "Kissinger (peak shift)",
+    },
+    "dash.kinetics.method.ofw": {
+        "tr": "Ozawa-Flynn-Wall (izokonversiyonel)",
+        "en": "Ozawa-Flynn-Wall (isoconversional)",
+    },
+    "dash.kinetics.method.friedman": {
+        "tr": "Friedman (diferansiyel izokonversiyonel)",
+        "en": "Friedman (differential isoconversional)",
+    },
+    "dash.kinetics.label_input_mode": {
+        "tr": "Girdi kaynağı",
+        "en": "Input source",
+    },
+    "dash.kinetics.mode.datasets": {
+        "tr": "Çalışma alanı veri setleri",
+        "en": "Workspace datasets",
+    },
+    "dash.kinetics.mode.manual": {
+        "tr": "Elle (β, Tp) girişi",
+        "en": "Manual (β, Tp) entry",
+    },
+    "dash.kinetics.label_datasets": {
+        "tr": "Veri setleri (en az iki, aynı mod)",
+        "en": "Datasets (at least two, same modality)",
+    },
+    "dash.kinetics.no_eligible": {
+        "tr": "Uygun veri seti yok. Önce en az iki DSC veya TGA veri seti içe aktarın.",
+        "en": "No eligible datasets. Import at least two DSC or TGA datasets first.",
+    },
+    "dash.kinetics.rate_label": {
+        "tr": "β (°C/min)",
+        "en": "β (°C/min)",
+    },
+    "dash.kinetics.rate_hint_metadata": {
+        "tr": "İzlenebilir değer: {value} °C/min ({source}). Boş bırakılırsa bu değer kullanılır.",
+        "en": "Traceable value: {value} °C/min ({source}). Leave blank to use it.",
+    },
+    "dash.kinetics.rate_hint_missing": {
+        "tr": "İzlenebilir ısıtma hızı yok — açıkça bir değer girin (kullanıcı beyanı olarak kaydedilir).",
+        "en": "No traceable heating rate — enter a value explicitly (recorded as user-declared).",
+    },
+    "dash.kinetics.rate_hint_user": {
+        "tr": "Boş bırakılırsa çalışma engellenir; varsayılan değer kullanılmaz.",
+        "en": "If left blank the run is blocked; no default value is used.",
+    },
+    "dash.kinetics.tp_label": {
+        "tr": "Tepe sıcaklığı Tp (°C)",
+        "en": "Peak temperature Tp (°C)",
+    },
+    "dash.kinetics.tp_hint_single": {
+        "tr": "Kayıtlı DSC analizinde tek tepe bulundu ({value} °C); boş bırakılırsa o kullanılır.",
+        "en": "Saved DSC analysis has one detected peak ({value} °C); leave blank to reuse it.",
+    },
+    "dash.kinetics.tp_hint_multi": {
+        "tr": "Kayıtlı DSC analizinde {count} tepe var; tepeyi açıkça girin (°C).",
+        "en": "Saved DSC analysis detected {count} peaks; enter the peak temperature explicitly (°C).",
+    },
+    "dash.kinetics.tp_hint_required": {
+        "tr": "Gerekli — tepe sıcaklığı sizin girdiniz veya kayıtlı bir analiz sonucu olmalıdır.",
+        "en": "Required — the peak temperature must be your input or a traceable saved analysis result.",
+    },
+    "dash.kinetics.params_title": {
+        "tr": "Parametreler",
+        "en": "Parameters",
+    },
+    "dash.kinetics.label_alpha_min": {
+        "tr": "α min",
+        "en": "α min",
+    },
+    "dash.kinetics.label_alpha_max": {
+        "tr": "α max",
+        "en": "α max",
+    },
+    "dash.kinetics.label_alpha_step": {
+        "tr": "α adımı",
+        "en": "α step",
+    },
+    "dash.kinetics.label_confidence": {
+        "tr": "Güven düzeyi",
+        "en": "Confidence level",
+    },
+    "dash.kinetics.manual_table_help": {
+        "tr": "Her satıra ısıtma hızı (°C/min) ve tepe sıcaklığı (°C) girin. En az iki farklı pozitif ısıtma hızı gerekir.",
+        "en": "Enter one heating rate (°C/min) and peak temperature (°C) per row. At least two distinct positive heating rates are required.",
+    },
+    "dash.kinetics.col_heating_rate": {
+        "tr": "β (°C/min)",
+        "en": "β (°C/min)",
+    },
+    "dash.kinetics.col_peak_temp": {
+        "tr": "Tp (°C)",
+        "en": "Tp (°C)",
+    },
+    "dash.kinetics.btn_add_point": {
+        "tr": "Nokta ekle",
+        "en": "Add point",
+    },
+    "dash.kinetics.run_title": {
+        "tr": "Çalıştır",
+        "en": "Run",
+    },
+    "dash.kinetics.btn_run": {
+        "tr": "Kinetik analizi çalıştır",
+        "en": "Run kinetic analysis",
+    },
+    "dash.kinetics.run_failed": {
+        "tr": "Analiz engellendi veya başarısız: {error}",
+        "en": "Analysis blocked or failed: {error}",
+    },
+    "dash.kinetics.run_saved": {
+        "tr": "Sonuç çalışma alanına kaydedildi: {rid}",
+        "en": "Result saved to the workspace: {rid}",
+    },
+    "dash.kinetics.empty_result": {
+        "tr": "Henüz sonuç yok. Analizi çalıştırın.",
+        "en": "No result yet. Run the analysis.",
+    },
+    "dash.kinetics.result_title": {
+        "tr": "Sonuçlar",
+        "en": "Results",
+    },
+    "dash.kinetics.metric.ea": {
+        "tr": "Aktivasyon enerjisi Ea",
+        "en": "Activation energy Ea",
+    },
+    "dash.kinetics.metric.ea_range": {
+        "tr": "Ea aralığı",
+        "en": "Ea range",
+    },
+    "dash.kinetics.metric.ea_mean": {
+        "tr": "Ortalama Ea",
+        "en": "Mean Ea",
+    },
+    "dash.kinetics.metric.r2": {
+        "tr": "R²",
+        "en": "R²",
+    },
+    "dash.kinetics.metric.points": {
+        "tr": "Nokta sayısı",
+        "en": "Fitted points",
+    },
+    "dash.kinetics.metric.conversion_points": {
+        "tr": "Dönüşüm seviyesi",
+        "en": "Conversion levels",
+    },
+    "dash.kinetics.ci_label": {
+        "tr": "{level} Ea güven aralığı",
+        "en": "{level} Ea confidence interval",
+    },
+    "dash.kinetics.ci_withheld": {
+        "tr": "Ea güven aralığı saklandı: {reason}",
+        "en": "Ea confidence interval withheld: {reason}",
+    },
+    "dash.kinetics.intercept_label": {
+        "tr": "Regresyon kesim noktası ln(A·R/Ea)",
+        "en": "Regression intercept ln(A·R/Ea)",
+    },
+    "dash.kinetics.ln_a_label": {
+        "tr": "Türetilmiş ln(A) [min⁻¹]",
+        "en": "Derived ln(A) [min⁻¹]",
+    },
+    "dash.kinetics.intercept_semantics_title": {
+        "tr": "Kesim noktası anlamı",
+        "en": "Intercept semantics",
+    },
+    "dash.kinetics.table.alpha": {
+        "tr": "α",
+        "en": "α",
+    },
+    "dash.kinetics.table.ea": {
+        "tr": "Ea (kJ/mol)",
+        "en": "Ea (kJ/mol)",
+    },
+    "dash.kinetics.table.ci_low": {
+        "tr": "GA alt (kJ/mol)",
+        "en": "CI low (kJ/mol)",
+    },
+    "dash.kinetics.table.ci_high": {
+        "tr": "GA üst (kJ/mol)",
+        "en": "CI high (kJ/mol)",
+    },
+    "dash.kinetics.table.r2": {
+        "tr": "R²",
+        "en": "R²",
+    },
+    "dash.kinetics.table.n": {
+        "tr": "Nokta",
+        "en": "Points",
+    },
+    "dash.kinetics.table.ci_status": {
+        "tr": "GA durumu",
+        "en": "CI status",
+    },
+    "dash.kinetics.ea_vs_alpha_title": {
+        "tr": "Aktivasyon enerjisi — dönüşüm ilişkisi",
+        "en": "Activation energy vs conversion",
+    },
+    "dash.kinetics.regression_plot_title": {
+        "tr": "{method} doğrusallaştırması",
+        "en": "{method} linearization",
+    },
+    "dash.kinetics.limitations_title": {
+        "tr": "Sınırlamalar ve GA kapsamı",
+        "en": "Limitations & CI scope",
+    },
+    "dash.kinetics.provenance_title": {
+        "tr": "İşlem ve köken",
+        "en": "Processing & provenance",
+    },
+    "dash.kinetics.prereq_workspace_body": {
+        "tr": "Önce bir çalışma alanı gerekir. Veri içe aktarın veya bir `.scopezip` proje arşivi yükleyin.",
+        "en": "A workspace is required first. Import data or load a `.scopezip` project archive.",
+    },
+    "dash.kinetics.select_datasets_hint": {
+        "tr": "En az iki veri seti seçin; her biri için izlenebilir ısıtma hızı gerekir.",
+        "en": "Select at least two datasets; each needs a traceable heating rate.",
+    },
+    "dash.kinetics.series_observed": {
+        "tr": "Gözlenen noktalar",
+        "en": "Observed points",
+    },
+    "dash.kinetics.series_fit": {
+        "tr": "Regresyon doğrusu",
+        "en": "Fitted line",
+    },
 }
 
 

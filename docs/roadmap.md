@@ -68,7 +68,7 @@ Out of scope: Rietveld, Kα2 stripping (documented limitation instead).
 
 ## Phase 4 — Productization
 
-- Execute Streamlit retirement per PR-6 inventory (port kinetics/deconvolution to Dash or formally cut).
+- Execute Streamlit retirement per PR-6 inventory (port kinetics/deconvolution to Dash or formally cut). Status: kinetics ported to a workspace-backed Dash surface under the preview flag (PR #62, `feat/dash-kinetics`); deconvolution port is the follow-up PR.
 - One desktop channel decision (Electron vs installer-Dash); build reproduced in CI.
 - Page decomposition: extract shared processing panels from 2–3k-line pages; slim i18n monolith.
 - Browser E2E smoke (Playwright; chromium already in Docker image) covering import→analysis→export per modality.

@@ -190,6 +190,14 @@ def analysis_run(
         return r.json()
 
 
+def kinetics_run(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Run a preview kinetics analysis (Kissinger/OFW/Friedman) via the backend."""
+    with _client() as c:
+        r = c.post(f"/workspace/{project_id}/kinetics/run", json=dict(payload))
+        _raise_with_detail(r)
+        return r.json()
+
+
 def literature_compare(
     project_id: str,
     result_id: str,
