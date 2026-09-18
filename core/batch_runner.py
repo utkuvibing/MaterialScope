@@ -478,6 +478,11 @@ def _execute_dsc_batch(
             "force": normalization_force,
             "applied": bool(processor.normalization_applied),
             "skip_reason": processor.normalization_skip_reason,
+            # Effective working-signal unit after this step (mW -> mW/mg when
+            # normalization ran), so saved processed bases can be labelled
+            # from recorded semantics instead of re-derived values.
+            "source_signal_unit": processor.source_signal_unit,
+            "working_signal_unit": processor.working_signal_unit,
         },
         analysis_type="DSC",
     )
@@ -1067,6 +1072,17 @@ def _infer_spectral_signal_context(dataset) -> tuple[str, str, str]:
 
 def _infer_spectral_signal_role(dataset) -> str:
     return _infer_spectral_signal_context(dataset)[1]
+
+
+def infer_spectral_signal_context(dataset) -> tuple[str, str, str]:
+    """Public entry point for the spectral signal-role/unit inference.
+
+    Returns ``(signal_unit, signal_role, provenance)`` using the same rules the
+    spectral pipeline applies to an imported dataset, so callers that need the
+    *raw* signal semantics (rather than the saved analysis semantics) do not
+    re-implement them.
+    """
+    return _infer_spectral_signal_context(dataset)
 
 
 def _maybe_invert_spectral_signal(signal: np.ndarray, role: str) -> tuple[np.ndarray, bool]:

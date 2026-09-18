@@ -373,6 +373,61 @@ class KineticsRunResponse(BaseModel):
     summary: ProjectSummary
 
 
+class DeconvolutionInitialGuess(BaseModel):
+    """Optional per-component initial guess (preview deconvolution).
+
+    Every field is optional: an omitted field is filled by the core's
+    automatic estimator and recorded as ``auto`` in the result provenance.
+    ``amplitude`` is lmfit's integrated area parameter, not a peak height.
+    """
+
+    center: float | None = None
+    amplitude: float | None = None
+    sigma: float | None = None
+
+
+class DeconvolutionRunRequest(BaseModel):
+    """Single-dataset peak deconvolution request (preview module).
+
+    ``signal_basis`` names a curve that must actually exist in the saved
+    analysis state (or the imported dataset for ``raw``); a missing basis is
+    blocked rather than silently replaced.  ``invert_signal_for_fit`` is the
+    only sign control and defaults to off.
+    """
+
+    dataset_key: str = Field(..., min_length=1)
+    signal_basis: str = "raw"
+    n_peaks: int = Field(..., ge=1, le=10)
+    peak_shape: str = "gaussian"
+    range_min: float | None = None
+    range_max: float | None = None
+    initial_params: list[DeconvolutionInitialGuess] = Field(default_factory=list)
+    invert_signal_for_fit: bool = False
+
+
+class DeconvolutionRunResponse(BaseModel):
+    project_id: str
+    dataset_key: str
+    analysis_type: str = "Peak Deconvolution"
+    execution_status: str = "saved"
+    result_id: str
+    signal_basis: str
+    axis_role: str | None = None
+    axis_unit: str | None = None
+    signal_role: str | None = None
+    signal_unit: str | None = None
+    # "physical" | "normalized" | "unknown" for the *selected* basis.
+    signal_dimensional_basis: str | None = None
+    inversion_applied: bool = False
+    warnings: list[str] = Field(default_factory=list)
+    result_summary: dict[str, Any] = Field(default_factory=dict)
+    rows: list[dict[str, Any]] = Field(default_factory=list)
+    report_payload: dict[str, Any] = Field(default_factory=dict)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    validation: ValidationSummary
+    summary: ProjectSummary
+
+
 class DatasetDetailResponse(BaseModel):
     project_id: str
     dataset: DatasetSummary
@@ -407,6 +462,9 @@ class ResultDetailResponse(BaseModel):
     rows_preview: list[dict[str, Any]]
     row_count: int
     report_payload: dict[str, Any] = Field(default_factory=dict)
+    # Scientific context (methodology, fit quality, limitations) travels with the
+    # detail payload so result pages can render honest limitation copy.
+    scientific_context: dict[str, Any] = Field(default_factory=dict)
     # PNG bytes live in workspace ``figures``; this is metadata only for UIs (exports, Dash gallery).
     figure_artifacts: dict[str, Any] = Field(default_factory=dict)
 

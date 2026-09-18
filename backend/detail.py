@@ -123,6 +123,7 @@ def build_result_detail(state: dict[str, Any], result_id: str) -> dict[str, Any]
         "rows_preview": _records_payload(frame, limit=20) if not frame.empty else [],
         "row_count": len(rows),
         "report_payload": copy.deepcopy(record.get("report_payload") or {}),
+        "scientific_context": copy.deepcopy(record.get("scientific_context") or {}),
         "figure_artifacts": _figure_artifacts_meta(record.get("artifacts")),
     }
 

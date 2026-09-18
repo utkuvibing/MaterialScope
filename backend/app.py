@@ -32,6 +32,7 @@ from backend.exports import (
     generate_results_xlsx_artifact,
     generate_report_pdf_artifact,
 )
+from backend.analysis_state import resolve_analysis_state
 from backend.library_cloud_service import ManagedLibraryCloudService
 from backend.models import (
     ActiveDatasetResponse,
@@ -50,6 +51,8 @@ from backend.models import (
     DatasetImportRequest,
     DatasetImportResponse,
     DatasetsListResponse,
+    DeconvolutionRunRequest,
+    DeconvolutionRunResponse,
     ExportArtifactResponse,
     ExportGenerateRequest,
     ExportPreparationResponse,
@@ -948,177 +951,48 @@ def create_app(
     ) -> AnalysisStateCurvesResponse:
         _require_token(api_token, x_ta_token)
         state = _require_project_state(project_store, project_id)
-        datasets = state.get("datasets", {}) or {}
-        dataset = datasets.get(dataset_key)
-        if dataset is None:
-            raise HTTPException(status_code=404, detail=f"Unknown dataset_key: {dataset_key}")
-
         try:
-            skey = analysis_state_key(analysis_type, dataset_key)
+            resolved = resolve_analysis_state(state, analysis_type, dataset_key)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"Unknown dataset_key: {exc.args[0]}") from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        analysis_state = state.get(skey)
-        if analysis_state is None:
+        if not resolved.has_analysis_state:
+            # Backward-compatible empty surface for a dataset that has no
+            # saved analysis state yet.
             return AnalysisStateCurvesResponse(
-                project_id=project_id, dataset_key=dataset_key,
-                analysis_type=analysis_type.upper(),
+                project_id=project_id,
+                dataset_key=dataset_key,
+                analysis_type=resolved.analysis_type,
             )
 
-        import numpy as np
-
-        def _to_list(arr: Any) -> list[float]:
-            if arr is None:
-                return []
-            a = np.asarray(arr, dtype=float)
-            a = np.where(np.isfinite(a), a, None)
-            return a.tolist()
-
-        frame = getattr(dataset, "data", None)
-        metadata = getattr(dataset, "metadata", {}) or {}
-        units = getattr(dataset, "units", {}) or {}
-        temperature = []
-        raw_signal = []
-        if frame is not None and "temperature" in frame.columns and "signal" in frame.columns:
-            raw_axis = np.asarray(frame["temperature"], dtype=float)
-            raw_values = np.asarray(frame["signal"], dtype=float)
-            finite_mask = np.isfinite(raw_axis) & np.isfinite(raw_values)
-            raw_axis = raw_axis[finite_mask]
-            raw_values = raw_values[finite_mask]
-            if raw_axis.size:
-                order = np.argsort(raw_axis)
-                raw_axis = raw_axis[order]
-                raw_values = raw_values[order]
-                unique_axis, unique_idx = np.unique(raw_axis, return_index=True)
-                temperature = unique_axis.tolist()
-                raw_signal = raw_values[unique_idx].tolist()
-
-        state_axis = _to_list(analysis_state.get("axis"))
-        if state_axis:
-            temperature = state_axis
-            if raw_signal and len(raw_signal) != len(temperature):
-                raw_signal = []
-
-        diagnostics = analysis_state.get("diagnostics") or {}
-        # PR-18: when the analysis axis was converted, raw samples (sorted on
-        # the declared axis, often in the opposite order) cannot be overlaid
-        # on the converted axis — drop them rather than misplace points.
-        if (diagnostics.get("axis_conversion") or {}).get("basis") == "converted":
-            raw_signal = []
-
-        smoothed = _to_list(analysis_state.get("smoothed"))
-        baseline = _to_list(analysis_state.get("baseline"))
-        corrected = _to_list(analysis_state.get("corrected"))
-        normalized = _to_list(analysis_state.get("normalized"))
-        dtg = _to_list(analysis_state.get("dtg"))
-        dtg_per_min = _to_list(analysis_state.get("dtg_per_min"))
-        # PR-18: prefer the annotated peak table (adds axis unit, signal
-        # basis, region labels) when present; fall back to raw peak dicts.
-        raw_peaks = analysis_state.get("peak_table") or analysis_state.get("peaks") or []
-        if not isinstance(raw_peaks, list):
-            raw_peaks = []
-
-        def _peak_to_dict(peak: Any) -> dict[str, Any]:
-            if isinstance(peak, dict):
-                return peak
-            if hasattr(peak, "__dict__"):
-                return vars(peak)
-            if hasattr(peak, "_asdict"):
-                return peak._asdict()
-            return {}
-
-        peaks = [_peak_to_dict(p) for p in raw_peaks]
-        diagnostics = analysis_state.get("diagnostics") or {}
-        processing = analysis_state.get("processing")
-        if not isinstance(processing, Mapping):
-            processing = {}
-        method_context = processing.get("method_context")
-        if not isinstance(method_context, Mapping):
-            method_context = {}
-
-        normalized_analysis_type = analysis_type.upper()
-        x_unit = units.get("temperature")
-        y_unit = units.get("signal")
-        axis_role = None
-        signal_role = None
-        if normalized_analysis_type == "FTIR":
-            # PR-18: after an axis or signal conversion the effective
-            # unit/role come from the stored analysis state, not the declared
-            # import units.
-            x_unit = analysis_state.get("axis_unit") or x_unit
-            y_unit = analysis_state.get("signal_unit") or y_unit
-            axis_role = str(
-                analysis_state.get("axis_role")
-                or metadata.get("spectral_axis_role")
-                or "wavenumber"
-            )
-            signal_role = str(
-                analysis_state.get("signal_role")
-                or diagnostics.get("signal_role")
-                or method_context.get("ftir_signal_role")
-                or ""
-            ).strip() or None
-        elif normalized_analysis_type == "RAMAN":
-            x_unit = analysis_state.get("axis_unit") or x_unit
-            y_unit = analysis_state.get("signal_unit") or y_unit
-            axis_role = str(
-                analysis_state.get("axis_role")
-                or metadata.get("spectral_axis_role")
-                or "raman_shift"
-            )
-            signal_role = str(
-                analysis_state.get("signal_role")
-                or diagnostics.get("signal_role")
-                or method_context.get("raman_signal_role")
-                or ""
-            ).strip() or None
-        elif normalized_analysis_type == "XRD":
-            axis_role = str(
-                method_context.get("xrd_axis_role")
-                or metadata.get("xrd_axis_role")
-                or "two_theta"
-            )
-            x_unit = (
-                method_context.get("xrd_axis_unit")
-                or metadata.get("xrd_axis_unit")
-                or x_unit
-            )
-            signal_role = "intensity"
-        elif normalized_analysis_type == "DSC":
-            axis_role = "temperature"
-            signal_role = "heat_flow"
-        elif normalized_analysis_type == "TGA":
-            axis_role = "temperature"
-            signal_role = "mass"
-        elif normalized_analysis_type == "DTA":
-            axis_role = "temperature"
-            signal_role = "delta_t"
-
+        series = resolved.series
         return AnalysisStateCurvesResponse(
             project_id=project_id,
             dataset_key=dataset_key,
-            analysis_type=normalized_analysis_type,
-            x_unit=str(x_unit) if x_unit not in (None, "") else None,
-            y_unit=str(y_unit) if y_unit not in (None, "") else None,
-            axis_role=axis_role,
-            signal_role=signal_role,
-            temperature=temperature,
-            raw_signal=raw_signal,
-            smoothed=smoothed,
-            baseline=baseline,
-            corrected=corrected,
-            normalized=normalized,
-            dtg=dtg,
-            dtg_per_min=dtg_per_min,
-            peaks=peaks,
-            has_smoothed=bool(smoothed),
-            has_baseline=bool(baseline),
-            has_corrected=bool(corrected),
-            has_normalized=bool(normalized),
-            has_dtg=bool(dtg),
-            has_dtg_per_min=bool(dtg_per_min),
-            has_peaks=bool(peaks),
-            diagnostics=diagnostics,
+            analysis_type=resolved.analysis_type,
+            x_unit=resolved.axis_unit,
+            y_unit=resolved.signal_unit,
+            axis_role=resolved.axis_role,
+            signal_role=resolved.signal_role,
+            temperature=resolved.axis,
+            raw_signal=series["raw_signal"],
+            smoothed=series["smoothed"],
+            baseline=series["baseline"],
+            corrected=series["corrected"],
+            normalized=series["normalized"],
+            dtg=series["dtg"],
+            dtg_per_min=series["dtg_per_min"],
+            peaks=resolved.peaks,
+            has_smoothed=bool(series["smoothed"]),
+            has_baseline=bool(series["baseline"]),
+            has_corrected=bool(series["corrected"]),
+            has_normalized=bool(series["normalized"]),
+            has_dtg=bool(series["dtg"]),
+            has_dtg_per_min=bool(series["dtg_per_min"]),
+            has_peaks=bool(resolved.peaks),
+            diagnostics=resolved.diagnostics,
         )
 
     @app.post("/workspace/{project_id}/results/{result_id}/literature/compare", response_model=LiteratureCompareResponse)
@@ -1985,6 +1859,112 @@ def create_app(
                 "saved_at_utc": provenance.get("saved_at_utc"),
                 "calibration_state": provenance.get("calibration_state"),
                 "reference_state": provenance.get("reference_state"),
+            },
+            validation=ValidationSummary(
+                status=validation.get("status", "unknown"),
+                warning_count=len(validation.get("warnings") or []),
+                issue_count=len(validation.get("issues") or []),
+            ),
+            summary=_project_summary(state),
+        )
+
+    @app.get("/workspace/{project_id}/deconvolution/options/{dataset_key}")
+    def deconvolution_options(
+        project_id: str,
+        dataset_key: str,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> dict:
+        """Preview module: selectable signal bases and effective axis semantics.
+
+        Read-only companion to the run endpoint so the Dash page can label the
+        axis honestly and explain why a basis is unavailable.
+        """
+        _require_token(api_token, x_ta_token)
+        if not preview_modules_enabled():
+            raise HTTPException(
+                status_code=403,
+                detail="Preview modules are disabled (MATERIALSCOPE_ENABLE_PREVIEW_MODULES).",
+            )
+        state = _require_project_state(project_store, project_id)
+
+        from backend.deconvolution_service import describe_options
+
+        datasets = state.get("datasets", {}) or {}
+        dataset = datasets.get(dataset_key)
+        if dataset is None:
+            raise HTTPException(status_code=404, detail=f"Unknown dataset_key: {dataset_key}")
+        analysis_type = str(getattr(dataset, "data_type", "") or "").strip().upper()
+        if analysis_type not in stable_analysis_types():
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unsupported modality for peak deconvolution: {analysis_type or 'unknown'}. "
+                    f"Supported modalities: {', '.join(stable_analysis_types())}."
+                ),
+            )
+        resolved = resolve_analysis_state(state, analysis_type, dataset_key)
+        return describe_options(resolved)
+
+    @app.post("/workspace/{project_id}/deconvolution/run", response_model=DeconvolutionRunResponse)
+    def deconvolution_run(
+        project_id: str,
+        request: DeconvolutionRunRequest,
+        x_ta_token: str | None = Header(default=None, alias="X-TA-Token"),
+    ) -> DeconvolutionRunResponse:
+        """Preview module: workspace-backed multi-component peak deconvolution.
+
+        Gated by ``MATERIALSCOPE_ENABLE_PREVIEW_MODULES``. Every scientific
+        prerequisite is validated server-side; the normalized result — including
+        the fitted arrays needed to re-render without re-running lmfit — is
+        persisted in the workspace ``results`` map with a history event.
+        """
+        _require_token(api_token, x_ta_token)
+        if not preview_modules_enabled():
+            raise HTTPException(
+                status_code=403,
+                detail="Preview modules are disabled (MATERIALSCOPE_ENABLE_PREVIEW_MODULES).",
+            )
+        state = _require_project_state(project_store, project_id)
+
+        from backend.deconvolution_service import DeconvolutionValidationError, run_deconvolution_workflow
+
+        try:
+            outcome = run_deconvolution_workflow(
+                state=state,
+                request=request,
+                app_version=APP_VERSION,
+                analyst_name=(state.get("branding") or {}).get("analyst_name"),
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"Unknown dataset_key: {exc.args[0]}") from exc
+        except DeconvolutionValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        project_store.set(project_id, state)
+        record = outcome["record"]
+        validation = outcome["validation"] or {}
+        provenance = outcome["provenance"] or {}
+        return DeconvolutionRunResponse(
+            project_id=project_id,
+            dataset_key=record.get("dataset_key") or request.dataset_key,
+            analysis_type=str(record.get("analysis_type") or ""),
+            execution_status="saved",
+            result_id=outcome["result_id"],
+            signal_basis=outcome["signal_basis"],
+            axis_role=outcome["axis_role"],
+            axis_unit=outcome["axis_unit"],
+            signal_role=outcome["signal_role"],
+            signal_unit=outcome["signal_unit"],
+            signal_dimensional_basis=outcome.get("signal_dimensional_basis"),
+            inversion_applied=bool(outcome["inversion_applied"]),
+            warnings=list(outcome["warnings"] or []),
+            result_summary=dict(record.get("summary") or {}),
+            rows=list(record.get("rows") or []),
+            report_payload=dict(record.get("report_payload") or {}),
+            provenance={
+                "saved_at_utc": provenance.get("saved_at_utc"),
+                "analysis_scope": provenance.get("analysis_scope"),
+                "signal_basis": provenance.get("signal_basis"),
             },
             validation=ValidationSummary(
                 status=validation.get("status", "unknown"),
