@@ -10,6 +10,12 @@ The resolver is deliberately permissive: it reports what exists.  Callers
 decide what to do about a missing basis (the HTTP endpoint keeps its empty
 response for datasets without a saved analysis; deconvolution blocks without
 silently falling back to raw).
+
+Signal semantics are resolved **per basis**, not once per dataset.  An FTIR
+dataset imported as %T whose saved analysis converted the working signal to
+absorbance therefore reports ``raw`` as transmittance while
+``smoothed``/``corrected`` are absorbance, and ``normalized`` keeps the useful
+role without claiming a physical unit.
 """
 
 from __future__ import annotations
@@ -19,6 +25,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
+from core.batch_runner import infer_spectral_signal_context
 from core.modalities import analysis_state_key
 
 
@@ -26,16 +33,46 @@ from core.modalities import analysis_state_key
 # derivatives are reported as series but are not selectable fitting bases.
 BASIS_NAMES: tuple[str, ...] = ("raw", "smoothed", "corrected", "normalized")
 
+# Modality-level raw-signal roles for non-FTIR datasets: a raw imported curve
+# carries the modality's physical quantity rather than any derived semantics.
+_RAW_MODALITY_ROLES: dict[str, str] = {
+    "RAMAN": "intensity",
+    "XRD": "intensity",
+    "DSC": "heat_flow",
+    "TGA": "mass",
+    "DTA": "delta_t",
+}
+
+
+def _clean_unit(unit: Any) -> str | None:
+    token = str(unit or "").strip()
+    return token or None
+
 
 @dataclass(frozen=True)
-class SignalBasisAvailability:
-    """Whether one signal basis can be used, and why not when it cannot."""
+class SignalBasisDescriptor:
+    """Whether one signal basis can be used, plus its own signal semantics.
+
+    Signal semantics are **basis-specific**: the imported raw signal and a
+    derived working signal (e.g. absorbance after a %T conversion) do not share
+    a role or a unit, and a normalized curve must not claim the physical unit
+    of the signal it was derived from.
+    """
 
     name: str
     available: bool
     source: str | None
     reason: str | None
     length: int
+    signal_role: str | None = None
+    signal_unit: str | None = None
+    # "physical" | "normalized" | "unknown"; None when the basis is unavailable.
+    dimensional_basis: str | None = None
+    role_provenance: str | None = None
+
+
+# Backwards-compatible alias: the descriptor supersedes the availability-only view.
+SignalBasisAvailability = SignalBasisDescriptor
 
 
 @dataclass(frozen=True)
@@ -100,6 +137,27 @@ def _peak_to_dict(peak: Any) -> dict[str, Any]:
     if hasattr(peak, "_asdict"):
         return peak._asdict()
     return {}
+
+
+def _raw_signal_semantics(dataset: Any, analysis_type: str) -> tuple[str | None, str | None, str | None]:
+    """Resolve the *imported* dataset's signal unit, role and role provenance.
+
+    The raw basis is the imported curve, so it must not inherit the saved
+    analysis working-signal semantics: an FTIR dataset imported as %T stays
+    transmittance even when the saved analysis converted the working signal to
+    absorbance.  FTIR reuses the spectral pipeline's own inference (declared
+    unit first, then an explicitly mapped column header), so a generic token
+    such as ``a.u.`` leaves the role unresolved instead of claiming absorbance.
+    """
+    if analysis_type == "FTIR":
+        unit, role, provenance = infer_spectral_signal_context(dataset)
+        return _clean_unit(unit), (None if role == "unknown" else role), provenance
+
+    declared = getattr(dataset, "units", {}).get("signal") or getattr(dataset, "metadata", {}).get(
+        "inferred_signal_unit"
+    )
+    role = _RAW_MODALITY_ROLES.get(analysis_type)
+    return _clean_unit(declared), role, ("modality_default" if role else "unresolved")
 
 
 def resolve_analysis_state(
@@ -229,30 +287,54 @@ def resolve_analysis_state(
         axis_role = "temperature"
         signal_role = "delta_t"
 
-    bases: dict[str, SignalBasisAvailability] = {}
+    # Effective *saved-analysis* semantics.  These describe the working signal
+    # (e.g. absorbance after a %T conversion on FTIR) and are what the
+    # analysis-state curves endpoint reports.  The raw basis has its own.
+    working_unit = _clean_unit(y_unit)
+    working_role = signal_role
+    raw_unit, raw_role, raw_role_provenance = _raw_signal_semantics(dataset, normalized_analysis_type)
+
+    bases: dict[str, SignalBasisDescriptor] = {}
     for name in BASIS_NAMES:
         if name == "raw" and raw_reason is not None:
-            bases[name] = SignalBasisAvailability(
+            bases[name] = SignalBasisDescriptor(
                 name=name, available=False, source=None, reason=raw_reason, length=0
             )
             continue
         values = series_for_basis(series, name)
-        if values:
-            bases[name] = SignalBasisAvailability(
-                name=name,
-                available=True,
-                source="dataset_import" if name == "raw" else "analysis_state",
-                reason=None,
-                length=len(values),
-            )
-        else:
-            bases[name] = SignalBasisAvailability(
+        if not values:
+            bases[name] = SignalBasisDescriptor(
                 name=name,
                 available=False,
                 source=None,
                 reason="no_saved_analysis_state" if not has_analysis_state else f"no_saved_{name}_curve",
                 length=0,
             )
+            continue
+
+        if name == "raw":
+            role, unit, role_provenance = raw_role, raw_unit, raw_role_provenance
+            dimensional_basis = "physical" if unit else "unknown"
+        elif name == "normalized":
+            # A normalized curve keeps the useful semantic role but must not
+            # claim the physical unit of the signal it was derived from.
+            role, unit, role_provenance = working_role, None, "analysis_state"
+            dimensional_basis = "normalized"
+        else:
+            role, unit, role_provenance = working_role, working_unit, "analysis_state"
+            dimensional_basis = "physical" if unit else "unknown"
+
+        bases[name] = SignalBasisDescriptor(
+            name=name,
+            available=True,
+            source="dataset_import" if name == "raw" else "analysis_state",
+            reason=None,
+            length=len(values),
+            signal_role=role,
+            signal_unit=unit,
+            dimensional_basis=dimensional_basis,
+            role_provenance=role_provenance,
+        )
 
     return ResolvedAnalysisState(
         dataset_key=dataset_key,

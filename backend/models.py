@@ -416,6 +416,8 @@ class DeconvolutionRunResponse(BaseModel):
     axis_unit: str | None = None
     signal_role: str | None = None
     signal_unit: str | None = None
+    # "physical" | "normalized" | "unknown" for the *selected* basis.
+    signal_dimensional_basis: str | None = None
     inversion_applied: bool = False
     warnings: list[str] = Field(default_factory=list)
     result_summary: dict[str, Any] = Field(default_factory=dict)

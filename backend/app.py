@@ -1955,6 +1955,7 @@ def create_app(
             axis_unit=outcome["axis_unit"],
             signal_role=outcome["signal_role"],
             signal_unit=outcome["signal_unit"],
+            signal_dimensional_basis=outcome.get("signal_dimensional_basis"),
             inversion_applied=bool(outcome["inversion_applied"]),
             warnings=list(outcome["warnings"] or []),
             result_summary=dict(record.get("summary") or {}),

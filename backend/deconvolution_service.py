@@ -196,10 +196,16 @@ def _apply_range(
     return axis, values, [float(axis.min()), float(axis.max())]
 
 
-def _transmittance_warning(resolved: ResolvedAnalysisState, *, inversion_applied: bool) -> str | None:
-    if resolved.analysis_type != "FTIR" or inversion_applied:
+def _transmittance_warning(
+    analysis_type: str,
+    signal_role: str | None,
+    *,
+    inversion_applied: bool,
+) -> str | None:
+    """Advisory for a transmittance *basis*; never a silent conversion."""
+    if analysis_type != "FTIR" or inversion_applied:
         return None
-    role = str(resolved.signal_role or "").strip().lower()
+    role = str(signal_role or "").strip().lower()
     if role not in TRANSMITTANCE_ROLES:
         return None
     return (
@@ -263,6 +269,14 @@ def run_deconvolution_workflow(
         )
 
     axis, values = _select_signal(resolved, basis)
+    # Signal semantics belong to the *selected* basis: the imported raw curve
+    # and a converted working signal (e.g. %T -> absorbance) do not share a
+    # role or a unit, and a normalized curve carries no physical unit.
+    descriptor = resolved.bases[basis]
+    basis_signal_role = descriptor.signal_role
+    basis_signal_unit = descriptor.signal_unit
+    basis_dimensional = descriptor.dimensional_basis
+
     axis, values, selected_range = _apply_range(axis, values, request)
     if axis.size < MIN_USABLE_POINTS:
         raise DeconvolutionValidationError(
@@ -299,7 +313,9 @@ def run_deconvolution_workflow(
             "centers were spaced evenly across the axis. Review the initial guesses."
         )
 
-    transmittance_warning = _transmittance_warning(resolved, inversion_applied=inversion_applied)
+    transmittance_warning = _transmittance_warning(
+        resolved.analysis_type, basis_signal_role, inversion_applied=inversion_applied
+    )
     if transmittance_warning:
         warnings.append(transmittance_warning)
 
@@ -331,11 +347,13 @@ def run_deconvolution_workflow(
             "analysis_scope": DECONVOLUTION_ANALYSIS_SCOPE,
             "dataset_key": dataset_key,
             "signal_basis": basis,
-            "signal_basis_source": resolved.bases[basis].source,
+            "signal_basis_source": descriptor.source,
+            "signal_role_provenance": descriptor.role_provenance,
+            "signal_dimensional_basis": basis_dimensional,
             "fit_axis_role": resolved.axis_role,
             "fit_axis_unit": resolved.axis_unit,
-            "fit_signal_role": resolved.signal_role,
-            "fit_signal_unit": resolved.signal_unit,
+            "fit_signal_role": basis_signal_role,
+            "fit_signal_unit": basis_signal_unit,
             "selected_range": selected_range,
             "n_peaks": n_peaks,
             "peak_shape": peak_shape,
@@ -348,11 +366,14 @@ def run_deconvolution_workflow(
     processing: dict[str, Any] = {
         "dataset_key": dataset_key,
         "signal_basis": basis,
-        "signal_basis_source": resolved.bases[basis].source,
+        "signal_basis_source": descriptor.source,
+        # Semantics of the *selected* basis, not of the dataset as a whole.
+        "signal_role": basis_signal_role,
+        "signal_unit": basis_signal_unit,
+        "signal_dimensional_basis": basis_dimensional,
+        "signal_role_provenance": descriptor.role_provenance,
         "axis_role": resolved.axis_role,
         "axis_unit": resolved.axis_unit,
-        "signal_role": resolved.signal_role,
-        "signal_unit": resolved.signal_unit,
         "selected_range": selected_range,
         "n_peaks": n_peaks,
         "peak_shape": peak_shape,
@@ -369,6 +390,9 @@ def run_deconvolution_workflow(
             "prominence_threshold": estimate["prominence_threshold"],
             "fallback_spacing_used": estimate["fallback_spacing_used"],
             "positive_point_fraction": estimate["positive_point_fraction"],
+            "amplitude_semantics": estimate.get("amplitude_semantics"),
+            "estimate_method": estimate.get("estimate_method"),
+            "shape_area_factor": estimate.get("shape_area_factor"),
         },
         "fit_engine": "lmfit",
         "component_parameter_semantics": (
@@ -388,7 +412,7 @@ def run_deconvolution_workflow(
         resolved.analysis_type, "x", detected_unit=resolved.axis_unit, axis_role=resolved.axis_role
     )
     y_label = build_axis_title(
-        resolved.analysis_type, "y", detected_unit=resolved.signal_unit, signal_kind=resolved.signal_role
+        resolved.analysis_type, "y", detected_unit=basis_signal_unit, signal_kind=basis_signal_role
     )
     if basis != "raw":
         y_label = f"{y_label} [{basis}]"
@@ -407,8 +431,9 @@ def run_deconvolution_workflow(
         "ylabel": y_label,
         "axis_role": resolved.axis_role,
         "axis_unit": resolved.axis_unit,
-        "signal_role": resolved.signal_role,
-        "signal_unit": resolved.signal_unit,
+        "signal_role": basis_signal_role,
+        "signal_unit": basis_signal_unit,
+        "signal_dimensional_basis": basis_dimensional,
         "selected_range": selected_range,
         "peak_count": n_peaks,
         "peak_shape": peak_shape,
@@ -457,8 +482,9 @@ def run_deconvolution_workflow(
         "signal_basis": basis,
         "axis_role": resolved.axis_role,
         "axis_unit": resolved.axis_unit,
-        "signal_role": resolved.signal_role,
-        "signal_unit": resolved.signal_unit,
+        "signal_role": basis_signal_role,
+        "signal_unit": basis_signal_unit,
+        "signal_dimensional_basis": basis_dimensional,
         "inversion_applied": inversion_applied,
         "warnings": warnings,
         "validation": validation,
@@ -471,7 +497,9 @@ def describe_options(resolved: ResolvedAnalysisState) -> dict[str, Any]:
 
     This is the read-only companion to the run endpoint: the Dash page needs
     the effective axis/unit labels, the axis domain, and *why* a basis is
-    unavailable before it can offer an honest workflow.
+    unavailable before it can offer an honest workflow.  Each basis also
+    carries its own signal role/unit so the page can label the selection
+    honestly instead of assuming the dataset has one signal semantics.
     """
     x_label = build_axis_title(
         resolved.analysis_type, "x", detected_unit=resolved.axis_unit, axis_role=resolved.axis_role
@@ -505,6 +533,23 @@ def describe_options(resolved: ResolvedAnalysisState) -> dict[str, Any]:
                 "source": info.source,
                 "reason": info.reason,
                 "length": info.length,
+                "signal_role": info.signal_role,
+                "signal_unit": info.signal_unit,
+                "dimensional_basis": info.dimensional_basis,
+                "role_provenance": info.role_provenance,
+                # Rendered with the backend's own axis-title rules so the UI
+                # labels the selected basis, not the dataset as a whole.
+                "signal_label": (
+                    build_axis_title(
+                        resolved.analysis_type,
+                        "y",
+                        detected_unit=info.signal_unit,
+                        signal_kind=info.signal_role,
+                    )
+                    + (" [normalized]" if info.dimensional_basis == "normalized" else "")
+                    if info.available
+                    else None
+                ),
             }
             for info in resolved.bases.values()
         ],

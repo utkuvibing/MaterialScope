@@ -32,6 +32,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 WORK_ROOT = REPO_ROOT / "pytest_temp" / "deconvolution_browser"
+SCOPE = "preview_deconvolution"
 
 
 @pytest.fixture(scope="module")
@@ -286,8 +287,11 @@ def _pw_session(session: str, *args: str) -> str:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         timeout=300,
-        check=True,
+        check=False,
     )
+    if completed.returncode != 0:
+        # Surface the browser-side error instead of a bare CalledProcessError.
+        raise RuntimeError(f"playwright-cli {' '.join(args)} failed:\n{completed.stdout}")
     return completed.stdout.strip()
 
 
@@ -337,19 +341,23 @@ async (page) => {
   await page.reload({waitUntil: 'domcontentloaded'});
   await page.locator('#deconvolution-dataset-select').waitFor({state: 'visible', timeout: 30000});
 
-  await page.locator('#deconvolution-dataset-select').click();
-  const option = page.locator('.dash-dropdown-option', {hasText: DATASET}).first();
-  await option.waitFor({state: 'visible', timeout: 15000});
-  await option.click();
-  await page.keyboard.press('Escape');
+  // A hard reload resets the form (the persisted *result* is what rehydrates),
+  // so dataset selection is a reusable step.
+  const selectDataset = async (name) => {
+    await page.locator('#deconvolution-dataset-select').click();
+    const opt = page.locator('.dash-dropdown-option', {hasText: name}).first();
+    await opt.waitFor({state: 'visible', timeout: 15000});
+    await opt.click();
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(
+      () => ((document.querySelector('#deconvolution-dataset-status') || {}).innerText || '').length > 0,
+      null,
+      {timeout: 20000}
+    );
+    await page.waitForTimeout(1000);
+  };
 
-  // Wait for the backend options to resolve the dataset (status text appears).
-  await page.waitForFunction(
-    () => ((document.querySelector('#deconvolution-dataset-status') || {}).innerText || '').length > 0,
-    null,
-    {timeout: 20000}
-  );
-  await page.waitForTimeout(1200);
+  await selectDataset(DATASET);
   const datasetStatus = await textOf('#deconvolution-dataset-status');
 
   await page.locator('#deconvolution-basis-select').click();
@@ -403,7 +411,47 @@ async (page) => {
   await page.waitForSelector('#deconvolution-result-figure .js-plotly-plot', {state: 'visible', timeout: 90000});
   await page.waitForTimeout(1500);
   const second = await collect();
-  await page.evaluate((r) => { window.__deconvolutionReport = r; }, {datasetStatus, first, second});
+
+  // Range panel: the switch must reveal the inputs, and a restricted run must
+  // persist the requested domain instead of only suggesting it.  The reload
+  // above reset the form, so the guesses are re-entered for this run.
+  const rangeHiddenBefore = !(await page.locator('#deconvolution-range-min').isVisible());
+  await selectDataset(DATASET);
+  await page.locator('#deconvolution-use-guesses input').click();
+  await page.waitForTimeout(600);
+  const rangeCenters = page.locator('input[id*="deconvolution-guess-center"]');
+  const rangeSigmas = page.locator('input[id*="deconvolution-guess-sigma"]');
+  await rangeCenters.nth(0).fill('120');
+  await rangeSigmas.nth(0).fill('8');
+  await rangeCenters.nth(1).fill('170');
+  await rangeSigmas.nth(1).fill('10');
+
+  await page.locator('#deconvolution-use-range input').click();
+  await page.waitForTimeout(600);
+  const rangeVisible = (await page.locator('#deconvolution-range-min').isVisible())
+    && (await page.locator('#deconvolution-range-max').isVisible());
+  const rangeWidth = await page.evaluate(() => {
+    const el = document.querySelector('#deconvolution-range-min');
+    return el ? el.getBoundingClientRect().width : 0;
+  });
+  await page.locator('#deconvolution-range-min').fill('100');
+  await page.locator('#deconvolution-range-max').fill('200');
+  await page.locator('#deconvolution-run-btn').click();
+
+  let rangeStatus = '';
+  for (let i = 0; i < 90; i++) {
+    rangeStatus = await textOf('#deconvolution-run-status');
+    if (rangeStatus.toLowerCase().includes('saved')) break;
+    await page.waitForTimeout(1000);
+  }
+  const rangeFigureCount = await page.evaluate(
+    () => document.querySelectorAll('#deconvolution-result-figure .js-plotly-plot').length
+  );
+
+  await page.evaluate((r) => { window.__deconvolutionReport = r; }, {
+    datasetStatus, first, second,
+    range: {rangeHiddenBefore, rangeVisible, rangeWidth, rangeStatus, rangeFigureCount},
+  });
 }
 """
 
@@ -501,6 +549,31 @@ def test_deconvolution_page_real_browser_thermal_flow(live_dash_preview):
     assert second["plot"] and second["plot"]["height"] > 200
     assert second["tableRows"] == 2
     assert second["plotCount"] == 1
+
+    # Range panel: hidden until the switch is on, then a restricted run must
+    # persist the requested domain.
+    range_report = report["range"]
+    assert range_report["rangeHiddenBefore"] is True
+    assert range_report["rangeVisible"] is True
+    assert range_report["rangeWidth"] > 20
+    assert "saved" in range_report["rangeStatus"].lower(), range_report["rangeStatus"]
+    assert range_report["rangeFigureCount"] >= 1
+
+    results = client.get(f"/workspace/{project_id}/results").json()["results"]
+    deconvolution_results = [item for item in results if item.get("analysis_scope") == SCOPE]
+    assert len(deconvolution_results) >= 2
+    newest = max(
+        deconvolution_results,
+        key=lambda item: (str(item.get("saved_at_utc") or ""), str(item.get("id") or "")),
+    )
+    detail = client.get(f"/workspace/{project_id}/results/{newest['id']}").json()
+    # selected_range is the realized sample domain inside the requested window.
+    selected = detail["processing"]["selected_range"]
+    assert 100.0 <= selected[0] <= 101.0
+    assert 199.0 <= selected[1] <= 200.0
+    assert selected[0] > 50.0 and selected[1] < 250.0
+    assert min(detail["report_payload"]["x"]) == pytest.approx(selected[0])
+    assert max(detail["report_payload"]["x"]) == pytest.approx(selected[1])
 
 
 @pytest.mark.skipif(

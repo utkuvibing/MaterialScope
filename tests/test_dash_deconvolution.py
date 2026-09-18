@@ -127,6 +127,7 @@ def _detail_payload() -> dict:
             "mae": 0.0009,
             "max_abs_residual": 0.003,
             "sse_per_dof": 1.4e-05,
+            "sse_per_dof_unit": "mW²",
             "dof": 494,
             "peak_shape": "gaussian",
             "peak_count": 2,
@@ -412,6 +413,56 @@ def test_guess_rows_hidden_when_disabled(_dash_app, monkeypatch):
     assert not isinstance(rows, list)
 
 
+def test_range_panel_reveals_only_when_the_switch_is_on(_dash_app):
+    """The range inputs must actually become reachable from the UI."""
+    mod = _import_page()
+
+    assert mod.toggle_deconvolution_range([]) == {"display": "none"}
+    assert mod.toggle_deconvolution_range(["on"]) == {}
+
+
+def test_range_panel_callback_is_registered(_dash_app):
+    mod = _import_page()
+
+    assert hasattr(mod, "toggle_deconvolution_range")
+    assert "deconvolution-range-wrap" in _dump(mod.layout)
+
+
+def test_no_static_page_i18n_key_is_missing(_dash_app):
+    """Every dash.deconvolution.* key the page uses must exist in EN and TR."""
+    import re
+    from pathlib import Path
+
+    from utils.i18n import TRANSLATIONS
+
+    mod = _import_page()
+    source = Path(mod.__file__).read_text(encoding="utf-8")
+    used = set(re.findall(r'"(dash\.deconvolution\.[A-Za-z0-9_.]+)"', source))
+    # f-string families the page builds dynamically.
+    used.update(f"dash.deconvolution.shape.{shape}" for shape in ("gaussian", "lorentzian", "pseudo_voigt"))
+    used.update(f"dash.deconvolution.basis.{basis}" for basis in ("raw", "smoothed", "corrected", "normalized"))
+    used.update(
+        f"dash.deconvolution.reason.{reason}"
+        for reason in (
+            "no_usable_samples",
+            "no_saved_analysis_state",
+            "raw_signal_not_aligned_with_effective_axis",
+            "no_saved_smoothed_curve",
+            "no_saved_corrected_curve",
+            "no_saved_normalized_curve",
+        )
+    )
+
+    missing = sorted(key for key in used if key not in TRANSLATIONS)
+    assert missing == []
+    assert "nav.deconvolution" in TRANSLATIONS
+
+    for key in sorted(used):
+        entry = TRANSLATIONS[key]
+        assert entry.get("en"), key
+        assert entry.get("tr"), key
+
+
 def test_blank_guess_fields_are_not_submitted_as_user_values(_dash_app, monkeypatch):
     monkeypatch.setenv(PREVIEW_ENV, "1")
     mod = _import_page()
@@ -563,6 +614,8 @@ def test_result_rendering_uses_the_persisted_payload(_dash_app, monkeypatch):
     assert "Unweighted SSE / DoF" in metrics_text
     assert "Degrees of freedom" in metrics_text
     assert "not a measurement-uncertainty-weighted" in metrics_text
+    # SSE/DoF carries squared signal units when they are known.
+    assert "mW²" in metrics_text
 
     assert figure is not None and "Graph" in _dump(figure)
     assert len(figure.figure.data) == 4  # input + total fit + two components

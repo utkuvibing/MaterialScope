@@ -4644,6 +4644,10 @@ TRANSLATIONS = {
         "tr": "Sıfır referansı",
         "en": "Zero reference",
     },
+    "dash.deconvolution.series_residual": {
+        "tr": "Artık (ölçülen − uydurulan)",
+        "en": "Residual (measured − fitted)",
+    },
     "dash.deconvolution.warnings_title": {
         "tr": "Uyarılar",
         "en": "Warnings",

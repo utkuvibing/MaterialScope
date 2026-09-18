@@ -2130,16 +2130,23 @@ def serialize_deconvolution_result(
     stats = result.get("residual_stats") or {}
     axis_unit = processing.get("axis_unit")
     signal_unit = processing.get("signal_unit")
+    dimensional_basis = processing.get("signal_dimensional_basis")
+    # SSE/DoF carries squared signal units.  It is only stated when the
+    # selected basis actually has a physical signal unit: a normalized curve
+    # carries no physical unit, and an unknown unit is never invented.
+    sse_per_dof_unit = f"{signal_unit}²" if signal_unit and dimensional_basis != "normalized" else None
     summary = {
         "r_squared": _clean_scalar(result.get("r_squared")),
         "rmse": _clean_scalar(stats.get("rmse")),
         "mae": _clean_scalar(stats.get("mae")),
         "max_abs_residual": _clean_scalar(stats.get("max_abs_residual")),
         "sse_per_dof": _clean_scalar(stats.get("sse_per_dof")),
+        "sse_per_dof_unit": sse_per_dof_unit,
         "dof": _clean_scalar(stats.get("dof")),
         "peak_shape": peak_shape,
         "peak_count": n_peaks,
         "signal_basis": processing.get("signal_basis"),
+        "signal_dimensional_basis": dimensional_basis,
         "axis_role": processing.get("axis_role"),
         "axis_unit": axis_unit,
         "signal_unit": signal_unit,

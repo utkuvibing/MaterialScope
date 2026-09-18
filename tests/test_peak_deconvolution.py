@@ -7,7 +7,7 @@ import pytest
 
 pytest.importorskip("lmfit")
 
-from core.peak_deconvolution import auto_estimate_peaks, deconvolve_peaks
+from core.peak_deconvolution import auto_estimate_peaks, deconvolve_peaks, shape_area_factor
 from core.result_serialization import serialize_deconvolution_result
 
 
@@ -163,6 +163,56 @@ def test_auto_estimate_detects_positive_peaks():
     assert estimate["detected_peak_count"] == 2
     assert estimate["fallback_spacing_used"] is False
     assert estimate["positive_point_fraction"] == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize(
+    ("shape", "factor"),
+    [
+        ("gaussian", float(np.sqrt(2.0 * np.pi))),
+        ("lorentzian", float(np.pi)),
+        ("pseudo_voigt", 1.0 / (0.5 / float(np.sqrt(2.0 * np.pi)) + 0.5 / float(np.pi))),
+    ],
+)
+def test_auto_amplitude_guess_has_integrated_area_semantics(shape, factor):
+    """lmfit's amplitude is an area, so the auto guess must not be the height."""
+    x, y = _synthetic_signal()
+
+    estimate = auto_estimate_peaks(x, y, 2, peak_shape=shape)
+    peak = estimate["peaks"][0]
+
+    assert estimate["amplitude_semantics"] == "integrated_area_parameter"
+    assert estimate["shape_area_factor"] == pytest.approx(factor)
+    assert estimate["peak_shape"] == shape
+    assert "shape_area_factor" in estimate["estimate_method"]
+
+    # A sampled height is the starting point, but the submitted amplitude is
+    # the integrated area that the selected model parameterizes.
+    assert peak["height"] > 0
+    assert peak["amplitude"] == pytest.approx(peak["height"] * peak["sigma"] * factor)
+    assert peak["amplitude"] != pytest.approx(peak["height"])
+
+    # Sanity: the Gaussian factor is the lightest, the Lorentzian the heaviest.
+    assert shape_area_factor("lorentzian") > shape_area_factor("pseudo_voigt") > shape_area_factor("gaussian")
+
+
+def test_auto_estimate_without_shape_argument_stays_backwards_compatible():
+    x, y = _synthetic_signal()
+
+    estimate = auto_estimate_peaks(x, y, 2)
+
+    assert estimate["peak_shape"] == "gaussian"
+    assert len(estimate["peaks"]) == 2
+    assert set(estimate["peaks"][0]) == {"center", "amplitude", "sigma", "height"}
+
+
+def test_auto_estimated_amplitude_is_a_usable_fit_start():
+    """Correct area scaling must keep the automatic path converging."""
+    x, y = _synthetic_signal()
+
+    result = deconvolve_peaks(x, y, n_peaks=2, peak_shape="gaussian")
+
+    assert result["r_squared"] > 0.99
+    assert [row["center"] for row in result["initial_guesses"]] == pytest.approx([120.0, 170.0], abs=5.0)
 
 
 def test_serializer_persists_report_payload_and_derived_rows():

@@ -50,12 +50,16 @@ class _Dataset:
         data_type: str = "DSC",
         units: dict | None = None,
         metadata: dict | None = None,
+        original_columns: dict | None = None,
     ) -> None:
         self.data = pd.DataFrame({"temperature": x, "signal": y})
         self.units = units if units is not None else {"temperature": "°C", "signal": "mW"}
         self.metadata = metadata if metadata is not None else {"sample_name": "Synthetic"}
         self.data_type = data_type
-        self.original_columns = ("temperature", "signal")
+        self.original_columns = original_columns if original_columns is not None else {
+            "temperature": "temperature",
+            "signal": "signal",
+        }
         self.file_path = None
         self.signal_convention = "unknown"
 
@@ -1040,3 +1044,367 @@ def test_nan_inputs_never_reach_the_fit():
     # input contains no holes and no nulls.
     assert all(value is not None and math.isfinite(float(value)) for value in payload["y"])
     assert len(payload["x"]) == len(payload["y"]) == len(payload["fitted"])
+
+
+# ---------------------------------------------------------------------------
+# Basis-specific signal semantics (%T raw + converted absorbance working state)
+# ---------------------------------------------------------------------------
+
+_FTIR_WN = np.linspace(4000.0, 400.0, 300)
+
+
+def _ftir_transmittance_dip() -> np.ndarray:
+    """A realistic %T spectrum: a downward absorption band on a flat baseline."""
+    return 1.0 - 0.4 * np.exp(-0.5 * ((_FTIR_WN - 1700.0) / 30.0) ** 2)
+
+
+def _ftir_transmittance_bump() -> np.ndarray:
+    """A baseline-relative %T spectrum with positive-going structure."""
+    return 0.1 + 0.5 * np.exp(-0.5 * ((_FTIR_WN - 1700.0) / 30.0) ** 2)
+
+
+def _ftir_dataset(signal: np.ndarray) -> _Dataset:
+    return _Dataset(
+        _FTIR_WN,
+        signal,
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "%T"},
+        metadata={"sample_name": "ir"},
+        original_columns={"temperature": "Wavenumber (cm-1)", "signal": "Transmittance (%T)"},
+    )
+
+
+def _absorbed_state(signal: np.ndarray) -> dict:
+    """Saved FTIR state *after* the stable %T -> absorbance conversion."""
+    absorbance = -np.log10(np.clip(signal, 1e-9, None))
+    return {
+        "axis": _FTIR_WN.tolist(),
+        "axis_unit": "cm^-1",
+        "axis_role": "wavenumber",
+        "signal_role": "absorbance",
+        "signal_unit": "absorbance",
+        "smoothed": absorbance.tolist(),
+        "corrected": absorbance.tolist(),
+        "normalized": (absorbance / float(np.max(absorbance))).tolist(),
+        "diagnostics": {"signal_role": "absorbance"},
+        "processing": {"method_context": {"ftir_signal_role": "absorbance"}},
+    }
+
+
+def test_resolver_signal_semantics_are_basis_specific():
+    """A %T import whose working state was converted must not leak semantics."""
+    dataset = _ftir_dataset(_ftir_transmittance_dip())
+    state = _state(dataset, analysis_type="FTIR", analysis_state=_absorbed_state(_ftir_transmittance_dip()))
+
+    resolved = resolve_analysis_state(state, "FTIR", DATASET_KEY)
+    bases = resolved.bases
+
+    # Raw is the imported curve, not the saved working signal.
+    assert bases["raw"].signal_role == "transmittance"
+    assert bases["raw"].signal_unit == "%T"
+    assert bases["raw"].dimensional_basis == "physical"
+    assert bases["raw"].role_provenance == "declared_unit"
+
+    for name in ("smoothed", "corrected"):
+        assert bases[name].signal_role == "absorbance"
+        assert bases[name].signal_unit == "absorbance"
+
+    # Normalized keeps the useful role but claims no physical unit.
+    assert bases["normalized"].signal_role == "absorbance"
+    assert bases["normalized"].signal_unit is None
+    assert bases["normalized"].dimensional_basis == "normalized"
+
+    # The endpoint-level effective semantics stay the saved working signal.
+    assert resolved.signal_role == "absorbance"
+    assert resolved.signal_unit == "absorbance"
+
+
+def test_resolver_keeps_raw_transmittance_for_a_fresh_import():
+    dataset = _ftir_dataset(_ftir_transmittance_dip())
+    state = _state(dataset)
+
+    resolved = resolve_analysis_state(state, "FTIR", DATASET_KEY)
+
+    assert resolved.has_analysis_state is False
+    assert resolved.bases["raw"].available is True
+    assert resolved.bases["raw"].signal_role == "transmittance"
+    assert resolved.bases["raw"].signal_unit == "%T"
+    assert resolved.bases["corrected"].available is False
+
+
+def test_raw_semantics_do_not_claim_absorbance_when_provenance_is_generic():
+    """A generic unit leaves the raw role unresolved instead of guessing."""
+    dataset = _Dataset(
+        _FTIR_WN,
+        _ftir_transmittance_dip(),
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "a.u."},
+        original_columns={"temperature": "Wavenumber (cm-1)", "signal": "Signal"},
+    )
+    state = _state(dataset)
+
+    resolved = resolve_analysis_state(state, "FTIR", DATASET_KEY)
+
+    assert resolved.bases["raw"].signal_role is None
+    assert resolved.bases["raw"].signal_unit == "a.u."
+    assert resolved.bases["raw"].role_provenance == "unresolved"
+
+
+def test_raw_semantics_use_the_column_header_when_the_unit_is_generic():
+    dataset = _Dataset(
+        _FTIR_WN,
+        _ftir_transmittance_dip(),
+        data_type="FTIR",
+        units={"temperature": "cm^-1", "signal": "%"},
+        original_columns={"temperature": "Wavenumber (cm-1)", "signal": "Transmittance (%T)"},
+    )
+    state = _state(dataset)
+
+    resolved = resolve_analysis_state(state, "FTIR", DATASET_KEY)
+
+    assert resolved.bases["raw"].signal_role == "transmittance"
+    assert resolved.bases["raw"].role_provenance == "column_header"
+
+
+def test_basis_labels_follow_the_selected_basis():
+    dataset = _ftir_dataset(_ftir_transmittance_dip())
+    state = _state(dataset, analysis_type="FTIR", analysis_state=_absorbed_state(_ftir_transmittance_dip()))
+
+    options = describe_options(resolve_analysis_state(state, "FTIR", DATASET_KEY))
+    by_name = {entry["name"]: entry for entry in options["bases"]}
+
+    assert "Transmittance" in by_name["raw"]["signal_label"]
+    assert "Absorbance" in by_name["corrected"]["signal_label"]
+    assert "[normalized]" in by_name["normalized"]["signal_label"]
+    assert by_name["raw"]["signal_role"] == "transmittance"
+
+
+def test_run_on_raw_records_transmittance_semantics_and_warns():
+    """Raw keeps %T semantics, so the transmittance advisory must fire."""
+    dataset = _ftir_dataset(_ftir_transmittance_bump())
+    state = _state(dataset, analysis_type="FTIR", analysis_state=_absorbed_state(_ftir_transmittance_bump()))
+
+    outcome = _run(state, n_peaks=1, initial_params=_guesses((1700.0, 0.5, 30.0)))
+
+    processing = outcome["record"]["processing"]
+    provenance = outcome["record"]["provenance"]
+    summary = outcome["record"]["summary"]
+    assert processing["signal_role"] == "transmittance"
+    assert processing["signal_unit"] == "%T"
+    assert processing["signal_dimensional_basis"] == "physical"
+    assert provenance["fit_signal_role"] == "transmittance"
+    assert provenance["fit_signal_unit"] == "%T"
+    assert summary["signal_unit"] == "%T"
+    assert any("transmittance" in item.lower() for item in outcome["warnings"])
+    assert "Transmittance" in outcome["record"]["report_payload"]["ylabel"]
+
+
+def test_run_on_corrected_uses_absorbance_semantics_without_the_advisory():
+    dataset = _ftir_dataset(_ftir_transmittance_dip())
+    state = _state(dataset, analysis_type="FTIR", analysis_state=_absorbed_state(_ftir_transmittance_dip()))
+
+    outcome = _run(
+        state,
+        signal_basis="corrected",
+        n_peaks=1,
+        initial_params=_guesses((1700.0, 30.0, 30.0)),
+    )
+
+    processing = outcome["record"]["processing"]
+    summary = outcome["record"]["summary"]
+    assert processing["signal_role"] == "absorbance"
+    assert processing["signal_unit"] == "absorbance"
+    assert processing["signal_basis_source"] == "analysis_state"
+    assert not any("transmittance" in item.lower() for item in outcome["warnings"])
+    assert summary["signal_unit"] == "absorbance"
+    assert summary["sse_per_dof_unit"] == "absorbance²"
+    assert summary["amplitude_unit"] == "absorbance·cm^-1"
+    assert "Absorbance" in outcome["record"]["report_payload"]["ylabel"]
+
+
+def test_run_on_normalized_does_not_claim_a_physical_unit():
+    dataset = _ftir_dataset(_ftir_transmittance_dip())
+    state = _state(dataset, analysis_type="FTIR", analysis_state=_absorbed_state(_ftir_transmittance_dip()))
+
+    outcome = _run(
+        state,
+        signal_basis="normalized",
+        n_peaks=1,
+        initial_params=_guesses((1700.0, 0.5, 30.0)),
+    )
+
+    processing = outcome["record"]["processing"]
+    summary = outcome["record"]["summary"]
+    assert processing["signal_role"] == "absorbance"
+    assert processing["signal_unit"] is None
+    assert processing["signal_dimensional_basis"] == "normalized"
+    assert summary["signal_unit"] is None
+    assert summary["sse_per_dof_unit"] is None
+    assert "amplitude_unit" not in summary
+    assert "[normalized]" in outcome["record"]["report_payload"]["ylabel"]
+
+
+def test_sse_per_dof_unit_is_squared_signal_units_when_known():
+    state = _state(_thermal_dataset(), analysis_type="DSC")
+
+    outcome = _run(state)
+
+    summary = outcome["record"]["summary"]
+    assert summary["sse_per_dof_unit"] == "mW²"
+    assert summary["signal_dimensional_basis"] == "physical"
+
+
+def test_sse_per_dof_unit_is_unspecified_when_the_unit_is_unknown():
+    x = np.linspace(50.0, 250.0, 500)
+    dataset = _Dataset(x, _two_gaussians(x), units={"temperature": "°C", "signal": ""})
+    state = _state(dataset, analysis_type="DSC")
+
+    outcome = _run(state)
+
+    summary = outcome["record"]["summary"]
+    assert summary["signal_unit"] is None
+    assert summary["sse_per_dof_unit"] is None
+
+
+# ---------------------------------------------------------------------------
+# Production path: real FTIR %T -> absorbance analysis
+# ---------------------------------------------------------------------------
+
+
+def _ftir_pct_csv() -> str:
+    rows = "\n".join(f"{wn:.4f},{value:.8f}" for wn, value in zip(_FTIR_WN, _ftir_transmittance_dip()))
+    return f"Wavenumber (cm-1),Transmittance (%T)\n{rows}\n"
+
+
+def test_ftir_transmittance_to_absorbance_production_path(client, monkeypatch):
+    """Real stable FTIR conversion: options and runs must follow the basis."""
+    monkeypatch.setenv(PREVIEW_ENV, "1")
+    project_id = client.post("/workspace/new").json()["project_id"]
+    dataset_key = _import_dataset(client, project_id, _ftir_pct_csv(), data_type="FTIR", name="ir_pct.csv")
+
+    # A. the imported dataset really is %T
+    detail = client.get(f"/workspace/{project_id}/datasets/{dataset_key}").json()
+    assert detail["units"]["signal"] == "%T"
+
+    # B. the REAL stable FTIR path, with %T -> absorbance enabled
+    run = client.post(
+        "/analysis/run",
+        json={
+            "project_id": project_id,
+            "dataset_key": dataset_key,
+            "analysis_type": "FTIR",
+            "workflow_template_id": "ftir.general",
+            "processing_overrides": {"signal_conversion": {"enabled": True}},
+        },
+    )
+    assert run.status_code == 200, run.text
+    run_body = run.json()
+    assert run_body["execution_status"] == "saved"
+    stable = client.get(f"/workspace/{project_id}/results/{run_body['result_id']}").json()
+    assert stable["summary"]["converted_to_absorbance"] is True
+
+    # C. deconvolution options follow the saved conversion per basis
+    options = client.get(f"/workspace/{project_id}/deconvolution/options/{dataset_key}")
+    assert options.status_code == 200, options.text
+    by_name = {entry["name"]: entry for entry in options.json()["bases"]}
+
+    assert by_name["raw"]["available"] is True
+    assert by_name["raw"]["signal_role"] == "transmittance"
+    assert by_name["raw"]["signal_unit"] == "%T"
+    assert "Transmittance" in by_name["raw"]["signal_label"]
+
+    for name in ("smoothed", "corrected"):
+        assert by_name[name]["available"] is True
+        assert by_name[name]["signal_role"] == "absorbance"
+        assert by_name[name]["signal_unit"] == "absorbance"
+
+    assert by_name["normalized"]["signal_role"] == "absorbance"
+    assert by_name["normalized"]["signal_unit"] is None
+    assert by_name["normalized"]["dimensional_basis"] == "normalized"
+    assert "[normalized]" in by_name["normalized"]["signal_label"]
+
+    # D. corrected fits the real absorbance bands with absorbance semantics
+    corrected = client.post(
+        f"/workspace/{project_id}/deconvolution/run",
+        json={
+            "dataset_key": dataset_key,
+            "signal_basis": "corrected",
+            "n_peaks": 1,
+            "peak_shape": "gaussian",
+            "initial_params": [{"center": 1700.0, "sigma": 30.0, "amplitude": 30.0}],
+        },
+    )
+    assert corrected.status_code == 200, corrected.text
+    corrected_body = corrected.json()
+    assert corrected_body["signal_role"] == "absorbance"
+    assert corrected_body["signal_unit"] == "absorbance"
+    assert corrected_body["result_summary"]["sse_per_dof_unit"] == "absorbance²"
+    assert not any("transmittance" in item.lower() for item in corrected_body["warnings"])
+
+    corrected_detail = client.get(f"/workspace/{project_id}/results/{corrected_body['result_id']}").json()
+    assert corrected_detail["processing"]["signal_role"] == "absorbance"
+    assert corrected_detail["provenance"]["fit_signal_role"] == "absorbance"
+
+    # E. normalized fits with no physical unit claimed anywhere
+    normalized = client.post(
+        f"/workspace/{project_id}/deconvolution/run",
+        json={
+            "dataset_key": dataset_key,
+            "signal_basis": "normalized",
+            "n_peaks": 1,
+            "peak_shape": "gaussian",
+            "initial_params": [{"center": 1700.0, "sigma": 30.0, "amplitude": 0.5}],
+        },
+    )
+    assert normalized.status_code == 200, normalized.text
+    normalized_body = normalized.json()
+    assert normalized_body["signal_unit"] is None
+    assert normalized_body["signal_dimensional_basis"] == "normalized"
+    assert normalized_body["result_summary"]["signal_unit"] is None
+    assert normalized_body["result_summary"]["sse_per_dof_unit"] is None
+
+
+def test_ftir_raw_basis_run_keeps_transmittance_provenance(client, monkeypatch):
+    """Selecting raw on a converted dataset must not borrow absorbance."""
+    monkeypatch.setenv(PREVIEW_ENV, "1")
+    project_id = client.post("/workspace/new").json()["project_id"]
+    bump_rows = "\n".join(f"{wn:.4f},{value:.8f}" for wn, value in zip(_FTIR_WN, _ftir_transmittance_bump()))
+    dataset_key = _import_dataset(
+        client, project_id, f"Wavenumber (cm-1),Transmittance (%T)\n{bump_rows}\n", data_type="FTIR", name="ir_bump.csv"
+    )
+
+    run = client.post(
+        "/analysis/run",
+        json={
+            "project_id": project_id,
+            "dataset_key": dataset_key,
+            "analysis_type": "FTIR",
+            "workflow_template_id": "ftir.general",
+            "processing_overrides": {"signal_conversion": {"enabled": True}},
+        },
+    )
+    assert run.status_code == 200, run.text
+
+    response = client.post(
+        f"/workspace/{project_id}/deconvolution/run",
+        json={
+            "dataset_key": dataset_key,
+            "signal_basis": "raw",
+            "n_peaks": 1,
+            "peak_shape": "gaussian",
+            "initial_params": [{"center": 1700.0, "sigma": 30.0, "amplitude": 0.5}],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["signal_role"] == "transmittance"
+    assert body["signal_unit"] == "%T"
+    assert any("transmittance" in item.lower() for item in body["warnings"])
+
+    detail = client.get(f"/workspace/{project_id}/results/{body['result_id']}").json()
+    assert detail["processing"]["signal_role"] == "transmittance"
+    assert detail["processing"]["signal_unit"] == "%T"
+    assert detail["provenance"]["fit_signal_role"] == "transmittance"
+    assert detail["summary"]["signal_unit"] == "%T"
+    assert "Transmittance" in detail["report_payload"]["ylabel"]

@@ -1069,6 +1069,17 @@ def _infer_spectral_signal_role(dataset) -> str:
     return _infer_spectral_signal_context(dataset)[1]
 
 
+def infer_spectral_signal_context(dataset) -> tuple[str, str, str]:
+    """Public entry point for the spectral signal-role/unit inference.
+
+    Returns ``(signal_unit, signal_role, provenance)`` using the same rules the
+    spectral pipeline applies to an imported dataset, so callers that need the
+    *raw* signal semantics (rather than the saved analysis semantics) do not
+    re-implement them.
+    """
+    return _infer_spectral_signal_context(dataset)
+
+
 def _maybe_invert_spectral_signal(signal: np.ndarray, role: str) -> tuple[np.ndarray, bool]:
     if role == "transmittance":
         max_val = float(np.max(signal))

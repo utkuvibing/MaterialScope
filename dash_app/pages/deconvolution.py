@@ -419,6 +419,20 @@ def gate_deconvolution_page(locale_data):
     return {"display": "none"}, disabled
 
 
+@callback(
+    Output("deconvolution-range-wrap", "style"),
+    Input("deconvolution-use-range", "value"),
+    prevent_initial_call=False,
+)
+def toggle_deconvolution_range(use_range):
+    """Reveal the optional range inputs when the switch is on.
+
+    The populated placeholders are the axis-domain suggestions only; they are
+    never submitted as explicit user input.
+    """
+    return _hidden(not use_range)
+
+
 # ---------------------------------------------------------------------------
 # Dataset + signal basis resolution
 # ---------------------------------------------------------------------------
@@ -535,14 +549,21 @@ def resolve_deconvolution_basis(project_id, dataset_key, locale_data, current_ba
     domain = options.get("axis_domain") or []
     domain_text = f"[{_fmt(domain[0])}, {_fmt(domain[1])}]" if len(domain) == 2 else "—"
 
+    selected_entry = next((entry for entry in bases if str(entry.get("name")) == selected), None)
+    # Label the resolved dataset with the *selected basis* semantics: the raw
+    # imported curve and a converted working signal can differ (e.g. %T vs
+    # absorbance), and a normalized curve carries no physical unit.
+    basis_role = (selected_entry or {}).get("signal_role") or options.get("signal_role")
+    basis_label = (selected_entry or {}).get("signal_label") or options.get("y_label")
+
     dataset_status = html.P(
         translate_ui(
             loc,
             "dash.deconvolution.basis_ready",
             x_label=options.get("x_label") or "—",
             axis_role=options.get("axis_role") or "—",
-            y_label=options.get("y_label") or "—",
-            signal_role=options.get("signal_role") or "—",
+            y_label=basis_label or "—",
+            signal_role=basis_role or "—",
             domain=domain_text,
         ),
         className="text-muted small mb-0",
@@ -558,7 +579,6 @@ def resolve_deconvolution_basis(project_id, dataset_key, locale_data, current_ba
             ]
         )
 
-    selected_entry = next((entry for entry in bases if str(entry.get("name")) == selected), None)
     if selected_entry is not None and not selected_entry.get("available"):
         basis_status = prereq_or_empty_help(
             translate_ui(
@@ -899,7 +919,9 @@ def _metrics_panel(summary: dict[str, Any], loc: str) -> html.Div:
         ),
         (
             translate_ui(loc, "dash.deconvolution.metric.sse_per_dof"),
-            _fmt(summary.get("sse_per_dof")),
+            # SSE/DoF carries squared signal units; unspecified when the
+            # selected basis has no physical unit.
+            _with_unit(loc, _fmt(summary.get("sse_per_dof")), summary.get("sse_per_dof_unit")),
         ),
         (translate_ui(loc, "dash.deconvolution.metric.dof"), _fmt(summary.get("dof"), 6)),
     ]

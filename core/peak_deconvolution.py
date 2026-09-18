@@ -105,7 +105,7 @@ def deconvolve_peaks(
 
     # Build the composite model and set initial parameters
     composite_model, param_names_per_peak = _build_model(n_peaks, peak_shape)
-    auto_estimate = auto_estimate_peaks(x, y, n_peaks)
+    auto_estimate = auto_estimate_peaks(x, y, n_peaks, peak_shape=peak_shape)
     auto_estimates = auto_estimate["peaks"]
 
     params = composite_model.make_params()
@@ -262,10 +262,47 @@ def _build_model(
     return composite, param_names_per_peak
 
 
+# lmfit's ``amplitude`` is the integrated area of each (normalized) peak
+# profile, not the peak height.  The automatic estimator therefore has to
+# convert a sampled height into that area using each shape's own convention:
+#
+#   Gaussian     f(c) = A / (sqrt(2*pi) * sigma)   -> A = h * sigma * sqrt(2*pi)
+#   Lorentzian   f(c) = A / (pi * sigma)           -> A = h * sigma * pi
+#   pseudo-Voigt f(c) = A * [(1-f)/(sqrt(2*pi)*sigma) + f/(pi*sigma)]
+#
+GAUSSIAN_AREA_FACTOR = float(np.sqrt(2.0 * np.pi))
+LORENTZIAN_AREA_FACTOR = float(np.pi)
+PSEUDO_VOIGT_DEFAULT_FRACTION = 0.5
+
+
+def shape_area_factor(peak_shape: str, *, fraction: float = PSEUDO_VOIGT_DEFAULT_FRACTION) -> float:
+    """Return the multiplier that turns ``height * sigma`` into lmfit's amplitude."""
+    shape = str(peak_shape or "").strip().lower()
+    if shape == "lorentzian":
+        return LORENTZIAN_AREA_FACTOR
+    if shape == "pseudo_voigt":
+        clamped = min(max(float(fraction), 0.0), 1.0)
+        mixing = (1.0 - clamped) / GAUSSIAN_AREA_FACTOR + clamped / LORENTZIAN_AREA_FACTOR
+        return 1.0 / max(mixing, 1e-12)
+    return GAUSSIAN_AREA_FACTOR
+
+
+def amplitude_from_height(
+    height: float,
+    sigma: float,
+    peak_shape: str,
+    *,
+    fraction: float = PSEUDO_VOIGT_DEFAULT_FRACTION,
+) -> float:
+    """Convert a sampled peak height into lmfit's integrated-area amplitude."""
+    return float(height) * max(float(sigma), 1e-12) * shape_area_factor(peak_shape, fraction=fraction)
+
+
 def auto_estimate_peaks(
     x: np.ndarray,
     y: np.ndarray,
     n_peaks: int,
+    peak_shape: str = "gaussian",
 ) -> dict:
     """
     Estimate initial center, amplitude, and sigma for each peak.
@@ -275,7 +312,9 @@ def auto_estimate_peaks(
     1. Run scipy.signal.find_peaks on the positive-clipped signal.
     2. If fewer peaks are detected than requested, distribute the remaining
        centers evenly across the x-range.
-    3. Amplitude is set to the signal value at the estimated center.
+    3. ``amplitude`` is lmfit's integrated-area parameter, so the sampled peak
+       height is converted into an area with ``peak_shape``'s own convention
+       (Gaussian, Lorentzian, or pseudo-Voigt).
     4. Sigma is set to one quarter of the average spacing between peaks
        (or a fraction of the x-range if only one peak).
 
@@ -288,7 +327,9 @@ def auto_estimate_peaks(
     dict with keys:
 
     ``'peaks'``
-        list[dict] – ``{'center', 'amplitude', 'sigma'}`` per requested peak.
+        list[dict] – ``{'center', 'amplitude', 'sigma', 'height'}`` per
+        requested peak.  ``amplitude`` is an integrated area; ``height`` is
+        the sampled height it was derived from.
     ``'detected_peak_count'``
         int – peaks found by find_peaks before any fallback spacing.
     ``'prominence_threshold'``
@@ -305,6 +346,12 @@ def auto_estimate_peaks(
     ``'reason'``
         str | None – machine-readable reason when ``usable_positive_structure``
         is False (``'no_positive_structure'`` or ``'no_detectable_peaks'``).
+    ``'amplitude_semantics'``
+        str – always ``'integrated_area_parameter'``.
+    ``'estimate_method'``
+        str – the documented conversion used for the amplitude estimate.
+    ``'shape_area_factor'``
+        float – the multiplier applied to ``height * sigma``.
     """
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
@@ -357,13 +404,22 @@ def auto_estimate_peaks(
         sigma_default = (x.max() - x.min()) / 6.0
 
     sigma_default = max(sigma_default, 1e-6)
+    area_factor = shape_area_factor(peak_shape)
 
     estimates: list[dict] = []
     for c in centers_x:
-        # Amplitude at nearest grid point
+        # Sampled height at the nearest grid point, converted into the
+        # integrated-area amplitude the selected model actually expects.
         idx = int(np.argmin(np.abs(x - c)))
-        amp = float(y_pos[idx]) if y_pos[idx] > 0 else float(y_pos.max()) / n_peaks
-        estimates.append({"center": c, "amplitude": amp, "sigma": sigma_default})
+        height = float(y_pos[idx]) if y_pos[idx] > 0 else float(y_pos.max()) / n_peaks
+        estimates.append(
+            {
+                "center": c,
+                "amplitude": height * sigma_default * area_factor,
+                "sigma": sigma_default,
+                "height": height,
+            }
+        )
 
     positive_span = float(y_pos.max() - y_pos.min()) if y_pos.size else 0.0
     usable = bool(detected_peak_count >= 1 and positive_span > 0)
@@ -383,6 +439,10 @@ def auto_estimate_peaks(
         "positive_span": positive_span,
         "usable_positive_structure": usable,
         "reason": reason,
+        "amplitude_semantics": "integrated_area_parameter",
+        "estimate_method": "height * sigma * shape_area_factor(peak_shape)",
+        "peak_shape": str(peak_shape or "").strip().lower(),
+        "shape_area_factor": float(area_factor),
     }
 
 
@@ -390,9 +450,10 @@ def _auto_estimate_params(
     x: np.ndarray,
     y: np.ndarray,
     n_peaks: int,
+    peak_shape: str = "gaussian",
 ) -> list[dict]:
     """Backward-compatible wrapper returning only the per-peak guesses."""
-    return auto_estimate_peaks(x, y, n_peaks)["peaks"]
+    return auto_estimate_peaks(x, y, n_peaks, peak_shape=peak_shape)["peaks"]
 
 
 def _eval_components(
