@@ -24,6 +24,7 @@ Scientific-honesty contract:
 from __future__ import annotations
 
 import math
+import re
 from typing import Any
 
 import numpy as np
@@ -206,6 +207,9 @@ def _normalized_signal_label(signal_role: str | None) -> str:
     return f"Normalized {role}"
 
 
+_UNIT_TITLE_SUFFIX = re.compile(r"\s*\([^()]*\)\s*$")
+
+
 def _signal_display_label(
     analysis_type: str,
     *,
@@ -213,12 +217,20 @@ def _signal_display_label(
     signal_unit: str | None,
     dimensional_basis: str | None,
 ) -> str:
-    """Display label for a basis's signal, unit-safe for normalized curves."""
+    """Display label for a basis's signal, unit-safe for normalized curves.
+
+    When the physical unit is withheld (unknown provenance), the modality's
+    default unit must not appear either: the label states the quantity only.
+    """
     if dimensional_basis == "normalized":
         return _normalized_signal_label(signal_role)
-    return build_axis_title(
+    label = build_axis_title(
         analysis_type, "y", detected_unit=signal_unit, signal_kind=signal_role
     )
+    if signal_unit is None:
+        stripped = _UNIT_TITLE_SUFFIX.sub("", label).strip()
+        label = stripped or label
+    return label
 
 
 def _transmittance_warning(

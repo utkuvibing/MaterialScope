@@ -1702,6 +1702,104 @@ def test_legacy_dsc_state_without_normalization_keeps_the_imported_unit():
     assert resolved.bases["corrected"].signal_unit == "mW"
 
 
+def test_legacy_dsc_state_with_unknown_applied_withholds_the_unit():
+    """A missing `applied` key is unknown, not false: never borrow the raw unit."""
+    dataset = _thermal_dataset()
+    normalization = {
+        "enabled": True,
+        "force": False,
+        "skip_reason": None,
+        # `applied` deliberately absent: the normalization state is unknown.
+    }
+    state = _legacy_dsc_state(dataset, normalization=normalization)
+
+    resolved = resolve_analysis_state(state, "DSC", DATASET_KEY)
+
+    assert resolved.bases["corrected"].signal_unit is None
+    assert resolved.bases["smoothed"].signal_unit is None
+    assert resolved.bases["corrected"].dimensional_basis == "unknown"
+    # The raw basis keeps the imported unit; only processed bases withhold.
+    assert resolved.bases["raw"].signal_unit == "mW"
+
+    options = describe_options(resolved)
+    by_name = {entry["name"]: entry for entry in options["bases"]}
+    # The withheld unit must not be replaced by the DSC mW default either.
+    assert by_name["corrected"]["signal_label"] == "Heat Flow"
+
+
+def test_deconvolution_on_unknown_applied_state_keeps_units_unspecified():
+    state = _legacy_dsc_state(_thermal_dataset(), normalization={"enabled": True})
+    options = describe_options(resolve_analysis_state(state, "DSC", DATASET_KEY))
+    by_name = {entry["name"]: entry for entry in options["bases"]}
+    assert by_name["corrected"]["signal_label"] == "Heat Flow"
+
+    outcome = _run(state, signal_basis="corrected", n_peaks=1, initial_params=[])
+
+    processing = outcome["record"]["processing"]
+    summary = outcome["record"]["summary"]
+    assert processing["signal_unit"] is None
+    assert processing["signal_dimensional_basis"] == "unknown"
+    assert outcome["record"]["provenance"]["fit_signal_unit"] is None
+    assert summary["signal_unit"] is None
+    assert summary["sse_per_dof_unit"] is None
+    assert "amplitude_unit" not in summary
+    # The basis tag names the basis; no physical unit may be fabricated.
+    assert outcome["record"]["report_payload"]["ylabel"] == "Heat Flow [corrected]"
+    assert "mW" not in outcome["record"]["report_payload"]["ylabel"]
+
+
+def test_legacy_dsc_unknown_applied_state_survives_scopezip_still_withheld():
+    from core.project_io import deserialize_project, serialize_project
+
+    state = _legacy_dsc_state(_thermal_dataset(), normalization={"enabled": True})
+    outcome = _run(state, signal_basis="corrected", n_peaks=1, initial_params=[])
+
+    payload = serialize_project(state)
+    restored = deserialize_project(
+        payload["manifest"],
+        {**payload["datasets"], **payload["figures"], **payload["branding_assets"]},
+        results_payload=payload["results"],
+        history_payload=payload["history"],
+    )
+
+    resolved = resolve_analysis_state(restored, "DSC", DATASET_KEY)
+    assert resolved.bases["corrected"].signal_unit is None
+    assert resolved.bases["corrected"].dimensional_basis == "unknown"
+    assert resolved.bases["raw"].signal_unit == "mW"
+
+    restored_record = restored["results"][outcome["result_id"]]
+    assert restored_record["summary"]["signal_unit"] is None
+    assert restored_record["summary"]["sse_per_dof_unit"] is None
+
+
+def test_legacy_w_source_resolves_w_per_mg_end_to_end():
+    """raw W + applied=True -> W/mg, with W mg⁻¹ labelling and no mW anywhere."""
+    dataset = _thermal_dataset(units={"temperature": "°C", "signal": "W"})
+    state = _legacy_dsc_state(dataset, normalization=_legacy_normalization())
+
+    resolved = resolve_analysis_state(state, "DSC", DATASET_KEY)
+    assert resolved.bases["raw"].signal_unit == "W"
+    assert resolved.bases["corrected"].signal_unit == "W/mg"
+
+    options = describe_options(resolved)
+    by_name = {entry["name"]: entry for entry in options["bases"]}
+    assert by_name["corrected"]["signal_unit"] == "W/mg"
+    assert by_name["corrected"]["signal_label"] == "Heat Flow (W mg⁻¹)"
+
+    outcome = _run(state, signal_basis="corrected", n_peaks=1, initial_params=[])
+
+    processing = outcome["record"]["processing"]
+    summary = outcome["record"]["summary"]
+    assert processing["signal_unit"] == "W/mg"
+    assert outcome["record"]["provenance"]["fit_signal_unit"] == "W/mg"
+    assert summary["signal_unit"] == "W/mg"
+    assert summary["sse_per_dof_unit"] == "(W/mg)²"
+    assert summary["amplitude_unit"] == "W/mg·°C"
+    payload = outcome["record"]["report_payload"]
+    assert "W mg⁻¹" in payload["ylabel"]
+    assert "mW" not in payload["ylabel"]
+
+
 @pytest.mark.parametrize("source_unit", [None, "a.u.", "unknown", "µV"])
 def test_legacy_dsc_state_with_unusable_source_withholds_the_unit(source_unit):
     """An unusable source never yields a specific-power unit by invention."""

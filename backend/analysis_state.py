@@ -216,17 +216,23 @@ def _working_signal_unit(
         recorded = _clean_unit(normalization.get("working_signal_unit"))
         if recorded:
             return recorded
-        if not normalization.get("applied"):
-            # Recorded semantics prove the working curve was never scaled, so
-            # the imported unit still describes it.
+        applied = normalization.get("applied")
+        if applied is False:
+            # Recorded proof that normalization did not run, so the imported
+            # unit still describes the working curve.
             return declared_unit
-        # Legacy state: normalization was applied but the resulting unit was
-        # never recorded (states written before the working unit was persisted).
-        # Recover it deterministically from the recorded source unit; when the
-        # provenance cannot justify a specific-power unit, withhold it instead
-        # of borrowing the raw unit.
-        source = _clean_unit(normalization.get("source_signal_unit")) or declared_unit
-        return _mass_normalized_unit(source)
+        if applied is True:
+            # Legacy state: normalization was applied but the resulting unit
+            # was never recorded.  Recover it deterministically from the
+            # recorded source unit; when the provenance cannot justify a
+            # specific-power unit, withhold it instead of borrowing the raw
+            # unit.
+            source = _clean_unit(normalization.get("source_signal_unit")) or declared_unit
+            return _mass_normalized_unit(source)
+        # `applied` is absent or malformed: the normalization state itself is
+        # unknown, so a processed curve must not borrow the imported physical
+        # unit.  The unit is withheld rather than guessed.
+        return None
 
     return declared_unit
 

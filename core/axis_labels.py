@@ -56,7 +56,10 @@ def canonical_unit_token(unit: str | None) -> str:
         "°f": "°F",
         "degf": "°F",
         "mw": "mW",
+        "w": "W",
         "mw/mg": "mW/mg",
+        "w/mg": "W/mg",
+        "mw/g": "mW/g",
         "w/g": "W/g",
         "%": "%",
         "%t": "%",
@@ -115,6 +118,8 @@ def canonical_unit_label(unit: str | None, *, plotly_html: bool = False) -> str:
         html_map = {
             "cm^-1": f"cm{_SUP_MINUS_ONE_HTML}",
             "mW/mg": f"mW mg{_SUP_MINUS_ONE_HTML}",
+            "W/mg": f"W mg{_SUP_MINUS_ONE_HTML}",
+            "mW/g": f"mW g{_SUP_MINUS_ONE_HTML}",
             "W/g": f"W g{_SUP_MINUS_ONE_HTML}",
             "%/°C": f"% °C{_SUP_MINUS_ONE_HTML}",
             "%/K": f"% K{_SUP_MINUS_ONE_HTML}",
@@ -130,6 +135,8 @@ def canonical_unit_label(unit: str | None, *, plotly_html: bool = False) -> str:
     unicode_map = {
         "cm^-1": f"cm{_SUP_MINUS_ONE_UNICODE}",
         "mW/mg": f"mW mg{_SUP_MINUS_ONE_UNICODE}",
+        "W/mg": f"W mg{_SUP_MINUS_ONE_UNICODE}",
+        "mW/g": f"mW g{_SUP_MINUS_ONE_UNICODE}",
         "W/g": f"W g{_SUP_MINUS_ONE_UNICODE}",
         "%/°C": f"% °C{_SUP_MINUS_ONE_UNICODE}",
         "%/K": f"% K{_SUP_MINUS_ONE_UNICODE}",

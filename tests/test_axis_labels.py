@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from core.axis_labels import build_axis_title, canonical_unit_label, modality_axis_labels
 from core.modality_specs import MODALITY_SPECS
 
@@ -36,6 +38,32 @@ def test_build_axis_title_thermal_signal_units():
     assert build_axis_title("TGA", "y", detected_unit="mg") == "Mass (mg)"
     assert build_axis_title("DTA", "y", detected_unit="uV") == "ΔT (µV)"
     assert build_axis_title("TGA", "y", detected_unit="%/K", signal_kind="dtg") == "DTG (% K⁻¹)"
+
+
+@pytest.mark.parametrize(
+    ("unit", "expected"),
+    [
+        ("mW", "Heat Flow (mW)"),
+        ("W", "Heat Flow (W)"),
+        ("mW/mg", "Heat Flow (mW mg⁻¹)"),
+        ("W/mg", "Heat Flow (W mg⁻¹)"),
+        ("mW/g", "Heat Flow (mW g⁻¹)"),
+        ("W/g", "Heat Flow (W g⁻¹)"),
+        # Case variants canonicalize to the same token instead of falling back.
+        ("w/mg", "Heat Flow (W mg⁻¹)"),
+        ("mw/g", "Heat Flow (mW g⁻¹)"),
+    ],
+)
+def test_dsc_axis_title_supports_every_units_dimensional_heat_flow_unit(unit, expected):
+    """No heat-flow unit may silently fall back to the mW default."""
+    assert build_axis_title("DSC", "y", detected_unit=unit) == expected
+
+
+def test_dsc_specific_power_units_are_all_allowed():
+    """The full units_dimensional set is representable for DSC without fallback."""
+    spec = MODALITY_SPECS["DSC"]
+    for unit in ("mW", "W", "mW/mg", "W/mg", "mW/g", "W/g"):
+        assert unit in spec["allowed_y_units"]
 
 
 def test_build_axis_title_ftir_signal_semantics():

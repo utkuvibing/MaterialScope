@@ -65,7 +65,10 @@ MODALITY_SPECS: dict[str, dict[str, Any]] = {
         signal_label="Heat Flow",
         signal_role="signal",
         allowed_x_units=("°C", "degC", "K", "°F"),
-        allowed_y_units=("mW", "mW/mg", "W/g", "a.u."),
+        # Every heat-flow unit core.units_dimensional can produce: raw power
+        # (mW, W) and the specific-power results of a mass normalization
+        # (mW/mg, W/mg, mW/g, W/g).
+        allowed_y_units=("mW", "W", "mW/mg", "W/mg", "mW/g", "W/g", "a.u."),
         default_x_unit="°C",
         default_y_unit="mW",
         x_aliases=(
