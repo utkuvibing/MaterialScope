@@ -2133,8 +2133,11 @@ def serialize_deconvolution_result(
     dimensional_basis = processing.get("signal_dimensional_basis")
     # SSE/DoF carries squared signal units.  It is only stated when the
     # selected basis actually has a physical signal unit: a normalized curve
-    # carries no physical unit, and an unknown unit is never invented.
-    sse_per_dof_unit = f"{signal_unit}²" if signal_unit and dimensional_basis != "normalized" else None
+    # carries no physical unit, and an unknown unit is never invented.  A
+    # ratio unit such as mW/mg squares to (mW/mg)², not mW/mg².
+    sse_per_dof_unit = None
+    if signal_unit and dimensional_basis != "normalized":
+        sse_per_dof_unit = f"({signal_unit})²" if "/" in signal_unit else f"{signal_unit}²"
     summary = {
         "r_squared": _clean_scalar(result.get("r_squared")),
         "rmse": _clean_scalar(stats.get("rmse")),

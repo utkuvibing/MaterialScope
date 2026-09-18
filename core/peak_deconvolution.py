@@ -276,13 +276,26 @@ PSEUDO_VOIGT_DEFAULT_FRACTION = 0.5
 
 
 def shape_area_factor(peak_shape: str, *, fraction: float = PSEUDO_VOIGT_DEFAULT_FRACTION) -> float:
-    """Return the multiplier that turns ``height * sigma`` into lmfit's amplitude."""
+    """Return the multiplier that turns ``height * sigma`` into lmfit's amplitude.
+
+    Each model uses its own ``sigma`` convention, taken from lmfit's own
+    parameter definitions:
+
+    - ``GaussianModel``:   ``height = A / (sigma * sqrt(2*pi))``
+    - ``LorentzianModel``: ``height = A / (pi * sigma)``
+    - ``PseudoVoigtModel``: the Gaussian term uses
+      ``sigma_g = sigma / sqrt(2*ln 2)`` so every component — and the sum — has
+      FWHM ``2*sigma``, giving
+      ``height = A * ((1-f)/(sigma*sqrt(pi/log(2))) + f/(pi*sigma))``.
+      Its ``sigma`` is therefore *not* a Gaussian standard deviation, and the
+      conversion must not reuse the GaussianModel factor.
+    """
     shape = str(peak_shape or "").strip().lower()
     if shape == "lorentzian":
         return LORENTZIAN_AREA_FACTOR
     if shape == "pseudo_voigt":
         clamped = min(max(float(fraction), 0.0), 1.0)
-        mixing = (1.0 - clamped) / GAUSSIAN_AREA_FACTOR + clamped / LORENTZIAN_AREA_FACTOR
+        mixing = (1.0 - clamped) / float(np.sqrt(np.pi / np.log(2.0))) + clamped / LORENTZIAN_AREA_FACTOR
         return 1.0 / max(mixing, 1e-12)
     return GAUSSIAN_AREA_FACTOR
 

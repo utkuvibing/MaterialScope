@@ -160,6 +160,37 @@ def _raw_signal_semantics(dataset: Any, analysis_type: str) -> tuple[str | None,
     return _clean_unit(declared), role, ("modality_default" if role else "unresolved")
 
 
+def _working_signal_unit(
+    *,
+    analysis_type: str,
+    analysis_state: Mapping[str, Any],
+    processing: Mapping[str, Any],
+    declared_unit: str | None,
+) -> str | None:
+    """Resolve the effective unit of a saved *working* (smoothed/corrected) signal.
+
+    Recorded processing semantics win over the imported unit: a DSC run that
+    normalized by mass saved mW/mg curves, and a TGA run saves its working curve
+    as mass-% even for an mg input.  Values are never re-derived from the
+    numbers themselves.
+    """
+    explicit = _clean_unit(analysis_state.get("signal_unit"))
+    if explicit:
+        return explicit
+
+    # TGAProcessor converts the working curve to mass-% before smoothing, so
+    # every saved TGA working signal is mass-% regardless of the input unit.
+    if analysis_type == "TGA":
+        return "%"
+
+    normalization = (processing.get("signal_pipeline") or {}).get("normalization") or {}
+    working = _clean_unit(normalization.get("working_signal_unit"))
+    if working:
+        return working
+
+    return declared_unit
+
+
 def resolve_analysis_state(
     state: Mapping[str, Any] | None,
     analysis_type: str,
@@ -288,9 +319,15 @@ def resolve_analysis_state(
         signal_role = "delta_t"
 
     # Effective *saved-analysis* semantics.  These describe the working signal
-    # (e.g. absorbance after a %T conversion on FTIR) and are what the
-    # analysis-state curves endpoint reports.  The raw basis has its own.
-    working_unit = _clean_unit(y_unit)
+    # (e.g. absorbance after a %T conversion on FTIR, mW/mg after a mass
+    # normalization on DSC) and are what the analysis-state curves endpoint
+    # reports.  The raw basis has its own.
+    working_unit = _working_signal_unit(
+        analysis_type=normalized_analysis_type,
+        analysis_state=analysis_state,
+        processing=processing,
+        declared_unit=_clean_unit(y_unit),
+    )
     working_role = signal_role
     raw_unit, raw_role, raw_role_provenance = _raw_signal_semantics(dataset, normalized_analysis_type)
 

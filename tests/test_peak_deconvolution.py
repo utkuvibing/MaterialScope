@@ -170,7 +170,14 @@ def test_auto_estimate_detects_positive_peaks():
     [
         ("gaussian", float(np.sqrt(2.0 * np.pi))),
         ("lorentzian", float(np.pi)),
-        ("pseudo_voigt", 1.0 / (0.5 / float(np.sqrt(2.0 * np.pi)) + 0.5 / float(np.pi))),
+        (
+            "pseudo_voigt",
+            1.0
+            / (
+                0.5 / float(np.sqrt(np.pi / np.log(2.0)))
+                + 0.5 / float(np.pi)
+            ),
+        ),
     ],
 )
 def test_auto_amplitude_guess_has_integrated_area_semantics(shape, factor):
@@ -190,6 +197,49 @@ def test_auto_amplitude_guess_has_integrated_area_semantics(shape, factor):
     assert peak["height"] > 0
     assert peak["amplitude"] == pytest.approx(peak["height"] * peak["sigma"] * factor)
     assert peak["amplitude"] != pytest.approx(peak["height"])
+
+
+def test_auto_amplitude_reproduces_the_height_inside_the_real_lmfit_models():
+    """Ground truth: evaluate the actual lmfit models, not the helper's formula.
+
+    lmfit's PseudoVoigtModel uses ``sigma_g = sigma / sqrt(2 ln 2)`` (every
+    component has FWHM ``2 * sigma``), so its conversion differs from the
+    GaussianModel convention.
+    """
+    from lmfit.models import GaussianModel, LorentzianModel, PseudoVoigtModel
+
+    x, y = _synthetic_signal()
+    models = {
+        "gaussian": GaussianModel(prefix="p1_"),
+        "lorentzian": LorentzianModel(prefix="p1_"),
+        "pseudo_voigt": PseudoVoigtModel(prefix="p1_"),
+    }
+
+    for shape, model in models.items():
+        estimate = auto_estimate_peaks(x, y, 1, peak_shape=shape)
+        peak = estimate["peaks"][0]
+
+        kwargs: dict[str, float] = {
+            "amplitude": peak["amplitude"],
+            "center": peak["center"],
+            "sigma": peak["sigma"],
+        }
+        if shape == "pseudo_voigt":
+            # The estimator seeds the same fraction the fit starts from.
+            kwargs["fraction"] = 0.5
+
+        evaluated = model.eval(x=np.asarray([peak["center"]]), **kwargs)
+
+        assert float(evaluated[0]) == pytest.approx(peak["height"], rel=1e-6), shape
+
+
+def test_pseudo_voigt_factor_differs_from_the_gaussian_convention():
+    """The PV ``sigma`` is not a Gaussian standard deviation (FWHM is 2*sigma)."""
+    assert shape_area_factor("pseudo_voigt") != pytest.approx(shape_area_factor("gaussian"))
+    # At f = 0 the mixed profile is a Gaussian of width sigma_g = sigma/sqrt(2 ln 2).
+    assert shape_area_factor("pseudo_voigt", fraction=0.0) == pytest.approx(
+        float(np.sqrt(2.0 * np.pi)) / float(np.sqrt(2.0 * np.log(2.0)))
+    )
 
     # Sanity: the Gaussian factor is the lightest, the Lorentzian the heaviest.
     assert shape_area_factor("lorentzian") > shape_area_factor("pseudo_voigt") > shape_area_factor("gaussian")

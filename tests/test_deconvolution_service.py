@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import base64
 import math
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -768,18 +769,50 @@ def client():
     return TestClient(create_app())
 
 
-def _import_dataset(client, project_id: str, csv_text: str, *, data_type: str, name: str) -> str:
-    response = client.post(
-        "/dataset/import",
-        json={
-            "project_id": project_id,
-            "file_name": name,
-            "file_base64": base64.b64encode(csv_text.encode("utf-8")).decode("ascii"),
-            "data_type": data_type,
-        },
-    )
+def _import_dataset(
+    client,
+    project_id: str,
+    csv_text: str,
+    *,
+    data_type: str,
+    name: str,
+    metadata: dict | None = None,
+) -> str:
+    payload: dict[str, Any] = {
+        "project_id": project_id,
+        "file_name": name,
+        "file_base64": base64.b64encode(csv_text.encode("utf-8")).decode("ascii"),
+        "data_type": data_type,
+    }
+    if metadata:
+        payload["metadata"] = metadata
+    response = client.post("/dataset/import", json=payload)
     assert response.status_code == 200, response.text
     return response.json()["dataset"]["key"]
+
+
+def _run_stable_analysis(
+    client,
+    project_id: str,
+    dataset_key: str,
+    analysis_type: str,
+    *,
+    workflow_template_id: str,
+    processing_overrides: dict | None = None,
+) -> dict:
+    payload: dict[str, Any] = {
+        "project_id": project_id,
+        "dataset_key": dataset_key,
+        "analysis_type": analysis_type,
+        "workflow_template_id": workflow_template_id,
+    }
+    if processing_overrides:
+        payload["processing_overrides"] = processing_overrides
+    run = client.post("/analysis/run", json=payload)
+    assert run.status_code == 200, run.text
+    body = run.json()
+    assert body["execution_status"] == "saved", body
+    return body
 
 
 def _thermal_csv() -> str:
@@ -1175,8 +1208,9 @@ def test_basis_labels_follow_the_selected_basis():
 
     assert "Transmittance" in by_name["raw"]["signal_label"]
     assert "Absorbance" in by_name["corrected"]["signal_label"]
-    assert "[normalized]" in by_name["normalized"]["signal_label"]
-    assert by_name["raw"]["signal_role"] == "transmittance"
+    # Normalized bases use an explicit path that cannot pick up a default
+    # physical unit.
+    assert by_name["normalized"]["signal_label"] == "Normalized absorbance"
 
 
 def test_run_on_raw_records_transmittance_semantics_and_warns():
@@ -1241,7 +1275,8 @@ def test_run_on_normalized_does_not_claim_a_physical_unit():
     assert summary["signal_unit"] is None
     assert summary["sse_per_dof_unit"] is None
     assert "amplitude_unit" not in summary
-    assert "[normalized]" in outcome["record"]["report_payload"]["ylabel"]
+    # No physical unit may leak into the persisted figure label.
+    assert outcome["record"]["report_payload"]["ylabel"] == "Normalized absorbance"
 
 
 def test_sse_per_dof_unit_is_squared_signal_units_when_known():
@@ -1321,7 +1356,7 @@ def test_ftir_transmittance_to_absorbance_production_path(client, monkeypatch):
     assert by_name["normalized"]["signal_role"] == "absorbance"
     assert by_name["normalized"]["signal_unit"] is None
     assert by_name["normalized"]["dimensional_basis"] == "normalized"
-    assert "[normalized]" in by_name["normalized"]["signal_label"]
+    assert by_name["normalized"]["signal_label"] == "Normalized absorbance"
 
     # D. corrected fits the real absorbance bands with absorbance semantics
     corrected = client.post(
@@ -1408,3 +1443,180 @@ def test_ftir_raw_basis_run_keeps_transmittance_provenance(client, monkeypatch):
     assert detail["provenance"]["fit_signal_role"] == "transmittance"
     assert detail["summary"]["signal_unit"] == "%T"
     assert "Transmittance" in detail["report_payload"]["ylabel"]
+
+
+# ---------------------------------------------------------------------------
+# Production units for thermal processed bases (DSC mW/mg, TGA mass-%)
+# ---------------------------------------------------------------------------
+
+
+def _thermal_unit_csv(header: str, x: np.ndarray, y: np.ndarray) -> str:
+    rows = "\n".join(f"{xi:.4f},{yi:.6f}" for xi, yi in zip(x, y))
+    return f"{header}\n{rows}\n"
+
+
+def test_dsc_mass_normalized_working_bases_report_mw_per_mg(client, monkeypatch):
+    """A mass-normalized DSC working signal must not be labelled mW."""
+    monkeypatch.setenv(PREVIEW_ENV, "1")
+    x = np.linspace(50.0, 250.0, 400)
+    csv_text = _thermal_unit_csv("Temperature (°C),Heat Flow (mW)", x, _two_gaussians(x))
+    project_id = client.post("/workspace/new").json()["project_id"]
+    dataset_key = _import_dataset(
+        client,
+        project_id,
+        csv_text,
+        data_type="DSC",
+        name="dsc_mw.csv",
+        metadata={"sample_mass": 5.0, "heating_rate": 10.0},
+    )
+
+    imported = client.get(f"/workspace/{project_id}/datasets/{dataset_key}").json()
+    assert imported["units"]["signal"] == "mW"
+
+    _run_stable_analysis(
+        client, project_id, dataset_key, "DSC", workflow_template_id="dsc.general"
+    )
+
+    options = client.get(f"/workspace/{project_id}/deconvolution/options/{dataset_key}")
+    assert options.status_code == 200, options.text
+    by_name = {entry["name"]: entry for entry in options.json()["bases"]}
+    # The saved working signal is the mass-normalized one.
+    assert by_name["smoothed"]["signal_unit"] == "mW/mg"
+    assert by_name["corrected"]["signal_unit"] == "mW/mg"
+    # Raw stays the imported mW signal.
+    assert by_name["raw"]["signal_unit"] == "mW"
+
+    run = client.post(
+        f"/workspace/{project_id}/deconvolution/run",
+        json={
+            "dataset_key": dataset_key,
+            "signal_basis": "corrected",
+            "n_peaks": 2,
+            "peak_shape": "gaussian",
+        },
+    )
+    assert run.status_code == 200, run.text
+    body = run.json()
+    assert body["signal_unit"] == "mW/mg"
+    assert body["result_summary"]["signal_unit"] == "mW/mg"
+    assert body["result_summary"]["sse_per_dof_unit"] == "(mW/mg)²"
+    assert body["result_summary"]["amplitude_unit"] == "mW/mg·°C"
+
+    detail = client.get(f"/workspace/{project_id}/results/{body['result_id']}").json()
+    assert detail["processing"]["signal_unit"] == "mW/mg"
+    assert detail["processing"]["signal_dimensional_basis"] == "physical"
+    assert detail["provenance"]["fit_signal_unit"] == "mW/mg"
+    # build_axis_title renders mW/mg with a superscript: mW mg⁻¹.
+    assert "mW" in detail["report_payload"]["ylabel"]
+    assert "mg" in detail["report_payload"]["ylabel"]
+
+
+def test_tga_absolute_mass_input_reports_percent_working_basis(client, monkeypatch):
+    """TGAProcessor saves a mass-% working curve even for an mg input."""
+    monkeypatch.setenv(PREVIEW_ENV, "1")
+    temperature = np.linspace(30.0, 600.0, 300)
+    # mg-scale input with a mid-step oxidation-like mass-gain bump so the
+    # working curve keeps positive structure for the fit.
+    mass_mg = 10.0 - 4.0 / (1.0 + np.exp(-(temperature - 350.0) / 40.0)) + 0.6 * np.exp(
+        -0.5 * ((temperature - 450.0) / 20.0) ** 2
+    )
+    csv_text = _thermal_unit_csv("Temperature (°C),Mass (mg)", temperature, mass_mg)
+    project_id = client.post("/workspace/new").json()["project_id"]
+    dataset_key = _import_dataset(
+        client,
+        project_id,
+        csv_text,
+        data_type="TGA",
+        name="tga_mg.csv",
+        metadata={"sample_mass": 10.0, "heating_rate": 10.0},
+    )
+
+    imported = client.get(f"/workspace/{project_id}/datasets/{dataset_key}").json()
+    assert imported["units"]["signal"] == "mg"
+
+    _run_stable_analysis(
+        client, project_id, dataset_key, "TGA", workflow_template_id="tga.general"
+    )
+
+    options = client.get(f"/workspace/{project_id}/deconvolution/options/{dataset_key}")
+    assert options.status_code == 200, options.text
+    by_name = {entry["name"]: entry for entry in options.json()["bases"]}
+    assert by_name["smoothed"]["available"] is True
+    assert by_name["smoothed"]["signal_unit"] == "%"
+    assert by_name["raw"]["signal_unit"] == "mg"
+
+    run = client.post(
+        f"/workspace/{project_id}/deconvolution/run",
+        json={
+            "dataset_key": dataset_key,
+            "signal_basis": "smoothed",
+            "n_peaks": 1,
+            "peak_shape": "gaussian",
+        },
+    )
+    assert run.status_code == 200, run.text
+    body = run.json()
+    assert body["signal_unit"] == "%"
+    assert body["result_summary"]["signal_unit"] == "%"
+    assert body["result_summary"]["sse_per_dof_unit"] == "%²"
+
+    detail = client.get(f"/workspace/{project_id}/results/{body['result_id']}").json()
+    assert detail["processing"]["signal_unit"] == "%"
+    assert detail["provenance"]["fit_signal_unit"] == "%"
+    assert "%" in detail["report_payload"]["ylabel"]
+    # Value-scale evidence that the working curve really is mass-%.
+    assert max(detail["report_payload"]["y"]) <= 100.0 + 10.0
+
+
+def test_xrd_normalized_basis_never_acquires_the_counts_unit():
+    """``build_axis_title`` defaults XRD to counts; a normalized curve must not."""
+    x = np.linspace(10.0, 80.0, 400)
+    y = np.exp(-0.5 * ((x - 30.0) / 0.4) ** 2)
+    dataset = _Dataset(
+        x,
+        y,
+        data_type="XRD",
+        units={"temperature": "degree_2theta", "signal": "counts"},
+        metadata={"xrd_axis_role": "two_theta", "xrd_axis_unit": "degree_2theta"},
+    )
+    state = _state(
+        dataset,
+        analysis_type="XRD",
+        analysis_state={
+            "axis": x.tolist(),
+            "smoothed": y.tolist(),
+            "corrected": y.tolist(),
+            "normalized": (y / float(np.max(y))).tolist(),
+        },
+    )
+
+    options = describe_options(resolve_analysis_state(state, "XRD", DATASET_KEY))
+    by_name = {entry["name"]: entry for entry in options["bases"]}
+    assert by_name["normalized"]["available"] is True
+    assert by_name["normalized"]["signal_unit"] is None
+    assert by_name["normalized"]["signal_label"] == "Normalized intensity"
+
+    outcome = _run(
+        state,
+        signal_basis="normalized",
+        n_peaks=1,
+        initial_params=_guesses((30.0, 0.5, 0.4)),
+    )
+
+    payload = outcome["record"]["report_payload"]
+    assert payload["ylabel"] == "Normalized intensity"
+    assert "counts" not in payload["ylabel"].lower()
+    assert outcome["record"]["summary"]["signal_unit"] is None
+    assert outcome["record"]["summary"]["sse_per_dof_unit"] is None
+    assert outcome["record"]["processing"]["signal_dimensional_basis"] == "normalized"
+
+
+def test_non_gaussian_runs_record_their_own_shape_factor():
+    """Auto-estimate diagnostics must follow the fitted shape, not Gaussian."""
+    state = _state(_thermal_dataset(), analysis_type="DSC")
+
+    outcome = _run(state, peak_shape="lorentzian")
+
+    auto_estimate = outcome["record"]["processing"]["auto_estimate"]
+    assert auto_estimate["peak_shape"] == "lorentzian"
+    assert auto_estimate["shape_area_factor"] == pytest.approx(float(np.pi))

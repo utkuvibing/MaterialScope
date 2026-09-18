@@ -478,6 +478,11 @@ def _execute_dsc_batch(
             "force": normalization_force,
             "applied": bool(processor.normalization_applied),
             "skip_reason": processor.normalization_skip_reason,
+            # Effective working-signal unit after this step (mW -> mW/mg when
+            # normalization ran), so saved processed bases can be labelled
+            # from recorded semantics instead of re-derived values.
+            "source_signal_unit": processor.source_signal_unit,
+            "working_signal_unit": processor.working_signal_unit,
         },
         analysis_type="DSC",
     )

@@ -196,6 +196,31 @@ def _apply_range(
     return axis, values, [float(axis.min()), float(axis.max())]
 
 
+def _normalized_signal_label(signal_role: str | None) -> str:
+    """Label a normalized basis without invoking any physical-unit default.
+
+    ``build_axis_title`` falls back to a modality's default physical unit
+    (e.g. XRD -> counts), which a normalized curve must never claim.
+    """
+    role = str(signal_role or "").strip() or "signal"
+    return f"Normalized {role}"
+
+
+def _signal_display_label(
+    analysis_type: str,
+    *,
+    signal_role: str | None,
+    signal_unit: str | None,
+    dimensional_basis: str | None,
+) -> str:
+    """Display label for a basis's signal, unit-safe for normalized curves."""
+    if dimensional_basis == "normalized":
+        return _normalized_signal_label(signal_role)
+    return build_axis_title(
+        analysis_type, "y", detected_unit=signal_unit, signal_kind=signal_role
+    )
+
+
 def _transmittance_warning(
     analysis_type: str,
     signal_role: str | None,
@@ -293,7 +318,7 @@ def run_deconvolution_workflow(
     inversion_applied = bool(request.invert_signal_for_fit)
     fit_values = -values if inversion_applied else values
 
-    estimate = auto_estimate_peaks(axis, fit_values, n_peaks)
+    estimate = auto_estimate_peaks(axis, fit_values, n_peaks, peak_shape=peak_shape)
     if not estimate["usable_positive_structure"]:
         if estimate["reason"] == "no_positive_structure":
             raise DeconvolutionValidationError(
@@ -385,15 +410,9 @@ def run_deconvolution_workflow(
         ),
         "initial_guesses": result.get("initial_guesses") or [],
         "initial_guess_provenance": guess_sources,
-        "auto_estimate": {
-            "detected_peak_count": estimate["detected_peak_count"],
-            "prominence_threshold": estimate["prominence_threshold"],
-            "fallback_spacing_used": estimate["fallback_spacing_used"],
-            "positive_point_fraction": estimate["positive_point_fraction"],
-            "amplitude_semantics": estimate.get("amplitude_semantics"),
-            "estimate_method": estimate.get("estimate_method"),
-            "shape_area_factor": estimate.get("shape_area_factor"),
-        },
+        # The core's own diagnostics from the run that actually executed, so
+        # the recorded shape factors can never drift from the fitted model.
+        "auto_estimate": dict(result.get("auto_estimate") or estimate),
         "fit_engine": "lmfit",
         "component_parameter_semantics": (
             "lmfit amplitude is an integrated area parameter, not a peak height; "
@@ -411,10 +430,15 @@ def run_deconvolution_workflow(
     x_label = build_axis_title(
         resolved.analysis_type, "x", detected_unit=resolved.axis_unit, axis_role=resolved.axis_role
     )
-    y_label = build_axis_title(
-        resolved.analysis_type, "y", detected_unit=basis_signal_unit, signal_kind=basis_signal_role
+    # Normalized curves are labelled through an explicit path so a modality's
+    # default physical unit (e.g. XRD -> counts) can never be attached.
+    y_label = _signal_display_label(
+        resolved.analysis_type,
+        signal_role=basis_signal_role,
+        signal_unit=basis_signal_unit,
+        dimensional_basis=basis_dimensional,
     )
-    if basis != "raw":
+    if basis != "raw" and basis_dimensional != "normalized":
         y_label = f"{y_label} [{basis}]"
     if inversion_applied:
         y_label = f"{y_label} (negated for fit)"
@@ -539,17 +563,16 @@ def describe_options(resolved: ResolvedAnalysisState) -> dict[str, Any]:
                 "role_provenance": info.role_provenance,
                 # Rendered with the backend's own axis-title rules so the UI
                 # labels the selected basis, not the dataset as a whole.
-                "signal_label": (
-                    build_axis_title(
-                        resolved.analysis_type,
-                        "y",
-                        detected_unit=info.signal_unit,
-                        signal_kind=info.signal_role,
-                    )
-                    + (" [normalized]" if info.dimensional_basis == "normalized" else "")
-                    if info.available
-                    else None
-                ),
+                # Normalized bases use an explicit path that cannot pick up a
+                # modality's default physical unit.
+                "signal_label": _signal_display_label(
+                    resolved.analysis_type,
+                    signal_role=info.signal_role,
+                    signal_unit=info.signal_unit,
+                    dimensional_basis=info.dimensional_basis,
+                )
+                if info.available
+                else None,
             }
             for info in resolved.bases.values()
         ],
