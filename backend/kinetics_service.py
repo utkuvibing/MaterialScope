@@ -108,6 +108,17 @@ def _peak_temperature_value(peak: Any) -> float | None:
     return parsed if math.isfinite(parsed) else None
 
 
+def _float_array(value: Any) -> np.ndarray:
+    """Coerce a stored curve payload to a float ndarray without truth-testing it.
+
+    Saved analysis states hold raw ``numpy.ndarray`` objects; boolean-coercing
+    them (``arr or []``) raises "truth value of an array is ambiguous".
+    """
+    if value is None:
+        return np.asarray([], dtype=float)
+    return np.asarray(value, dtype=float)
+
+
 def _resolve_peak_temperature(
     *,
     state: dict[str, Any],
@@ -137,7 +148,9 @@ def _resolve_peak_temperature(
         )
 
     dsc_state = state.get(f"dsc_state_{dataset_key}") or {}
-    peaks = dsc_state.get("peaks") or []
+    peaks = dsc_state.get("peaks")
+    if isinstance(peaks, np.ndarray):
+        peaks = peaks.tolist()
     if not isinstance(peaks, list):
         peaks = []
     peak_temperatures = [(idx, _peak_temperature_value(p)) for idx, p in enumerate(peaks)]
@@ -174,14 +187,17 @@ def _dsc_corrected_arrays(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return ``(temperature, corrected_signal)`` from the saved DSC state."""
     dsc_state = state.get(f"dsc_state_{dataset_key}") or {}
-    corrected = np.asarray(dsc_state.get("corrected") or [], dtype=float)
+    corrected = _float_array(dsc_state.get("corrected"))
     if corrected.size == 0:
         raise KineticsValidationError(
             f"dataset '{dataset_key}': no baseline-corrected DSC signal is stored; "
             "run the DSC analysis (baseline correction) first."
         )
     dataset_temp, _signal = _dataset_temperature_signal(dataset)
-    state_axis = np.asarray(dsc_state.get("axis") or dsc_state.get("temperature") or [], dtype=float)
+    axis_raw = dsc_state.get("axis")
+    if axis_raw is None:
+        axis_raw = dsc_state.get("temperature")
+    state_axis = _float_array(axis_raw)
     if state_axis.size == corrected.size:
         return state_axis, corrected
     if dataset_temp.size == corrected.size:
@@ -231,8 +247,13 @@ def _resolve_alpha_grid(request: KineticsRunRequest) -> tuple[list[float], dict[
         raise KineticsValidationError("alpha_min must be > 0 and smaller than alpha_max (<= 1).")
     if not 0.0 < alpha_step <= (alpha_max - alpha_min):
         raise KineticsValidationError("alpha_step must be positive and no larger than the alpha range.")
-    values = np.arange(alpha_min, alpha_max + alpha_step / 2.0, alpha_step)
-    values = values[(values > 0.0) & (values <= 1.0)]
+    # Emit only on-grid points inside the declared range. The previous
+    # ``alpha_max + step/2`` upper bound let np.arange overshoot alpha_max
+    # for non-even ranges (e.g. 0.10-0.85 step 0.20 emitted alpha=0.90).
+    tol = 1e-9
+    values = np.arange(alpha_min, alpha_max + tol, alpha_step)
+    values = values[(values >= alpha_min - tol) & (values <= alpha_max + tol)]
+    values = np.clip(values, alpha_min, alpha_max)
     if values.size == 0:
         raise KineticsValidationError("the requested alpha grid contains no usable conversion levels.")
     return values.tolist(), {"alpha_min": alpha_min, "alpha_max": alpha_max, "alpha_step": alpha_step}

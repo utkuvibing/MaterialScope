@@ -8,16 +8,27 @@ module (registration, nav gating, EN/TR chrome).
 
 from __future__ import annotations
 
+import base64
+from pathlib import Path
+from typing import Any
+
+import dash
 import numpy as np
 import pandas as pd
 import pytest
 
-from backend.kinetics_service import KineticsValidationError, run_kinetics_workflow
+from backend.kinetics_service import (
+    KineticsValidationError,
+    _resolve_alpha_grid,
+    run_kinetics_workflow,
+)
 from backend.models import (
     KineticsDatasetSelection,
     KineticsManualPoint,
     KineticsRunRequest,
+    ResultSummary,
 )
+from backend.workspace import summarize_result
 from core.data_io import ThermalDataset
 from core.result_serialization import split_valid_results
 
@@ -614,3 +625,249 @@ def test_kinetics_chrome_renders_in_en_and_tr(_dash_app, monkeypatch, locale):
     # method options localized, run button non-empty
     assert outputs[4][0]["label"]
     assert outputs[16]  # run button label
+
+
+# ---------------------------------------------------------------------------
+# Regression: real DSC analysis state uses ndarrays (PR #62 review, blocker)
+# ---------------------------------------------------------------------------
+
+
+def _dsc_csv(path: Path, peak_center: float) -> Path:
+    temperature = np.linspace(50.0, 350.0, 300)
+    signal = np.exp(-0.5 * ((temperature - peak_center) / 12.0) ** 2)
+    path.write_text(
+        pd.DataFrame({"temperature": temperature, "signal": np.round(signal, 6)}).to_csv(
+            index=False
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _import_dataset(client, project_id: str, path: Path, data_type: str) -> str:
+    response = client.post(
+        "/dataset/import",
+        json={
+            "project_id": project_id,
+            "file_name": path.name,
+            "file_base64": base64.b64encode(path.read_bytes()).decode("ascii"),
+            "data_type": data_type,
+        },
+    )
+    response.raise_for_status()
+    return response.json()["dataset"]["key"]
+
+
+def _run_analysis(client, project_id: str, dataset_key: str, analysis_type: str) -> None:
+    response = client.post(
+        "/analysis/run",
+        json={
+            "project_id": project_id,
+            "dataset_key": dataset_key,
+            "analysis_type": analysis_type,
+        },
+    )
+    assert response.status_code == 200, response.text
+
+
+def test_dsc_ofw_and_friedman_use_real_saved_analysis_state(tmp_path, monkeypatch):
+    """Real ``/analysis/run`` DSC execution stores ndarray payloads.
+
+    The prior implementation boolean-coerced ``dsc_state.get("corrected") or []``
+    which raises ``ValueError`` on multi-element ndarrays. This test drives the
+    genuine backend/core DSC execution path and would fail on the unfixed code.
+    """
+    from fastapi.testclient import TestClient
+
+    from backend.app import create_app
+    from backend.store import ProjectStore
+
+    monkeypatch.setenv("MATERIALSCOPE_ENABLE_PREVIEW_MODULES", "1")
+    store = ProjectStore(autosave=False)
+    client = TestClient(create_app(store=store))
+    project_id = client.post("/workspace/new").json()["project_id"]
+
+    keys = [
+        _import_dataset(
+            client,
+            project_id,
+            _dsc_csv(tmp_path / f"dsc_{idx}.csv", center),
+            "DSC",
+        )
+        for idx, center in enumerate((195.0, 212.0, 228.0))
+    ]
+    for key in keys:
+        _run_analysis(client, project_id, key, "DSC")
+
+    state = store.get(project_id)
+    for key in keys:
+        dsc_state = state[f"dsc_state_{key}"]
+        # Production shape: ndarray payloads, not lists.
+        assert isinstance(dsc_state["corrected"], np.ndarray)
+        assert dsc_state["corrected"].size > 1
+
+    selections = [
+        {"dataset_key": key, "heating_rate": rate}
+        for key, rate in zip(keys, (5.0, 10.0, 20.0), strict=True)
+    ]
+    for method in ("ofw", "friedman"):
+        response = client.post(
+            f"/workspace/{project_id}/kinetics/run",
+            json={
+                "method": method,
+                "alpha_min": 0.2,
+                "alpha_max": 0.8,
+                "alpha_step": 0.2,
+                "dataset_selections": selections,
+            },
+        )
+        assert response.status_code == 200, response.text
+        result_id = response.json()["result_id"]
+        detail = client.get(f"/workspace/{project_id}/results/{result_id}").json()
+        bases = {
+            entry["signal_basis"] for entry in detail["processing"]["inputs"]
+        }
+        assert bases == {"dsc_corrected_signal"}
+
+
+# ---------------------------------------------------------------------------
+# Regression: alpha grid must never exceed alpha_max (PR #62 review)
+# ---------------------------------------------------------------------------
+
+
+def test_alpha_grid_evenly_divisible_range_reaches_alpha_max():
+    request = _request(method="ofw", alpha_min=0.1, alpha_max=0.9, alpha_step=0.2)
+    values, _ = _resolve_alpha_grid(request)
+    assert values == pytest.approx([0.1, 0.3, 0.5, 0.7, 0.9])
+
+
+def test_alpha_grid_non_even_range_never_exceeds_alpha_max():
+    request = _request(method="ofw", alpha_min=0.1, alpha_max=0.85, alpha_step=0.2)
+    values, _ = _resolve_alpha_grid(request)
+    assert values == pytest.approx([0.1, 0.3, 0.5, 0.7])
+    assert max(values) <= 0.85
+
+
+def test_alpha_grid_float_edge_keeps_endpoint_within_bounds():
+    request = _request(method="ofw", alpha_min=0.1, alpha_max=0.3, alpha_step=0.1)
+    values, _ = _resolve_alpha_grid(request)
+    assert values == pytest.approx([0.1, 0.2, 0.3])
+    assert min(values) >= 0.1
+    assert max(values) <= 0.3 + 1e-9
+
+
+# ---------------------------------------------------------------------------
+# Regression: hydrate kinetics-latest-result-id from workspace (PR #62 review)
+# ---------------------------------------------------------------------------
+
+
+def _results_payload(*items: dict[str, Any]) -> dict[str, Any]:
+    return {"results": list(items)}
+
+
+def _kinetics_summary(result_id: str, saved_at: str) -> dict[str, Any]:
+    return {
+        "id": result_id,
+        "analysis_scope": "preview_kinetics",
+        "saved_at_utc": saved_at,
+    }
+
+
+def test_hydration_selects_newest_kinetics_result(_dash_app, monkeypatch):
+    mod = _import_page()
+    payload = _results_payload(
+        _kinetics_summary("k1", "2026-01-01T10:00:00+00:00"),
+        _kinetics_summary("k2", "2026-01-02T10:00:00+00:00"),
+        {"id": "dsc1", "analysis_scope": None, "saved_at_utc": "2026-01-03T00:00:00+00:00"},
+    )
+    monkeypatch.setattr("dash_app.api_client.workspace_results", lambda _pid: payload)
+    assert (
+        mod.hydrate_latest_kinetics_result("/kinetics", "proj", 0, None) == "k2"
+    )
+
+
+def test_hydration_deterministic_tiebreak_on_equal_timestamps(_dash_app, monkeypatch):
+    mod = _import_page()
+    payload = _results_payload(
+        _kinetics_summary("k-b", "2026-01-01T10:00:00+00:00"),
+        _kinetics_summary("k-a", "2026-01-01T10:00:00+00:00"),
+    )
+    monkeypatch.setattr("dash_app.api_client.workspace_results", lambda _pid: payload)
+    first = mod.hydrate_latest_kinetics_result("/kinetics", "proj", 0, None)
+    payload["results"].reverse()
+    monkeypatch.setattr("dash_app.api_client.workspace_results", lambda _pid: payload)
+    second = mod.hydrate_latest_kinetics_result("/kinetics", "proj", 0, None)
+    assert first == second == "k-b"
+
+
+def test_hydration_keeps_valid_current_selection(_dash_app, monkeypatch):
+    mod = _import_page()
+    payload = _results_payload(
+        _kinetics_summary("k1", "2026-01-01T10:00:00+00:00"),
+        _kinetics_summary("k2", "2026-01-02T10:00:00+00:00"),
+    )
+    monkeypatch.setattr("dash_app.api_client.workspace_results", lambda _pid: payload)
+    with pytest.raises(dash.exceptions.PreventUpdate):
+        mod.hydrate_latest_kinetics_result("/kinetics", "proj", 0, "k1")
+
+
+def test_hydration_replaces_stale_selection_with_newest(_dash_app, monkeypatch):
+    mod = _import_page()
+    payload = _results_payload(
+        _kinetics_summary("k2", "2026-01-02T10:00:00+00:00"),
+    )
+    monkeypatch.setattr("dash_app.api_client.workspace_results", lambda _pid: payload)
+    assert (
+        mod.hydrate_latest_kinetics_result("/kinetics", "proj", 0, "gone")
+        == "k2"
+    )
+
+
+def test_hydration_empty_when_no_kinetics_results(_dash_app, monkeypatch):
+    mod = _import_page()
+    payload = _results_payload(
+        {"id": "dsc1", "analysis_scope": None, "saved_at_utc": "2026-01-01T00:00:00+00:00"},
+    )
+    monkeypatch.setattr("dash_app.api_client.workspace_results", lambda _pid: payload)
+    with pytest.raises(dash.exceptions.PreventUpdate):
+        mod.hydrate_latest_kinetics_result("/kinetics", "proj", 0, None)
+    assert mod.hydrate_latest_kinetics_result("/kinetics", "proj", 0, "stale") is None
+
+
+def test_hydration_requires_project_and_route(_dash_app):
+    mod = _import_page()
+    with pytest.raises(dash.exceptions.PreventUpdate):
+        mod.hydrate_latest_kinetics_result("/kinetics", "", 0, None)
+    with pytest.raises(dash.exceptions.PreventUpdate):
+        mod.hydrate_latest_kinetics_result("/dsc", "proj", 0, None)
+
+
+def test_scopezip_restored_kinetics_result_rehydrates():
+    """A kinetics record survives .scopezip round-trip and stays identifiable."""
+    from core.project_io import deserialize_project, serialize_project
+
+    state = _state({})
+    request = _request(
+        method="kissinger",
+        input_mode="manual",
+        manual_points=[
+            KineticsManualPoint(heating_rate=5.0, peak_temperature=210.0),
+            KineticsManualPoint(heating_rate=10.0, peak_temperature=220.0),
+            KineticsManualPoint(heating_rate=20.0, peak_temperature=232.0),
+        ],
+    )
+    outcome = run_kinetics_workflow(state=state, request=request)
+    payload = serialize_project(state)
+    restored = deserialize_project(
+        payload["manifest"],
+        {**payload["datasets"], **payload["figures"], **payload["branding_assets"]},
+        results_payload=payload["results"],
+        history_payload=payload["history"],
+    )
+    restored_record = restored["results"][outcome["result_id"]]
+    assert restored_record["provenance"]["analysis_scope"] == "preview_kinetics"
+
+    # The workspace summary the Dash page hydrates from stays identifiable.
+    summary = summarize_result(restored_record)
+    assert isinstance(summary, ResultSummary)
+    assert summary.analysis_scope == "preview_kinetics"

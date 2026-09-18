@@ -725,6 +725,55 @@ def run_kinetics(
     )
 
 
+@callback(
+    Output("kinetics-latest-result-id", "data", allow_duplicate=True),
+    Input("url", "pathname"),
+    Input("project-id", "data"),
+    Input("workspace-refresh", "data"),
+    State("kinetics-latest-result-id", "data"),
+    prevent_initial_call="initial_duplicate",
+)
+def hydrate_latest_kinetics_result(pathname, project_id, _workspace_refresh, current_id):
+    """Reopen the newest saved kinetics result for the active workspace.
+
+    Fires when the route is (re)opened, when ``project-id`` is populated, and
+    when the workspace refresh bumps (e.g. a ``.scopezip`` load). Selection is
+    explicit: records whose provenance carries ``analysis_scope ==
+    "preview_kinetics"`` — never title matching. A still-valid current
+    selection is kept so a just-finished run is never regressed to an older
+    result by this hydration pass.
+    """
+    if pathname and str(pathname) != "/kinetics":
+        raise dash.exceptions.PreventUpdate
+    if not project_id:
+        raise dash.exceptions.PreventUpdate
+
+    from dash_app.api_client import workspace_results
+
+    try:
+        payload = workspace_results(project_id)
+    except Exception:
+        raise dash.exceptions.PreventUpdate
+
+    candidates = [
+        item
+        for item in (payload.get("results") or [])
+        if str(item.get("analysis_scope") or "") == "preview_kinetics" and item.get("id")
+    ]
+    current = str(current_id) if current_id else None
+    if current and any(str(item.get("id")) == current for item in candidates):
+        raise dash.exceptions.PreventUpdate
+    if not candidates:
+        if current:
+            return None
+        raise dash.exceptions.PreventUpdate
+    newest = max(
+        candidates,
+        key=lambda item: (str(item.get("saved_at_utc") or ""), str(item.get("id") or "")),
+    )
+    return str(newest["id"])
+
+
 def _ci_text(summary: dict[str, Any], loc: str) -> str | None:
     status = str(summary.get("ea_ci_status") or "")
     if status == "computed" and summary.get("activation_energy_ci_low_kj_mol") is not None:

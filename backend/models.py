@@ -261,6 +261,9 @@ class ResultSummary(BaseModel):
     saved_at_utc: str | None = None
     calibration_state: str | None = None
     reference_state: str | None = None
+    # Explicit module marker from result provenance (e.g. "preview_kinetics")
+    # so preview pages can rehydrate their saved results without title matching.
+    analysis_scope: str | None = None
 
 
 class ResultsListResponse(BaseModel):

@@ -196,4 +196,5 @@ def summarize_result(record: dict[str, Any]) -> ResultSummary:
         saved_at_utc=provenance.get("saved_at_utc"),
         calibration_state=method_context.get("calibration_state") or provenance.get("calibration_state"),
         reference_state=method_context.get("reference_state") or provenance.get("reference_state"),
+        analysis_scope=provenance.get("analysis_scope"),
     )

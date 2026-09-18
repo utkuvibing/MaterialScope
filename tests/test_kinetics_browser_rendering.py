@@ -82,14 +82,26 @@ def _tga_csv(name: str, step_center: float) -> Path:
     return path
 
 
-def _import_dataset(client, project_id: str, path: Path) -> str:
+def _dsc_csv(name: str, peak_center: float) -> Path:
+    """Deterministic DSC-like CSV (single positive peak) under pytest_temp."""
+    out_dir = REPO_ROOT / "pytest_temp" / "kinetics_browser"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / name
+    temperature = np.linspace(50.0, 350.0, 300)
+    signal = np.exp(-0.5 * ((temperature - peak_center) / 12.0) ** 2)
+    frame = pd.DataFrame({"temperature": temperature, "signal": np.round(signal, 6)})
+    path.write_text(frame.to_csv(index=False), encoding="utf-8")
+    return path
+
+
+def _import_dataset(client, project_id: str, path: Path, data_type: str = "TGA") -> str:
     response = client.post(
         "/dataset/import",
         json={
             "project_id": project_id,
             "file_name": path.name,
             "file_base64": base64.b64encode(path.read_bytes()).decode("ascii"),
-            "data_type": "TGA",
+            "data_type": data_type,
         },
     )
     response.raise_for_status()
@@ -100,6 +112,30 @@ def _seed_three_tga(client, project_id: str) -> list[str]:
     keys = []
     for idx, center in enumerate((400.0, 430.0, 460.0)):
         keys.append(_import_dataset(client, project_id, _tga_csv(f"kinetics_tga_{idx}.csv", center)))
+    return keys
+
+
+def _seed_three_dsc_with_analysis(client, project_id: str) -> list[str]:
+    """Import 3 DSC datasets and run REAL ``/analysis/run`` DSC execution on each.
+
+    The saved ``dsc_state_*`` payloads then carry genuine ndarray curves —
+    the production shape that crashed the unfixed kinetics service.
+    """
+    keys = []
+    for idx, center in enumerate((195.0, 212.0, 228.0)):
+        key = _import_dataset(
+            client, project_id, _dsc_csv(f"kinetics_dsc_{idx}.csv", center), "DSC"
+        )
+        response = client.post(
+            "/analysis/run",
+            json={
+                "project_id": project_id,
+                "dataset_key": key,
+                "analysis_type": "DSC",
+            },
+        )
+        response.raise_for_status()
+        keys.append(key)
     return keys
 
 
@@ -260,7 +296,7 @@ async (page) => {
   await page.locator('#kinetics-run-btn').click();
   await page.waitForSelector('#kinetics-result-figure .js-plotly-plot', {state: 'visible', timeout: 90000});
   await page.waitForTimeout(1500);
-  const report = await page.evaluate(() => {
+  const collect = async () => page.evaluate(() => {
     const box = (sel) => {
       const el = document.querySelector(sel);
       if (!el) return null;
@@ -276,7 +312,14 @@ async (page) => {
       tableRows: document.querySelectorAll('#kinetics-result-table tbody tr').length,
     };
   });
-  await page.evaluate((r) => { window.__kineticsReport = r; }, report);
+  const first = await collect();
+  // Hydration regression: a full reload must reopen the saved workspace
+  // result (kinetics-latest-result-id hydration), not just the in-page store.
+  await page.reload({waitUntil: 'domcontentloaded'});
+  await page.waitForSelector('#kinetics-result-figure .js-plotly-plot', {state: 'visible', timeout: 60000});
+  await page.waitForTimeout(1000);
+  const second = await collect();
+  await page.evaluate((r) => { window.__kineticsReport = r; }, {first, second});
 }
 """
 
@@ -326,8 +369,71 @@ def test_kinetics_page_real_browser_run(live_dash_preview):
     report = json.loads(payload)
     assert isinstance(report, dict), output
 
-    assert report["plotCount"] >= 1
-    assert report["svgCount"] >= 1
-    assert report["plot"]["width"] > 300
-    assert report["plot"]["height"] > 300
-    assert report["tableRows"] >= 1
+    first = report["first"]
+    assert first["plotCount"] >= 1
+    assert first["svgCount"] >= 1
+    assert first["plot"]["width"] > 300
+    assert first["plot"]["height"] > 300
+    assert first["tableRows"] >= 1
+
+    # After a full reload the page rehydrates kinetics-latest-result-id from
+    # the workspace results list and re-renders the same saved result.
+    second = report["second"]
+    assert second["plotCount"] >= 1
+    assert second["svgCount"] >= 1
+    assert second["tableRows"] >= 1
+
+
+@pytest.mark.skipif(
+    os.environ.get("MATERIALSCOPE_RUN_BROWSER_TESTS") != "1",
+    reason="Set MATERIALSCOPE_RUN_BROWSER_TESTS=1 to run live browser rendering checks.",
+)
+def test_kinetics_page_real_browser_dsc_ofw(live_dash_preview):
+    """Real DSC /analysis/run state -> browser OFW -> reload re-render."""
+    client = live_dash_preview
+    base_url = str(client.base_url).rstrip("/")
+    project_id = client.post("/workspace/new").json()["project_id"]
+    keys = _seed_three_dsc_with_analysis(client, project_id)
+    names = [f"{key} (DSC)" for key in keys]
+
+    script_path = REPO_ROOT / "pytest_temp" / "kinetics_browser" / "kinetics_browser_dsc.js"
+    script_path.parent.mkdir(parents=True, exist_ok=True)
+    script_path.write_text(
+        _BROWSER_JS_TEMPLATE
+        % {
+            "base": base_url,
+            "project": project_id,
+            "names": json.dumps(names),
+        },
+        encoding="utf-8",
+    )
+
+    session = f"kinetics-dsc-{os.getpid()}"
+    try:
+        _pw_session(session, "open", base_url)
+        _pw_session(session, "run-code", "--filename", str(script_path))
+        output = _pw_session(session, "eval", "() => window.__kineticsReport")
+    finally:
+        npx = shutil.which("npx") or shutil.which("npx.cmd")
+        if npx:
+            subprocess.run(
+                [npx, "--yes", "--package", "@playwright/cli", "playwright-cli", f"-s={session}", "close"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                timeout=30,
+            )
+
+    marker = "### Result\n"
+    assert marker in output, output
+    payload = output.split(marker, 1)[1].split("\n### ", 1)[0].strip()
+    report = json.loads(payload)
+    assert isinstance(report, dict), output
+
+    first = report["first"]
+    assert first["plotCount"] >= 1
+    assert first["tableRows"] >= 1
+
+    # Saved DSC-based kinetics result rehydrates after reload.
+    second = report["second"]
+    assert second["plotCount"] >= 1
+    assert second["tableRows"] >= 1
