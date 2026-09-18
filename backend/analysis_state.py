@@ -27,6 +27,11 @@ import numpy as np
 
 from core.batch_runner import infer_spectral_signal_context
 from core.modalities import analysis_state_key
+from core.units_dimensional import (
+    RAW_POWER_TO_WORKING,
+    UnitClass,
+    canonical_signal_unit,
+)
 
 
 # Signal bases a caller may request by name.  ``baseline`` and the DTG
@@ -160,6 +165,29 @@ def _raw_signal_semantics(dataset: Any, analysis_type: str) -> tuple[str | None,
     return _clean_unit(declared), role, ("modality_default" if role else "unresolved")
 
 
+def _mass_normalized_unit(source_unit: str | None) -> str | None:
+    """Working unit ``DSCProcessor.normalize()`` produces for ``source_unit``.
+
+    Uses the exact ``core.units_dimensional`` contract so a legacy state whose
+    working unit was never recorded can be recovered the same way the processor
+    recovered it:
+
+    - raw power (``mW`` / ``W``) is divided by mg (``mW/mg`` / ``W/mg``);
+    - an already-specific unit keeps its label (the forced re-normalization
+      path in ``resolve_working_unit`` never re-divides);
+    - anything else — unknown, generic or unusable — yields ``None``: the
+      physical unit is withheld rather than borrowed from the raw signal.
+    """
+    if not source_unit:
+        return None
+    resolved, unit_class = canonical_signal_unit(source_unit)
+    if unit_class is UnitClass.RAW_POWER:
+        return RAW_POWER_TO_WORKING[resolved]
+    if unit_class is UnitClass.SPECIFIC_POWER:
+        return resolved
+    return None
+
+
 def _working_signal_unit(
     *,
     analysis_type: str,
@@ -183,10 +211,22 @@ def _working_signal_unit(
     if analysis_type == "TGA":
         return "%"
 
-    normalization = (processing.get("signal_pipeline") or {}).get("normalization") or {}
-    working = _clean_unit(normalization.get("working_signal_unit"))
-    if working:
-        return working
+    if analysis_type == "DSC":
+        normalization = (processing.get("signal_pipeline") or {}).get("normalization") or {}
+        recorded = _clean_unit(normalization.get("working_signal_unit"))
+        if recorded:
+            return recorded
+        if not normalization.get("applied"):
+            # Recorded semantics prove the working curve was never scaled, so
+            # the imported unit still describes it.
+            return declared_unit
+        # Legacy state: normalization was applied but the resulting unit was
+        # never recorded (states written before the working unit was persisted).
+        # Recover it deterministically from the recorded source unit; when the
+        # provenance cannot justify a specific-power unit, withhold it instead
+        # of borrowing the raw unit.
+        source = _clean_unit(normalization.get("source_signal_unit")) or declared_unit
+        return _mass_normalized_unit(source)
 
     return declared_unit
 

@@ -1620,3 +1620,149 @@ def test_non_gaussian_runs_record_their_own_shape_factor():
     auto_estimate = outcome["record"]["processing"]["auto_estimate"]
     assert auto_estimate["peak_shape"] == "lorentzian"
     assert auto_estimate["shape_area_factor"] == pytest.approx(float(np.pi))
+
+
+# ---------------------------------------------------------------------------
+# Pre-PR legacy DSC states: normalization applied, working unit never recorded
+# ---------------------------------------------------------------------------
+
+
+def _legacy_dsc_state(dataset: _Dataset, *, normalization: dict) -> dict:
+    """A DSC state written before the working unit was persisted."""
+    x = np.asarray(dataset.data["temperature"], dtype=float)
+    working = np.asarray(dataset.data["signal"], dtype=float) / 5.0
+    return _state(
+        dataset,
+        analysis_type="DSC",
+        analysis_state={
+            "axis": x.tolist(),
+            "smoothed": working.tolist(),
+            "corrected": working.tolist(),
+            "processing": {"signal_pipeline": {"normalization": normalization}},
+        },
+    )
+
+
+def _legacy_normalization(**overrides) -> dict:
+    payload = {
+        "enabled": True,
+        "force": False,
+        "applied": True,
+        "skip_reason": None,
+        # working_signal_unit / source_signal_unit deliberately absent.
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_legacy_dsc_state_recovers_mw_per_mg_for_applied_normalization():
+    """applied=True + mW source means the saved curves are already mW/mg."""
+    dataset = _thermal_dataset()  # imported mW signal, sample_mass 5 mg
+    state = _legacy_dsc_state(dataset, normalization=_legacy_normalization())
+
+    resolved = resolve_analysis_state(state, "DSC", DATASET_KEY)
+
+    assert resolved.bases["raw"].signal_unit == "mW"
+    assert resolved.bases["smoothed"].signal_unit == "mW/mg"
+    assert resolved.bases["corrected"].signal_unit == "mW/mg"
+    assert resolved.bases["corrected"].dimensional_basis == "physical"
+
+
+def test_legacy_dsc_state_recovers_w_per_mg_from_a_watt_source():
+    state = _legacy_dsc_state(
+        _thermal_dataset(units={"temperature": "°C", "signal": "W"}),
+        normalization=_legacy_normalization(),
+    )
+
+    resolved = resolve_analysis_state(state, "DSC", DATASET_KEY)
+
+    assert resolved.bases["corrected"].signal_unit == "W/mg"
+
+
+def test_legacy_dsc_state_with_forced_renormalization_keeps_specific_label():
+    """A forced re-normalization of an already-specific source keeps its label."""
+    dataset = _thermal_dataset(units={"temperature": "°C", "signal": "mW/mg"})
+    state = _legacy_dsc_state(
+        dataset,
+        normalization=_legacy_normalization(force=True, source_signal_unit="mW/mg"),
+    )
+
+    resolved = resolve_analysis_state(state, "DSC", DATASET_KEY)
+
+    assert resolved.bases["corrected"].signal_unit == "mW/mg"
+
+
+def test_legacy_dsc_state_without_normalization_keeps_the_imported_unit():
+    """When normalization did not run, the imported unit is still honest."""
+    dataset = _thermal_dataset()
+    state = _legacy_dsc_state(dataset, normalization=_legacy_normalization(applied=False))
+
+    resolved = resolve_analysis_state(state, "DSC", DATASET_KEY)
+
+    assert resolved.bases["corrected"].signal_unit == "mW"
+
+
+@pytest.mark.parametrize("source_unit", [None, "a.u.", "unknown", "µV"])
+def test_legacy_dsc_state_with_unusable_source_withholds_the_unit(source_unit):
+    """An unusable source never yields a specific-power unit by invention."""
+    overrides = {} if source_unit is None else {"source_signal_unit": source_unit}
+    dataset = _thermal_dataset(units={"temperature": "°C", "signal": "a.u."})
+    state = _legacy_dsc_state(dataset, normalization=_legacy_normalization(**overrides))
+
+    resolved = resolve_analysis_state(state, "DSC", DATASET_KEY)
+
+    assert resolved.bases["corrected"].signal_unit is None
+    assert resolved.bases["corrected"].dimensional_basis == "unknown"
+    assert resolved.bases["raw"].signal_unit == "a.u."
+
+
+def test_deconvolution_on_a_legacy_dsc_state_uses_mw_per_mg_everywhere():
+    state = _legacy_dsc_state(_thermal_dataset(), normalization=_legacy_normalization())
+
+    outcome = _run(state, signal_basis="corrected", n_peaks=1, initial_params=[])
+
+    processing = outcome["record"]["processing"]
+    summary = outcome["record"]["summary"]
+    assert processing["signal_unit"] == "mW/mg"
+    assert outcome["record"]["provenance"]["fit_signal_unit"] == "mW/mg"
+    assert summary["signal_unit"] == "mW/mg"
+    assert summary["sse_per_dof_unit"] == "(mW/mg)²"
+    assert summary["amplitude_unit"] == "mW/mg·°C"
+    # Height / RMSE / MAE inherit the working unit through the summary.
+    assert summary["signal_dimensional_basis"] == "physical"
+    assert "mg" in outcome["record"]["report_payload"]["ylabel"]
+
+
+def test_legacy_dsc_state_survives_scopezip_and_stays_mw_per_mg():
+    from core.project_io import deserialize_project, serialize_project
+
+    dataset = _thermal_dataset()
+    state = _legacy_dsc_state(dataset, normalization=_legacy_normalization())
+    outcome = _run(state, signal_basis="corrected", n_peaks=1, initial_params=[])
+
+    payload = serialize_project(state)
+    restored = deserialize_project(
+        payload["manifest"],
+        {**payload["datasets"], **payload["figures"], **payload["branding_assets"]},
+        results_payload=payload["results"],
+        history_payload=payload["history"],
+    )
+
+    # The restored analysis state still lacks the new working-unit keys, so the
+    # resolver must keep recovering mW/mg from the legacy provenance.
+    restored_state = restored[f"dsc_state_{DATASET_KEY}"]
+    normalization = (restored_state.get("processing") or {}).get("signal_pipeline", {}).get(
+        "normalization"
+    ) or {}
+    assert "working_signal_unit" not in normalization
+    assert normalization.get("applied") is True
+
+    resolved = resolve_analysis_state(restored, "DSC", DATASET_KEY)
+    assert resolved.bases["corrected"].signal_unit == "mW/mg"
+    assert resolved.bases["smoothed"].signal_unit == "mW/mg"
+    assert resolved.bases["raw"].signal_unit == "mW"
+
+    restored_record = restored["results"][outcome["result_id"]]
+    assert restored_record["summary"]["signal_unit"] == "mW/mg"
+    assert restored_record["summary"]["sse_per_dof_unit"] == "(mW/mg)²"
+    assert summarize_result(restored_record).analysis_scope == "preview_deconvolution"
