@@ -4331,6 +4331,339 @@ TRANSLATIONS = {
         "tr": "Regresyon doğrusu",
         "en": "Fitted line",
     },
+    # --- Peak Deconvolution (preview module) ---
+    "nav.deconvolution": {
+        "tr": "Pik Dekonvolüsyonu",
+        "en": "Peak Deconvolution",
+    },
+    "dash.deconvolution.title": {
+        "tr": "Pik Dekonvolüsyonu",
+        "en": "Peak Deconvolution",
+    },
+    "dash.deconvolution.caption": {
+        "tr": "Çakışan pikleri Gaussian, Lorentzian veya Pseudo-Voigt bileşenlerine ayırın; sonuç çalışma alanına kaydedilir ve tarayıcı yenilendikten sonra yeniden yüklenir.",
+        "en": "Resolve overlapping peaks into Gaussian, Lorentzian, or pseudo-Voigt components; the result is saved in the workspace and rehydrates after a browser reload.",
+    },
+    "dash.deconvolution.badge": {
+        "tr": "Önizleme Modülü",
+        "en": "Preview Module",
+    },
+    "dash.deconvolution.disabled_title": {
+        "tr": "Önizleme modülü kapalı",
+        "en": "Preview module disabled",
+    },
+    "dash.deconvolution.disabled_body": {
+        "tr": "Pik dekonvolüsyonu, MATERIALSCOPE_ENABLE_PREVIEW_MODULES etkinleştirilene kadar kullanılamaz. Arka uç uç noktası da 403 döndürür.",
+        "en": "Peak deconvolution is unavailable until MATERIALSCOPE_ENABLE_PREVIEW_MODULES is enabled. The backend endpoint returns 403 as well.",
+    },
+    "dash.deconvolution.guidance_what_title": {
+        "tr": "Bu sayfa ne yapar?",
+        "en": "What this page does",
+    },
+    "dash.deconvolution.guidance_what_body": {
+        "tr": "Kaydedilmiş analiz durumundan bir sinyal tabanı seçer ve sunucu tarafında lmfit ile en küçük kareler uydurması yapar. Bileşen sayısı sizin seçiminizdir; fiziksel olarak kaç geçiş/bant/faz olduğunun kanıtı değildir.",
+        "en": "Fits a non-linear least-squares model with lmfit on the server, using a signal basis from the saved analysis state. The component count is your modelling choice; it is not evidence of how many physical transitions, bands, or phases exist.",
+    },
+    "dash.deconvolution.workflow_step1": {
+        "tr": "Veri setini ve sinyal tabanını seçin. Var olmayan bir taban engellenir; sessizce ham veriye düşülmez.",
+        "en": "Pick a dataset and a signal basis. A missing basis is blocked; there is no silent fallback to raw.",
+    },
+    "dash.deconvolution.workflow_step2": {
+        "tr": "Bileşen sayısını, pik şeklini ve isteğe bağlı eksen aralığını belirleyin. Başlangıç tahminlerini boş bırakırsanız otomatik tahmin kullanılır.",
+        "en": "Choose the component count, peak shape, and an optional axis window. Leave the initial guesses blank to use the automatic estimate.",
+    },
+    "dash.deconvolution.workflow_step3": {
+        "tr": "Çalıştırın; metrikler, bileşen tablosu, artık grafiği ve kaynak bilgisi kaydedilen sonuçtan yeniden oluşturulur.",
+        "en": "Run it; metrics, the component table, the residual plot, and provenance are re-rendered from the saved result.",
+    },
+    "dash.deconvolution.usage_title": {
+        "tr": "Sınırlar",
+        "en": "Limits",
+    },
+    "dash.deconvolution.usage_bullet1": {
+        "tr": "Güçlü çakışmada parametreler yüksek korelasyonludur ve genişlik/alan değerleri modele bağlıdır.",
+        "en": "Strongly overlapping components give highly correlated parameters; widths and areas depend on the model choice.",
+    },
+    "dash.deconvolution.usage_bullet2": {
+        "tr": "lmfit 'amplitude' değeri entegre alan parametresidir, tepe yüksekliği değildir. Yükseklik ve FWHM ayrı sütunlarda verilir.",
+        "en": "lmfit's 'amplitude' is an integrated area parameter, not a peak height. Height and FWHM are reported separately.",
+    },
+    "dash.deconvolution.usage_bullet3": {
+        "tr": "SSE/serbestlik derecesi ağırlıksız bir istatistiktir; ölçüm belirsizliğiyle ağırlıklandırılmış indirgenmiş χ² değildir.",
+        "en": "SSE per degree of freedom is unweighted; it is not a measurement-uncertainty-weighted reduced χ².",
+    },
+    "dash.deconvolution.next_step_body": {
+        "tr": "Sonuçları Proje sayfasından inceleyin, Rapor Merkezi'ne ekleyin veya .scopezip arşivine kaydedin.",
+        "en": "Review the result on the Project page, include it in the Report Center, or save the .scopezip archive.",
+    },
+    "dash.deconvolution.setup_title": {
+        "tr": "Veri ve sinyal tabanı",
+        "en": "Data and signal basis",
+    },
+    "dash.deconvolution.label_dataset": {
+        "tr": "Veri seti",
+        "en": "Dataset",
+    },
+    "dash.deconvolution.label_basis": {
+        "tr": "Sinyal tabanı",
+        "en": "Signal basis",
+    },
+    "dash.deconvolution.no_dataset_hint": {
+        "tr": "Dekonvolüsyon için uygun veri seti yok. Önce Veri içe aktarın (DSC, DTA, TGA, FTIR, Raman veya XRD).",
+        "en": "No dataset eligible for deconvolution. Import data first (DSC, DTA, TGA, FTIR, Raman, or XRD).",
+    },
+    "dash.deconvolution.basis.raw": {
+        "tr": "Ham sinyal (kaydedildiği gibi)",
+        "en": "Raw signal (as stored)",
+    },
+    "dash.deconvolution.basis.smoothed": {
+        "tr": "Yumuşatılmış",
+        "en": "Smoothed",
+    },
+    "dash.deconvolution.basis.corrected": {
+        "tr": "Baz çizgisi düzeltilmiş",
+        "en": "Baseline-corrected",
+    },
+    "dash.deconvolution.basis.normalized": {
+        "tr": "Normalize edilmiş",
+        "en": "Normalized",
+    },
+    "dash.deconvolution.reason.no_usable_samples": {
+        "tr": "içe aktarılan veri setinde sonlu eksen/sinyal örnekleri yok",
+        "en": "the imported dataset has no finite axis/signal samples",
+    },
+    "dash.deconvolution.reason.no_saved_analysis_state": {
+        "tr": "bu veri seti için henüz kaydedilmiş bir modalite analizi yok",
+        "en": "no saved modality analysis exists for this dataset yet",
+    },
+    "dash.deconvolution.reason.raw_signal_not_aligned_with_effective_axis": {
+        "tr": "ham veri yalnızca özgün içe aktarma ekseninde var; kaydedilen analiz durumu dönüştürülmüş bir eksen kullanıyor",
+        "en": "the raw data exists only on the original imported axis while the saved analysis state uses a converted effective axis",
+    },
+    "dash.deconvolution.reason.no_saved_smoothed_curve": {
+        "tr": "kaydedilmiş yumuşatılmış eğri yok",
+        "en": "no smoothed curve was saved",
+    },
+    "dash.deconvolution.reason.no_saved_corrected_curve": {
+        "tr": "kaydedilmiş baz çizgisi düzeltilmiş eğri yok",
+        "en": "no baseline-corrected curve was saved",
+    },
+    "dash.deconvolution.reason.no_saved_normalized_curve": {
+        "tr": "kaydedilmiş normalize eğri yok",
+        "en": "no normalized curve was saved",
+    },
+    "dash.deconvolution.basis_ready": {
+        "tr": "Geçerli eksen: {x_label} — {axis_role}; sinyal: {y_label} ({signal_role}). Aralık: {domain}.",
+        "en": "Effective axis: {x_label} — {axis_role}; signal: {y_label} ({signal_role}). Domain: {domain}.",
+    },
+    "dash.deconvolution.basis_ready_no_analysis": {
+        "tr": "Bu veri setinde kaydedilmiş analiz durumu yok; yalnızca ham sinyal kullanılabilir ve eksen içe aktarıldığı gibidir.",
+        "en": "This dataset has no saved analysis state, so only the raw signal is available and the axis is the imported one.",
+    },
+    "dash.deconvolution.basis_unavailable": {
+        "tr": "'{basis}' tabanı kullanılamıyor: {reason}. Yedek taban kullanılmaz.",
+        "en": "The '{basis}' basis is unavailable: {reason}. No fallback basis is substituted.",
+    },
+    "dash.deconvolution.fit_title": {
+        "tr": "Uydurma ayarları",
+        "en": "Fit configuration",
+    },
+    "dash.deconvolution.label_n_peaks": {
+        "tr": "Bileşen sayısı (1–10)",
+        "en": "Number of components (1–10)",
+    },
+    "dash.deconvolution.label_peak_shape": {
+        "tr": "Pik şekli",
+        "en": "Peak shape",
+    },
+    "dash.deconvolution.shape.gaussian": {
+        "tr": "Gaussian",
+        "en": "Gaussian",
+    },
+    "dash.deconvolution.shape.lorentzian": {
+        "tr": "Lorentzian",
+        "en": "Lorentzian",
+    },
+    "dash.deconvolution.shape.pseudo_voigt": {
+        "tr": "Pseudo-Voigt",
+        "en": "Pseudo-Voigt",
+    },
+    "dash.deconvolution.label_use_range": {
+        "tr": "Eksen aralığını sınırla",
+        "en": "Restrict the axis range",
+    },
+    "dash.deconvolution.label_range_min": {
+        "tr": "Aralık başlangıcı ({unit})",
+        "en": "Range start ({unit})",
+    },
+    "dash.deconvolution.label_range_max": {
+        "tr": "Aralık sonu ({unit})",
+        "en": "Range end ({unit})",
+    },
+    "dash.deconvolution.label_invert": {
+        "tr": "Uydurma için sinyali ters çevir",
+        "en": "Invert signal for fitting",
+    },
+    "dash.deconvolution.invert_help": {
+        "tr": "Kapalıyken sinyal kaydedildiği gibi uydurulur. Açıkken yalnızca bu çalıştırma için y ile -1 çarpılır ve bu dönüşüm kaynak bilgisine yazılır. Otomatik ters çevirme yoktur.",
+        "en": "When off, the signal is fitted exactly as stored. When on, y is multiplied by -1 for this run only and the transform is recorded in provenance. There is no automatic inversion.",
+    },
+    "dash.deconvolution.label_use_guesses": {
+        "tr": "Başlangıç tahminleri ver",
+        "en": "Provide initial guesses",
+    },
+    "dash.deconvolution.guesses_help": {
+        "tr": "Boş bırakılan her alan otomatik tahminden gelir ve kaynak bilgisinde 'auto' olarak kaydedilir. Sizden gelmeyen değerler sizin girmiş gibi kaydedilmez.",
+        "en": "Every blank field comes from the automatic estimate and is recorded as 'auto' in provenance. Values you did not enter are never recorded as yours.",
+    },
+    "dash.deconvolution.guess_center": {
+        "tr": "Merkez",
+        "en": "Center",
+    },
+    "dash.deconvolution.guess_amplitude": {
+        "tr": "Entegre genlik / alan parametresi",
+        "en": "Integrated amplitude / area parameter",
+    },
+    "dash.deconvolution.guess_sigma": {
+        "tr": "Sigma",
+        "en": "Sigma",
+    },
+    "dash.deconvolution.field_auto_placeholder": {
+        "tr": "otomatik",
+        "en": "auto",
+    },
+    "dash.deconvolution.guess_hint": {
+        "tr": "Boş alan = otomatik tahmin",
+        "en": "Blank field = automatic estimate",
+    },
+    "dash.deconvolution.component_title": {
+        "tr": "Bileşen {index}",
+        "en": "Component {index}",
+    },
+    "dash.deconvolution.run_title": {
+        "tr": "Çalıştır",
+        "en": "Run",
+    },
+    "dash.deconvolution.btn_run": {
+        "tr": "Dekonvolüsyonu çalıştır",
+        "en": "Run deconvolution",
+    },
+    "dash.deconvolution.run_saved": {
+        "tr": "Sonuç çalışma alanına kaydedildi: {rid}",
+        "en": "Result saved to the workspace: {rid}",
+    },
+    "dash.deconvolution.run_failed": {
+        "tr": "Uydurma engellendi veya başarısız: {error}",
+        "en": "Fit blocked or failed: {error}",
+    },
+    "dash.deconvolution.result_title": {
+        "tr": "Sonuç",
+        "en": "Result",
+    },
+    "dash.deconvolution.table_title": {
+        "tr": "Bileşen parametreleri",
+        "en": "Component parameters",
+    },
+    "dash.deconvolution.table.peak": {
+        "tr": "Bileşen",
+        "en": "Component",
+    },
+    "dash.deconvolution.table.center": {
+        "tr": "Merkez",
+        "en": "Center",
+    },
+    "dash.deconvolution.table.amplitude": {
+        "tr": "Entegre genlik / alan parametresi",
+        "en": "Integrated amplitude / area parameter",
+    },
+    "dash.deconvolution.table.sigma": {
+        "tr": "Sigma",
+        "en": "Sigma",
+    },
+    "dash.deconvolution.table.fwhm": {
+        "tr": "FWHM",
+        "en": "FWHM",
+    },
+    "dash.deconvolution.table.height": {
+        "tr": "Yükseklik",
+        "en": "Height",
+    },
+    "dash.deconvolution.table.fraction": {
+        "tr": "Lorentzian oranı (PV)",
+        "en": "Lorentzian fraction (PV)",
+    },
+    "dash.deconvolution.amplitude_note": {
+        "tr": "'Entegre genlik / alan parametresi' lmfit 'amplitude' değeridir ve tepe yüksekliği değildir. Yükseklik ayrı sütunda verilir.",
+        "en": "'Integrated amplitude / area parameter' is lmfit's 'amplitude' and is not a peak height. Height is reported in its own column.",
+    },
+    "dash.deconvolution.residual_title": {
+        "tr": "Artıklar (ölçülen − uydurulan)",
+        "en": "Residuals (measured − fitted)",
+    },
+    "dash.deconvolution.metric.r2": {
+        "tr": "R²",
+        "en": "R²",
+    },
+    "dash.deconvolution.metric.rmse": {
+        "tr": "RMSE",
+        "en": "RMSE",
+    },
+    "dash.deconvolution.metric.mae": {
+        "tr": "MAE",
+        "en": "MAE",
+    },
+    "dash.deconvolution.metric.max_residual": {
+        "tr": "Maks |artık|",
+        "en": "Max |residual|",
+    },
+    "dash.deconvolution.metric.sse_per_dof": {
+        "tr": "Ağırlıksız SSE / SD",
+        "en": "Unweighted SSE / DoF",
+    },
+    "dash.deconvolution.metric.dof": {
+        "tr": "Serbestlik derecesi",
+        "en": "Degrees of freedom",
+    },
+    "dash.deconvolution.fit_quality_note": {
+        "tr": "Ağırlıksız SSE/SD, ölçüm belirsizliğiyle ağırlıklandırılmış indirgenmiş χ² değildir.",
+        "en": "Unweighted SSE/DoF is not a measurement-uncertainty-weighted reduced χ².",
+    },
+    "dash.deconvolution.series_input": {
+        "tr": "Uydurulan girdi",
+        "en": "Fitted input",
+    },
+    "dash.deconvolution.series_total": {
+        "tr": "Toplam uydurma",
+        "en": "Total fit",
+    },
+    "dash.deconvolution.series_component": {
+        "tr": "Bileşen {index}",
+        "en": "Component {index}",
+    },
+    "dash.deconvolution.series_zero": {
+        "tr": "Sıfır referansı",
+        "en": "Zero reference",
+    },
+    "dash.deconvolution.warnings_title": {
+        "tr": "Uyarılar",
+        "en": "Warnings",
+    },
+    "dash.deconvolution.inversion_note": {
+        "tr": "Bu uydurma, kullanıcı isteğiyle -1 ile çarpılmış sinyal üzerinde yapıldı; bileşenler bu bildirilen uydurma tabanını tanımlar.",
+        "en": "This fit used the signal multiplied by -1 at explicit user request; the components describe that declared fitting basis.",
+    },
+    "dash.deconvolution.limitations_title": {
+        "tr": "Uydurma sınırları",
+        "en": "Fit limitations",
+    },
+    "dash.deconvolution.provenance_title": {
+        "tr": "İşleme ve kaynak bilgisi",
+        "en": "Processing and provenance",
+    },
+    "dash.deconvolution.unit_unspecified": {
+        "tr": "birim belirtilmemiş",
+        "en": "unit unspecified",
+    },
 }
 
 

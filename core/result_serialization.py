@@ -963,15 +963,31 @@ def _build_deconvolution_scientific_context(
     *,
     metadata: dict[str, Any] | None = None,
     validation: dict[str, Any] | None = None,
+    processing: dict[str, Any] | None = None,
+    rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    processing = processing or {}
     fit_quality = {
         "r_squared": _clean_scalar(result.get("r_squared")),
     }
-    for key in ("rmse", "mae", "max_abs_residual", "reduced_chi_squared", "dof"):
+    for key in (
+        "rmse",
+        "mae",
+        "max_abs_residual",
+        "sse_per_dof",
+        "unweighted_sse_per_dof",
+        "reduced_chi_squared",
+        "dof",
+    ):
         if key in (result.get("residual_stats") or {}):
             fit_quality[key] = _clean_scalar(result["residual_stats"].get(key))
     if "fit_quality" in result and isinstance(result["fit_quality"], dict):
         fit_quality.update({k: _clean_scalar(v) for k, v in result["fit_quality"].items()})
+
+    axis_role = processing.get("axis_role")
+    axis_unit = processing.get("axis_unit")
+    signal_unit = processing.get("signal_unit")
+    inversion_applied = bool(processing.get("inversion_applied"))
 
     interpretation = [
         build_interpretation(
@@ -981,13 +997,39 @@ def _build_deconvolution_scientific_context(
             unit="components",
         )
     ]
+    methodology = {
+        "analysis_family": "Peak Deconvolution",
+        "fit_engine": "lmfit",
+        "peak_shape": peak_shape,
+        "initial_guesses": result.get("initial_guesses") or [],
+        "amplitude_semantics": "integrated area parameter (not peak height)",
+        "inversion_applied": inversion_applied,
+    }
+    if processing.get("signal_basis"):
+        methodology["signal_basis"] = processing.get("signal_basis")
+    if axis_role:
+        methodology["axis_role"] = axis_role
+    if axis_unit:
+        methodology["axis_unit"] = axis_unit
+    if signal_unit:
+        methodology["signal_unit"] = signal_unit
+
+    limitations = [
+        "Parameter identifiability may degrade for strongly overlapping peaks.",
+        "Model-shape choice can bias component amplitudes and widths.",
+        "The number of fitted components is a user/model choice and is not evidence of the true number of physical transitions, bands, or phases.",
+        "Fitted components are not automatically distinct chemical or physical species.",
+        "Parameters of overlapping components can be strongly correlated.",
+        "SSE per degree of freedom is unweighted (no measurement uncertainties are supplied); it is not a metrologically interpretable reduced chi-square.",
+        "lmfit's amplitude parameter is an integrated area parameter, not peak height.",
+    ]
+    if inversion_applied:
+        limitations.append(
+            "The fitted signal was negated at explicit user request; the components describe that declared fitting basis, not the stored signal sign."
+        )
+
     base_context = build_scientific_context(
-        methodology={
-            "analysis_family": "Peak Deconvolution",
-            "fit_engine": "lmfit",
-            "peak_shape": peak_shape,
-            "initial_guesses": result.get("initial_guesses") or [],
-        },
+        methodology=methodology,
         equations=[
             build_equation(
                 "Composite Peak Model",
@@ -997,10 +1039,7 @@ def _build_deconvolution_scientific_context(
         ],
         numerical_interpretation=interpretation,
         fit_quality=build_fit_quality(fit_quality),
-        limitations=[
-            "Parameter identifiability may degrade for strongly overlapping peaks.",
-            "Model-shape choice can bias component amplitudes and widths.",
-        ],
+        limitations=limitations,
     )
     summary = {
         "peak_shape": peak_shape,
@@ -1011,10 +1050,13 @@ def _build_deconvolution_scientific_context(
         base_context=base_context,
         analysis_type="Peak Deconvolution",
         summary=summary,
-        rows=[],
+        rows=rows or [],
         metadata=metadata or {},
         fit_quality=fit_quality,
         validation=validation or {},
+        # Only thermal axes carry a temperature unit; spectra must not be
+        # described as if their axis were °C.
+        temperature_unit=axis_unit if axis_role == "temperature" else None,
     )
 
 
@@ -2059,8 +2101,10 @@ def serialize_deconvolution_result(
     validation: dict[str, Any] | None = None,
     review: dict[str, Any] | None = None,
     scientific_context: dict[str, Any] | None = None,
+    report_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Serialize an experimental peak deconvolution result."""
+    processing = processing or {}
     params = result.get("params", {})
     rows = []
     n_peaks = len(result.get("components", []))
@@ -2072,16 +2116,42 @@ def serialize_deconvolution_result(
             "amplitude": _clean_scalar(params.get(f"{prefix}amplitude")),
             "sigma": _clean_scalar(params.get(f"{prefix}sigma")),
         }
+        # lmfit-derived parameters: FWHM is an axis width, height is a signal
+        # value.  Neither replaces the integrated amplitude.
+        for key in ("fwhm", "height"):
+            value = params.get(f"{prefix}{key}")
+            if value is not None:
+                row[key] = _clean_scalar(value)
         fraction = params.get(f"{prefix}fraction")
         if fraction is not None:
             row["fraction"] = _clean_scalar(fraction)
         rows.append(row)
 
+    stats = result.get("residual_stats") or {}
+    axis_unit = processing.get("axis_unit")
+    signal_unit = processing.get("signal_unit")
     summary = {
         "r_squared": _clean_scalar(result.get("r_squared")),
+        "rmse": _clean_scalar(stats.get("rmse")),
+        "mae": _clean_scalar(stats.get("mae")),
+        "max_abs_residual": _clean_scalar(stats.get("max_abs_residual")),
+        "sse_per_dof": _clean_scalar(stats.get("sse_per_dof")),
+        "dof": _clean_scalar(stats.get("dof")),
         "peak_shape": peak_shape,
         "peak_count": n_peaks,
+        "signal_basis": processing.get("signal_basis"),
+        "axis_role": processing.get("axis_role"),
+        "axis_unit": axis_unit,
+        "signal_unit": signal_unit,
+        "inversion_applied": bool(processing.get("inversion_applied")),
+        # The lmfit amplitude is an integrated area parameter; the UI and
+        # reports must not present it as a peak height.
+        "amplitude_semantics": "integrated_area_parameter",
     }
+    # An area unit is only stated when both dimensions are actually known.
+    if axis_unit and signal_unit:
+        summary["amplitude_unit"] = f"{signal_unit}·{axis_unit}"
+
     return make_result_record(
         result_id=f"deconv_{dataset_key}",
         analysis_type="Peak Deconvolution",
@@ -2095,6 +2165,7 @@ def serialize_deconvolution_result(
         provenance=provenance,
         validation=validation,
         review=review,
+        report_payload=report_payload,
         scientific_context=scientific_context
         or _build_deconvolution_scientific_context(
             result,
@@ -2102,6 +2173,8 @@ def serialize_deconvolution_result(
             n_peaks,
             metadata=dataset.metadata,
             validation=validation,
+            processing=processing,
+            rows=rows,
         ),
     )
 

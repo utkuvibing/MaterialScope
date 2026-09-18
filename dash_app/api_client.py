@@ -198,6 +198,22 @@ def kinetics_run(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         return r.json()
 
 
+def deconvolution_run(project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Run a preview peak deconvolution via the backend."""
+    with _client() as c:
+        r = c.post(f"/workspace/{project_id}/deconvolution/run", json=dict(payload))
+        _raise_with_detail(r)
+        return r.json()
+
+
+def deconvolution_options(project_id: str, dataset_key: str) -> dict[str, Any]:
+    """Selectable signal bases and effective axis semantics for a dataset."""
+    with _client() as c:
+        r = c.get(f"/workspace/{project_id}/deconvolution/options/{dataset_key}")
+        _raise_with_detail(r)
+        return r.json()
+
+
 def literature_compare(
     project_id: str,
     result_id: str,

@@ -38,6 +38,7 @@ NAV_MANAGEMENT_DEF: list[tuple[str, str, str]] = [
 # promoted into NAV_ANALYSIS_DEF (the six stable modalities).
 NAV_PREVIEW_DEF: list[tuple[str, str, str]] = [
     ("nav.kinetics", "bi-lightning-charge", "/kinetics"),
+    ("nav.deconvolution", "bi-bar-chart-steps", "/deconvolution"),
 ]
 
 
